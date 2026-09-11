@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import PaperShortcutsOverlay from '../../../components/paper/PaperShortcutsOverlay.vue'
+import { useFeatureFlagStore } from '../../../store/featureFlagStore'
 import overlaySource from '../../../components/paper/PaperShortcutsOverlay.vue?raw'
 import appShellSource from '../../../components/shell/AppShell.vue?raw'
 import reviewKeymapSource from '../../../composables/useReviewKeymap.ts?raw'
 import boardViewSource from '../../../views/BoardView.vue?raw'
 import {
   APP_SHELL_SHORTCUT_BINDINGS,
+  bindingAppliesToSkin,
   formatShortcut,
   KEYBOARD_HELP_SHORTCUT,
+  PAPER_SHORTCUT_BINDINGS,
   PAPER_SHORTCUT_GROUPS,
   SHORTCUT_HANDLER_CONTRACTS,
   strokeMatches,
@@ -182,6 +185,52 @@ describe('PaperShortcutsOverlay', () => {
     // `f` is gated on `!paperOn` in BoardView, so Paper must not advertise it.
     expect(displayedIds).not.toContain('board-toggle-filter')
     expect(teleportContent().textContent).not.toContain('Filter panel')
+  })
+
+  it('hides the Review binding when its feature flag is disabled', () => {
+    const featureFlags = useFeatureFlagStore()
+    featureFlags.flags.newAutomation = false
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+
+    const displayedIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+
+    expect(displayedIds).not.toContain('workspace-review')
+  })
+
+  it('hides and restores every Paper review-keymap row with the automation flag', () => {
+    const featureFlags = useFeatureFlagStore()
+    const reviewKeymapIds = PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.handlerOwner === 'review-keymap')
+      .map((binding) => binding.id)
+    const nonReviewIds = PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.group !== undefined
+        && binding.handlerOwner !== 'review-keymap'
+        && bindingAppliesToSkin(binding, 'paper')
+        && binding.flag === undefined)
+      .map((binding) => binding.id)
+
+    expect(reviewKeymapIds).toHaveLength(6)
+    expect(PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.handlerOwner === 'review-keymap')
+      .every((binding) => binding.flag === 'newAutomation')).toBe(true)
+
+    featureFlags.flags.newAutomation = false
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const disabledIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+    expect(disabledIds).not.toEqual(expect.arrayContaining(reviewKeymapIds))
+    expect(disabledIds).toEqual(expect.arrayContaining(nonReviewIds))
+    wrapper.unmount()
+
+    featureFlags.flags.newAutomation = true
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const enabledIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+    expect(enabledIds).toEqual(expect.arrayContaining(reviewKeymapIds))
   })
 
   it('does not advertise an undo shortcut that the product does not implement', () => {

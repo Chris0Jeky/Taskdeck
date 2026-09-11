@@ -168,8 +168,8 @@ This writes uncompressed exports:
   - `X-Content-Type-Options: nosniff`
   - `X-Frame-Options: SAMEORIGIN`
   - `Referrer-Policy: strict-origin-when-cross-origin`
-  - `Permissions-Policy: geolocation=(), microphone=(), camera=()`
-  - `Content-Security-Policy: default-src 'self'; ...`
+  - `Permissions-Policy: geolocation=(), microphone=(self), camera=()`
+  - `Content-Security-Policy: default-src 'self'; media-src 'self' blob:; ...`
 - gzip compression for common text/json/js/css/svg payloads
 
 ## TLS and Forwarded-Header Assumptions

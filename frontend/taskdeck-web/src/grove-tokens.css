@@ -1,0 +1,52 @@
+/* Grove extends the existing Paper substrate, including the legacy token bridge.
+   Both classes remain on body so every current route receives the same palette. */
+body.paper.grove {
+  --paper: #f3f4ee;
+  --paper-2: #e8ece1;
+  --paper-card: #fbfcf8;
+  --paper-edge: #dfe5d5;
+  --line: #ccd4c3;
+  --line-soft: #dce2d4;
+  --ink: #252d25;
+  --ink-deep: #142218;
+  --ink-2: #394737;
+  --mute: #505d49;
+  --faint: #56614f;
+  --whisper: #b7c3ab;
+  --ember: #3e6545;
+  --ember-deep: #2d4c32;
+  --ember-bloom: #3e65451a;
+  --ember-tint: #dce8d8;
+  --ember-ink: #29452d;
+  --td-on-ember: #fcfff9;
+  --applied: #3d6234;
+  --applied-tint: #dbe8d2;
+  --awaits: #56614f;
+  --r-2: 8px;
+  --r-3: 12px;
+}
+body.paper-night.grove-night {
+  --paper: #171f1b;
+  --paper-2: #131a16;
+  --paper-card: #202b23;
+  --paper-edge: #29372c;
+  --line: #3b4b3c;
+  --line-soft: #2e3b30;
+  --ink: #edf0e3;
+  --ink-deep: #faffed;
+  --ink-2: #d1dbc5;
+  --mute: #b6c1a8;
+  --faint: #adbaa0;
+  --whisper: #475740;
+  --ember: #aecb93;
+  --ember-deep: #9eba84;
+  --ember-bloom: #aecb9322;
+  --ember-tint: #2d412c;
+  --ember-ink: #d2e8bf;
+  --td-on-ember: #182216;
+  --applied: #bad795;
+  --applied-tint: #2d3a22;
+  --awaits: #adbaa0;
+  --r-2: 8px;
+  --r-3: 12px;
+}

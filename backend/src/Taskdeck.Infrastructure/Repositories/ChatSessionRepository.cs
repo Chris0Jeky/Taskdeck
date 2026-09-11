@@ -74,6 +74,40 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
     }
 
+    public async Task<bool> TryBindBoardAsync(
+        Guid sessionId,
+        Guid userId,
+        Guid boardId,
+        DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var rowsUpdated = await _dbSet
+            .Where(session =>
+                session.Id == sessionId &&
+                session.UserId == userId &&
+                session.Status == ChatSessionStatus.Active &&
+                session.BoardId == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(session => session.BoardId, boardId)
+                    .SetProperty(session => session.UpdatedAt, updatedAt),
+                cancellationToken);
+
+        if (rowsUpdated == 0)
+        {
+            // ExecuteUpdate bypasses this context's change tracker. If another request won the
+            // compare-and-set after this context loaded the session, refresh that tracked row so
+            // the service can distinguish an idempotent same-board race from a different binding.
+            var trackedSession = _context.ChangeTracker
+                .Entries<ChatSession>()
+                .FirstOrDefault(entry => entry.Entity.Id == sessionId);
+            if (trackedSession != null)
+                await trackedSession.ReloadAsync(cancellationToken);
+        }
+
+        return rowsUpdated == 1;
+    }
+
     private static async Task<IReadOnlyList<ChatSession>> GetLimitedOrderedByUpdatedAtAsync(
         IQueryable<ChatSession> query,
         int limit,

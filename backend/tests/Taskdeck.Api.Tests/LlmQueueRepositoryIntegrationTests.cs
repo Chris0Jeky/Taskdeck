@@ -789,6 +789,70 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task TryCorrectLinkedTranscriptCaptureAsync_ShouldCompareAndSwapTheCanonicalLink()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("transcript-correction-cas", "transcript-correction-cas@example.com", "hash");
+            db.Users.Add(user);
+            var request = new LlmRequest(
+                user.Id,
+                CaptureRequestContract.RequestTypeTranscriptV1,
+                CaptureRequestContract.SerializePayload(
+                    new CapturePayloadV1(1, CaptureSource.TranscriptPaste, "original")));
+            request.MarkAsProcessing();
+            request.MarkAsCompleted();
+            var original = new Transcript(
+                user.Id,
+                CaptureSource.TranscriptPaste,
+                "original",
+                createdFromCaptureId: request.Id);
+            db.Transcripts.Add(original);
+            db.LlmRequests.Add(request);
+            request.AttachTranscript(original.Id);
+            await db.SaveChangesAsync();
+
+            db.ChangeTracker.Clear();
+            var persistedRequest = await db.LlmRequests.AsNoTracking().SingleAsync(item => item.Id == request.Id);
+            var expectedUpdatedAt = persistedRequest.UpdatedAt;
+            var expectedPayload = persistedRequest.Payload;
+            var replacement = new Transcript(
+                user.Id,
+                CaptureSource.TranscriptPaste,
+                "replacement",
+                createdFromCaptureId: request.Id);
+            db.Transcripts.Add(replacement);
+            await db.SaveChangesAsync();
+
+            var replacementPayload = CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.TranscriptPaste, "replacement"));
+            var updated = await repo.TryCorrectLinkedTranscriptCaptureAsync(
+                request.Id,
+                RequestStatus.Completed,
+                expectedUpdatedAt,
+                original.Id,
+                expectedPayload,
+                replacement.Id,
+                replacementPayload);
+
+            updated.Should().BeTrue();
+            var updatedRequest = await db.LlmRequests.AsNoTracking().SingleAsync(item => item.Id == request.Id);
+            updatedRequest.TranscriptId.Should().Be(replacement.Id);
+            updatedRequest.Payload.Should().Be(replacementPayload);
+
+            var stale = await repo.TryCorrectLinkedTranscriptCaptureAsync(
+                request.Id,
+                RequestStatus.Completed,
+                expectedUpdatedAt,
+                original.Id,
+                expectedPayload,
+                original.Id,
+                expectedPayload);
+            stale.Should().BeFalse();
+        });
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldRefreshTrackedUpdatedAtToPersistedValue()
     {
         await WithSqliteRepoAsync(async (db, repo) =>

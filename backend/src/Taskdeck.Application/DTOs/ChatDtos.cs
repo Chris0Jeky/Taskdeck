@@ -23,7 +23,9 @@ public record ChatMessageDto(
     int? TokenUsage,
     DateTimeOffset CreatedAt,
     string? DegradedReason = null,
-    string? ToolCallMetadataJson = null
+    string? ToolCallMetadataJson = null,
+    ChatContextSelection? Context = null,
+    IReadOnlyList<ChatContextSource>? ContextSources = null
 );
 
 public record ChatProviderHealthDto(
@@ -46,7 +48,12 @@ public record CreateChatSessionDto(
     Guid? BoardId = null
 );
 
+public record BindChatSessionBoardDto(
+    Guid BoardId
+);
+
 public record SendChatMessageDto(
     string Content,
-    bool RequestProposal = false
+    bool RequestProposal = false,
+    ChatContextSelection? Context = null
 );

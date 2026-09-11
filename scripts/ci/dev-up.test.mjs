@@ -22,6 +22,7 @@ const powershellLauncher = join(repoRoot, 'scripts', 'dev-up.ps1')
 const bashLauncher = join(repoRoot, 'scripts', 'dev-up.sh')
 const frontendPackage = join(repoRoot, 'frontend', 'taskdeck-web', 'package.json')
 const trackedNodeVersion = join(repoRoot, '.nvmrc')
+const DIAGNOSTIC_OUTPUT_LIMIT = 8 * 1024
 const RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000
 
 // #2378: this suite is serial and launches real PowerShell/Bash launchers, which in turn start
@@ -198,6 +199,7 @@ if (kind === 'linger') {
   }
 
   let port = Number(process.env.FAKE_FRONTEND_PORT)
+  const frontendHost = process.env.FAKE_FRONTEND_HOST ?? 'localhost'
   const mode = process.env.FAKE_FRONTEND_MODE ?? 'success'
   if (mode === 'transform-failure') {
     console.error('[dev] Taskdeck entry graph transform failed at "/src/main.ts"')
@@ -252,7 +254,7 @@ if (kind === 'linger') {
     }
     server.once('error', onError)
     server.once('listening', onListening)
-    server.listen(port, 'localhost')
+    server.listen(port, frontendHost)
   }
   listen()
 } else if (kind === 'dotnet') {
@@ -595,7 +597,7 @@ async function createFixture(platform) {
   }
 }
 
-async function installPostTaskkillUnknownProbe(fixture) {
+async function installTransientIdentityProbe(fixture, probeNumber = 2, persistent = false) {
   const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
   const source = await readFile(launcherPath, 'utf8')
   const identityFunction = 'function Get-ProcessIdentityStatus {'
@@ -614,8 +616,8 @@ function Get-ProcessIdentityStatus {
     $actual = Get-RealProcessIdentityStatus -Record $Record
     if (-not $script:IdentityProbeCounts.ContainsKey($key)) { $script:IdentityProbeCounts[$key] = 0 }
     $script:IdentityProbeCounts[$key] = [int]$script:IdentityProbeCounts[$key] + 1
-    if ([int]$script:IdentityProbeCounts[$key] -eq 2) {
-        Write-Host '[dev-up-test] Forced transient post-taskkill identity: Unknown'
+      if (${persistent ? '$true' : `[int]$script:IdentityProbeCounts[$key] -eq ${probeNumber}`}) {
+          Write-Host '[dev-up-test] Forced transient identity probe ${probeNumber}: Unknown'
         return 'Unknown'
     }
     return $actual
@@ -624,6 +626,33 @@ function Get-ProcessIdentityStatus {
 function Assert-ProcessIdentityMatch {`,
     )
   await writeFile(launcherPath, instrumented)
+}
+
+async function installPidFileLockProbe(fixture, persistent = false) {
+  const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
+  const source = await readFile(launcherPath, 'utf8')
+  const anchor = 'function Stop-LoadedStack {'
+  assert.equal(source.split(anchor).length - 1, 1, 'unexpected stack-stop function count')
+  await writeFile(launcherPath, source.replace(anchor, String.raw`
+$script:PidRemovalProbed = $false
+function Remove-Item {
+    [CmdletBinding()]
+    param([string]$LiteralPath)
+    if ($LiteralPath -eq $PidFile -and (${persistent ? '$true' : '-not $script:PidRemovalProbed'})) {
+        $script:PidRemovalProbed = $true
+        $stateLock = [System.IO.File]::Open($LiteralPath, 'Open', 'ReadWrite', 'None')
+        try {
+            Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -ErrorAction Stop
+        } finally {
+            $stateLock.Dispose()
+            Write-Host '[dev-up-test] Released transient PID-file lock'
+        }
+        return
+    }
+    Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -ErrorAction Stop
+}
+
+function Stop-LoadedStack {`))
 }
 
 async function installExitedPreflightRecordProbe(fixture) {
@@ -748,11 +777,11 @@ async function canBind(port, host = 'localhost') {
   }
 }
 
-async function listenForeign(host = '127.0.0.1') {
+async function listenForeign(host = '127.0.0.1', port = 0) {
   const server = net.createServer()
   await new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(0, host, resolve)
+    server.listen(port, host, resolve)
   })
   return server
 }
@@ -941,6 +970,101 @@ async function waitUntil(predicate, message, timeout = 5000) {
   assert.fail(message)
 }
 
+function boundedDiagnosticText(value, limit = DIAGNOSTIC_OUTPUT_LIMIT) {
+  const text = value == null ? '' : String(value)
+  if (text.length <= limit) return text
+  return `${text.slice(0, limit)}\n...[truncated ${text.length - limit} characters]`
+}
+
+function captureBoundedOutput(stream) {
+  let text = ''
+  if (!stream) return () => text
+  stream.setEncoding('utf8')
+  stream.on('data', (chunk) => {
+    text += chunk
+    if (text.length > DIAGNOSTIC_OUTPUT_LIMIT) text = text.slice(-DIAGNOSTIC_OUTPUT_LIMIT)
+  })
+  return () => text
+}
+
+function readinessFailure(reason, child, expectedPort, expectedHost, readStdout, readStderr, exit = {}) {
+  const exitCode = exit.exitCode ?? child?.exitCode
+  const signal = exit.signal ?? child?.signalCode
+  const stdout = boundedDiagnosticText(readStdout?.())
+  const stderr = boundedDiagnosticText(readStderr?.())
+  const error = new Error(
+    `frontend helper readiness failed: ${reason}\n` +
+      `expected ${expectedHost}:${expectedPort}; child pid=${child?.pid ?? 'unknown'} ` +
+      `exitCode=${exitCode ?? 'running'} signal=${signal ?? 'none'}\n` +
+      `stdout:\n${stdout || '(empty)'}\n` +
+      `stderr:\n${stderr || '(empty)'}`,
+  )
+  return error
+}
+
+function waitForFrontendReadiness(child, { expectedHost = 'localhost', expectedPort, readStdout, readStderr, timeout = 5000 }) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const markerPrefix = 'TASKDECK_DEV_FRONTEND_READY '
+    const finish = (callback, value) => {
+      if (settled) return
+      settled = true
+      clearInterval(markerPoll)
+      clearTimeout(timeoutTimer)
+      child.removeListener('close', onClose)
+      child.removeListener('error', onError)
+      callback(value)
+    }
+    const onClose = (code, signal) => {
+      finish(reject, readinessFailure('child exited before the readiness marker', child, expectedPort, expectedHost, readStdout, readStderr, { exitCode: code, signal }))
+    }
+    const onError = (error) => {
+      finish(reject, readinessFailure(`child emitted ${error?.code ?? 'an error'}: ${error?.message ?? error}`, child, expectedPort, expectedHost, readStdout, readStderr))
+    }
+    const inspectMarker = () => {
+      const output = readStdout()
+      const markerStart = output.lastIndexOf(markerPrefix)
+      if (markerStart < 0) return
+      const lineEnd = output.indexOf('\n', markerStart)
+      if (lineEnd < 0) return
+      const markerText = output.slice(markerStart + markerPrefix.length, lineEnd).trim()
+      let marker
+      try {
+        marker = JSON.parse(markerText)
+      } catch (error) {
+        finish(reject, readinessFailure(`invalid readiness marker JSON: ${error.message}`, child, expectedPort, expectedHost, readStdout, readStderr))
+        return
+      }
+      if (
+        marker?.schemaVersion !== 1 ||
+        marker?.port !== expectedPort ||
+        marker?.url !== `http://localhost:${expectedPort}/`
+      ) {
+        finish(
+          reject,
+          readinessFailure(
+            `readiness marker did not identify the expected frontend port: ${markerText}`,
+            child,
+            expectedPort,
+            expectedHost,
+            readStdout,
+            readStderr,
+          ),
+        )
+        return
+      }
+      finish(resolve, marker)
+    }
+    const markerPoll = setInterval(inspectMarker, 10)
+    const timeoutTimer = setTimeout(() => {
+      finish(reject, readinessFailure(`no valid readiness marker within ${timeout}ms`, child, expectedPort, expectedHost, readStdout, readStderr))
+    }, timeout)
+    child.once('close', onClose)
+    child.once('error', onError)
+    inspectMarker()
+  })
+}
+
 async function terminateLauncherTree(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return
   killProcessTree(child.pid)
@@ -981,15 +1105,32 @@ function combinedOutput(result) {
   return `${result.stdout ?? ''}\n${result.stderr ?? ''}`
 }
 
+function formatLauncherFailure(result) {
+  const error = result?.error ? `${result.error.code ?? 'error'}: ${result.error.message ?? result.error}` : 'none'
+  return (
+    `launcher status=${result?.status ?? 'null'} signal=${result?.signal ?? 'none'} error=${error}\n` +
+    `launcher stdout:\n${boundedDiagnosticText(result?.stdout) || '(empty)'}\n` +
+    `launcher stderr:\n${boundedDiagnosticText(result?.stderr) || '(empty)'}`
+  )
+}
+
 function assertFailedClosed(result) {
   assert.ifError(result.error)
   assert.notEqual(result.status, 0)
   assert.doesNotMatch(combinedOutput(result), /Stack is up/)
 }
 
-async function assertNoStateAndPortsReleased(fixture, ports) {
-  assert.equal(await readOptional(fixture.stateFile), null, 'failed startup retained state despite complete cleanup')
-  for (const port of ports) assert.equal(await canBind(port), true, `port ${port} remained occupied`)
+async function assertNoStateAndPortsReleased(fixture, ports, result = null) {
+  const state = await readOptional(fixture.stateFile)
+  const launcherDetails = result ? `\n${formatLauncherFailure(result)}` : ''
+  assert.equal(
+    state,
+    null,
+    `failed startup retained state despite complete cleanup\nstate:\n${boundedDiagnosticText(state) || '(empty)'}${launcherDetails}`,
+  )
+  for (const port of ports) {
+    assert.equal(await canBind(port), true, `port ${port} remained occupied${launcherDetails}`)
+  }
 }
 
 async function stopSuccessfulStack(platform, fixture, { timeout = 20_000 } = {}) {
@@ -1079,50 +1220,128 @@ test('launchers encode the transactional lifecycle and custom-port environment b
   )
 })
 
-if (process.platform !== 'win32') {
-  test(
-    'Node helper: TERM closes an active frontend connection',
-    { concurrency: false, timeout: 10_000 },
-    async () => {
-      const platform = { name: 'Bash', launcher: 'dev-up.sh' }
-      const fixture = await createFixture(platform)
-      const frontendPort = await getFreePort()
-      const child = spawn(process.execPath, [fixture.helper, 'npm', 'run', 'dev'], {
-        cwd: fixture.root,
-        stdio: 'ignore',
-        env: fixtureEnvironment(platform, fixture, { FAKE_FRONTEND_PORT: String(frontendPort) }),
+test(
+  'Node helper: TERM closes an active frontend connection',
+  {
+    concurrency: false,
+    timeout: 10_000,
+    skip: process.platform === 'win32' ? 'requires POSIX signal handling; hosted Linux proof is required' : false,
+  },
+  async () => {
+    const platform = { name: 'Bash', launcher: 'dev-up.sh' }
+    const fixture = await createFixture(platform)
+    const frontendPort = await getFreePort()
+    const child = spawn(process.execPath, [fixture.helper, 'npm', 'run', 'dev'], {
+      cwd: fixture.root,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: fixtureEnvironment(platform, fixture, {
+        FAKE_FRONTEND_HOST: '127.0.0.1',
+        FAKE_FRONTEND_PORT: String(frontendPort),
+      }),
+    })
+    const readStdout = captureBoundedOutput(child.stdout)
+    const readStderr = captureBoundedOutput(child.stderr)
+    let socket
+    try {
+      const marker = await waitForFrontendReadiness(child, {
+        expectedHost: '127.0.0.1',
+        expectedPort: frontendPort,
+        readStdout,
+        readStderr,
       })
-      let socket
-      try {
-        await waitUntil(() => canBind(frontendPort, 'localhost').then((available) => !available), 'frontend helper did not bind')
-        socket = net.createConnection({ host: 'localhost', port: frontendPort })
-        await new Promise((resolve, reject) => {
-          socket.once('connect', resolve)
-          socket.once('error', reject)
-        })
+      assert.deepEqual(marker, {
+        schemaVersion: 1,
+        url: `http://localhost:${frontendPort}/`,
+        port: frontendPort,
+      })
+      assert.equal(
+        await canBind(frontendPort, '127.0.0.1'),
+        false,
+        `frontend helper emitted readiness without binding its port\n${readStdout()}\n${readStderr()}`,
+      )
+      socket = net.createConnection({ host: '127.0.0.1', port: frontendPort })
+      await new Promise((resolve, reject) => {
+        socket.once('connect', resolve)
+        socket.once('error', reject)
+      })
 
-        const exitResult = new Promise((resolve) => {
-          const timer = setTimeout(() => resolve(null), 3000)
-          child.once('exit', (code, signal) => {
-            clearTimeout(timer)
-            resolve({ code, signal })
-          })
+      const exitResult = new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(null), 3000)
+        child.once('exit', (code, signal) => {
+          clearTimeout(timer)
+          resolve({ code, signal })
         })
-        assert.equal(child.kill('SIGTERM'), true)
-        const result = await exitResult
-        assert.ok(result, 'frontend helper did not exit after TERM with an open connection')
-        assert.deepEqual(result, { code: 0, signal: null })
-      } finally {
-        socket?.destroy()
-        if (child.exitCode === null && child.signalCode === null) {
-          child.kill('SIGKILL')
-          await new Promise((resolve) => child.once('exit', resolve))
-        }
-        await removeFixture(fixture)
+      })
+      assert.equal(child.kill('SIGTERM'), true)
+      const result = await exitResult
+      assert.ok(result, 'frontend helper did not exit after TERM with an open connection')
+      assert.deepEqual(result, { code: 0, signal: null })
+    } catch (error) {
+      error.message +=
+        `\nchild stdout:\n${boundedDiagnosticText(readStdout()) || '(empty)'}` +
+        `\nchild stderr:\n${boundedDiagnosticText(readStderr()) || '(empty)'}`
+      throw error
+    } finally {
+      socket?.destroy()
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL')
+        await new Promise((resolve) => child.once('exit', resolve))
       }
-    },
-  )
-}
+      await removeFixture(fixture)
+    }
+  },
+)
+
+test(
+  'Node helper: early frontend bind failure includes exit and stderr diagnostics',
+  {
+    concurrency: false,
+    timeout: 10_000,
+    skip: process.platform === 'win32' ? 'requires POSIX fixture execution; hosted Linux proof is required' : false,
+  },
+  async () => {
+    const platform = { name: 'Bash', launcher: 'dev-up.sh' }
+    const fixture = await createFixture(platform)
+    const frontendPort = await getFreePort()
+    const foreign = await listenForeign('127.0.0.1', frontendPort)
+    const child = spawn(process.execPath, [fixture.helper, 'npm', 'run', 'dev'], {
+      cwd: fixture.root,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: fixtureEnvironment(platform, fixture, {
+        FAKE_FRONTEND_HOST: '127.0.0.1',
+        FAKE_FRONTEND_PORT: String(frontendPort),
+      }),
+    })
+    const readStdout = captureBoundedOutput(child.stdout)
+    const readStderr = captureBoundedOutput(child.stderr)
+    try {
+      let failure
+      try {
+        await waitForFrontendReadiness(child, {
+          expectedHost: '127.0.0.1',
+          expectedPort: frontendPort,
+          readStdout,
+          readStderr,
+          timeout: 3000,
+        })
+        assert.fail('frontend helper unexpectedly reported readiness while its port was occupied')
+      } catch (error) {
+        failure = error
+      }
+      assert.match(failure.message, /exited before the readiness marker/)
+      assert.match(failure.message, /EADDRINUSE/)
+      assert.match(failure.message, /exitCode=1/)
+      assert.equal(await canBind(frontendPort, '127.0.0.1'), false)
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL')
+        await new Promise((resolve) => child.once('exit', resolve))
+      }
+      await new Promise((resolve) => foreign.close(resolve))
+      await removeFixture(fixture)
+    }
+  },
+)
 
 for (const platform of platforms) {
   test(`${platform.name}: reset seed option is rejected before launcher side effects without seed`, { concurrency: false }, async () => {
@@ -1197,7 +1416,7 @@ if (powershell) {
       assert.ifError(result.error)
       assert.equal(result.status, 0, combinedOutput(result))
       assert.doesNotMatch(combinedOutput(result), /Stack is up/)
-      await assertNoStateAndPortsReleased(fixture, [apiPort])
+      await assertNoStateAndPortsReleased(fixture, [apiPort], result)
       const events = await readEvents(fixture)
       assert.ok(events.some((event) => event.kind === 'dotnet'))
       assert.equal(events.some((event) => event.args.join(' ') === 'run dev'), false)
@@ -1215,7 +1434,7 @@ if (powershell) {
       const result = runPowerShellCancellation(fixture, apiPort, { afterSeed: true })
       assert.ifError(result.error)
       assert.equal(result.status, 0, combinedOutput(result))
-      await assertNoStateAndPortsReleased(fixture, [apiPort])
+      await assertNoStateAndPortsReleased(fixture, [apiPort], result)
       assert.equal(await describeLiveFixtureProcesses(fixture), 'none still alive')
       const seedEvents = (await readEvents(fixture)).filter((event) => event.args.join(' ') === 'run demo:seed -- --reset')
       assert.equal(seedEvents.length, 1)
@@ -1236,45 +1455,71 @@ if (powershell) {
       assert.ifError(result.error)
       assert.equal(result.status, 0, combinedOutput(result))
       await stopSuccessfulStack(platform, fixture)
-      await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
+      await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort], result)
     } finally {
       if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
       await removeFixture(fixture)
     }
   })
 
-  test('PowerShell: Stop retries transient post-taskkill Unknown until both trees are missing', { concurrency: false }, async () => {
-    const platform = { name: 'PowerShell', launcher: 'dev-up.ps1' }
-    const fixture = await createFixture(platform)
-    const apiPort = await getFreePort()
-    const frontendPort = await getFreePort()
-    const foreign = await listenForeign()
-    try {
-      const startResult = runLauncher(platform, fixture, {
-        apiPort,
-        env: { FAKE_FRONTEND_PORT: String(frontendPort) },
-      })
-      assert.ifError(startResult.error)
-      assert.equal(startResult.status, 0, combinedOutput(startResult))
-      assert.equal(await canBind(apiPort), false)
-      assert.equal(await canBind(frontendPort), false)
+  for (const probeNumber of [1, 2, 'persistent', 'state-lock', 'repeated-state-lock']) {
+    test(`PowerShell: Stop handles cleanup probe ${probeNumber} without losing identity safety`, { concurrency: false }, async () => {
+      const platform = { name: 'PowerShell', launcher: 'dev-up.ps1' }
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      const frontendPort = await getFreePort()
+      const foreign = await listenForeign()
+      try {
+        const startResult = runLauncher(platform, fixture, {
+          apiPort,
+          env: { FAKE_FRONTEND_PORT: String(frontendPort) },
+        })
+        assert.ifError(startResult.error)
+        assert.equal(startResult.status, 0, combinedOutput(startResult))
+        assert.equal(await canBind(apiPort), false)
+        assert.equal(await canBind(frontendPort), false)
 
-      await installPostTaskkillUnknownProbe(fixture)
-      const stopResult = runLauncher(platform, fixture, { stop: true })
-      assert.ifError(stopResult.error)
-      assert.equal(stopResult.status, 0, combinedOutput(stopResult))
-      assert.match(combinedOutput(stopResult), /Forced transient post-taskkill identity: Unknown/)
-      assert.match(combinedOutput(stopResult), /Stack stopped/)
-      assert.equal(await readOptional(fixture.stateFile), null)
-      assert.equal(await canBind(apiPort), true)
-      assert.equal(await canBind(frontendPort), true)
-      assert.equal(foreign.listening, true, 'Stop killed an unrelated listener')
-    } finally {
-      if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
-      await new Promise((resolve) => foreign.close(resolve))
-      await removeFixture(fixture)
-    }
-  })
+        if (String(probeNumber).endsWith('state-lock')) await installPidFileLockProbe(fixture, probeNumber === 'repeated-state-lock')
+        else await installTransientIdentityProbe(fixture, probeNumber === 'persistent' ? 1 : probeNumber, probeNumber === 'persistent')
+        const stopResult = runLauncher(platform, fixture, { stop: true })
+        assert.ifError(stopResult.error)
+        if (probeNumber === 'repeated-state-lock') {
+          assert.equal(stopResult.status, 1, combinedOutput(stopResult))
+          assert.match(combinedOutput(stopResult), /PID state could not be removed/)
+          assert.notEqual(await readOptional(fixture.stateFile), null)
+          assert.equal(await canBind(apiPort), true)
+          assert.equal(await canBind(frontendPort), true)
+          const attempts = combinedOutput(stopResult).match(/Released transient PID-file lock/g)?.length ?? 0
+          assert.ok(attempts > 1 && attempts <= 10, `unbounded or absent removal retries: ${attempts}`)
+          assert.equal(foreign.listening, true)
+          return
+        }
+        if (probeNumber === 'persistent') {
+          assert.equal(stopResult.status, 1, combinedOutput(stopResult))
+          assert.match(combinedOutput(stopResult), /identity is unknown/)
+          assert.notEqual(await readOptional(fixture.stateFile), null)
+          assert.equal(await canBind(apiPort), false, 'unverified API identity was killed')
+          assert.equal(await canBind(frontendPort), false, 'unverified frontend identity was killed')
+          assert.equal(foreign.listening, true)
+          return
+        }
+        assert.equal(stopResult.status, 0, combinedOutput(stopResult))
+        assert.match(combinedOutput(stopResult), probeNumber === 'state-lock'
+          ? /Released transient PID-file lock/
+          : new RegExp(`Forced transient identity probe ${probeNumber}: Unknown`))
+        assert.match(combinedOutput(stopResult), /Stack stopped/)
+        assert.equal(await readOptional(fixture.stateFile), null)
+        assert.equal(await canBind(apiPort), true)
+        assert.equal(await canBind(frontendPort), true)
+        assert.equal(foreign.listening, true, 'Stop killed an unrelated listener')
+      } finally {
+        await copyFile(powershellLauncher, join(fixture.scriptsDir, 'dev-up.ps1'))
+        if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+        await new Promise((resolve) => foreign.close(resolve))
+        await removeFixture(fixture)
+      }
+    })
+  }
 }
 
 if (bash) {
@@ -1718,7 +1963,7 @@ for (const platform of platforms) {
             },
           })
           assertFailedClosed(result)
-          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
+          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort], result)
           if (scenario.seed) {
             const seedEvent = (await readEvents(fixture)).find((event) => event.args[0] === 'run' && event.args[1] === 'demo:seed')
             assert.equal(seedEvent.taskdeckApiBaseUrl, `http://localhost:${apiPort}/api`)
@@ -1748,7 +1993,7 @@ for (const platform of platforms) {
             },
           })
           assertFailedClosed(result)
-          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
+          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort], result)
           const events = await readEvents(fixture)
           assert.equal(events.some((event) => event.args[0] === 'run' && event.args[1] === 'demo:seed'), false)
           assert.equal(events.some((event) => event.args.join(' ') === 'run dev'), false)
@@ -1797,7 +2042,7 @@ for (const platform of platforms) {
         })
         assertFailedClosed(result)
         assert.match(combinedOutput(result), scenario.expectedFailure)
-        await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
+        await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort], result)
         const events = await readEvents(fixture)
         assert.equal(
           events.filter((event) => event.args.join(' ') === 'run demo:seed').length,
@@ -1835,7 +2080,7 @@ for (const platform of platforms) {
           },
         })
         assertFailedClosed(result)
-        await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort, spoofPort])
+        await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort, spoofPort], result)
         const viteEvent = (await readEvents(fixture)).find((event) => event.args.join(' ') === 'run dev')
         assert.equal(viteEvent.viteApiBaseUrl, `http://localhost:${apiPort}/api`)
       } finally {

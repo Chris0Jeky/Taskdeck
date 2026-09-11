@@ -59,6 +59,7 @@ public static class LlmProviderRegistration
         var llmKillSwitchSettings = configuration.GetSection("LlmKillSwitch").Get<LlmKillSwitchSettings>() ?? new LlmKillSwitchSettings();
         services.AddSingleton(llmKillSwitchSettings);
         services.AddScoped<ILlmQuotaService, LlmQuotaService>();
+        services.AddScoped<WorkspaceObservationService>();
         services.AddSingleton<ILlmKillSwitchService, LlmKillSwitchService>();
 
         // Abuse detection settings, shared state (singleton), and service (scoped to access ILlmUsageRecordRepository)
@@ -156,7 +157,8 @@ public static class LlmProviderRegistration
         })
         .AddPolicyHandler(openAiCircuitBreakerPolicy)
         .RemoveAllLoggers()
-        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>()
+        .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
         services.AddHttpClient(OpenAiCompatibleHttpClientName, (sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -210,7 +212,8 @@ public static class LlmProviderRegistration
         })
         .AddPolicyHandler(ollamaCircuitBreakerPolicy)
         .RemoveAllLoggers()
-        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>()
+        .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
 
         services.AddScoped<MockLlmProvider>();
 

@@ -29,6 +29,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'save', payload: { revisedPayload: string; reason: string }): void
   (event: 'cancel'): void
+  (event: 'toggle-provenance'): void
+  (event: 'preview-diff'): void
 }>()
 
 interface EditableField {
@@ -189,6 +191,21 @@ function onSave() {
     </div>
 
     <div class="revision-editor__actions">
+      <!-- P and Space stay ordinary text while an editor field has focus. These
+           native buttons keep the same read-only inspection actions reachable
+           by keyboard without weakening that typing guard. -->
+      <div class="revision-editor__inspect-actions">
+        <PaperHLBtn
+          :label="$t('review.keys.provenance')"
+          data-testid="revision-inspect-provenance"
+          @click="emit('toggle-provenance')"
+        />
+        <PaperHLBtn
+          :label="$t('review.keys.preview')"
+          data-testid="revision-inspect-diff"
+          @click="emit('preview-diff')"
+        />
+      </div>
       <PaperHLBtn
         :label="$t('review.revisionEditor.cancel')"
         :disabled="saving"
@@ -270,5 +287,10 @@ function onSave() {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+.revision-editor__inspect-actions {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
 }
 </style>

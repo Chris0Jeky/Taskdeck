@@ -216,7 +216,7 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: session appears and can be selected.
 2. Send non-actionable message.
    - Expected: assistant response appears.
-3. Create board-scoped chat session and send actionable instruction with `Request proposal generation` enabled.
+3. Create board-scoped chat session and send actionable instruction using the default proposal-attempt flow; no opt-in checkbox is required.
    - Expected: assistant response includes proposal reference.
 4. Send a tool-calling question: "What columns does my board have?" or "What cards are in <column>?"
    - Expected: intermediate "Looking up..." status messages appear via SignalR, then a response with actual board data.

@@ -8,7 +8,7 @@ using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
-public class CardService
+public partial class CardService
 {
     private const string ArchivedBoardWriteMessage = "Cannot modify cards on an archived board. Restore the board before editing.";
     private readonly IUnitOfWork _unitOfWork;
@@ -31,6 +31,72 @@ public class CardService
 
     private Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
         => AuditLogWriter.SafeLogAsync(_historyService, _logger, entityType, entityId, action, userId, changes);
+
+    public async Task<Result<IEnumerable<CardDto>>> GetArchivedCardsAsync(Guid boardId, CancellationToken cancellationToken = default)
+    {
+        var cards = await _unitOfWork.Cards.GetArchivedByBoardIdAsync(boardId, cancellationToken);
+        return Result.Success(cards.Select(MapToDto));
+    }
+
+    public async Task<Result<CardDto>> GetCardAsync(Guid boardId, Guid cardId, CancellationToken cancellationToken = default)
+    {
+        var card = await _unitOfWork.Cards.GetByIdWithLabelsAsync(cardId, cancellationToken);
+        return card == null || card.BoardId != boardId
+            ? Result.Failure<CardDto>(ErrorCodes.NotFound, "Card not found in this board")
+            : Result.Success(MapToDto(card));
+    }
+
+    public async Task<Result<CardDto>> SetArchivedAsync(Guid boardId, Guid cardId, bool archive,
+        CardLifecycleDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!dto.ExpectedUpdatedAt.HasValue)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "ExpectedUpdatedAt is required. Refresh the card before changing its archive state.");
+            var card = await _unitOfWork.Cards.GetByIdWithLabelsAsync(cardId, cancellationToken);
+            if (card == null || card.BoardId != boardId)
+                return Result.Failure<CardDto>(ErrorCodes.NotFound, "Card not found in this board");
+            var board = await _unitOfWork.Boards.GetByIdAsync(boardId, cancellationToken);
+            if (board == null)
+                return Result.Failure<CardDto>(ErrorCodes.NotFound, "Board not found");
+            if (board.IsArchived)
+                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+            if (card.UpdatedAt != dto.ExpectedUpdatedAt.Value)
+                return Result.Failure<CardDto>(ErrorCodes.Conflict, "Card changed since it was displayed. Refresh and retry.");
+            if (card.IsArchived == archive)
+                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, archive ? "Card is already archived." : "Card is already active.");
+            IReadOnlyList<Card> detachedChildren = [];
+            if (!archive)
+            {
+                var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(card.ColumnId, cancellationToken);
+                if (column == null || column.BoardId != boardId)
+                    return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, "The original column is unavailable. Restore that column before restoring this card.");
+                if (column.WouldExceedWipLimitIfAdded())
+                    return Result.Failure<CardDto>(ErrorCodes.WipLimitExceeded, "The original column is full. Free space or adjust its WIP limit, then retry restoring this card.");
+                card.Restore();
+            }
+            else
+            {
+                var children = await ReadDetachChildrenAsync(card, cancellationToken);
+                detachedChildren = children;
+                var confirmed = ValidateDetachConfirmation(card, children, dto);
+                if (!confirmed.IsSuccess) return Result.Failure<CardDto>(confirmed.ErrorCode, confirmed.ErrorMessage);
+                await StageDetachChildrenAsync(card, children, actorUserId, cancellationToken);
+                card.Archive();
+            }
+            await _unitOfWork.Cards.StageDependencyProjectionInvalidationAsync(boardId, cancellationToken);
+            board.RecordHierarchyMutation();
+            await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id,
+                archive ? AuditAction.Archived : AuditAction.Unarchived, actorUserId,
+                archive ? "Card archived; original placement retained" : "Card restored to original column"), cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(new BoardRealtimeEvent(boardId, "card",
+                archive ? "archived" : "restored", card.Id, DateTimeOffset.UtcNow), cancellationToken);
+            await NotifyDetachedChildrenAsync(boardId, detachedChildren, cancellationToken);
+            return Result.Success(MapToDto(card));
+        }
+        catch (DomainException ex) { return Result.Failure<CardDto>(ex.ErrorCode, ex.Message); }
+    }
 
     public async Task<Result<CardDto>> CreateCardAsync(CreateCardDto dto, CancellationToken cancellationToken = default)
     {
@@ -58,23 +124,53 @@ public class CardService
     {
         try
         {
+            var staged = await StageCardCreationAsync(dto, cardId, cancellationToken);
+            if (!staged.IsSuccess) return Result.Failure<CardDto>(staged.ErrorCode, staged.ErrorMessage);
+            var card = staged.Value;
+            if (dto.ParentCardId.HasValue)
+                await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Created, actorUserId,
+                    $"title={card.Title}; WorkItemType={card.WorkItemType}; ParentCardId={card.ParentCardId}"), cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
+            if (!dto.ParentCardId.HasValue) await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, $"title={card.Title}; WorkItemType={card.WorkItemType}");
+
+            var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
+            return Result.Success(MapToDto(createdCard!));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<CardDto>(ex.ErrorCode, ex.Message);
+        }
+    }
+
+    // Shared guarded writer. The caller must atomically commit staged entities, audit and
+    // links before publishing realtime. This method performs no save or notification.
+    internal async Task<Result<Card>> StageCardCreationAsync(
+        CreateCardDto dto, Guid? cardId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var workItemType = Card.ParseWorkItemType(dto.WorkItemType ?? "Task");
+
             // Verify board and column exist
             var board = await _unitOfWork.Boards.GetByIdAsync(dto.BoardId, cancellationToken);
             if (board == null)
-                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId} not found");
+                return Result.Failure<Card>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId} not found");
             if (board.IsArchived)
-                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+                return Result.Failure<Card>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(dto.ColumnId, cancellationToken);
             if (column == null)
-                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found");
+                return Result.Failure<Card>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found");
 
             if (column.BoardId != dto.BoardId)
-                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found in board {dto.BoardId}");
+                return Result.Failure<Card>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found in board {dto.BoardId}");
 
             // Check WIP limit
             if (column.WouldExceedWipLimitIfAdded())
-                return Result.Failure<CardDto>(ErrorCodes.WipLimitExceeded,
+                return Result.Failure<Card>(ErrorCodes.WipLimitExceeded,
                     $"Cannot add card, column '{column.Name}' has reached its WIP limit of {column.WipLimit}");
 
             // Determine position (add to bottom)
@@ -83,6 +179,14 @@ public class CardService
             var card = cardId.HasValue
                 ? new Card(cardId.Value, dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position)
                 : new Card(dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position);
+            card.SetWorkItemType(workItemType);
+            if (dto.ParentCardId.HasValue)
+            {
+                var graph = await _unitOfWork.Cards.GetHierarchyByBoardIdAsync(dto.BoardId, cancellationToken);
+                ValidateActiveParent(graph, dto.ParentCardId);
+                CardHierarchy.ValidateParent(graph.Append(card), card.Id, dto.ParentCardId);
+                card.SetParent(dto.ParentCardId);
+            }
             await _unitOfWork.Cards.AddAsync(card, cancellationToken);
 
             // Add labels if provided
@@ -98,20 +202,11 @@ public class CardService
                 }
             }
 
-            board.RecordCardMutation();
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _realtimeNotifier.NotifyBoardMutationAsync(
-                new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
-                cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, $"title={card.Title}");
-
-            var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
-            return Result.Success(MapToDto(createdCard!));
+            if (dto.ParentCardId.HasValue) board.RecordHierarchyMutation();
+            else board.RecordCardMutation();
+            return Result.Success(card);
         }
-        catch (DomainException ex)
-        {
-            return Result.Failure<CardDto>(ex.ErrorCode, ex.Message);
-        }
+        catch (DomainException ex) { return Result.Failure<Card>(ex.ErrorCode, ex.Message); }
     }
 
     public async Task<Result<CardDto>> UpdateCardAsync(
@@ -122,12 +217,23 @@ public class CardService
     {
         try
         {
+            var changesParent = dto.ParentCardId.HasValue || dto.ClearParent;
+            if (dto.ParentCardId.HasValue && dto.ClearParent)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "ParentCardId and ClearParent cannot both be set.");
+            if (changesParent && !dto.ExpectedUpdatedAt.HasValue)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "ExpectedUpdatedAt is required when changing parent.");
+            var workItemType = dto.WorkItemType is null ? (CardWorkItemType?)null : Card.ParseWorkItemType(dto.WorkItemType);
+            if (workItemType.HasValue && !dto.ExpectedUpdatedAt.HasValue)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "ExpectedUpdatedAt is required when changing WorkItemType. Refresh the card first.");
             if (dto.ClearDueDate && dto.DueDate.HasValue)
                 return Result.Failure<CardDto>(ErrorCodes.ValidationError, "DueDate and ClearDueDate cannot both be set");
 
             var card = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             if (card == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found");
+
+            if (card.IsArchived)
+                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, "Card is archived. Restore the card before editing.");
 
             var board = await _unitOfWork.Boards.GetByIdAsync(card.BoardId, cancellationToken);
             if (board?.IsArchived == true)
@@ -141,13 +247,24 @@ public class CardService
                     "Card was updated by another session. Refresh and retry your changes.");
             }
 
+            var oldParentId = card.ParentCardId;
+            if (changesParent)
+            {
+                var graph = await _unitOfWork.Cards.GetHierarchyByBoardIdAsync(card.BoardId, cancellationToken);
+                ValidateActiveParent(graph, dto.ParentCardId);
+                CardHierarchy.ValidateParent(graph, card.Id, dto.ParentCardId);
+                card.SetParent(dto.ParentCardId);
+            }
             // Capture pre-mutation state for change summary
+            var oldWorkItemType = card.WorkItemType;
             var oldTitle = card.Title;
             var oldDescription = card.Description;
             var oldDueDate = card.DueDate;
             var oldIsBlocked = card.IsBlocked;
             var oldBlockReason = card.BlockReason;
             var oldLabelIds = card.CardLabels.Select(cl => cl.LabelId).OrderBy(id => id).ToList();
+
+            if (workItemType.HasValue) card.SetWorkItemType(workItemType.Value);
 
             // Update basic fields
             if (dto.Title != null || dto.Description != null || dto.DueDate.HasValue)
@@ -179,13 +296,22 @@ public class CardService
             }
 
             var changeSummary = BuildCardChangeSummary(dto, oldTitle, oldDescription, oldDueDate, oldIsBlocked, oldBlockReason, oldLabelIds);
+            if (workItemType.HasValue && oldWorkItemType != workItemType.Value)
+                changeSummary = $"WorkItemType: {oldWorkItemType} -> {workItemType.Value}" +
+                    (changeSummary == "no fields changed" ? "" : $"; {changeSummary}");
 
-            board?.RecordCardMutation();
+            if (changesParent)
+            {
+                changeSummary = $"ParentCardId: {oldParentId?.ToString() ?? "none"} -> {card.ParentCardId?.ToString() ?? "none"}; {changeSummary}";
+                board?.RecordHierarchyMutation();
+                await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Updated, actorUserId, changeSummary), cancellationToken);
+            }
+            else board?.RecordCardMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "updated", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId, changeSummary);
+            if (!changesParent) await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId, changeSummary);
 
             var updatedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(updatedCard!));
@@ -408,7 +534,7 @@ public class CardService
         return DeleteCardAsync(id, actorUserId: null, cancellationToken);
     }
 
-    public async Task<Result> DeleteCardAsync(Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteCardAsync(Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default, CardLifecycleDto? confirmation = null)
     {
         try
         {
@@ -420,13 +546,19 @@ public class CardService
             if (board?.IsArchived == true)
                 return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
+            var children = await ReadDetachChildrenAsync(card, cancellationToken);
+            var confirmed = ValidateDetachConfirmation(card, children, confirmation);
+            if (!confirmed.IsSuccess) return confirmed;
+            await StageDetachChildrenAsync(card, children, actorUserId, cancellationToken);
             await _unitOfWork.Cards.DeleteAsync(card, cancellationToken);
-            board?.RecordCardMutation();
+            board?.RecordHierarchyMutation();
+            await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Deleted, actorUserId, $"title={card.Title}"), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "deleted", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Deleted, actorUserId, $"title={card.Title}");
+            await NotifyDetachedChildrenAsync(card.BoardId, children, cancellationToken);
+
 
             return Result.Success();
         }
@@ -441,16 +573,16 @@ public class CardService
         return DeleteCardAsync(boardId, id, actorUserId: null, cancellationToken);
     }
 
-    public async Task<Result> DeleteCardAsync(Guid boardId, Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteCardAsync(Guid boardId, Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default, CardLifecycleDto? confirmation = null)
     {
         var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
         if (card == null || card.BoardId != boardId)
             return Result.Failure(ErrorCodes.NotFound, $"Card with ID {id} not found in board {boardId}");
 
-        return await DeleteCardAsync(id, actorUserId, cancellationToken);
+        return await DeleteCardAsync(id, actorUserId, cancellationToken, confirmation);
     }
 
-    private static CardDto MapToDto(Card card)
+    internal static CardDto MapToDto(Card card)
     {
         var labels = card.CardLabels
             .Select(cl => new LabelDto(
@@ -475,7 +607,10 @@ public class CardService
             card.Position,
             labels,
             card.CreatedAt,
-            card.UpdatedAt
+            card.UpdatedAt,
+            card.IsArchived,
+            card.WorkItemType.ToString(),
+            card.ParentCardId
         );
     }
 

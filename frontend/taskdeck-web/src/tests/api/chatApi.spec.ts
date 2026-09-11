@@ -33,6 +33,24 @@ describe('chatApi', () => {
     })
   })
 
+  it('binds an existing session to a board', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { id: 'session-1', boardId: 'board-1' } })
+
+    await chatApi.bindBoard('session/1', { boardId: 'board-1' })
+
+    expect(http.post).toHaveBeenCalledWith('/llm/chat/sessions/session%2F1/board', {
+      boardId: 'board-1',
+    })
+  })
+
+  it('can fail fast for a post-send reconciliation read', async () => {
+    const failure = new Error('Refresh unavailable')
+    vi.mocked(http.get).mockRejectedValue(failure)
+
+    await expect(chatApi.getSession('session/1', { skipRetry: true, timeout: 15_000 })).rejects.toBe(failure)
+    expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session%2F1', { skipRetry: true, timeout: 15_000 })
+  })
+
   it('loads provider health', async () => {
     const healthPayload = {
       isAvailable: true,

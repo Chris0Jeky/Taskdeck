@@ -14,6 +14,56 @@ namespace Taskdeck.Application.Tests.Services;
 public class OpenAiLlmProviderTests
 {
     [Fact]
+    public async Task CompleteWithToolsAsync_TracksTheActualDispatchedProviderAndModel()
+    {
+        var settings = BuildSettings();
+        var transport = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"choices\":[{\"message\":{\"content\":\"done\"}}],\"usage\":{\"total_tokens\":3}}",
+                Encoding.UTF8,
+                "application/json")
+        });
+        var provider = new OpenAiLlmProvider(
+            new HttpClient(new LlmDispatchTrackingHandler { InnerHandler = transport }),
+            settings,
+            NullLogger<OpenAiLlmProvider>.Instance);
+        var request = new ChatCompletionRequest([new ChatCompletionMessage("User", "hello")]);
+
+        await provider.CompleteWithToolsAsync(request, []);
+
+        request.DispatchContext.ReadSnapshot().Should().Be(new LlmDispatchSnapshot(
+            LlmDispatchPhase.Dispatched,
+            "OpenAI",
+            settings.OpenAi.Model));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_InvalidConfiguration_DoesNotMarkDispatch()
+    {
+        var settings = BuildSettings();
+        settings.OpenAi.ApiKey = string.Empty;
+        var transportCalled = false;
+        var provider = new OpenAiLlmProvider(
+            new HttpClient(new StubHttpMessageHandler(_ =>
+            {
+                transportCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            })),
+            settings,
+            NullLogger<OpenAiLlmProvider>.Instance);
+        var request = new ChatCompletionRequest([new ChatCompletionMessage("User", "hello")]);
+
+        await provider.CompleteAsync(request);
+
+        transportCalled.Should().BeFalse();
+        request.DispatchContext.ReadSnapshot().Should().Be(new LlmDispatchSnapshot(
+            LlmDispatchPhase.ObservedPreDispatch,
+            "OpenAI",
+            settings.OpenAi.Model));
+    }
+
+    [Fact]
     public async Task CompleteAsync_ShouldReturnParsedCompletion_WhenOpenAiResponseIsValid()
     {
         var settings = BuildSettings();

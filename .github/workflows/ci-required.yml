@@ -151,24 +151,47 @@ jobs:
       dotnet-version: 8.0.x
 
   backend-unit:
+    needs:
+      - backend-architecture
+      - release-workflow-contract
     name: Backend Unit
     uses: ./.github/workflows/reusable-backend-unit.yml
     with:
       dotnet-version: 8.0.x
 
   api-integration:
+    needs:
+      - backend-architecture
+      - release-workflow-contract
     name: API Integration
     uses: ./.github/workflows/reusable-api-integration.yml
     with:
+      platform: linux
+      dotnet-version: 8.0.x
+
+  # Windows still qualifies the same complete suite, but does not serialize Linux E2E.
+  api-integration-windows:
+    needs:
+      - backend-architecture
+      - release-workflow-contract
+    name: API Integration
+    uses: ./.github/workflows/reusable-api-integration.yml
+    with:
+      platform: windows
       dotnet-version: 8.0.x
 
   migration-validation:
+    needs:
+      - backend-architecture
     name: Migration Validation
     uses: ./.github/workflows/reusable-migration-validation.yml
     with:
       dotnet-version: 8.0.x
 
   frontend-unit:
+    needs:
+      - release-workflow-contract
+      - paper-color-audit
     name: Frontend Unit
     uses: ./.github/workflows/reusable-frontend-unit.yml
     with:
@@ -179,6 +202,8 @@ jobs:
     uses: ./.github/workflows/reusable-paper-color-audit.yml
 
   container-images:
+    needs:
+      - release-workflow-contract
     name: Container Images
     uses: ./.github/workflows/reusable-container-images.yml
     with:
@@ -245,6 +270,9 @@ jobs:
       - backend-unit
       - api-integration
       - migration-validation
+      - frontend-unit
+      - release-workflow-contract
+      - paper-color-audit
     uses: ./.github/workflows/reusable-e2e-smoke.yml
     with:
       dotnet-version: 8.0.x

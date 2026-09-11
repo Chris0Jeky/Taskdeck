@@ -44,6 +44,32 @@ public class AutomationPlannerService : IAutomationPlannerService
         ProposalSourceType sourceType = ProposalSourceType.Manual,
         string? sourceReferenceId = null,
         string? correlationId = null)
+        => await ParseInstructionCoreAsync(
+            instruction, userId, boardId, cancellationToken, sourceType,
+            sourceReferenceId, correlationId, producerMetadata: null);
+
+    public async Task<Result<ProposalDto>> ParseInstructionAsync(
+        string instruction,
+        Guid userId,
+        Guid? boardId,
+        CancellationToken cancellationToken,
+        ProposalSourceType sourceType,
+        string? sourceReferenceId,
+        string? correlationId,
+        ProposalProducerMetadata producerMetadata)
+        => await ParseInstructionCoreAsync(
+            instruction, userId, boardId, cancellationToken, sourceType,
+            sourceReferenceId, correlationId, producerMetadata);
+
+    private async Task<Result<ProposalDto>> ParseInstructionCoreAsync(
+        string instruction,
+        Guid userId,
+        Guid? boardId,
+        CancellationToken cancellationToken,
+        ProposalSourceType sourceType,
+        string? sourceReferenceId,
+        string? correlationId,
+        ProposalProducerMetadata? producerMetadata)
     {
         if (string.IsNullOrWhiteSpace(instruction))
             return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Instruction cannot be empty");
@@ -443,7 +469,12 @@ public class AutomationPlannerService : IAutomationPlannerService
                 normalizedSourceReferenceId,
                 1440,
                 operations
-            );
+            )
+            {
+                ProvenanceProvider = producerMetadata?.Provider,
+                ProvenanceModelId = producerMetadata?.Model,
+                ProvenancePromptVersion = producerMetadata?.PromptVersion
+            };
 
             // Proposal creation is a mutation lane: the requester must be write-capable on the
             // board the proposal targets (#1433, #1836). Validate before persisting so a
@@ -483,6 +514,32 @@ public class AutomationPlannerService : IAutomationPlannerService
         ProposalSourceType sourceType = ProposalSourceType.Manual,
         string? sourceReferenceId = null,
         string? correlationId = null)
+        => await ParseBatchInstructionCoreAsync(
+            instructions, userId, boardId, cancellationToken, sourceType,
+            sourceReferenceId, correlationId, producerMetadata: null);
+
+    public async Task<Result<ProposalDto>> ParseBatchInstructionAsync(
+        IReadOnlyList<string> instructions,
+        Guid userId,
+        Guid? boardId,
+        CancellationToken cancellationToken,
+        ProposalSourceType sourceType,
+        string? sourceReferenceId,
+        string? correlationId,
+        ProposalProducerMetadata producerMetadata)
+        => await ParseBatchInstructionCoreAsync(
+            instructions, userId, boardId, cancellationToken, sourceType,
+            sourceReferenceId, correlationId, producerMetadata);
+
+    private async Task<Result<ProposalDto>> ParseBatchInstructionCoreAsync(
+        IReadOnlyList<string> instructions,
+        Guid userId,
+        Guid? boardId,
+        CancellationToken cancellationToken,
+        ProposalSourceType sourceType,
+        string? sourceReferenceId,
+        string? correlationId,
+        ProposalProducerMetadata? producerMetadata)
     {
         if (instructions == null || instructions.Count == 0)
             return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Instructions list cannot be empty");
@@ -577,7 +634,12 @@ public class AutomationPlannerService : IAutomationPlannerService
                 normalizedSourceReferenceId,
                 1440,
                 allOperations
-            );
+            )
+            {
+                ProvenanceProvider = producerMetadata?.Provider,
+                ProvenanceModelId = producerMetadata?.Model,
+                ProvenancePromptVersion = producerMetadata?.PromptVersion
+            };
 
             // Proposal creation is a mutation lane: the requester must be write-capable on the
             // board the proposal targets (#1433, #1836). Validate before persisting so a

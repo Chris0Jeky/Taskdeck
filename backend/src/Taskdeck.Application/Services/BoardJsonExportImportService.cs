@@ -11,6 +11,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
+    private readonly IThinkingDeckRepository? _thinkingDecks;
+    private readonly IBoardDependencyRepository? _dependencies;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -20,10 +22,14 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
     public BoardJsonExportImportService(
         IUnitOfWork unitOfWork,
-        DevelopmentSandboxSettings? sandboxSettings = null)
+        DevelopmentSandboxSettings? sandboxSettings = null,
+        IThinkingDeckRepository? thinkingDecks = null,
+        IBoardDependencyRepository? dependencies = null)
     {
         _unitOfWork = unitOfWork;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
+        _thinkingDecks = thinkingDecks;
+        _dependencies = dependencies;
     }
 
     public async Task<Result<ExportBoardDto>> ExportBoardAsync(Guid boardId, Guid userId)
@@ -85,6 +91,16 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                     a.GrantedAt))
                 .ToList();
 
+            var exportedIds = cards.Select(card => card.Id).ToHashSet();
+            var thinkingDecks = _thinkingDecks is null ? null :
+                (await _thinkingDecks.GetByCardIdsAsync(cards.Select(card => card.Id).ToArray(), default))
+                    .Select(deck => new ExportThinkingDeckDto(deck.CardId, new ThinkingMaterialDto(deck.SchemaVersion, deck.ReadLayers().Select(layer => layer with
+                    {
+                        Items = layer.Items.Select(item => item.LinkedCardId.HasValue && !exportedIds.Contains(item.LinkedCardId.Value)
+                            ? item with { LinkedCardId = null } : item).ToArray()
+                    }).ToArray())))
+                    .ToList();
+
             var exportDto = new ExportBoardDto(
                 boardDto,
                 columns,
@@ -92,7 +108,10 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 labels,
                 accessDtos,
                 DateTimeOffset.UtcNow,
-                requestingUser.Username);
+                requestingUser.Username,
+                thinkingDecks,
+                _dependencies is null ? null : (await _dependencies.GetAsync(boardId, CancellationToken.None))?
+                    .ReadEdges().Where(edge => exportedIds.Contains(edge.CardId) && exportedIds.Contains(edge.DependsOnCardId)).ToArray());
 
             return Result.Success(exportDto);
         }
@@ -108,7 +127,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
         if (!exportResult.IsSuccess)
             return Result.Failure<string>(exportResult.ErrorCode, exportResult.ErrorMessage);
 
-        var json = JsonSerializer.Serialize(exportResult.Value, JsonOptions);
+        var json = JsonSerializer.Serialize(ToPortablePayload(exportResult.Value), JsonOptions);
         return Result.Success(json);
     }
 
@@ -124,7 +143,11 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
             var labels = dto.Labels ?? Enumerable.Empty<ImportLabelDto>();
             var columns = dto.Columns ?? Enumerable.Empty<ImportColumnDto>();
-            var cards = dto.Cards ?? Enumerable.Empty<ImportCardDto>();
+            var cards = (dto.Cards ?? Enumerable.Empty<ImportCardDto>()).ToList();
+            var cardIds = new Dictionary<Guid, Guid>();
+            foreach (var source in cards.Where(card => card.SourceId.HasValue))
+                if (source.SourceId == Guid.Empty || !cardIds.TryAdd(source.SourceId!.Value, Guid.NewGuid()))
+                    throw new DomainException(ErrorCodes.ValidationError, "Invalid or duplicate source card ID.");
 
             var board = new Board(dto.Name, dto.Description, userId);
             await _unitOfWork.Boards.AddAsync(board);
@@ -154,13 +177,23 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             }
 
             // Create cards with label associations
+            var importedCards = new List<Card>();
             var cardsImported = 0;
             foreach (var importCard in cards.OrderBy(c => c.Position))
             {
                 if (!columnsByName.TryGetValue(importCard.ColumnName, out var column))
                     throw new DomainException(ErrorCodes.ValidationError, $"Column '{importCard.ColumnName}' referenced by card '{importCard.Title}' was not found");
 
-                var card = new Card(board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
+                var card = new Card(importCard.SourceId.HasValue ? cardIds[importCard.SourceId.Value] : Guid.NewGuid(),
+                    board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
+                card.SetWorkItemType(Card.ParseWorkItemType(importCard.WorkItemType));
+                if (importCard.ParentCardId is Guid sourceParent)
+                {
+                    if (!cardIds.TryGetValue(sourceParent, out var newParent))
+                        throw new DomainException(ErrorCodes.ValidationError, "Parent must reference a card inside this import.");
+                    card.SetParent(newParent);
+                }
+                importedCards.Add(card);
                 var uniqueCardLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var labelName in importCard.Labels ?? Enumerable.Empty<string>())
@@ -186,11 +219,52 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                     card.AddLabel(cardLabel);
                 }
 
+                if (importCard.IsArchived) card.Archive();
                 await _unitOfWork.Cards.AddAsync(card);
+                if (importCard.Thinking is not null)
+                {
+                    if (_thinkingDecks is null)
+                        throw new DomainException(ErrorCodes.ValidationError, "This host cannot import thinking material.");
+                    if (importCard.Thinking.SchemaVersion is not (1 or 2))
+                        throw new DomainException(ErrorCodes.ValidationError, "Unsupported thinking material schema version.");
+                    var deck = new ThinkingDeck(card.Id);
+                    // Validate source IDs before remapping; links never point into the source board.
+                    var material = importCard.Thinking.Layers;
+                    var sourceDeck = new ThinkingDeck(importCard.SourceId ?? card.Id);
+                    sourceDeck.Replace(material);
+                    if (sourceDeck.SchemaVersion > importCard.Thinking.SchemaVersion)
+                        throw new DomainException(ErrorCodes.ValidationError, "Linked thinking cards require material schema version 2.");
+                    deck.Replace(material.Select(layer => layer with
+                    {
+                        Items = layer.Items.Select(item => item.LinkedCardId.HasValue
+                            ? item with { LinkedCardId = cardIds.TryGetValue(item.LinkedCardId.Value, out var linkedId) ? linkedId
+                                : throw new DomainException(ErrorCodes.ValidationError, "Thinking link references a card outside this import.") }
+                            : item).ToArray()
+                    }).ToArray());
+                    _thinkingDecks.AddForImport(deck);
+                }
                 cardsImported++;
             }
 
-            await _unitOfWork.SaveChangesAsync();
+                CardHierarchy.Validate(importedCards);
+
+                if (dto.Dependencies is { Count: > 0 })
+                {
+                    if (_dependencies is null)
+                        throw new DomainException(ErrorCodes.InvalidOperation, "Dependency import is not available in this host.");
+                    var graph = new BoardDependencies(board.Id);
+                    var remapped = new List<CardDependency>();
+                    foreach (var edge in dto.Dependencies)
+                    {
+                        if (edge is null || !cardIds.TryGetValue(edge.CardId, out var from) || !cardIds.TryGetValue(edge.DependsOnCardId, out var to))
+                            throw new DomainException(ErrorCodes.ValidationError, "Dependencies must reference cards inside this import.");
+                        remapped.Add(new CardDependency(from, to));
+                    }
+                    graph.Replace(remapped);
+                    _dependencies.AddForImport(graph);
+                }
+
+                await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.CommitTransactionAsync();
 
             var result = new ImportResultDto(
@@ -248,6 +322,17 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
     internal static ImportBoardDto? TryDeserializeImportDto(string json)
     {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("format", out _))
+            {
+                var envelope = JsonSerializer.Deserialize<BoardExportEnvelope>(json, JsonOptions);
+                return envelope is { Format: "taskdeck-board", Version: 2 or 3, Payload: not null }
+                    ? ConvertExportToImportDto(envelope.Payload) : null;
+            }
+        }
+        catch (JsonException) { return null; }
         ImportBoardDto? importDto = null;
         try
         {
@@ -310,8 +395,19 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             }
         }
 
+        var exportedCards = (exportDto.Cards ?? Enumerable.Empty<CardDto>()).ToList();
+        var exportedCardIds = exportedCards.Select(card => card.Id).ToHashSet();
+        if (exportedCardIds.Count != exportedCards.Count)
+            throw new JsonException("Export payload contains duplicate card IDs");
+        var thinkingByCard = new Dictionary<Guid, ThinkingMaterialDto>();
+        foreach (var deck in exportDto.ThinkingDecks ?? [])
+        {
+            if (deck is null || deck.Material is null || !exportedCardIds.Contains(deck.CardId) || !thinkingByCard.TryAdd(deck.CardId, deck.Material))
+                throw new JsonException("Export payload contains an invalid or duplicate thinking card reference");
+        }
+
         var cards = new List<ImportCardDto>();
-        foreach (var card in exportDto.Cards ?? Enumerable.Empty<CardDto>())
+        foreach (var card in exportedCards)
         {
             if (!columnNameById.TryGetValue(card.ColumnId, out var columnName))
             {
@@ -331,7 +427,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 columnName,
                 card.Position,
                 card.DueDate,
-                labelNames));
+                labelNames,
+                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived, card.WorkItemType, card.ParentCardId));
         }
 
         return new ImportBoardDto(
@@ -339,8 +436,13 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             exportDto.Board.Description,
             columns,
             cards,
-            labels);
+            labels,
+            exportDto.Dependencies);
     }
+
+    public static object ToPortablePayload(ExportBoardDto dto) => dto.Cards.Any(card => card.ParentCardId.HasValue)
+        ? new BoardExportEnvelope("taskdeck-board", 3, dto)
+        : dto.Dependencies is { Count: > 0 } ? new BoardExportEnvelope("taskdeck-board", 2, dto) : dto;
 
     private static BoardDto MapToBoardDto(Board board)
     {
@@ -378,6 +480,6 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             card.Position,
             labels,
             card.CreatedAt,
-            card.UpdatedAt);
+            card.UpdatedAt, card.IsArchived, card.WorkItemType.ToString(), card.ParentCardId);
     }
 }

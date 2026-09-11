@@ -2,26 +2,21 @@ import type { Proposal } from '../types/automation'
 import { proposalIdsEqual } from '../utils/proposalIdentity'
 
 /**
- * The shared, fail-closed gates behind Paper's two batch surfaces — batch approve
- * (`useBatchApproveProposals`) and batch execute (`useBatchExecuteProposals`).
+ * Eligibility helpers for Paper's batch approval and execution surfaces.
  *
- * They live here rather than in either composable because #1307 AC3 scopes BOTH halves to the same
- * class of work ("eligible low-risk, create-card-only proposals … batch approve, then batch
- * execute"). Two private copies of that rule drift, and the drift is silent and one-directional:
- * whichever surface loosens first starts admitting proposals the other refuses, and a bulk apply is
- * the worse place to find out. The two composables differ ONLY on the status axis — PendingReview
- * for approve, Approved for execute — and each keeps its own status predicate for that reason.
+ * Under #1307 D-4 (2026-09-06), batch approve remains own, Low-risk, and bounded to card
+ * creations. Batch execute accepts live Approved proposals of any risk and operation shape;
+ * board-less execution still requires ownership. Both retain live/deferred checks.
  *
- * Every gate is deliberately stricter than the general display normalizers: an unknown or
- * unrecognised wire value is never read as Low. Eligibility here is presentation-only; the server
+ * Risk gates used for approval are stricter than display normalizers: an unrecognised value
+ * is never read as Low. Eligibility here is presentation-only; the server
  * repeats board access, status, policy, and the approved-revision pin authoritatively for every
  * item in the request.
  */
 
 /**
- * The most operations a single proposal may carry to be bulk-eligible. A batch is a decision made
- * without opening each proposal, so the per-proposal blast radius has to stay small enough to be
- * summarised in a row.
+ * The most operations a single proposal may carry to be batch-approval eligible.
+ * Batch execution has no per-proposal operation-count restriction.
  */
 export const MAX_BATCH_OPERATION_COUNT = 5
 
@@ -60,7 +55,8 @@ export function isLiveAndNotDeferred(proposal: Proposal, nowMs: number): boolean
  *
  * Creation is the one action whose bulk blast radius is bounded by inspection: it touches nothing
  * that already exists. An archive, a move, or an update in a bulk action can change or hide work the
- * reviewer never looked at, which is exactly the decision a batch is unsuited to.
+ * reviewer never looked at, so this gate belongs to batch approval, not execution of
+ * proposals that have already been individually approved.
  */
 export function isBoundedCreateCardOnly(operations: Proposal['operations']): boolean {
   return Array.isArray(operations) &&

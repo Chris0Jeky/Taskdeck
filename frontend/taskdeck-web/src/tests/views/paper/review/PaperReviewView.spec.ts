@@ -1340,10 +1340,12 @@ describe('PaperReviewView', () => {
     try {
       expect(wrapper.find('[data-testid="paper-review-access-revoked-retry"]').exists()).toBe(false)
 
-      // Changing the board is a deliberate list-read attempt. The queue is
-      // already refused, so the second refusal needs its own durable sentence.
+      // Switching this board into its read-only history is a second deliberate
+      // list-read attempt for the SAME board. A different board must start
+      // with its own first-refusal state, but this retry keeps the same board
+      // authority scope and needs its own durable sentence.
       mocks.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
-      await routerOf(wrapper).replace('/workspace/review?boardId=another-board')
+      await routerOf(wrapper).replace('/workspace/review?boardId=board-revoked&history=archived')
       await flushPromises()
       await wrapper.vm.$nextTick()
 
@@ -2236,14 +2238,86 @@ describe('PaperReviewView', () => {
     expect(value.map((operation: { sequence: number }) => operation.sequence)).toEqual([1, 2])
   })
 
-  it('disables apply and reject while a revision edit is open', async () => {
-    const wrapper = await mountView([makeProposal()])
+  it('keeps inspection keys available without letting an editor session decide', async () => {
+    const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], { attachTo: true })
 
     await wrapper.find('[data-testid="decision-edit"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="decision-reject"]').attributes('disabled')).toBeDefined()
+
+    // A real editor field owns the typing keys. The two read-only page shortcuts
+    // must not steal P or Space while the reviewer is changing a revision.
+    const editorField = wrapper.get('[data-testid="revision-field-operations"]')
+    const typingProvenance = new KeyboardEvent('keydown', {
+      key: 'p', bubbles: true, cancelable: true,
+    })
+    editorField.element.dispatchEvent(typingProvenance)
+    const typingPreview = new KeyboardEvent('keydown', {
+      key: ' ', bubbles: true, cancelable: true,
+    })
+    editorField.element.dispatchEvent(typingPreview)
+    await flushPromises()
+    expect(typingProvenance.defaultPrevented).toBe(false)
+    expect(typingPreview.defaultPrevented).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').attributes('aria-expanded'))
+      .toBe('false')
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+    // Once the keystroke originates from the review page instead of the
+    // editor, provenance and diff remain available under the decision lock.
+    mocks.getProposalDiff.mockResolvedValueOnce('--- before\n+++ after\n+Keep evidence')
+    const provenance = new KeyboardEvent('keydown', {
+      key: 'p', bubbles: true, cancelable: true,
+    })
+    document.body.dispatchEvent(provenance)
+    await flushPromises()
+    expect(provenance.defaultPrevented).toBe(true)
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').attributes('aria-expanded'))
+      .toBe('true')
+
+    const preview = new KeyboardEvent('keydown', {
+      key: ' ', bubbles: true, cancelable: true,
+    })
+    document.body.dispatchEvent(preview)
+    await flushPromises()
+    expect(preview.defaultPrevented).toBe(true)
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('proposal-001')
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+
+    // The editor exposes native inspection controls in the tab order, so a
+    // keyboard user does not need to move focus out of a text field to inspect
+    // provenance or the diff. They call the same read-only handlers and cannot
+    // create a decision.
+    const inspectProvenance = wrapper.get('[data-testid="revision-inspect-provenance"]')
+    expect(inspectProvenance.element.tagName).toBe('BUTTON')
+    const provenanceButton = inspectProvenance.element as HTMLButtonElement
+    provenanceButton.focus()
+    expect(document.activeElement).toBe(provenanceButton)
+    await inspectProvenance.trigger('click')
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').attributes('aria-expanded'))
+      .toBe('false')
+
+    const inspectDiff = wrapper.get('[data-testid="revision-inspect-diff"]')
+    expect(inspectDiff.element.tagName).toBe('BUTTON')
+    const diffButton = inspectDiff.element as HTMLButtonElement
+    diffButton.focus()
+    expect(document.activeElement).toBe(diffButton)
+    await inspectDiff.trigger('click')
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(false)
+
+    // Decision and editor-opening keys stay blocked for the full edit session.
+    const blockedEvents = ['Enter', 'Backspace', 'e', 'd'].map((key) => {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true })
+      window.dispatchEvent(event)
+      return event
+    })
+    expect(blockedEvents.every((event) => !event.defaultPrevented)).toBe(true)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.deferProposal).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="decision-apply"]').trigger('click')
     await wrapper.get('[data-testid="decision-reject"]').trigger('click')
@@ -4089,13 +4163,16 @@ describe('PaperReviewView', () => {
       expect(right.element.parentElement).toBe(root.element)
       // The hoisted disclosure regions are the first children so they survive
       // every flip of the branch pair below them (#2214 round 2); the three
-      // columns keep their order and their parent. Both are `.sr-only` and
-      // therefore absolutely positioned, so neither takes a grid column.
+      // columns keep their order and their parent. All are `.sr-only` and
+      // therefore absolutely positioned, so none takes a grid column.
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
       const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
+      const unavailable = wrapper.get('[data-testid="paper-review-unavailable-announcement"]')
+      expect(unavailable.classes()).toContain('sr-only')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
         refused.element,
+        unavailable.element,
         queue.element,
         main.element,
         right.element,
@@ -4129,9 +4206,12 @@ describe('PaperReviewView', () => {
       expect(stale.element.parentElement).toBe(empty.element)
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
       const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
+      const unavailable = wrapper.get('[data-testid="paper-review-unavailable-announcement"]')
+      expect(unavailable.classes()).toContain('sr-only')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
         refused.element,
+        unavailable.element,
         queue.element,
         empty.element,
         right.element,
@@ -5162,6 +5242,17 @@ describe('PaperReviewView', () => {
       window.dispatchEvent(backspace)
       await flushPromises()
       expect(backspace.defaultPrevented).toBe(false)
+
+      // Read-only P/Space remain an editor-lock exception only. A confirmation
+      // dialog still owns every review key, including non-mutating inspection.
+      const provenance = new KeyboardEvent('keydown', { key: 'p', cancelable: true })
+      window.dispatchEvent(provenance)
+      const preview = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+      window.dispatchEvent(preview)
+      await flushPromises()
+      expect(provenance.defaultPrevented).toBe(false)
+      expect(preview.defaultPrevented).toBe(false)
+      expect(mocks.getProposalDiff).not.toHaveBeenCalled()
       expect(mocks.infoToast).not.toHaveBeenCalled()
       expect(mocks.rejectProposal).not.toHaveBeenCalled()
 

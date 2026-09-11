@@ -12,6 +12,81 @@ changes.
 
 ---
 
+## Unreleased workspace overhaul
+
+Card hierarchy adds nullable `Cards.ParentCardId` through the
+`20260910214635_AddCardParentHierarchy` migration. Existing cards remain parentless and keep their
+IDs and placement. A hierarchy supports three parent-child links (four levels). Archiving or deleting
+a parent requires confirmation of its direct-child detachments; restoring it does not reattach them.
+Board JSON containing parent links uses the `taskdeck-board` version-3 envelope. Older importers
+reject it; current importers still accept plain and version-2 files and remap parent links to fresh
+card IDs. Developer rollback drops parent links while retaining cards, so reapplying the migration
+does not recover those links. Back up the database before upgrading; application downgrades are not
+established by this rollback test. [Hierarchy contract](docs/product/CARD_HIERARCHY.md).
+
+Card work-item types add a required `Cards.WorkItemType` column through the
+`20260910195339_AddCardWorkItemType` migration. Existing cards become Task; Epic and Spike
+are explicit choices in card details. **BREAKING: none.** Existing clients that omit the type
+keep the saved type on update and create Task cards. Board JSON and account exports include it.
+The migration's developer rollback drops type metadata while preserving cards; applying it again
+defaults those cards to Task, so former Epic/Spike distinctions are lost. Back up the database
+before upgrading; this rollback behavior does not establish support for application downgrades.
+
+Private audio answers add `StoredBlobs`, `StoredBlobChunks`, `StoredBlobReferences`, `Representations`,
+`RepresentationSupersessions` and `ThinkingAudioAnswers`. Three additive migrations introduce these
+tables; existing audio/artefact bytes and legacy transcript rows are not rewritten or backfilled.
+**BREAKING: none.** New account exports include `sourceStorage` and blob-reference IDs on source assets.
+Back up the database before upgrading. Rolling these migrations back removes the new recordings and
+representation history; preserve an account export first. Export is archival, not an automatic restore.
+Originals survive board deletion for owner export and are erased by account deletion. The new question
+audio path accepts 2 MiB originals and never enables a transcription provider automatically.
+
+Private memory sources add four nullable reference columns across `WorkspaceMemories` and its
+history. New answers and corrections stage native Context Fabric captures in the same transaction;
+older memories preserve their saved history and acquire sources on their next explicit write.
+There is no automatic processing job. **BREAKING: none.** Account exports add `nativeCaptures`;
+private board-memory downloads include source assets in version 2 when sources exist. These
+downloads remain archival JSON, not an account or board restore format.
+
+Archiving memory excludes it from active context but retains originals. Deleting its board removes
+the memory and shared context while retaining the owner's native originals for account export.
+Account deletion erases those captures and assets. This retention rule is shown beside originals.
+
+The contextual companion adds two nullable columns to `ChatMessages` for explicit source selections
+and source receipts. Old messages remain readable. Selected private-memory text is resolved for the
+model only after actor, board, archive and revision checks; it is not appended to the stored user
+instruction. Model answers can remain in the private conversation after their sources change.
+Existing approval and explicit Apply behavior is unchanged. **BREAKING: none.**
+
+An additional additive migration creates `BoardDependencies`. Explicit prerequisite links are
+shared with the board and never change card status or deadlines. Deleted-card links are omitted
+from reads and exports; deleting the board removes its graph. JSON exports containing dependencies
+use the `taskdeck-board` version-2 envelope. Current importers remap both ends to newly created cards;
+older importers reject that envelope instead of silently dropping relationships. Boards without
+dependencies retain the existing JSON shape, and existing JSON imports remain supported.
+
+**BREAKING: none.** Additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
+and correction-history tables, then private question-source columns. A further additive migration
+adds private personal-plan JSON and revision columns to UserPreferences with empty defaults. Plan dates
+are independent of card deadlines. Both account exports include the plan and last explicit focus;
+account deletion erases them, while shared board export omits them.
+ Existing boards, cards, captures and proposals retain their identities. Thinking material
+is attached to a card and is removed when that card is deleted. Insights and memory remain private
+to their author and require access to an active board. Memory archive retains correction history.
+
+Normal startup migrations apply the additive schema. Back up the stopped SQLite workspace before
+upgrading. A database backup includes all new records. Current board JSON export/import includes
+shared Thinking Decks; older imports remain valid. Private answers are deliberately excluded from
+shared board exports. Memory's explicit JSON download includes active and archived private entries,
+originals and history, but is not an import format or an atomic backup. Both account export formats
+also include private memory, revision history and quiet insights, including archived records.
+Account deletion explicitly erases these private records even when their shared board survives;
+other users' private records and shared thinking remain intact. See the
+[overhaul delivery ledger](docs/product/WORKSPACE_OVERHAUL.md) for exact coverage.
+
+Experience, presentation and theme selections are local browser preferences. Classic remains the
+default. Choosing another experience never changes authorization or the approve/apply boundary.
+
 ## Backup the database and packaged identity
 
 Everything Taskdeck stores — boards, cards, captures, proposals, audit history, API keys — lives
@@ -133,6 +208,17 @@ tested) — lossless while the setting was never enabled; if you did enable it, 
 the mirrored rows go with the tables. Downgrading past `ReconcileContextFabricScaffold` also folds the
 three state axes back into the single legacy `Lifecycle` column, which is lossy — irrelevant while the
 tables are empty, but a reason to export before downgrading if you ever turned the setting on.
+
+- **BREAKING: none — repair historical capture text divergence (#2418).** Migration
+  `20260908005202_AddCaptureLegacyReconciliationVersion` adds one integer column defaulting to zero.
+  The startup backfill checks existing queue-backed captures in bounded batches, including text
+  mismatches hidden by a later Keep/Archive timestamp. Successful repairs append superseding source
+  assets and retain the original text. Each successful row earns a repair version, so subsequent
+  starts do not reload its payload for this upgrade. The new `capture.legacy-queue.v2` completion
+  marker cannot inherit the older marker's success. An archived mismatch remains outstanding,
+  while healthy rows behind it progress; Inbox reads retain the queue text until repair is complete.
+  Disabling `ContextFabric:BackfillCaptures` defers the repair and keeps the upgraded read switch
+  on queue data. No board changes or review approvals are made by this repair.
 
 - **BREAKING: none — proposal provenance records the producer triple.** Migration
   `20260904030926_AddProposalProvenanceProducerTriple` adds two nullable columns, `Provider` and

@@ -424,6 +424,83 @@ public class ContextFabricCaptureBackfillTests : IClassFixture<TestWebApplicatio
         capture.SourceAssets[1].SupersedesAssetId.Should().Be(capture.SourceAssets[0].Id);
     }
 
+    [Theory]
+    [InlineData(false, "\r\n")]
+    [InlineData(true, "\r\n")]
+    [InlineData(false, "\r")]
+    [InlineData(true, "\r")]
+    public async Task Backfill_ShouldPreserveEquivalentRawSourceAndDrainBacklog(bool archived, string lineEnding)
+    {
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "cf01-equivalent-source");
+        var rawText = $"corrected{lineEnding}second line";
+        Guid captureId = Guid.Empty;
+        try
+        {
+            var created = (await (await _client.PostAsJsonAsync(
+                "/api/capture/items", new CreateCaptureItemDto(null, rawText, "typed")))
+                .Content.ReadFromJsonAsync<CaptureItemDto>())!;
+            captureId = created.Id;
+            await RunBackfillAsync();
+            if (archived)
+            {
+                var archive = await _client.PostAsync($"/api/capture/items/{captureId}/archive", null);
+                archive.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
+
+            Guid sourceId;
+            string sourceHash;
+            DateTimeOffset queueStamp;
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<ICaptureStore>();
+                var capture = (await store.GetByIdForUserAsync(captureId, user.UserId))!;
+                var source = capture.SourceAssets.Single();
+                sourceId = source.Id;
+                sourceHash = source.ContentHash!;
+                var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+                var request = await db.LlmRequests.SingleAsync(row => row.Id == captureId);
+                var payload = CaptureRequestContract.ParseStoredPayload(request.Payload);
+                request.UpdatePayload(CaptureRequestContract.SerializePayload(payload with { Text = "corrected\nsecond line" }));
+                await db.SaveChangesAsync();
+                queueStamp = request.UpdatedAt;
+            }
+
+            // Read before reconciliation: a newer queue stamp must not discard equivalent raw text.
+            var reread = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{captureId}");
+            var result = await RunBackfillAsync();
+            using var assertions = new FluentAssertions.Execution.AssertionScope();
+            reread!.RawText.Should().Be(rawText);
+            result.Reconciled.Should().Be(1);
+            result.Skipped.Should().Be(0);
+            result.Remaining.Should().Be(0);
+            result.Complete.Should().BeTrue();
+            using (var inspected = _factory.Services.CreateScope())
+            {
+                var store = inspected.ServiceProvider.GetRequiredService<ICaptureStore>();
+                var capture = (await store.GetByIdForUserAsync(captureId, user.UserId))!;
+                capture.CurrentText.Should().Be(rawText);
+                capture.SourceAssets.Should().ContainSingle();
+                capture.SourceAssets.Single().Id.Should().Be(sourceId);
+                capture.SourceAssets.Single().ContentHash.Should().Be(sourceHash);
+                capture.LegacyReconciliationVersion.Should().Be(Capture.CurrentLegacyReconciliationVersion);
+                capture.UpdatedAt.Should().BeOnOrAfter(queueStamp);
+            }
+            var secondRun = await RunBackfillAsync();
+            secondRun.Reconciled.Should().Be(0);
+            secondRun.Remaining.Should().Be(0);
+        }
+        finally
+        {
+            if (captureId != Guid.Empty)
+            {
+                using var cleanup = _factory.Services.CreateScope();
+                var db = cleanup.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+                await db.Captures.Where(capture => capture.Id == captureId).ExecuteDeleteAsync();
+                await db.LlmRequests.Where(row => row.Id == captureId).ExecuteDeleteAsync();
+            }
+        }
+    }
+
     [Fact]
     public async Task Backfill_ShouldKeepAnArchivedTextMismatchReadableAndOutstandingWithoutStampingIt()
     {

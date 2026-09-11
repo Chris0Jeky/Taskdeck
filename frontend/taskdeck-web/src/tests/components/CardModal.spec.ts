@@ -18,6 +18,11 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
+vi.mock('../../api/cardsApi', () => ({ cardsApi: {
+  getCards: vi.fn().mockResolvedValue([]),
+  previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
+} }))
+
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: vi.fn(),
 }))
@@ -85,6 +90,34 @@ describe('CardModal', () => {
 
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
     vi.mocked(useSessionStore).mockReturnValue(mockSessionStore as any)
+  })
+
+  it('edits a work item type with the displayed version and retains a failed draft', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: false }
+    card.workItemType = 'Epic'
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+    const selector = wrapper.get('#card-work-item-type')
+    expect((selector.element as HTMLSelectElement).value).toBe('Epic')
+    await selector.setValue('Spike')
+    mockStore.updateCard.mockRejectedValueOnce({ response: { status: 409 } })
+    await wrapper.findAll('button').find(button => button.text() === 'Save Changes')!.trigger('click')
+    await flushPromises()
+    expect(mockStore.updateCard).toHaveBeenCalledWith(card.boardId, card.id,
+      expect.objectContaining({ workItemType: 'Spike', expectedUpdatedAt: card.updatedAt }))
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect((selector.element as HTMLSelectElement).value).toBe('Spike')
+    wrapper.unmount()
+  })
+
+  it('shows old cards as Task and disables type changes for a viewer', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: false, isArchived: false }
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+    const selector = wrapper.get('#card-work-item-type').element as HTMLSelectElement
+    expect(selector.value).toBe('Task')
+    expect(selector.disabled).toBe(true)
+    wrapper.unmount()
   })
 
   it('should request capture provenance when modal opens', async () => {
@@ -310,6 +343,107 @@ describe('CardModal', () => {
     opener.remove()
   })
 
+  it('moves focus into the modal when an open inspector becomes modal and restores the opener on close', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    opener.textContent = 'Open card'
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const outsideControl = document.createElement('button')
+    outsideControl.type = 'button'
+    outsideControl.textContent = 'Board control'
+    document.body.appendChild(outsideControl)
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+        presentation: 'inspector',
+      },
+      attachTo: document.body,
+    })
+
+    try {
+      await nextTick()
+      outsideControl.focus()
+      expect(document.activeElement).toBe(outsideControl)
+
+      await wrapper.setProps({ presentation: 'modal' })
+      await nextTick()
+      expect(document.activeElement).toBe(
+        wrapper.find('[aria-label="Close card editor"]').element,
+      )
+
+      await wrapper.setProps({ isOpen: false })
+      await nextTick()
+      expect(document.activeElement).toBe(opener)
+    } finally {
+      wrapper.unmount()
+      opener.remove()
+      outsideControl.remove()
+    }
+  })
+
+  it('preserves focus inside the editor when an open inspector becomes modal', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+        presentation: 'inspector',
+      },
+      attachTo: document.body,
+    })
+
+    try {
+      await nextTick()
+      const titleInput = wrapper.get('#card-title').element as HTMLInputElement
+      titleInput.focus()
+
+      await wrapper.setProps({ presentation: 'modal' })
+      await nextTick()
+      expect(document.activeElement).toBe(titleInput)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('does not steal focus from a nested dialog during an inspector to modal transition', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+        presentation: 'inspector',
+      },
+      attachTo: document.body,
+    })
+
+    try {
+      await nextTick()
+      const deleteButton = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('Delete Card'))
+      expect(deleteButton).toBeDefined()
+      await deleteButton!.trigger('click')
+      await nextTick()
+
+      const nestedDialog = document.body.querySelector<HTMLElement>('.td-dialog')
+      expect(nestedDialog).not.toBeNull()
+      const nestedControl = nestedDialog?.querySelector<HTMLButtonElement>('button')
+      expect(nestedControl).not.toBeNull()
+      nestedControl!.focus()
+
+      await wrapper.setProps({ presentation: 'modal' })
+      await nextTick()
+      expect(document.activeElement).toBe(nestedControl)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('should keep Tab and Shift+Tab inside the dialog focus cycle', async () => {
     const wrapper = mount(CardModal, {
       props: {
@@ -373,6 +507,30 @@ describe('CardModal', () => {
     await nextTick()
 
     expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('hands discard confirmation to the parent without reopening a stale local prompt', async () => {
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    await wrapper.get('#card-title').setValue('Unsaved title')
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).not.toBeNull()
+
+    await wrapper.setProps({ suppressDiscardPrompt: true })
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+
+    await wrapper.setProps({ suppressDiscardPrompt: false })
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+    expect(wrapper.emitted('close')).toBeUndefined()
+
     wrapper.unmount()
   })
 
@@ -524,6 +682,23 @@ describe('CardModal', () => {
     )
   })
 
+  it('focuses the replacement inspector when a different card is selected', async () => {
+    const wrapper = mount(CardModal, {
+      attachTo: document.body,
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+    })
+    await flushPromises()
+
+    const commentInput = wrapper.get('#new-card-comment').element as HTMLTextAreaElement
+    commentInput.focus()
+    expect(document.activeElement).toBe(commentInput)
+
+    await wrapper.setProps({ card: { ...card, id: 'card-2', title: 'Second Card' } })
+    await flushPromises()
+
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="Close card editor"]').element)
+  })
+
   it('should emit updated event after successful save', async () => {
     const wrapper = mount(CardModal, {
       props: {
@@ -657,7 +832,7 @@ describe('CardModal', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    expect(mockStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(mockStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({ expectedChildrenFingerprint: 'v1:fixed' }))
     expect(wrapper.emitted('close')).toBeTruthy()
 
     wrapper.unmount()

@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -20,6 +21,80 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # CI10-2 observation only: this job records what the pure coordinator would select. Every deep
+  # job below remains unconditional until the one-week observation gate is separately accepted.
+  nightly-coordinator:
+    name: Nightly coordinator observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout current main head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.13.1
+
+      - name: Resolve last complete nightly pair
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OBSERVER_REPO: ${{ github.repository }}
+          OBSERVER_RUN_ID: ${{ github.run_id }}
+          OBSERVER_HEAD_SHA: ${{ github.sha }}
+          OBSERVER_REF: ${{ github.ref }}
+          OBSERVER_EVENT: ${{ github.event_name }}
+          OBSERVER_WORKFLOW: ${{ github.workflow }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/ci/smart-ci/nightly-baseline.mjs \
+            --repo "${OBSERVER_REPO}" \
+            --branch main \
+            --current-run-id "${OBSERVER_RUN_ID}" \
+            --current-head "${OBSERVER_HEAD_SHA}" \
+            --current-ref "${OBSERVER_REF}" \
+            --current-event "${OBSERVER_EVENT}" \
+            --current-workflow "${OBSERVER_WORKFLOW}" \
+            --workspace "${GITHUB_WORKSPACE}" \
+            --artifact-dir artifacts/nightly-observer/downloaded-plan \
+            --last-receipt artifacts/nightly-observer/input/last-qualified.json \
+            --changed-files artifacts/nightly-observer/input/changed-files.tsv \
+            --evidence artifacts/nightly-observer/current/nightly-baseline.json \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Render nightly coordinator receipt
+        env:
+          CURRENT_HEAD_SHA: ${{ steps.baseline.outputs.head_sha }}
+          CURRENT_TREE_SHA: ${{ steps.baseline.outputs.tree_sha }}
+          GENERATED_AT_UTC: ${{ steps.baseline.outputs.generated_at_utc }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/ci/smart-ci/nightly-coordinator.mjs \
+            --policy ci/policy.v1.json \
+            --last-receipt artifacts/nightly-observer/input/last-qualified.json \
+            --head-sha "${CURRENT_HEAD_SHA}" \
+            --tree-sha "${CURRENT_TREE_SHA}" \
+            --changed-files artifacts/nightly-observer/input/changed-files.tsv \
+            --now "${GENERATED_AT_UTC}" \
+            --out artifacts/nightly-observer/current/nightly-plan.json \
+            --out-md artifacts/nightly-observer/current/nightly-plan.md \
+            --summary "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload nightly coordinator plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-coordinator-plan
+          path: artifacts/nightly-observer/current/nightly-plan.json
+          if-no-files-found: error
+          retention-days: 14
+
   openapi-guardrail:
     name: OpenAPI Guardrail
     uses: ./.github/workflows/reusable-openapi-guardrail.yml

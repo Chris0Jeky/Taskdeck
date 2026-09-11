@@ -30,15 +30,19 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly ILogger<AccountDeletionService>? _logger;
     private readonly ISourceArtefactRepository _artefacts;
     private readonly ITranscriptRepository _transcripts;
+    private readonly IWorkspaceInsightRepository _workspaceInsights;
 
     public AccountDeletionService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
         ISourceArtefactRepository artefacts,
         ITranscriptRepository transcripts,
+        IWorkspaceInsightRepository workspaceInsights,
         IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null,
-        ICaptureStore? captureStore = null)
+        ICaptureStore? captureStore = null,
+        IBlobStore? blobStore = null,
+        IAudioTranscriptionStore? audioTranscription = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -46,10 +50,15 @@ public class AccountDeletionService : IAccountDeletionService
         _logger = logger;
         _artefacts = artefacts;
         _transcripts = transcripts;
+        _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
+        _blobStore = blobStore;
+        _audioTranscription = audioTranscription;
     }
 
     private readonly ICaptureStore? _captureStore;
+    private readonly IBlobStore? _blobStore;
+    private readonly IAudioTranscriptionStore? _audioTranscription;
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
         Guid userId,
@@ -126,9 +135,13 @@ public class AccountDeletionService : IAccountDeletionService
             // 3b. Delete the durable Capture mirrors (ADR-0065). Rows exist only when
             //     ContextFabric:DualWriteCaptures was ever on; they carry user-authored titles and
             //     their FK to User is Restrict, so they must go inside this same transaction.
+            if (_audioTranscription is not null)
+                await _audioTranscription.DeleteOwnerAsync(userId, cancellationToken);
             var durableCapturesDeleted = _captureStore is null
                 ? 0
                 : await _captureStore.DeleteByUserAsync(userId, cancellationToken);
+            if (_blobStore is not null)
+                await _blobStore.DeleteOwnerAsync(userId, cancellationToken);
 
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.
@@ -136,6 +149,7 @@ public class AccountDeletionService : IAccountDeletionService
             // Transcript evidence links are database-owned by their Transcript FK, so this
             // set-based delete cascades without a racy string-source-ID scan.
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
+            var privateWorkspaceDeleted = await _workspaceInsights.DeleteByUserAsync(userId, cancellationToken);
 
             // 4. Anonymize chat sessions — delete messages and sessions
             var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
@@ -221,7 +235,10 @@ public class AccountDeletionService : IAccountDeletionService
                 PreferencesDeleted: preferencesDeleted,
                 ArtefactsDeleted: artefactsDeleted,
                 TranscriptsDeleted: transcriptsDeleted,
-                DurableCapturesDeleted: durableCapturesDeleted));
+                DurableCapturesDeleted: durableCapturesDeleted,
+                WorkspaceMemoriesDeleted: privateWorkspaceDeleted.Memories,
+                WorkspaceMemoryRevisionsDeleted: privateWorkspaceDeleted.Revisions,
+                QuietInsightsDeleted: privateWorkspaceDeleted.Insights));
         }
         catch (Exception ex)
         {

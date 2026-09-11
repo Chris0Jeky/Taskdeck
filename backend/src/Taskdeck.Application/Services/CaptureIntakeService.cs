@@ -2,13 +2,14 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// The one canonical writer of the durable <see cref="Capture"/> aggregate and its
 /// <see cref="SourceAsset"/>s (ADR-0065 §Decision 1; CF-01 <c>#2255</c>). Every path that admits a
-/// capture goes through <see cref="IntakeAsync"/> — <see cref="CaptureService.CreateAsync"/>,
+/// capture goes through <see cref="IntakeAsync"/> or <see cref="StageMemorySourcesAsync"/> — <see cref="CaptureService.CreateAsync"/>,
 /// <see cref="LlmQueueService.AddToQueueAsync"/> and the ID-preserving backfill
 /// (<see cref="CaptureBackfillService"/>, through <see cref="BuildCapture"/>) — and nothing else
 /// constructs a <see cref="Capture"/>; <c>CaptureIntakeIsTheOnlyCaptureWriterTests</c> proves it
@@ -23,8 +24,8 @@ namespace Taskdeck.Application.Services;
 /// <para>
 /// Both are staged into the ambient unit of work, so they commit together or not at all, and intake
 /// must never fail where the queue row succeeds. While
-/// <see cref="ContextFabricSettings.DualWriteCaptures"/> is off this class does nothing and shipped
-/// behaviour is byte-identical.
+/// <see cref="ContextFabricSettings.DualWriteCaptures"/> is off legacy intake does nothing. Native
+/// private memory sources use their own admission path, independent of the legacy mirror switch.
 /// </para>
 /// </summary>
 public sealed class CaptureIntakeService
@@ -40,6 +41,74 @@ public sealed class CaptureIntakeService
 
     /// <summary>True when the durable aggregate is written; false leaves shipped behaviour byte-identical.</summary>
     public bool DualWriteEnabled => _settings.DualWriteCaptures && _captureStore is not null;
+
+    /// <summary>Retains an explicit private audio original and its question; does not schedule transcription.</summary>
+    public async Task<(Capture Capture, SourceAsset Audio)> StageAudioAnswerAsync(Guid ownerId, Guid boardId,
+        string title, string evidence, BlobReference blob, string mediaType, string fileName, CancellationToken ct)
+    {
+        var store = _captureStore ?? throw new InvalidOperationException("Audio originals require a capture store.");
+        if (blob.OwnerUserId != ownerId || blob.AssetModality != CaptureModality.Audio)
+            throw new DomainException(ErrorCodes.ValidationError, "The recording belongs to a different source.");
+        var capture = new Capture(Guid.NewGuid(), ownerId, CaptureModality.Audio, CaptureOriginAdapter.WebComposer,
+            CaptureProducerKind.Human, CaptureIntentMode.Remember, CaptureSource.Voice,
+            contextBoardId: boardId, userTitle: title, userNote: "Private audio original. No transcription has been requested.");
+        var audio = SourceAsset.FromBlobReference(capture.Id, 0, CaptureModality.Audio, mediaType, blob.ContentHash,
+            blob.ByteSize, blob.ReferenceId, fileName);
+        capture.AddSourceAsset(audio);
+        capture.AddInlineTextSource(evidence, originalName: "original-question-evidence.txt");
+        capture.Keep();
+        await store.AddAsync(capture, ct);
+        return (capture, audio);
+    }
+
+    /// <summary>
+    /// Stages native private memory sources in the memory's unit of work. This is not a legacy
+    /// queue mirror and never schedules processing. Historical rows are admitted on their next
+    /// explicit write; their saved text remains the authority, not a reconstructed question.
+    /// Existing memories must advance their concurrency revision before staging an admission.
+    /// </summary>
+    public async Task StageMemorySourcesAsync(WorkspaceMemory memory, CancellationToken ct = default)
+    {
+        var store = _captureStore ?? throw new InvalidOperationException("Private memory sources require a capture store.");
+        Capture capture;
+        if (memory.SourceCaptureId is { } captureId)
+        {
+            capture = await store.GetByIdForUpdateAsync(captureId, memory.UserId, ct)
+                ?? throw new DomainException(ErrorCodes.Conflict, "The private source is unavailable. Keep your draft and reload.");
+            if (capture.LegacyRequestId.HasValue || capture.ContextBoardId != memory.BoardId)
+                throw new DomainException(ErrorCodes.Conflict, "The private source no longer matches this memory.");
+            if (capture.CurrentText != memory.Text)
+            {
+                var answer = capture.SupersedeInlineTextSource(memory.Text, originalName: $"answer-revision-{memory.Revision}.txt");
+                memory.RecordSources(capture.Id, answer.Id, memory.EvidenceSourceAssetId);
+            }
+            await store.UpdateAsync(capture, ct);
+            return;
+        }
+
+        capture = new Capture(Guid.NewGuid(), memory.UserId, CaptureModality.Text,
+            CaptureOriginAdapter.WebComposer, CaptureProducerKind.Human, CaptureIntentMode.Remember,
+            CaptureSource.Typed, contextBoardId: memory.BoardId, userTitle: memory.Title,
+            userNote: $"Private memory {memory.Id}. Originals retained until account deletion.");
+        var evidence = string.IsNullOrWhiteSpace(memory.OriginalEvidence) ? null
+            : capture.AddInlineTextSource(memory.OriginalEvidence, originalName: "original-question-evidence.txt");
+        SourceAsset? previous = null;
+        foreach (var revision in memory.History.OrderBy(x => x.Revision))
+        {
+            if (previous?.TextPayload?.Text != revision.Text)
+                previous = previous is null
+                    ? capture.AddInlineTextSource(revision.Text, originalName: $"answer-revision-{revision.Revision}.txt")
+                    : capture.SupersedeInlineTextSource(revision.Text, originalName: $"answer-revision-{revision.Revision}.txt");
+            revision.RecordAnswerSource(previous!.Id);
+        }
+        if (previous?.TextPayload?.Text != memory.Text)
+            previous = previous is null
+                ? capture.AddInlineTextSource(memory.Text, originalName: $"answer-revision-{memory.Revision}.txt")
+                : capture.SupersedeInlineTextSource(memory.Text, originalName: $"answer-revision-{memory.Revision}.txt");
+        memory.RecordSources(capture.Id, previous!.Id, evidence?.Id);
+        capture.Keep();
+        await store.AddAsync(capture, ct);
+    }
 
     /// <summary>
     /// Admits a capture: builds the aggregate under <paramref name="request"/>'s id with its
@@ -92,7 +161,7 @@ public sealed class CaptureIntakeService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(payload);
 
-        return Capture.FromQueueRequest(
+        var capture = Capture.FromQueueRequest(
             request.Id,
             userId,
             payload.Source,
@@ -111,6 +180,8 @@ public sealed class CaptureIntakeService
             processingSummary: legacyState?.ProcessingSummary,
             actionState: legacyState?.ActionState,
             userDisposition: legacyState?.Disposition);
+        capture.RecordLegacyReconciliation(request.UpdatedAt);
+        return capture;
     }
 
     /// <summary>

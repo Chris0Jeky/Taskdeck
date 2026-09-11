@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useAutomationChat } from '../composables/useAutomationChat'
 import ChatHeroHeader from '../components/chat/ChatHeroHeader.vue'
 import LlmHealthStatusBar from '../components/chat/LlmHealthStatusBar.vue'
 import ChatSessionSidebar from '../components/chat/ChatSessionSidebar.vue'
 import ChatMessageList from '../components/chat/ChatMessageList.vue'
 import ChatComposeBar from '../components/chat/ChatComposeBar.vue'
+import ChatContextPicker from '../components/chat/ChatContextPicker.vue'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
+
+const props = defineProps<{ boardId?: string; cardId?: string; embedded?: boolean; thinkingDirty?: boolean }>()
+const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; 'sending-change': [sending: boolean] }>()
 
 const {
   sessions,
@@ -15,15 +20,25 @@ const {
   loadingHealth,
   creatingSession,
   sendingMessage,
+  refreshingReceipt,
+  receiptRefreshError,
+  retryReceiptRefresh,
+  bindingBoard,
+  bindingMessageId,
+  boardBindingError,
+  boardBindingReceipt,
+  boardOptionsLoadError,
   chatHealth,
   chatHealthLoadError,
   newSessionTitle,
   newSessionBoardId,
   messageContent,
-  requestProposal,
+  contextSelection,
   boardOptions,
+  eligibleBoards,
   sortedMessages,
   lastMessageIsClarification,
+  pendingBoardRecovery,
   selectedSessionBoardName,
   pendingSessionBoardContextLabel,
   queryBoardId,
@@ -32,6 +47,8 @@ const {
   handleCreateSession,
   handleSendMessage,
   handleSkipClarification,
+  bindBoardToPendingTurn,
+  continuePendingInstruction,
   loadBoardOptions,
   loadSession,
   loadProviderHealth,
@@ -39,12 +56,15 @@ const {
   applyHintSuggestion,
   openReviewRoute,
   openProposalReview,
-} = useAutomationChat()
+} = useAutomationChat({ boardId: () => props.boardId, sendBlocked: () => !!props.thinkingDirty })
+watch([messageContent, sendingMessage], () => emit('dirty-change', !!messageContent.value.trim() || sendingMessage.value))
+watch(sendingMessage, value => emit('sending-change', value), { flush: 'sync' })
 </script>
 
 <template>
-  <div class="paper-chat">
+  <div class="paper-chat" :class="{ 'paper-chat--embedded': embedded }">
     <ChatHeroHeader
+      v-if="!embedded"
       :loading-health="loadingHealth"
       @refresh-health="loadProviderHealth()"
       @verify-llm="loadProviderHealth({ probe: true })"
@@ -67,7 +87,8 @@ const {
         :creating-session="creatingSession"
         :new-session-title="newSessionTitle"
         :new-session-board-id="newSessionBoardId"
-        :board-options="boardOptions"
+        :board-options="boardId ? boardOptions.filter(board => board.value === boardId) : boardOptions"
+        :fixed-board="!!boardId"
         :query-board-id="queryBoardId"
         :pending-session-board-context-label="pendingSessionBoardContextLabel"
         @update:new-session-title="newSessionTitle = $event"
@@ -105,20 +126,46 @@ const {
           <ChatMessageList
             :messages="sortedMessages"
             :sending-message="sendingMessage"
+            :send-blocked="thinkingDirty || refreshingReceipt"
+            :eligible-boards="eligibleBoards"
+            :loading-boards="loadingBoards"
+            :selected-session-board-id="selectedSession.boardId"
+            :selected-session-board-name="selectedSessionBoardName"
+            :pending-board-message-id="pendingBoardRecovery?.messageId ?? null"
+            :binding-board="bindingBoard"
+            :binding-message-id="bindingMessageId"
+            :board-binding-error="boardBindingError"
+            :board-binding-receipt="boardBindingReceipt"
+            :board-load-error="boardOptionsLoadError"
             @apply-hint-suggestion="applyHintSuggestion"
             @open-proposal-review="openProposalReview"
+            @bind-board="bindBoardToPendingTurn"
+            @continue-instruction="continuePendingInstruction"
+            @open-boards="openRoute('/workspace/boards')"
+            @reload-boards="loadBoardOptions"
           />
 
+          <ChatContextPicker
+            :key="`${selectedSession.id}:${selectedSession.boardId}`"
+            :board-id="selectedSession.boardId"
+            :disabled="sendingMessage"
+            :suggested-card-id="cardId"
+            @change="contextSelection = $event"
+          />
           <ChatComposeBar
             :message-content="messageContent"
-            :request-proposal="requestProposal"
             :sending-message="sendingMessage"
+            :send-blocked="thinkingDirty || refreshingReceipt"
             :last-message-is-clarification="lastMessageIsClarification"
             @update:message-content="messageContent = $event"
-            @update:request-proposal="requestProposal = $event"
             @send-message="handleSendMessage"
             @skip-clarification="handleSkipClarification"
           />
+          <p v-if="thinkingDirty" role="status">Save your shared thinking before sending a companion message. The companion reads the saved version.</p>
+          <div v-if="receiptRefreshError || refreshingReceipt" role="status">
+            <p>{{ refreshingReceipt ? 'Refreshing the saved conversation and source receipts…' : receiptRefreshError }}</p>
+            <button v-if="receiptRefreshError" type="button" :disabled="sendingMessage || refreshingReceipt" @click="retryReceiptRefresh">Retry receipt refresh</button>
+          </div>
         </template>
       </section>
     </div>
@@ -147,12 +194,17 @@ const {
 }
 
 .paper-chat__layout {
+  min-width: 0;
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: var(--s-4, 16px);
 }
 
+.paper-chat--embedded .paper-chat__layout { grid-template-columns: 240px minmax(0, 1fr); }
+.paper-chat--embedded { max-width: 100%; min-width: 0; }
+
 .paper-chat__panel {
+  min-width: 0;
   background: var(--paper-card, #fbf7ee);
   border: 1px solid var(--line, #d8d0bf);
   border-radius: var(--r-3, 6px);
@@ -214,6 +266,8 @@ const {
   .paper-chat__layout {
     grid-template-columns: 1fr;
   }
+
+  .paper-chat--embedded .paper-chat__layout { grid-template-columns: 1fr; }
 
   .paper-chat__panel {
     min-height: 0;

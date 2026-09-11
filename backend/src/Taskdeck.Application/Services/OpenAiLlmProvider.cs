@@ -29,6 +29,7 @@ public class OpenAiLlmProvider : ILlmProvider
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
     {
+        request.DispatchContext.Observe("OpenAI", GetConfiguredModelOrDefault());
         var lastUserMessage = request.Messages
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
@@ -52,6 +53,7 @@ public class OpenAiLlmProvider : ILlmProvider
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.OpenAi.ApiKey.Trim());
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildRequestPayload(request));
+            LlmDispatchTrackingHandler.Attach(message, request.DispatchContext);
 
             if (_protectOutboundTelemetry)
             {
@@ -165,6 +167,7 @@ public class OpenAiLlmProvider : ILlmProvider
         IReadOnlyList<ToolCallResult>? previousToolResults = null,
         CancellationToken ct = default)
     {
+        request.DispatchContext.Observe("OpenAI", GetConfiguredModelOrDefault());
         if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
                 _settings,
                 out var validationError,
@@ -184,6 +187,7 @@ public class OpenAiLlmProvider : ILlmProvider
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.OpenAi.ApiKey.Trim());
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
+            LlmDispatchTrackingHandler.Attach(message, request.DispatchContext);
 
             if (_protectOutboundTelemetry)
             {
@@ -228,7 +232,8 @@ public class OpenAiLlmProvider : ILlmProvider
         var messages = new List<object>();
 
         // System prompt for tool-calling mode
-        var systemPrompt = request.SystemPrompt ?? ToolCallingSystemPrompt.Prompt;
+        var systemPrompt = LlmSystemPromptBuilder.BuildEffectiveSystemPrompt(
+            request.SystemPrompt ?? ToolCallingSystemPrompt.Prompt, request.BoardContext);
         if (!string.IsNullOrEmpty(systemPrompt))
         {
             messages.Add(new { role = "system", content = systemPrompt });

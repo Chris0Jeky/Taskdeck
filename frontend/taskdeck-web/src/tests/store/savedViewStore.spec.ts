@@ -3,6 +3,21 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useSavedViewStore, cardMatchesSavedViewFilter } from '../../store/savedViewStore'
 import type { SavedViewFilter } from '../../store/savedViewStore'
 import type { Card } from '../../types/board'
+import { addCalendarDays, calendarDateKeyToMidnightUtc, localCalendarDateKey } from '../../utils/dueDates'
+
+const FIXED_NOW = '2026-09-07T23:30:00.000Z'
+
+function freezeDate() {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(FIXED_NOW))
+}
+
+function dueDateFor(daysFromToday: number): string {
+  const dueDateKey = addCalendarDays(localCalendarDateKey(), daysFromToday)
+  const dueDate = dueDateKey ? calendarDateKeyToMidnightUtc(dueDateKey) : null
+  if (!dueDate) throw new Error(`Unable to build test due date for offset ${daysFromToday}`)
+  return dueDate
+}
 
 function createMockCard(overrides: Partial<Card> = {}): Card {
   return {
@@ -388,6 +403,11 @@ describe('savedViewStore', () => {
 })
 
 describe('cardMatchesSavedViewFilter', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
   describe('search text', () => {
     it('should match cards by title', () => {
       const card = createMockCard({ title: 'Fix bug in parser' })
@@ -449,6 +469,8 @@ describe('cardMatchesSavedViewFilter', () => {
   })
 
   describe('due date filter', () => {
+    beforeEach(freezeDate)
+
     it('should pass all cards when filter is "all"', () => {
       const card = createMockCard()
       const filter = createBaseFilter({ dueDateFilter: 'all' })
@@ -456,10 +478,7 @@ describe('cardMatchesSavedViewFilter', () => {
     })
 
     it('should match overdue cards (UTC date in the past)', () => {
-      // Use a UTC date string that is clearly in the past
-      const twoDaysAgo = new Date()
-      twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2)
-      const card = createMockCard({ dueDate: twoDaysAgo.toISOString() })
+      const card = createMockCard({ dueDate: dueDateFor(-2) })
       const filter = createBaseFilter({ dueDateFilter: 'overdue' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
     })
@@ -471,20 +490,13 @@ describe('cardMatchesSavedViewFilter', () => {
     })
 
     it('should not match today as overdue', () => {
-      // A card due today (UTC midnight) should NOT be overdue
-      const now = new Date()
-      const todayMidnightUTC = new Date(Date.UTC(
-        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()
-      ))
-      const card = createMockCard({ dueDate: todayMidnightUTC.toISOString() })
+      const card = createMockCard({ dueDate: dueDateFor(0) })
       const filter = createBaseFilter({ dueDateFilter: 'overdue' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
     })
 
     it('should not match future cards as overdue', () => {
-      const tomorrow = new Date()
-      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
-      const card = createMockCard({ dueDate: tomorrow.toISOString() })
+      const card = createMockCard({ dueDate: dueDateFor(1) })
       const filter = createBaseFilter({ dueDateFilter: 'overdue' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
     })
@@ -493,10 +505,8 @@ describe('cardMatchesSavedViewFilter', () => {
       // The Card type has no isDone/isCompleted field; "done" is a column-level
       // concept.  cardMatchesSavedViewFilter intentionally does not filter by
       // column status — callers should pre-filter by column if needed.
-      const yesterday = new Date()
-      yesterday.setUTCDate(yesterday.getUTCDate() - 1)
       const card = createMockCard({
-        dueDate: yesterday.toISOString(),
+        dueDate: dueDateFor(-1),
         columnId: 'done-column-id',
       })
       const filter = createBaseFilter({ dueDateFilter: 'overdue' })
@@ -505,17 +515,13 @@ describe('cardMatchesSavedViewFilter', () => {
     })
 
     it('should match cards due this week', () => {
-      const threeDays = new Date()
-      threeDays.setUTCDate(threeDays.getUTCDate() + 3)
-      const card = createMockCard({ dueDate: threeDays.toISOString() })
+      const card = createMockCard({ dueDate: dueDateFor(3) })
       const filter = createBaseFilter({ dueDateFilter: 'due-week' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
     })
 
     it('should not match cards due beyond this week', () => {
-      const twoWeeks = new Date()
-      twoWeeks.setUTCDate(twoWeeks.getUTCDate() + 14)
-      const card = createMockCard({ dueDate: twoWeeks.toISOString() })
+      const card = createMockCard({ dueDate: dueDateFor(14) })
       const filter = createBaseFilter({ dueDateFilter: 'due-week' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
     })
@@ -527,17 +533,13 @@ describe('cardMatchesSavedViewFilter', () => {
     })
 
     it('should exclude cards with a due date for no-date filter', () => {
-      const card = createMockCard({ dueDate: new Date().toISOString() })
+      const card = createMockCard({ dueDate: dueDateFor(0) })
       const filter = createBaseFilter({ dueDateFilter: 'no-date' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
     })
 
     it('should match card due today for due-today filter', () => {
-      const now = new Date()
-      const todayMidnightUTC = new Date(Date.UTC(
-        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0
-      ))
-      const card = createMockCard({ dueDate: todayMidnightUTC.toISOString() })
+      const card = createMockCard({ dueDate: dueDateFor(0) })
       const filter = createBaseFilter({ dueDateFilter: 'due-today' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
     })

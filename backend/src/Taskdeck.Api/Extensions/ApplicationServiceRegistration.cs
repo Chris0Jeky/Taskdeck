@@ -28,6 +28,15 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
         services.AddScoped<CardCommentService>();
+        services.AddScoped<ThinkingDeckService>();
+        services.AddScoped<BoardDependencyService>();
+        services.AddScoped<WorkspacePlanService>();
+        services.AddScoped<WorkspaceAttentionService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ChatContextResolver>();
+        services.AddScoped<ThinkingStepService>();
+        services.AddScoped<ThinkingAnswerService>();
+        services.AddScoped<ThinkingAudioService>();
         services.AddScoped<LabelService>();
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<AuthenticationService>();

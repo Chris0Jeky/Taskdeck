@@ -46,6 +46,29 @@ public class WriteToolExecutorTests
     #region ProposeCreateCardExecutor
 
     [Fact]
+    public async Task ProposeCreateCard_UsesTrustedContextProducerAndIgnoresForgedArguments()
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeCreateCardExecutor(
+            _proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var context = new ToolExecutionContext(
+            _boardId,
+            _userId,
+            new ProposalProducerMetadata("OpenAICompatible", "vendor/model"));
+        var arguments = ParseArgs(
+            "{\"title\":\"Fix login bug\",\"provenanceProvider\":\"forged\",\"provenanceModelId\":\"forged\"}");
+
+        await executor.ExecuteAsync(context, arguments);
+
+        captured.Should().NotBeNull();
+        captured!.ProvenanceProvider.Should().Be("OpenAICompatible");
+        captured.ProvenanceModelId.Should().Be("vendor/model");
+        captured.ProvenancePromptVersion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ProposeCreateCard_WithValidTitle_CreatesProposal()
     {
         var proposalId = Guid.NewGuid();
@@ -290,9 +313,10 @@ public class WriteToolExecutorTests
     [Fact]
     public async Task ProposeUpdateCard_WithNewTitle_CreatesProposal()
     {
+        CreateProposalDto? captured = null;
         var card = CreateCard("Old title");
         SetupBoardCards(card);
-        SetupProposalCreation(Guid.NewGuid());
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
 
         var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
         var shortId = BoardContextBuilder.FormatShortId(card.Id);
@@ -303,6 +327,14 @@ public class WriteToolExecutorTests
 
         doc.RootElement.GetProperty("proposal_id").GetString().Should().NotBeNullOrEmpty();
         doc.RootElement.GetProperty("summary").GetString().Should().Contain("title");
+        captured.Should().NotBeNull();
+        captured!.Summary.Should().Contain("Old title");
+        var operation = captured.Operations.Should().ContainSingle().Subject;
+        operation.TargetId.Should().Be(card.Id.ToString());
+        using var parameters = JsonDocument.Parse(operation.Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(card.Id);
+        parameters.RootElement.GetProperty("title").GetString().Should().Be("New title");
+        card.Title.Should().Be("Old title", "chat must only create a Review proposal before Apply");
     }
 
     [Fact]
@@ -319,6 +351,33 @@ public class WriteToolExecutorTests
         var doc = JsonDocument.Parse(result);
 
         doc.RootElement.GetProperty("error").GetString().Should().Contain("At least one field");
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_ReadOnlyUser_ReturnsErrorWithoutProposal()
+    {
+        var card = CreateCard("Protected title");
+        SetupBoardCards(card);
+        _policyEngine
+            .Setup(p => p.ValidatePermissionsAsync(
+                _userId,
+                _boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "Board write access required"));
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","title":"Unauthorized title"}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
+            .Should().Be("Board write access required");
+        card.Title.Should().Be("Protected title");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

@@ -39,6 +39,11 @@ const NotificationPreferencesView = () => import('../views/NotificationPreferenc
 const AppearanceSettingsView = () => import('../views/AppearanceSettingsView.vue')
 const InboxView = () => import('../views/InboxView.vue')
 const HomeView = () => import('../views/HomeView.vue')
+const WorkspacePlanView = () => import('../views/overhaul/WorkspacePlanView.vue')
+const WorkspaceExperiencesView = () => import('../views/overhaul/WorkspaceExperiencesView.vue')
+const ThinkingWorkspaceView = () => import('../views/overhaul/ThinkingWorkspaceView.vue')
+const QuietInsightsView = () => import('../views/QuietInsightsView.vue')
+const WorkspaceMemoryView = () => import('../views/WorkspaceMemoryView.vue')
 const TodayView = () => import('../views/TodayView.vue')
 const ReviewView = () => import('../views/ReviewView.vue')
 const DevToolsView = () => import('../views/DevToolsView.vue')
@@ -105,6 +110,36 @@ const router = createRouter({
     },
 
     // Workspace routes
+    {
+      path: '/workspace/plan',
+      name: 'workspace-plan',
+      component: WorkspacePlanView,
+      meta: { requiresShell: true, breadcrumb: 'Personal plan' },
+    },
+    {
+      path: '/workspace/experiences',
+      name: 'workspace-experiences',
+      component: WorkspaceExperiencesView,
+      meta: { requiresShell: true, breadcrumb: 'Experiences' },
+    },
+    {
+      path: '/workspace/boards/:boardId/cards/:cardId/thinking',
+      name: 'workspace-thinking',
+      component: ThinkingWorkspaceView,
+      meta: { requiresShell: true, breadcrumb: 'Thinking Deck' },
+    },
+    {
+      path: '/workspace/insights',
+      name: 'workspace-insights',
+      component: QuietInsightsView,
+      meta: { requiresShell: true, breadcrumb: 'Quiet insights' },
+    },
+    {
+      path: '/workspace/memory',
+      name: 'workspace-memory',
+      component: WorkspaceMemoryView,
+      meta: { requiresShell: true, breadcrumb: 'Memory & questions' },
+    },
     {
       path: '/workspace',
       redirect: '/workspace/home',

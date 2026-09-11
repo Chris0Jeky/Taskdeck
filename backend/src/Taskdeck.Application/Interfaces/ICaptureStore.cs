@@ -14,7 +14,8 @@ public sealed record CaptureListMaterial(
     CaptureSource LegacySourceSnapshot,
     DateTimeOffset CapturedAtServer,
     DateTimeOffset UpdatedAt,
-    string? CurrentText);
+    string? CurrentText,
+    int LegacyReconciliationVersion = 0);
 
 /// <summary>
 /// The persistence façade for the durable <see cref="Capture"/> aggregate (ADR-0065 §Decision 1;
@@ -79,6 +80,9 @@ public interface ICaptureStore
     Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Owner-scoped native originals, including those whose board was deleted.</summary>
+    Task<IReadOnlyList<Capture>> NativeByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes every capture owned by <paramref name="userId"/> (account erasure). Set-based and

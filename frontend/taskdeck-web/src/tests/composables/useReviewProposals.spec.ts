@@ -70,10 +70,6 @@ vi.mock('../../utils/inputAssist', () => ({
     seeds.map((s) => ({ value: s.value, label: s.label })),
 }))
 
-vi.mock('../../utils/navigation', () => ({
-  normalizeBoardIdQueryParam: (v: unknown) => v ?? null,
-}))
-
 vi.mock('../../composables/usePerformanceMark', () => ({
   usePerformanceMark: () => ({ start: vi.fn(), end: vi.fn() }),
 }))
@@ -1082,6 +1078,25 @@ describe('useReviewProposals', () => {
       expect(mockToast.error).toHaveBeenCalled()
     })
 
+    it('does not carry a revoked board claim into another scope that has a transient failure', async () => {
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(true)
+
+      mockRoute.query = { boardId: 'board-c' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+
+      // A 500 says C could not be refreshed. It cannot prove that C refused
+      // access, so the durable panel from B must not describe C.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+      expect(mockToast.error).toHaveBeenCalled()
+    })
+
     it('keeps the pin-leg 403 as the single-proposal outcome #2593 shipped', async () => {
       // A readable board with one proposal this reviewer may not open is the
       // opposite case, and it must stay the unavailable pin rather than tearing
@@ -1133,6 +1148,26 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
       expect(rp.queueAccessRevoked.value).toBe(false)
       expect(rp.queueAccessRevokedRetry.value).toBe(false)
+    })
+
+    it('keeps repeated refusal feedback when the second explicit read changes scope', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await rp.loadProposals()
+
+      // Clearing board A's authority claim before the board B read must not
+      // erase the fact that this is the second explicit refusal.
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
     })
 
     it('does not raise the retry disclosure for a non-user list read', async () => {
@@ -3239,6 +3274,294 @@ describe('useReviewProposals', () => {
         mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 405 } })
         await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
       }
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+  })
+
+  describe('refresh-health scope attribution (#2214)', () => {
+    async function primeDegradedRevokedBoard() {
+      vi.useFakeTimers()
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'b-1', boardId: 'board-b' }),
+      ])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 400 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+
+      expect(rp.queueRefreshStale.value).toBe(true)
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      return rp
+    }
+
+    it('clears board B health before a board C transient failure can render it', async () => {
+      const rp = await primeDegradedRevokedBoard()
+
+      mockRoute.query = { boardId: 'board-c' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+
+      // The reset also retires B's uninterrupted runs. C can therefore have
+      // its own threshold-length-minus-one failures without inheriting B's
+      // counters and raising either disclosure early.
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD - 1; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD - 1; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 400 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not announce a false recovery when board C succeeds after board B health', async () => {
+      const rp = await primeDegradedRevokedBoard()
+
+      mockRoute.query = { boardId: 'board-c' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'c-1', boardId: 'board-c' }),
+      ])
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+      rp.stopQueueRefresh()
+    })
+
+    it.each(['stale', 'refused'] as const)(
+      'restores retained board B %s health after a failed board C detour',
+      async (healthKind) => {
+        vi.useFakeTimers()
+        mockRoute.query = { boardId: 'board-b' }
+        mockAutomationApi.getProposals.mockResolvedValueOnce([
+          makeProposal({ id: 'b-1', boardId: 'board-b' }),
+        ])
+        const rp = useReviewProposals()
+        await rp.loadProposals()
+        rp.startQueueRefresh()
+
+        const failure = healthKind === 'stale'
+          ? { response: { status: 500 } }
+          : { response: { status: 400 } }
+        for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+          mockAutomationApi.getProposals.mockRejectedValueOnce(failure)
+          await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+        }
+        expect(rp.queueRefreshStale.value).toBe(healthKind === 'stale')
+        expect(rp.queueRefreshRefused.value).toBe(healthKind === 'refused')
+
+        // C fails, so B's landed rows remain rendered while C is the active
+        // request scope.
+        mockRoute.query = { boardId: 'board-c' }
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await rp.loadProposals()
+        expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['b-1'])
+
+        // B fails too. The retained B rows still need the known B disclosure,
+        // rather than silently becoming an ordinary stale-looking queue.
+        mockRoute.query = { boardId: 'board-b' }
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await rp.loadProposals()
+        expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['b-1'])
+        expect(rp.queueRefreshStale.value).toBe(healthKind === 'stale')
+        expect(rp.queueRefreshRefused.value).toBe(healthKind === 'refused')
+
+        // Once B lands successfully again, its restored warning is cleared by
+        // the existing same-scope success accounting.
+        mockAutomationApi.getProposals.mockResolvedValueOnce([
+          makeProposal({ id: 'b-2', boardId: 'board-b' }),
+        ])
+        await rp.loadProposals()
+        expect(rp.queueRefreshStale.value).toBe(false)
+        expect(rp.queueRefreshRefused.value).toBe(false)
+        rp.stopQueueRefresh()
+      },
+    )
+
+    it('does not let a late board B failure restore health after board C takes over', async () => {
+      vi.useFakeTimers()
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'b-1', boardId: 'board-b' }),
+      ])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      let rejectBoardB: (reason: unknown) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectBoardB = reject
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      mockRoute.query = { boardId: 'board-c' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      rejectBoardB({ response: { status: 500 } })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    async function primeDegradedBoardB(healthKind: 'stale' | 'refused') {
+      vi.useFakeTimers()
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'b-1', boardId: 'board-b' }),
+      ])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      const failure =
+        healthKind === 'stale' ? { response: { status: 500 } } : { response: { status: 400 } }
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce(failure)
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshStale.value).toBe(healthKind === 'stale')
+      expect(rp.queueRefreshRefused.value).toBe(healthKind === 'refused')
+      expect(rp.visibleProposals.value.map((proposal: any) => proposal.id)).toEqual(['b-1'])
+      return rp
+    }
+
+    /**
+     * Only a LANDING replaces `proposals`. Widening a known-degraded board
+     * queue to All boards and failing that read therefore leaves board B's rows
+     * on screen, and an unscoped filter admits every one of them. Retiring the
+     * disclosure there leaves the transient toast as the only report, and once
+     * it goes Review presents a partial, known-stale board queue as the
+     * ordinary all-boards queue.
+     */
+    it.each(['stale', 'refused'] as const)(
+      'keeps board B %s health while its retained rows render as the All boards queue',
+      async (healthKind) => {
+        const rp = await primeDegradedBoardB(healthKind)
+
+        mockRoute.query = {}
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await rp.loadProposals()
+
+        // The negative control for this contract: the retained rows really are
+        // still rendered and still actionable. The alternative contract is to
+        // retire them; whichever is chosen, "no rows and no warning" and "rows
+        // with no warning" are both wrong, so both halves are asserted here
+        // against real composable state rather than a stubbed flag.
+        expect(rp.visibleProposals.value.map((proposal: any) => proposal.id)).toEqual(['b-1'])
+        expect(rp.dismissableProposalIds.value.length + rp.visibleProposals.value.length).
+          toBeGreaterThan(0)
+        expect(rp.queueAccessRevoked.value).toBe(false)
+        // The count stays unspeakable, because no read has landed for the
+        // all-boards scope: that signal is necessary but NOT sufficient, which
+        // is why the disclosure below has to stand too.
+        expect(rp.queueScopeLoaded.value).toBe(false)
+
+        expect(rp.queueRefreshStale.value || rp.queueRefreshRefused.value).toBe(true)
+        expect(rp.queueRefreshStale.value).toBe(healthKind === 'stale')
+        expect(rp.queueRefreshRefused.value).toBe(healthKind === 'refused')
+        rp.stopQueueRefresh()
+      },
+    )
+
+    it('retires the retained board B warning once the All boards read lands', async () => {
+      const rp = await primeDegradedBoardB('stale')
+
+      mockRoute.query = {}
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'c-1', boardId: 'board-c' }),
+      ])
+      await rp.loadProposals()
+
+      expect(rp.visibleProposals.value.map((proposal: any) => proposal.id)).toEqual(['c-1'])
+      expect(rp.queueScopeLoaded.value).toBe(true)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('restores retained board B health when a failed All boards read re-exposes its rows', async () => {
+      const rp = await primeDegradedBoardB('stale')
+
+      // Board C hides every retained board B row, so there is no rendered queue
+      // for B's warning to describe and it correctly stands down.
+      mockRoute.query = { boardId: 'board-c' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+      expect(rp.visibleProposals.value).toEqual([])
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      // Widening back to All boards puts the same known-stale B rows back on
+      // screen without any read having landed, so the warning has to come back
+      // with them.
+      mockRoute.query = {}
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+
+      expect(rp.visibleProposals.value.map((proposal: any) => proposal.id)).toEqual(['b-1'])
+      expect(rp.queueScopeLoaded.value).toBe(false)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not resurrect a revoked board B warning when the All boards read fails', async () => {
+      const rp = await primeDegradedRevokedBoard()
+
+      mockRoute.query = {}
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+
+      // A 403 already dropped the rows and the landed scope, so there is
+      // nothing on screen for the old warning to describe. The revoked panel
+      // stays this fact's single owner.
+      expect(rp.proposals.value).toEqual([])
+      expect(rp.visibleProposals.value).toEqual([])
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueRefreshStale.value).toBe(false)
       expect(rp.queueRefreshRefused.value).toBe(false)
       rp.stopQueueRefresh()
     })

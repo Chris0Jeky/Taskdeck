@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
@@ -80,6 +81,65 @@ public class ChatSessionStateMachineTests
         var act = () => new ChatSession(ValidUserId, title);
         act.Should().Throw<DomainException>()
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    #endregion
+
+    #region Board binding
+
+    [Fact]
+    public void Unbound_BindBoard_BindsExistingSession()
+    {
+        var session = CreateActiveSession();
+
+        session.BindBoard(ValidBoardId);
+
+        session.BoardId.Should().Be(ValidBoardId);
+    }
+
+    [Fact]
+    public void Bound_BindSameBoard_IsIdempotent()
+    {
+        var session = CreateActiveSession(ValidBoardId);
+        var updatedAt = session.UpdatedAt;
+
+        session.BindBoard(ValidBoardId);
+
+        session.BoardId.Should().Be(ValidBoardId);
+        session.UpdatedAt.Should().Be(updatedAt);
+    }
+
+    [Fact]
+    public void Bound_BindDifferentBoard_ThrowsConflict()
+    {
+        var session = CreateActiveSession(ValidBoardId);
+
+        var act = () => session.BindBoard(Guid.NewGuid());
+
+        act.Should().Throw<DomainException>()
+            .Where(error => error.ErrorCode == ErrorCodes.Conflict);
+    }
+
+    [Fact]
+    public void Archived_BindBoard_ThrowsInvalidOperation()
+    {
+        var session = CreateArchivedSession();
+
+        var act = () => session.BindBoard(ValidBoardId);
+
+        act.Should().Throw<DomainException>()
+            .Where(error => error.ErrorCode == ErrorCodes.InvalidOperation);
+    }
+
+    [Fact]
+    public void BindBoard_EmptyBoardId_ThrowsValidationError()
+    {
+        var session = CreateActiveSession();
+
+        var act = () => session.BindBoard(Guid.Empty);
+
+        act.Should().Throw<DomainException>()
+            .Where(error => error.ErrorCode == ErrorCodes.ValidationError);
     }
 
     #endregion
@@ -233,6 +293,36 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public void Messages_SortsByCreatedAtThenId_WhenTrackedCollectionIsScrambled()
+    {
+        var session = CreateActiveSession();
+        var baseTime = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero);
+        var oldest = new ChatMessage(session.Id, ChatMessageRole.User, "Oldest", "text");
+        var tieLaterId = new ChatMessage(session.Id, ChatMessageRole.Assistant, "Tie later", "text");
+        var newest = new ChatMessage(session.Id, ChatMessageRole.User, "Newest", "text");
+        var tieEarlierId = new ChatMessage(session.Id, ChatMessageRole.Assistant, "Tie earlier", "text");
+
+        SetId(oldest, Guid.Parse("00000000-0000-0000-0000-000000000004"));
+        SetId(tieLaterId, Guid.Parse("00000000-0000-0000-0000-000000000003"));
+        SetId(newest, Guid.Parse("00000000-0000-0000-0000-000000000001"));
+        SetId(tieEarlierId, Guid.Parse("00000000-0000-0000-0000-000000000002"));
+        SetCreatedAt(oldest, baseTime);
+        SetCreatedAt(tieLaterId, baseTime.AddMinutes(1));
+        SetCreatedAt(newest, baseTime.AddMinutes(2));
+        SetCreatedAt(tieEarlierId, baseTime.AddMinutes(1));
+
+        // Simulate a provider/ORM collection whose materialization order is unrelated to the
+        // transcript's causal order, including a same-timestamp tie.
+        session.AddMessage(newest);
+        session.AddMessage(tieLaterId);
+        session.AddMessage(oldest);
+        session.AddMessage(tieEarlierId);
+
+        session.Messages.Select(message => message.Content).Should().Equal(
+            "Oldest", "Tie earlier", "Tie later", "Newest");
+    }
+
+    [Fact]
     public void Archived_AddMessage_Throws()
     {
         var session = CreateArchivedSession();
@@ -296,6 +386,12 @@ public class ChatSessionStateMachineTests
 
         session.Title.Should().Be("Archived title update");
     }
+
+    private static void SetId(Entity entity, Guid id)
+        => typeof(Entity).GetProperty(nameof(Entity.Id))!.SetValue(entity, id);
+
+    private static void SetCreatedAt(Entity entity, DateTimeOffset timestamp)
+        => typeof(Entity).GetProperty(nameof(Entity.CreatedAt))!.SetValue(entity, timestamp);
 
     #endregion
 }

@@ -24,7 +24,7 @@ sentence that cannot inherit one of these shipped sources.
 | A workspace is local SQLite data the operator controls; back up its accompanying local configuration/keys too. | [Shipped local-first direction](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L354-L354), [README local-first ownership](../../README.md), and [upgrade guide](../../UPGRADING.md) | Operator | 2026-09-02 |
 | Captured text can become source-linked proposals; the review/apply loop is a separate, explicit user decision. | [Live-verified proposal loop](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L105-L105) | Product maintainer | 2026-09-02 |
 | Untouched v0.3 builds have no automatic usage ping, crash reporter, update check, analytics script, or background destination. Configured LLMs, connectors, webhooks, login, Sentry, and OTLP are separate, user/operator-enabled egress. | [Shipped v0.3 telemetry statement](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L55-L55) and [telemetry policy](../TELEMETRY.md) | Release maintainer | 2026-09-02 |
-| Agent-originated board changes are review-first: proposal, review, approval, then an explicit Apply confirmation. Single-proposal Apply remains a separate action. The API can execute a selected batch of already-Approved proposals, up to 500, and returns an independent outcome for each item without whole-batch rollback; a request with no executable item may collapse to 404/403. The current Paper batch control deliberately offers only the reviewer's own, live, non-deferred, exact-Low, create-card-only approved proposals; other approved proposals retain individual Apply. | [Shipped batch endpoint contract](../../backend/src/Taskdeck.Api/Controllers/AutomationProposalsController.cs), [Paper eligibility boundary](../../frontend/taskdeck-web/src/composables/useBatchExecuteProposals.ts), [per-item receipt shape](../../backend/src/Taskdeck.Application/DTOs/AutomationProposalDtos.cs), [D-4(a) ruling](../STATUS.md#L848), and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Product maintainer | 2026-09-07 |
+| Agent-originated board changes are review-first: proposal, review, approval, then an explicit Apply confirmation. Single-proposal Apply remains a separate action. The API can execute a selected batch of already-Approved proposals, up to 500, and returns an independent outcome for each item without whole-batch rollback. The current Paper batch control covers live, non-deferred Approved proposals: shared-board proposals are eligible regardless of author, while boardless proposals require ownership by the signed-in reviewer. The server rechecks each item's access, status, policy, and approved-revision pin; a request with no executable item may collapse to 404/403. Batch approval remains narrower. | [Shipped batch endpoint contract](../../backend/src/Taskdeck.Api/Controllers/AutomationProposalsController.cs), [batch authorization checks](../../backend/src/Taskdeck.Application/Services/BatchProposalExecutionService.cs), [Paper eligibility boundary](../../frontend/taskdeck-web/src/composables/useBatchExecuteProposals.ts), [per-item receipt shape](../../backend/src/Taskdeck.Application/DTOs/AutomationProposalDtos.cs), [D-4(a) ruling](../STATUS.md#L848), and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Product maintainer | 2026-09-07 |
 | Encrypted backup/restore and connector verification exist for the supported Docker deployment. The recovery objectives are objectives, not measured guarantees. | [Shipped recovery receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L39-L39), [PR #2360](https://github.com/Chris0Jeky/Taskdeck/pull/2360), [PR #2361](https://github.com/Chris0Jeky/Taskdeck/pull/2361), and [disaster-recovery runbook](../ops/DISASTER_RECOVERY_RUNBOOK.md) | Recovery operator | 2026-09-02 |
 | Windows ZIP checksums are published; the current ZIP is unsigned. | [Shipped ZIP/checksum receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L31-L35), [published-artifact journey](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L121-L121), and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Release maintainer | 2026-09-02 |
 | The core is GPL-3.0-only; earlier MIT releases retain the grants already made. | [Shipped licensing record](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L281-L281), [licensing follow-up](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L366-L366), [licensing policy](../../LICENSING.md), [GPL text](../../LICENSE), and [ADR-0050](../decisions/ADR-0050-gplv3-copyleft-core.md) | Maintainer/legal owner | 2026-09-02 |
@@ -122,10 +122,13 @@ them in Review, approve them, and then Apply is a separate confirmation. A
 proposal is not a board mutation. Single-proposal Apply remains explicit. The
 API can execute a selected batch of already-Approved proposals, up to 500 in
 one request, with an independent `Applied`, `Skipped`, or `Failed` outcome for
-each item and no whole-batch rollback. In the current Paper UI, batch Apply is
-deliberately limited to the reviewer's own live, non-deferred, exact-Low,
-create-card-only approved proposals; other approved proposals use individual
-Apply. A request with no executable item may collapse to 404/403.
+each item and no whole-batch rollback. In the current Paper UI, batch Apply
+covers live, non-deferred Approved proposals. Shared-board proposals are eligible
+regardless of author; boardless proposals require ownership by the signed-in
+reviewer. The server rechecks each item's access, status, policy, and
+approved-revision pin. Batch Apply still requires explicit confirmation, accepts
+up to 500 selected proposals, and a request with no executable item may collapse
+to 404/403. Batch approval remains narrower.
 
 The Windows artifact is currently unsigned, so SmartScreen may say “Windows
 protected your PC.” Only continue after downloading from the official release
@@ -178,11 +181,13 @@ or speaker diarization, artefact extraction is not wired to a request path, and
 MFA TOTP seeds remain unencrypted at rest in its single-node SQLite data. There
 is no hosted instance. Single-proposal Apply remains explicit. The API can
 execute a selected batch of already-Approved proposals, up to 500, and reports
-`Applied`, `Skipped`, or `Failed` independently for each item; the current
-Paper UI deliberately limits batch Apply to the reviewer's own live,
-non-deferred, exact-Low, create-card-only approved proposals. Other approved
-proposals use individual Apply; a request with no executable item may collapse
-to 404/403.
+`Applied`, `Skipped`, or `Failed` independently for each item; the current Paper
+UI covers live, non-deferred Approved proposals. Shared-board proposals are
+eligible regardless of author; boardless proposals require ownership by the
+signed-in reviewer. The server rechecks each item's access, status, policy, and
+approved-revision pin. Batch Apply still requires explicit confirmation, accepts
+up to 500 selected proposals, and a request with no executable item may collapse
+to 404/403. Batch approval remains narrower.
 
 **First comment:**
 
@@ -192,10 +197,13 @@ extraction is not wired to a request path, and MFA TOTP seeds remain unencrypted
 at rest in the single-node SQLite data. Single-proposal Apply remains explicit.
 The API can execute a selected batch of already-Approved proposals, up to 500,
 and returns `Applied`, `Skipped`, or `Failed` for each item without rolling back
-successful neighbours. The current Paper UI deliberately limits batch Apply to
-the reviewer's own live, non-deferred, exact-Low, create-card-only approved
-proposals; other approved proposals use individual Apply. A request with no
-executable item may collapse to 404/403.
+successful neighbours. The current Paper UI covers live, non-deferred Approved
+proposals. Shared-board proposals are eligible regardless of author; boardless
+proposals require ownership by the signed-in reviewer. The server rechecks each
+item's access, status, policy, and approved-revision pin. Batch Apply still
+requires explicit confirmation, accepts up to 500 selected proposals, and a
+request with no executable item may collapse to 404/403. Batch approval remains
+narrower.
 Use the [approved public release page](https://github.com/Chris0Jeky/taskdeck-release/releases)
 and [public security policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/SECURITY.md);
 there is no hosted instance and the public support route is available only after
@@ -245,10 +253,12 @@ MFA TOTP seeds remain unencrypted at rest in the single-node SQLite data. There
 is no hosted instance. Single-proposal Apply remains explicit; a separate
 batch Apply can execute a selected set of already-Approved proposals, up to
 500, and reports `Applied`, `Skipped`, or `Failed` independently for each item.
-The current Paper UI deliberately limits batch Apply to the reviewer's own live,
-non-deferred, exact-Low, create-card-only approved proposals. Other approved
-proposals use individual Apply; a request with no executable item may collapse
-to 404/403.
+The current Paper UI covers live, non-deferred Approved proposals. Shared-board
+proposals are eligible regardless of author; boardless proposals require
+ownership by the signed-in reviewer. The server rechecks each item's access,
+status, policy, and approved-revision pin. Batch Apply still requires explicit
+confirmation, accepts up to 500 selected proposals, and a request with no
+executable item may collapse to 404/403. Batch approval remains narrower.
 
 ### awesome-selfhosted — do not submit yet
 
@@ -274,10 +284,13 @@ rest. The release does not ingest audio or diarize speakers, and artefact
 extraction is not wired to a request path. Single-proposal Apply remains
 explicit. The API can execute a selected batch of already-Approved proposals,
 up to 500, with an independent `Applied`, `Skipped`, or `Failed` outcome for
-each item. The current Paper UI deliberately limits batch Apply to the
-reviewer's own live, non-deferred, exact-Low, create-card-only approved
-proposals. Other approved proposals use individual Apply; a request with no
-executable item may collapse to 404/403. Use the
+each item. The current Paper UI covers live, non-deferred Approved proposals.
+Shared-board proposals are eligible regardless of author; boardless proposals
+require ownership by the signed-in reviewer. The server rechecks each item's
+access, status, policy, and approved-revision pin. Batch Apply still requires
+explicit confirmation, accepts up to 500 selected proposals, and a request with
+no executable item may collapse to 404/403. Batch approval remains narrower.
+Use the
 [approved public source and release mirror](https://github.com/Chris0Jeky/taskdeck-release)
 and its [public security policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/SECURITY.md)
 after the publication gate has passed.
@@ -322,10 +335,13 @@ policy summary, not legal advice.
 - Apply remains an explicit action for one proposal. The API's separate batch
   Apply path accepts a selected set of already-Approved proposals, up to 500
   per request, and returns `Applied`, `Skipped`, or `Failed` independently for
-  each item; there is no whole-batch rollback. The current Paper UI deliberately
-  limits batch Apply to the reviewer's own live, non-deferred, exact-Low,
-  create-card-only approved proposals. Other approved proposals use individual
-  Apply.
+each item; there is no whole-batch rollback. The current Paper UI covers live,
+non-deferred Approved proposals. Shared-board proposals are eligible regardless
+of author; boardless proposals require ownership by the signed-in reviewer.
+Batch Apply still requires explicit confirmation, accepts up to 500 selected
+proposals, and reports independent outcomes without whole-batch rollback. The
+server rechecks each item's access, status, policy, and approved-revision pin;
+batch approval remains narrower.
 - There is no hosted instance. Do not turn the v0.4 direction into a current
   availability claim.
 
@@ -364,9 +380,11 @@ policy summary, not legal advice.
 > it. Known limits include no audio ingestion/diarization, unwired artefact
 > extraction, unencrypted TOTP seeds at rest, and explicit single/batch Apply.
 > The API batch is bounded at 500 selected already-Approved proposals and
-> reports an independent result for each item. The current Paper UI limits it
-> to the reviewer's own live, non-deferred, exact-Low, create-card-only approved
-> proposals. Please
+> reports an independent result for each item. The current Paper UI covers live,
+> non-deferred Approved proposals. Shared-board proposals are eligible regardless
+> of author; boardless proposals require ownership by the signed-in reviewer.
+> Batch Apply still requires explicit confirmation, and the server rechecks each
+> item's access, status, policy, and approved-revision pin. Please
 > report reproducible non-security bugs with redacted steps; never post
 > secrets, keys, or private workspace data. Suspected vulnerabilities must not
 > be posted as a public issue, discussion, or PR; use the private

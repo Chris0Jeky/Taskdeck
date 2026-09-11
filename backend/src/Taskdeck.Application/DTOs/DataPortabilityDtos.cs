@@ -28,7 +28,30 @@ public record UserDataExportContentDto(
     UserDataExportNotificationPreferencesDto? NotificationPreferences,
     IReadOnlyList<UserDataExportProposalFeedbackDto> ProposalFeedback,
     IReadOnlyList<UserDataExportArtefactDto>? Artefacts = null,
-    IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null);
+    IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null,
+    IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
+    IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
+    IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null,
+    SourceStorageExportDto? SourceStorage = null,
+    IReadOnlyList<CardDto>? Cards = null);
+
+public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
+
+public record UserDataExportWorkspaceMemoryDto(
+    Guid Id, Guid BoardId, Guid? InsightId, Guid? SourceCardId, Guid? SourceLayerId,
+    long? SourceDeckRevision, string? SourceQuestionHash, string Title, string Text,
+    string OriginalText, string? OriginalEvidence, string Status, bool Archived, int Revision,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<UserDataExportWorkspaceMemoryRevisionDto> History,
+    Guid? SourceCaptureId = null, Guid? AnswerSourceAssetId = null, Guid? EvidenceSourceAssetId = null);
+
+public record UserDataExportWorkspaceMemoryRevisionDto(
+    Guid Id, Guid MemoryId, string Title, string Text, string Status, bool Archived, int Revision,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, Guid? AnswerSourceAssetId = null);
+
+public record UserDataExportQuietInsightDto(
+    Guid Id, Guid BoardId, Guid? CardId, Guid? MemoryId, string Rule, string TargetKey,
+    string Title, string Detail, string Evidence, string State, DateTimeOffset CheckedAt,
+    DateTimeOffset? SnoozeUntil, int Revision, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 /// <summary>
 /// A portable normalized transcript. <see cref="Text"/> remains the only
@@ -132,7 +155,8 @@ public record UserDataExportSourceAssetDto(
     string? OriginalName,
     Guid? SupersedesAssetId,
     Guid? SupersededByAssetId,
-    string? Text);
+    string? Text,
+    Guid? BlobReferenceId = null);
 
 public record UserDataExportCaptureDispositionDto(
     string Kind,
@@ -175,7 +199,11 @@ public record UserDataExportAuditEntryDto(
 
 public record UserDataExportPreferencesDto(
     string WorkspaceMode,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Taskdeck.Domain.Entities.PersonalPlan? PersonalPlan = null,
+    long PersonalPlanRevision = 0,
+    Taskdeck.Domain.Entities.WorkspaceAttention? Attention = null,
+    long AttentionRevision = 0);
 
 public record UserDataExportNotificationPreferencesDto(
     bool InAppChannelEnabled,
@@ -205,4 +233,7 @@ public record AccountDeletionResultDto(
     int PreferencesDeleted,
     int ArtefactsDeleted = 0,
     int TranscriptsDeleted = 0,
-    int DurableCapturesDeleted = 0);
+    int DurableCapturesDeleted = 0,
+    int WorkspaceMemoriesDeleted = 0,
+    int WorkspaceMemoryRevisionsDeleted = 0,
+    int QuietInsightsDeleted = 0);

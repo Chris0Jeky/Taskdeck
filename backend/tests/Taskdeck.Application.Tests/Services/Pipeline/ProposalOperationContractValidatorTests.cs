@@ -13,6 +13,55 @@ namespace Taskdeck.Application.Tests.Services.Pipeline;
 public class ProposalOperationContractValidatorTests
 {
     [Fact]
+    public async Task WorkItemType_RequiresValidTypeCurrentVersionAndOneWrite()
+    {
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "Type proposal");
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        unit.Setup(u => u.Cards).Returns(cards.Object);
+        cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        var valid = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Epic", expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [valid])).IsSuccess.Should().BeTrue();
+        var missing = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Epic" });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [missing])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        var invalid = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Question", expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [invalid])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        var stale = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt.AddMinutes(-1) });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [stale])).ErrorCode.Should().Be(ErrorCodes.Conflict);
+        var second = CreateOperation(1, "update", card.Id, new { cardId = card.Id, title = "Other" });
+        foreach (var operations in new[] { new[] { valid, second }, new[] { second, valid } })
+            (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, operations)).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        card.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Task);
+    }
+
+    [Fact]
+    public async Task Lifecycle_RejectsStaleApprovalMissingTimestampAndMixedWrites_AndAcceptsCurrentVersion()
+    {
+        var boardId = Guid.NewGuid();
+        var board = new Board("Hierarchy");
+        boardId = board.Id;
+        var card = new Card(boardId, Guid.NewGuid(), "Lifecycle validation");
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        unit.Setup(u => u.Cards).Returns(cards.Object);
+        cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        var boards = new Mock<IBoardRepository>();
+        unit.SetupGet(u => u.Boards).Returns(boards.Object);
+        boards.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        cards.Setup(r => r.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { card });
+        var valid = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [valid])).IsSuccess.Should().BeTrue();
+        var missing = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [missing])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        var stale = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt.AddMinutes(-1) });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [stale])).ErrorCode.Should().Be(ErrorCodes.Conflict);
+        var second = CreateOperation(1, "archive", card.Id, new { cardId = card.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [valid, second])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        card.Archive();
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [second])).ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+    }
+    [Fact]
     public async Task ValidateAsync_ShouldCacheBoundedEntityLookupsAcrossOperations()
     {
         var boardId = Guid.NewGuid();

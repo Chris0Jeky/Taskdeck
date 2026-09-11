@@ -1,4 +1,5 @@
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.DTOs;
 
@@ -21,14 +22,24 @@ public record ExportBoardDto(
     IEnumerable<LabelDto> Labels,
     IEnumerable<BoardAccessDto> Accesses,
     DateTimeOffset ExportedAt,
-    string ExportedBy);
+    string ExportedBy,
+    IReadOnlyList<ExportThinkingDeckDto>? ThinkingDecks = null,
+    IReadOnlyList<CardDependency>? Dependencies = null);
+
+// The envelope deliberately has no top-level board/name: older importers reject it
+// instead of importing the cards while silently discarding their relationships.
+public sealed record BoardExportEnvelope(string Format, int Version, ExportBoardDto Payload);
+
+public sealed record ThinkingMaterialDto(int SchemaVersion, IReadOnlyList<ThinkingLayer> Layers);
+public sealed record ExportThinkingDeckDto(Guid CardId, ThinkingMaterialDto Material);
 
 public record ImportBoardDto(
     string Name,
     string? Description,
     IEnumerable<ImportColumnDto> Columns,
     IEnumerable<ImportCardDto> Cards,
-    IEnumerable<ImportLabelDto> Labels);
+    IEnumerable<ImportLabelDto> Labels,
+    IReadOnlyList<CardDependency>? Dependencies = null);
 
 public record ImportColumnDto(
     string Name,
@@ -41,7 +52,8 @@ public record ImportCardDto(
     string ColumnName,
     int Position,
     DateTimeOffset? DueDate,
-    IEnumerable<string>? Labels);
+    IEnumerable<string>? Labels,
+    ThinkingMaterialDto? Thinking = null, Guid? SourceId = null, bool IsArchived = false, string WorkItemType = "Task", Guid? ParentCardId = null);
 
 public record ImportLabelDto(
     string Name,

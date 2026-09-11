@@ -17,6 +17,276 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
+    [Theory]
+    [InlineData("remove")]
+    [InlineData("reparent")]
+    [InlineData("restore-archived")]
+    public async Task Hierarchy_ChildMembershipOrArchivedVersionChangeInvalidatesApproval(string change)
+    {
+        var board = await CreateBoardAsync(); var column = await CreateColumnAsync(board.Id, "Pins", null);
+        var path = $"/api/boards/{board.Id}/cards";
+        async Task<CardDto> Create(string title, Guid? parent = null)
+        {
+            var response = await _client.PostAsJsonAsync(path, new CreateCardDto(board.Id, column.Id, title, null, null, null, ParentCardId: parent));
+            response.EnsureSuccessStatusCode(); return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+        var parent = await Create("Parent"); var other = await Create("Other parent"); var child = await Create("Child", parent.Id);
+        if (change == "restore-archived")
+            child = (await (await _client.PostAsJsonAsync(path + $"/{child.Id}/archive", new { expectedUpdatedAt = child.UpdatedAt })).Content.ReadFromJsonAsync<CardDto>())!;
+        var preview = (await _client.GetFromJsonAsync<CardDetachPreviewDto>(path + $"/{parent.Id}/detach-preview"))!;
+        if (change == "remove") (await _client.DeleteAsync(path + $"/{child.Id}")).EnsureSuccessStatusCode();
+        else if (change == "reparent") (await _client.PatchAsJsonAsync(path + $"/{child.Id}", new { parentCardId = other.Id, expectedUpdatedAt = child.UpdatedAt })).EnsureSuccessStatusCode();
+        else (await _client.PostAsJsonAsync(path + $"/{child.Id}/restore", new { expectedUpdatedAt = child.UpdatedAt })).EnsureSuccessStatusCode();
+        (await _client.PostAsJsonAsync(path + $"/{parent.Id}/archive", preview)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.GetFromJsonAsync<CardDto>(path + $"/{parent.Id}"))!.IsArchived.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Hierarchy_RejectsAnonymousViewerForeignParentsAndForeignPreview()
+    {
+        var board = await CreateBoardAsync(); var column = await CreateColumnAsync(board.Id, "Access", null);
+        var response = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards", new CreateCardDto(board.Id, column.Id, "Private", null, null, null));
+        var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        var foreign = await CreateBoardAsync(); var foreignColumn = await CreateColumnAsync(foreign.Id, "Foreign", null);
+        var foreignResponse = await _client.PostAsJsonAsync($"/api/boards/{foreign.Id}/cards", new CreateCardDto(foreign.Id, foreignColumn.Id, "Foreign", null, null, null));
+        var foreignCard = (await foreignResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        var path = $"/api/boards/{board.Id}/cards/{card.Id}";
+        (await _client.PatchAsJsonAsync(path, new { parentCardId = foreignCard.Id, expectedUpdatedAt = card.UpdatedAt })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var anonymous = _factory.CreateClient();
+        (await anonymous.GetAsync(path + "/detach-preview")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var outsider = _factory.CreateClient(); var viewer = await ApiTestHarness.AuthenticateAsync(outsider, "hierarchy-viewer");
+        (await outsider.GetAsync(path + "/detach-preview")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await _client.PostAsJsonAsync($"/api/boards/{board.Id}/access", new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer))).EnsureSuccessStatusCode();
+        (await outsider.PatchAsJsonAsync(path, new { clearParent = true, expectedUpdatedAt = card.UpdatedAt })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await outsider.GetAsync(path + "/detach-preview")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Hierarchy_AssignmentDepthAndRemovalKeepIdentityAndRequireVersion()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Hierarchy", null);
+        var path = $"/api/boards/{board.Id}/cards";
+        var cards = new List<CardDto>();
+        for (var i = 0; i < 4; i++)
+        {
+            var response = await _client.PostAsJsonAsync(path, new { columnId = column.Id, title = $"Level {i}",
+                parentCardId = cards.LastOrDefault()?.Id, workItemType = i % 2 == 0 ? "Spike" : "Epic" });
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            cards.Add((await response.Content.ReadFromJsonAsync<CardDto>())!);
+        }
+        (await _client.PostAsJsonAsync(path, new { columnId = column.Id, title = "Too deep", parentCardId = cards[3].Id }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PatchAsJsonAsync(path + $"/{cards[0].Id}", new { parentCardId = cards[3].Id, expectedUpdatedAt = cards[0].UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PatchAsJsonAsync(path + $"/{cards[1].Id}", new { clearParent = true }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var removed = await _client.PatchAsJsonAsync(path + $"/{cards[1].Id}", new { clearParent = true, expectedUpdatedAt = cards[1].UpdatedAt });
+        removed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var detached = (await removed.Content.ReadFromJsonAsync<CardDto>())!;
+        detached.ParentCardId.Should().BeNull();
+        detached.Id.Should().Be(cards[1].Id);
+        detached.ColumnId.Should().Be(cards[1].ColumnId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Hierarchy_ArchiveAndDeleteRequireExactVisibleChildrenIncludingArchived(bool delete)
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Detachment", null);
+        var path = $"/api/boards/{board.Id}/cards";
+        async Task<CardDto> Create(string title, Guid? parent = null)
+        {
+            var response = await _client.PostAsJsonAsync(path, new { columnId = column.Id, title, parentCardId = parent });
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+        var parent = await Create("Parent");
+        var child = await Create("Archived child", parent.Id);
+        (await _client.PostAsJsonAsync(path + $"/{child.Id}/archive", new { expectedUpdatedAt = child.UpdatedAt })).EnsureSuccessStatusCode();
+        var preview = (await _client.GetFromJsonAsync<CardDetachPreviewDto>(path + $"/{parent.Id}/detach-preview"))!;
+        preview.Children.Should().ContainSingle().Which.IsArchived.Should().BeTrue();
+        async Task<HttpResponseMessage> Apply(CardDetachPreviewDto pin) => delete
+            ? await _client.DeleteAsync(path + $"/{parent.Id}?expectedUpdatedAt={Uri.EscapeDataString(pin.ExpectedUpdatedAt.ToString("O"))}&expectedChildrenFingerprint={pin.ExpectedChildrenFingerprint}")
+            : await _client.PostAsJsonAsync(path + $"/{parent.Id}/archive", pin);
+        var added = await Create("Added after preview", parent.Id);
+        (await Apply(preview)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        preview = (await _client.GetFromJsonAsync<CardDetachPreviewDto>(path + $"/{parent.Id}/detach-preview"))!;
+        (await _client.PatchAsJsonAsync(path + $"/{added.Id}", new { title = "Edited after preview", expectedUpdatedAt = added.UpdatedAt })).EnsureSuccessStatusCode();
+        (await Apply(preview)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        preview = (await _client.GetFromJsonAsync<CardDetachPreviewDto>(path + $"/{parent.Id}/detach-preview"))!;
+        preview.Children.Should().HaveCount(2);
+        (await Apply(preview)).EnsureSuccessStatusCode();
+        var archived = (await _client.GetFromJsonAsync<CardDto>(path + $"/{child.Id}"))!;
+        archived.ParentCardId.Should().BeNull();
+        archived.IsArchived.Should().BeTrue();
+        archived.ColumnId.Should().Be(child.ColumnId);
+        if (!delete)
+        {
+            var current = (await _client.GetFromJsonAsync<CardDto>(path + $"/{parent.Id}"))!;
+            (await _client.PostAsJsonAsync(path + $"/{parent.Id}/restore", new { expectedUpdatedAt = current.UpdatedAt })).EnsureSuccessStatusCode();
+            (await _client.GetFromJsonAsync<CardDto>(path + $"/{added.Id}"))!.ParentCardId.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public async Task WorkItemType_OmittedPayloadsPreserveDefaultsAndArchivedOrForeignCardsRejectWrites()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Type guards", null);
+        var response = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new { columnId = column.Id, title = "Default" });
+        var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        card.WorkItemType.Should().Be("Task");
+        var path = $"/api/boards/{board.Id}/cards/{card.Id}";
+        var changed = await _client.PatchAsJsonAsync(path, new { workItemType = "Epic", expectedUpdatedAt = card.UpdatedAt });
+        card = (await changed.Content.ReadFromJsonAsync<CardDto>())!;
+        var titleOnly = await _client.PatchAsJsonAsync(path, new { title = "Keep type" });
+        card = (await titleOnly.Content.ReadFromJsonAsync<CardDto>())!;
+        card.WorkItemType.Should().Be("Epic");
+        var otherBoard = await CreateBoardAsync();
+        (await _client.PatchAsJsonAsync($"/api/boards/{otherBoard.Id}/cards/{card.Id}",
+            new { workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _client.PatchAsJsonAsync(path, new { title = "Must not change", workItemType = "Question", expectedUpdatedAt = card.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.GetFromJsonAsync<CardDto>(path))!.Title.Should().Be("Keep type");
+        using var anonymous = _factory.CreateClient();
+        await ApiTestHarness.AssertUnauthorizedAsync(await anonymous.PatchAsJsonAsync(path,
+            new { workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt }));
+        var archivedResponse = await _client.PostAsJsonAsync(path + "/archive", new { expectedUpdatedAt = card.UpdatedAt });
+        var archived = (await archivedResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        (await _client.PatchAsJsonAsync(path, new { workItemType = "Spike", expectedUpdatedAt = archived.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        archived.WorkItemType.Should().Be("Epic");
+        await ApiTestHarness.AuthenticateAsync(_client, "type-outsider");
+        await ApiTestHarness.AssertForbiddenAsync(await _client.PatchAsJsonAsync(path,
+            new { workItemType = "Spike", expectedUpdatedAt = archived.UpdatedAt }));
+    }
+
+    [Fact]
+    public async Task WorkItemType_RoundTripsAndRejectsUnknownOrUnversionedChanges()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Types", null);
+        var path = $"/api/boards/{board.Id}/cards";
+        var response = await _client.PostAsJsonAsync(path,
+            new { columnId = column.Id, title = "An epic", workItemType = "Epic" });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        card.WorkItemType.Should().Be("Epic");
+        (await _client.PostAsJsonAsync(path, new { columnId = column.Id, title = "Invalid", workItemType = "Mystery" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PatchAsJsonAsync(path + $"/{card.Id}", new { workItemType = "Spike" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var changed = await _client.PatchAsJsonAsync(path + $"/{card.Id}",
+            new { workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt });
+        changed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var spike = (await changed.Content.ReadFromJsonAsync<CardDto>())!;
+        spike.WorkItemType.Should().Be("Spike");
+        spike.Id.Should().Be(card.Id);
+        spike.ColumnId.Should().Be(card.ColumnId);
+        (await _client.PatchAsJsonAsync(path + $"/{card.Id}",
+            new { workItemType = "Task", expectedUpdatedAt = card.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.GetFromJsonAsync<CardDto>(path + $"/{card.Id}"))!.WorkItemType.Should().Be("Spike");
+    }
+
+    [Fact]
+    public async Task CardLifecycle_RejectsMissingVersionArchivedWritesFullRestoreAndArchivedBoard()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "One active", wipLimit: 1);
+        var created = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Archive guard", null, null, null));
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        var path = $"/api/boards/{board.Id}/cards/{card.Id}";
+        (await _client.PostAsJsonAsync(path + "/archive", new { })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var archivedResponse = await _client.PostAsJsonAsync(path + "/archive", new { expectedUpdatedAt = card.UpdatedAt });
+        var archived = (await archivedResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        (await _client.GetFromJsonAsync<CardDto>(path))!.IsArchived.Should().BeTrue();
+        (await _client.PatchAsJsonAsync(path, new UpdateCardDto("No", null, null, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.PatchAsJsonAsync(path, new UpdateCardDto(null, null, null, null, null, [])))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.PostAsJsonAsync(path + "/move", new MoveCardDto(column.Id, 0)))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.DeleteAsync($"/api/boards/{board.Id}/columns/{column.Id}"))
+            .StatusCode.Should().NotBe(HttpStatusCode.NoContent, "archived placement must remain recoverable");
+        (await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Active control", null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        var beforeFailedRestore = (await _client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{board.Id}/dependencies"))!;
+        (await _client.PostAsJsonAsync(path + "/restore", new { expectedUpdatedAt = archived.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.GetFromJsonAsync<CardDto>(path)).Should().BeEquivalentTo(archived);
+        (await _client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{board.Id}/dependencies"))
+            .Should().BeEquivalentTo(beforeFailedRestore);
+        await _client.PutAsJsonAsync($"/api/boards/{board.Id}", new UpdateBoardDto(null, null, true));
+        (await _client.PostAsJsonAsync(path + "/restore", new { expectedUpdatedAt = archived.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task CardLifecycle_EnforcesClaimsBoardAccessAndWrongBoardIsolation()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Protected", null);
+        var created = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Private", null, null, null));
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        var secondBoard = await CreateBoardAsync();
+        var payload = new { expectedUpdatedAt = card.UpdatedAt };
+        foreach (var action in new[] { "archive", "restore" })
+        {
+            (await _client.PostAsJsonAsync($"/api/boards/{secondBoard.Id}/cards/{card.Id}/{action}", payload))
+                .StatusCode.Should().Be(HttpStatusCode.NotFound);
+            using var anonymous = _factory.CreateClient();
+            await ApiTestHarness.AssertUnauthorizedAsync(await anonymous.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/cards/{card.Id}/{action}", payload));
+        }
+        await ApiTestHarness.AuthenticateAsync(_client, "lifecycle-outsider");
+        foreach (var action in new[] { "archive", "restore" })
+            await ApiTestHarness.AssertForbiddenAsync(await _client.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/cards/{card.Id}/{action}", payload));
+        await ApiTestHarness.AssertForbiddenAsync(await _client.GetAsync($"/api/boards/{board.Id}/cards/archived"));
+        await ApiTestHarness.AssertForbiddenAsync(await _client.GetAsync($"/api/boards/{board.Id}/cards/{card.Id}"));
+    }
+
+    [Fact]
+    public async Task CardLifecycle_ShouldArchiveAndRestoreInPlace_WithoutChangingLegacyBlockState()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Archive lifecycle", wipLimit: null);
+        var created = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Keep my history", "Original", null, null));
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        var response = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{card.Id}/archive",
+            new { expectedUpdatedAt = card.UpdatedAt });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var archived = await response.Content.ReadFromJsonAsync<JsonElement>();
+        archived.GetProperty("isArchived").GetBoolean().Should().BeTrue();
+        archived.GetProperty("isBlocked").GetBoolean().Should().BeFalse();
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!
+            .Should().NotContain(c => c.Id == card.Id);
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards/archived"))!
+            .Should().ContainSingle(c => c.Id == card.Id);
+        var staleRestore = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{card.Id}/restore",
+            new { expectedUpdatedAt = card.UpdatedAt });
+        staleRestore.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var restored = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{card.Id}/restore",
+            new { expectedUpdatedAt = archived.GetProperty("updatedAt").GetDateTimeOffset() });
+        restored.StatusCode.Should().Be(HttpStatusCode.OK);
+        var restoredCard = (await restored.Content.ReadFromJsonAsync<CardDto>())!;
+        restoredCard.Id.Should().Be(card.Id);
+        restoredCard.ColumnId.Should().Be(column.Id);
+        restoredCard.Description.Should().Be("Original");
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!
+            .Should().ContainSingle(c => c.Id == card.Id);
+    }
+
     public CardsApiTests(TestWebApplicationFactory factory)
     {
         _factory = factory;

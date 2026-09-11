@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
+import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
 import { useViewportMode } from '../../composables/useViewportMode'
 import PaperBoardColumn from './PaperBoardColumn.vue'
@@ -78,6 +80,9 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
+const session = useSessionStore()
+const layout = useWorkspaceLayoutStore()
+const boardPresentation = computed(() => layout.experience === 'classic' ? 'classic' : layout.presentation)
 const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
@@ -96,11 +101,12 @@ const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
 const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
 const cardEditorDirty = ref(false)
+const routeDiscarding = ref(false)
 type BoardDensity = 'comfortable' | 'compact'
 const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
 const BOARD_COLUMN_WIDTH_KEY = 'td.paper.board-column-width.v1'
-const BOARD_COLLAPSED_COLUMNS_KEY = 'td.paper.board-collapsed-columns.v1'
+const BOARD_COLLAPSED_COLUMNS_KEY = 'td.paper.board-collapsed-columns.v2'
 /*
  * Card detail is a *presentation* preference, not a card prop: `titles` hides
  * the excerpt and the meta row through the board's own scoped rules while every
@@ -187,6 +193,28 @@ function parseCollapsedColumnIds(value: string | null): Set<string> {
   }
 }
 
+/**
+ * Collapsing a lane is an individual workspace preference. The old v1 key was
+ * shared by every account using the browser profile, so it is deliberately not
+ * migrated into whichever account happens to load the board first. Until an
+ * authenticated identity is available the preference remains session-local.
+ */
+function collapsedColumnsStorageKey(userId: string | null | undefined): string | null {
+  const normalizedUserId = userId?.trim()
+  return normalizedUserId ? `${BOARD_COLLAPSED_COLUMNS_KEY}:${normalizedUserId}` : null
+}
+
+function readCollapsedColumnIds(userId: string | null | undefined): Set<string> {
+  const storageKey = collapsedColumnsStorageKey(userId)
+  if (!storageKey) return new Set()
+
+  try {
+    return parseCollapsedColumnIds(window.localStorage.getItem(storageKey))
+  } catch {
+    return new Set()
+  }
+}
+
 onMounted(() => {
   try {
     density.value = window.localStorage.getItem(BOARD_DENSITY_KEY) === 'compact'
@@ -211,15 +239,16 @@ onMounted(() => {
   } catch {
     cardDetail.value = DEFAULT_BOARD_CARD_DETAIL
   }
-  try {
-    persistedCollapsedColumnIds.value = parseCollapsedColumnIds(
-      window.localStorage.getItem(BOARD_COLLAPSED_COLUMNS_KEY),
-    )
-  } catch {
-    persistedCollapsedColumnIds.value = new Set()
-  }
+  persistedCollapsedColumnIds.value = readCollapsedColumnIds(session.userId)
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
+
+watch(
+  () => session.userId,
+  (userId) => {
+    persistedCollapsedColumnIds.value = readCollapsedColumnIds(userId)
+  },
+)
 
 function toggleDensity() {
   density.value = density.value === 'compact' ? 'comfortable' : 'compact'
@@ -280,11 +309,11 @@ function toggleColumnCollapse(column: Column) {
   }
   persistedCollapsedColumnIds.value = next
 
+  const storageKey = collapsedColumnsStorageKey(session.userId)
+  if (!storageKey) return
+
   try {
-    window.localStorage.setItem(
-      BOARD_COLLAPSED_COLUMNS_KEY,
-      JSON.stringify([...next].sort()),
-    )
+    window.localStorage.setItem(storageKey, JSON.stringify([...next].sort()))
   } catch {
     // Local fallback only. The collapse remains active for this mounted board.
   }
@@ -313,6 +342,7 @@ const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard
 watch(boardId, () => {
   selectedCard.value = null
   pendingCard.value = null
+  routeDiscarding.value = false
   cardEditorDirty.value = false
   // Switching boards must not carry a half-typed card draft, an open column
   // dialog, or an error banner across to a board they do not belong to.
@@ -410,6 +440,8 @@ function onLaneDragStart(column: Column, event: DragEvent) {
 }
 
 function openCard(card: Card) {
+  routeDiscarding.value = false
+
   if (selectedCard.value?.id === card.id) return
   if (selectedCard.value && cardEditorDirty.value) {
     pendingCard.value = card
@@ -419,6 +451,7 @@ function openCard(card: Card) {
 }
 
 function closeCard() {
+  routeDiscarding.value = false
   pendingNavigation.value?.resolve(false)
   pendingNavigation.value = null
   selectedCard.value = null
@@ -442,6 +475,7 @@ function closeCard() {
  * other two exits from this dialog use.
  */
 function handleCardUpdated() {
+  routeDiscarding.value = false
   const navigation = pendingNavigation.value
   pendingNavigation.value = null
   cardEditorDirty.value = false
@@ -453,12 +487,13 @@ function handleCardEditorDirtyChange(dirty: boolean) {
 }
 
 function cancelPendingDiscard() {
+  routeDiscarding.value = false
   pendingCard.value = null
   pendingNavigation.value?.resolve(false)
   pendingNavigation.value = null
 }
 
-function confirmPendingDiscard() {
+async function confirmPendingDiscard() {
   const cardToOpen = pendingCard.value
   const navigation = pendingNavigation.value
   pendingCard.value = null
@@ -469,6 +504,8 @@ function confirmPendingDiscard() {
     return
   }
   if (navigation) {
+    routeDiscarding.value = true
+    await nextTick()
     selectedCard.value = null
     navigation.resolve(true)
   }
@@ -476,7 +513,16 @@ function confirmPendingDiscard() {
 
 function guardDirtyNavigation(): boolean | Promise<boolean> {
   if (!selectedCard.value || !cardEditorDirty.value) return true
-  if (discardDialogOpen.value) return false
+
+  // Router navigation can be requested again while the discard confirmation is
+  // open (for example, a second board link before the first choice). The first
+  // request is no longer the user's intent, so settle it and let the newest
+  // request own the single confirmation rather than leaving a stale route
+  // promise behind the dialog.
+  pendingNavigation.value?.resolve(false)
+  pendingNavigation.value = null
+  pendingCard.value = null
+
   return new Promise<boolean>((resolve) => {
     pendingNavigation.value = { resolve }
   })
@@ -791,9 +837,10 @@ async function addStarterColumns() {
   <div
     class="paper-board-view"
     data-surface="paper-board"
-    :data-density="density"
+    :data-density="boardPresentation === 'control' ? 'compact' : boardPresentation === 'zen' ? 'comfortable' : density"
+    :data-presentation="boardPresentation"
     :data-column-width="columnWidth"
-    :data-card-detail="cardDetail"
+    :data-card-detail="boardPresentation === 'classic' ? cardDetail : 'full'"
   >
     <div class="paper-board-view__inner">
       <header class="paper-board-view__head">
@@ -830,6 +877,7 @@ async function addStarterColumns() {
             </select>
           </label>
           <PaperHLBtn
+            v-if="boardPresentation === 'classic' || boardPresentation === 'studio'"
             :label="t('boardDetail.actions.compactDensity')"
             :aria-label="t('boardDetail.actions.compactDensityAria')"
             :aria-pressed="density === 'compact'"
@@ -846,6 +894,7 @@ async function addStarterColumns() {
             let its own activation keys through would fire a shortcut too.
           -->
           <PaperHLBtn
+            v-if="boardPresentation === 'classic'"
             :label="t('boardDetail.actions.titlesOnly')"
             :aria-label="t('boardDetail.actions.titlesOnlyAria')"
             :aria-pressed="cardDetail === 'titles'"
@@ -996,6 +1045,7 @@ async function addStarterColumns() {
             :cards="cardsByColumn.get(column.id) ?? []"
             :collapsed="isColumnCollapsed(column.id)"
             :card-variant="props.cardVariant"
+            :presentation="boardPresentation"
             :style="columnWidthStyle"
             :is-drag-over="dragOverColumnId === column.id"
             :selected-card-id="activeSelectedCardId"
@@ -1086,6 +1136,8 @@ async function addStarterColumns() {
           :is-open="Boolean(selectedCard)"
           :labels="boardStore.currentBoardLabels"
           :presentation="cardPresentation"
+          :suppress-discard-prompt="discardDialogOpen"
+          :skip-focus-restore="routeDiscarding"
           @close="closeCard"
           @updated="handleCardUpdated"
           @dirty-change="handleCardEditorDirtyChange"

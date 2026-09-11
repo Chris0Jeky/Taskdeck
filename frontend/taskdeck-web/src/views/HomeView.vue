@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, defineComponent, h, onActivated, onMounted } from 'vue'
+import { computed, defineAsyncComponent, defineComponent, h, onActivated, onMounted, ref, watch } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import PersonalPlanResume from '../components/workspace/PersonalPlanResume.vue'
 import { TdSkeleton } from '../components/ui'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { usePaperThemeStore } from '../store/paperThemeStore'
+import { useWorkspaceLayoutStore } from '../store/workspaceLayoutStore'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
 import type { HomeRecommendedAction, WorkspaceOnboarding } from '../types/workspace'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
@@ -50,6 +52,12 @@ const PaperHomeView = defineAsyncComponent({
 
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
+const layout = useWorkspaceLayoutStore()
+const overhaulActivated = ref(false)
+const OverhaulWorkspaceHome = defineAsyncComponent(() => import('./overhaul/OverhaulWorkspaceHome.vue'))
+watch(() => layout.experience, experience => {
+  if (experience !== 'classic') overhaulActivated.value = true
+}, { immediate: true })
 const homeLoadPerf = usePerformanceMark('home-load')
 
 const summary = computed(() => workspace.homeSummary)
@@ -167,8 +175,10 @@ onActivated(refreshHomeSummary)
 </script>
 
 <template>
-  <PaperHomeView v-if="paperTheme.isOn" />
-  <div v-else class="td-home" role="region" aria-label="Home workspace">
+  <OverhaulWorkspaceHome v-if="overhaulActivated" v-show="layout.experience !== 'classic'" />
+  <PersonalPlanResume v-if="layout.experience === 'classic'" />
+  <PaperHomeView v-if="paperTheme.isOn" v-show="layout.experience === 'classic'" />
+  <div v-else v-show="layout.experience === 'classic'" class="td-home" role="region" aria-label="Home workspace">
     <header class="td-home__hero td-panel">
       <div class="td-home__hero-copy">
         <span class="td-home__eyebrow" aria-hidden="true">Workspace</span>

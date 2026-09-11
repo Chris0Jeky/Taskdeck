@@ -4,6 +4,10 @@ using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.DTOs;
 
+public record ProposalPreviewDto(Guid ProposalId, Guid? BoardId, ProposalStatus Status,
+    Guid? EffectiveRevisionId, int? EffectiveRevisionNumber, DateTimeOffset ProposalUpdatedAt,
+    DateTime ExpiresAt, DateTimeOffset CheckedAt, string Diff);
+
 public record ProposalDto(
     Guid Id,
     ProposalSourceType SourceType,
@@ -235,6 +239,16 @@ public record CreateProposalDto(
     [JsonIgnore]
     public int ProvenanceTotalTokens { get; init; }
 }
+
+/// <summary>
+/// Server-observed identity of the producer that generated a proposal instruction.
+/// This value is carried only inside the Application layer; HTTP and tool arguments
+/// cannot supply it.
+/// </summary>
+public sealed record ProposalProducerMetadata(
+    string Provider,
+    string Model,
+    string? PromptVersion = null);
 
 public record CreateProposalOperationDto(
     int Sequence,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { isDemoMode } from '../../utils/demoMode'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useProductVersion } from '../../composables/useProductVersion'
 import { useViewportMode } from '../../composables/useViewportMode'
@@ -92,6 +93,10 @@ const primaryItems: PaperNavItem[] = [
 ]
 
 const workbenchItems: PaperNavItem[] = [
+  { id: 'insights', label: 'Quiet insights', glyph: '✧', path: '/workspace/insights', keywords: 'insights questions observations blocked suggestions' },
+  { id: 'memory', label: 'Memory', glyph: 'M', path: '/workspace/memory', keywords: 'memory knowledge questions answers assumptions' },
+  { id: 'plan', label: 'Personal plan', glyph: 'P', path: '/workspace/plan', keywords: 'plan personal focus resume horizon' },
+  { id: 'experiences', label: 'Experiences', glyph: '◒', path: '/workspace/experiences', keywords: 'experiences layouts themes studio companion unified compare' },
   { id: 'views', label: 'Views', glyph: 'V', path: '/workspace/views', keywords: 'views saved filters shortcuts blocked due week review' },
   { id: 'notifications', label: 'Notifications', glyph: 'N', path: '/workspace/notifications', keywords: 'notifications updates mention assignment' },
   { id: 'chat', label: 'Chat', glyph: 'C', path: '/workspace/automations/chat', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: 'chat automation assistant board context' },
@@ -130,6 +135,7 @@ const activeWorkspaceMode = computed<WorkspaceMode>(() =>
   isWorkspaceMode(workspace.mode) ? workspace.mode : 'guided')
 
 function isAvailable(item: PaperNavItem): boolean {
+  if (item.id === 'plan' && isDemoMode) return false
   if (!item.flag) return true
   if (activeWorkspaceMode.value === 'workbench' && item.workbenchBypassesFlag) return true
   return featureFlags.isEnabled(item.flag)

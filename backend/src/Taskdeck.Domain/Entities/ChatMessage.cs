@@ -1,5 +1,6 @@
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
+using System.Text.Json;
 
 namespace Taskdeck.Domain.Entities;
 
@@ -13,7 +14,9 @@ public class ChatMessage : Entity
         "status",
         "degraded",
         "clarification",
-        "parse-hint"
+        "parse-hint",
+        "action-needs-board",
+        "action-no-proposal"
     };
 
     private static readonly HashSet<string> ValidMessageTypeSet = new(ValidMessageTypes, StringComparer.Ordinal);
@@ -26,6 +29,8 @@ public class ChatMessage : Entity
     public int? TokenUsage { get; private set; }
     public string? DegradedReason { get; private set; }
     public string? ToolCallMetadataJson { get; private set; }
+    public string? ContextSelectionJson { get; private set; }
+    public string? ContextSourcesJson { get; private set; }
 
     // Navigation
     public ChatSession Session { get; private set; } = null!;
@@ -86,6 +91,20 @@ public class ChatMessage : Entity
         ToolCallMetadataJson = string.IsNullOrWhiteSpace(metadataJson) ? null : metadataJson.Trim();
         Touch();
     }
+
+    public void SetContextSelection(ChatContextSelection selection, IReadOnlyList<ChatContextSource> sources)
+    {
+        if (Role != ChatMessageRole.User || ContextSelectionJson is not null)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Context belongs to the original user turn and cannot be replaced.");
+        selection.Validate();
+        ContextSelectionJson = JsonSerializer.Serialize(selection);
+        ContextSourcesJson = JsonSerializer.Serialize(sources);
+    }
+
+    public ChatContextSelection? ReadContextSelection() => ContextSelectionJson is null ? null :
+        JsonSerializer.Deserialize<ChatContextSelection>(ContextSelectionJson);
+    public IReadOnlyList<ChatContextSource>? ReadContextSources() => ContextSourcesJson is null ? null :
+        JsonSerializer.Deserialize<List<ChatContextSource>>(ContextSourcesJson);
 }
 
 public enum ChatMessageRole

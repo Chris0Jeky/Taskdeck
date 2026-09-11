@@ -477,7 +477,12 @@ function dismissSettledElsewhereNotice() {
 
 watch(
   hashProposalId,
-  (id) => {
+  (id, previousId) => {
+    // A new deep-link lookup, including leaving the hash, supersedes the
+    // background-poll notice. Otherwise a missing/malformed pin can replace
+    // the notice visually, then reveal that stale notice again when Return
+    // clears the hash (#2215).
+    if (id !== previousId) activeProposalSettledElsewhere.value = null
     if (!id) return
     const target = proposals.value.find(
       (proposal) =>
@@ -491,6 +496,32 @@ watch(
   },
   { immediate: true },
 )
+
+const unavailableReturnRef = ref<HTMLButtonElement | null>(null)
+const unavailableAnnouncementOwner = ref<'page' | 'approve' | 'execute'>('page')
+const unavailableAnnouncement = computed(() => unavailableProposalId.value && !queueAccessRevoked.value
+  ? `${t(unavailableProposalMalformed.value ? 'review.empty.unavailable.malformedBody' : 'review.empty.unavailable.body', { id: unavailableProposalId.value })} ${t('review.empty.unavailable.return')}`
+  : '')
+
+// The unavailable panel replaces the decision column after an async lookup.
+// Recover focus when its old control disappears, but preserve a queue control
+// or dialog the reviewer focused while the lookup was pending.
+watch(unavailableProposalId, (id) => {
+  // Keep one announcement owner for this result, even after the dialog closes.
+  unavailableAnnouncementOwner.value = id && batchExecuteOpen.value
+    ? 'execute'
+    : id && batchConfirmationOpen.value ? 'approve' : 'page'
+  if (!id) return
+  const previousFocus = document.activeElement
+  activeProposalSettledElsewhere.value = null
+  void nextTick(() => {
+    const currentFocus = document.activeElement
+    if (currentFocus !== document.body && currentFocus !== document.documentElement) return
+    if (previousFocus?.isConnected && previousFocus !== document.body &&
+      previousFocus !== document.documentElement) return
+    unavailableReturnRef.value?.focus?.()
+  })
+})
 
 const selectors = usePaperReviewSelectors(activeProposal)
 
@@ -1137,6 +1168,24 @@ const busy = computed(
     batchExecuteBusy.value ||
     batchExecuteOpen.value ||
     applyGuardBusy.value,
+)
+
+// Revision editing owns the decision lock, but it must not make the two
+// read-only review keys look dead. Keep the exception narrow: another action,
+// confirmation dialog, or apply preflight still silences every review key.
+const readonlyReviewKeymapEnabled = computed(
+  () =>
+    (revisionEditing.value || revisionSaving.value) &&
+    proposalActionBusyId.value === null &&
+    !bulkDismissBusy.value &&
+    !batchApproveBusy.value &&
+    !batchConfirmationOpen.value &&
+    !batchExecuteBusy.value &&
+    !batchExecuteOpen.value &&
+    !applyGuardBusy.value &&
+    !revisionReviewRefreshBusy.value &&
+    executeConfirmProposal.value === null &&
+    rejectPromptProposal.value === null,
 )
 
 /**
@@ -2483,13 +2532,21 @@ useReviewKeymap(
     // dialog the same standing: ⌫ behind it would re-open the gate it IS.
     enabled: () =>
       !isArchivedHistory.value &&
-      !busy.value &&
+      (!busy.value || readonlyReviewKeymapEnabled.value) &&
       activeProposal.value !== null &&
       (activeAppliedProposal.value === null || activeDismissable.value) &&
       executeConfirmProposal.value === null &&
       rejectPromptProposal.value === null &&
       (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
     isActionEnabled: (action) => {
+      // P and Space inspect the current review record without changing its
+      // decision state, so they remain available while Request edit owns the
+      // shared lock. Enter/Backspace/E/D stay blocked for the whole editor
+      // lifetime, including its save round trips.
+      if (readonlyReviewKeymapEnabled.value) {
+        return action === 'onToggleProvenance' || action === 'onPreviewDiff'
+      }
+      if (busy.value) return false
       // An applied record is read-only: the only live key is ⌫, whose #1161
       // dual-purpose branch files the record away — the affordance the filing
       // rail still advertises for the reviewer's own applied proposal.
@@ -2621,6 +2678,9 @@ const emptyColRef = ref<HTMLElement | null>(null)
  */
 async function returnToReview() {
   if (!unavailableProposalId.value) return
+  // The route watcher also clears this when the hash is removed, but clear it
+  // before the await so a stale poll notice cannot flash during navigation.
+  activeProposalSettledElsewhere.value = null
   await clearProposalDeepLink(unavailableProposalId.value)
   // After the DOM has settled on whichever of the two replaces the panel.
   await nextTick()
@@ -2672,7 +2732,7 @@ async function onClearBoardScope() {
 <template>
   <div
     ref="reviewViewRef"
-    class="paper paper-review-deep"
+    class="paper-review-deep"
     data-testid="paper-review-view"
     :data-history-mode="isArchivedHistory ? 'archived' : undefined"
   >
@@ -2744,6 +2804,15 @@ async function onClearBoardScope() {
       aria-atomic="true"
       data-testid="paper-review-queue-refused"
     >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
+
+    <!-- Keep the status node mounted before a delayed lookup settles. -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-unavailable-announcement"
+    >{{ unavailableAnnouncementOwner === 'page' ? unavailableAnnouncement : '' }}</p>
 
     <ReviewQueueRail
       ref="queueRailRef"
@@ -2824,6 +2893,11 @@ async function onClearBoardScope() {
       >
         {{ revisionReviewUnavailableNote }}
       </p>
+      <router-link
+        v-if="activeProposal.boardId && !isArchivedHistory && ['PendingReview', 'Approved'].includes(normalizeProposalStatus(activeProposal.status))"
+        class="tk-meta"
+        :to="{ path: `/workspace/boards/${activeProposal.boardId}`, query: { proposalId: activeProposal.id } }"
+      >Preview on board</router-link>
       <ReviewMain
         ref="reviewMainRef"
         :key="activeProposal.id"
@@ -2999,6 +3073,8 @@ async function onClearBoardScope() {
         :revision-changed="revisionChangedWhileEditing"
         @save="onSaveRevision"
         @cancel="onCancelRevision"
+        @toggle-provenance="onToggleProvenance"
+        @preview-diff="onPreviewDiff"
       />
     </div>
     <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
@@ -3070,6 +3146,7 @@ async function onClearBoardScope() {
           {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedBody', { id: unavailableProposalId }) : $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
         </p>
         <button
+          ref="unavailableReturnRef"
           type="button"
           class="paper-review-deep__clear-scope"
           data-testid="paper-review-unavailable-return"
@@ -3157,6 +3234,7 @@ async function onClearBoardScope() {
       :open="batchConfirmationOpen"
       :count="batchSelectedCount"
       :busy="batchApproveBusy"
+      :announcement="unavailableAnnouncementOwner === 'approve' && batchConfirmationOpen ? unavailableAnnouncement : ''"
       @confirm="confirmBatchApproval"
       @cancel="cancelBatchApproval"
     />
@@ -3166,6 +3244,7 @@ async function onClearBoardScope() {
       :count="batchExecuteConfirmationCount"
       :busy="batchExecuteBusy"
       :receipts="batchExecuteReceipts"
+      :announcement="unavailableAnnouncementOwner === 'execute' && batchExecuteOpen ? unavailableAnnouncement : ''"
       @confirm="confirmBatchExecute"
       @close="cancelBatchExecute"
     />

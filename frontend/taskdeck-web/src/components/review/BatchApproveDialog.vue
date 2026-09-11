@@ -5,6 +5,7 @@ defineProps<{
   open: boolean
   count: number
   busy?: boolean
+  announcement?: string
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +23,13 @@ const emit = defineEmits<{
     @close="emit('cancel')"
   >
     <div data-testid="batch-approve-dialog">
+      <p
+        class="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="batch-approve-announcement"
+      >{{ announcement ?? '' }}</p>
       <p>{{ $t('review.batchApprove.dialog.body', { count }, count) }}</p>
       <p class="tk-meta" data-testid="batch-approve-not-applied">
         {{ $t('review.batchApprove.dialog.notApplied') }}

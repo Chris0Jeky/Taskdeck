@@ -11,7 +11,7 @@ namespace Taskdeck.Application.Services;
 public static class ClarificationDetector
 {
     /// <summary>Maximum clarification rounds before the LLM should attempt best-effort.</summary>
-    public const int MaxClarificationRounds = 2;
+    public const int MaxClarificationRounds = 1;
 
     /// <summary>
     /// Phrases that indicate the user wants to skip clarification and proceed

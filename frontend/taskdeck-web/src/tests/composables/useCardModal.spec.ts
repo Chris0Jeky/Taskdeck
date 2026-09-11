@@ -27,6 +27,11 @@ const mockSessionStore = {
   userId: 'user-1',
 }
 
+vi.mock('../../api/cardsApi', () => ({ cardsApi: {
+  getCards: vi.fn().mockResolvedValue([]),
+  previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
+} }))
+
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
 }))
@@ -659,6 +664,25 @@ describe('useCardModal', () => {
       )
     })
 
+    it.each([
+      'Card parents cannot form a cycle.',
+      'Card hierarchy supports at most three links (four levels), including descendants.',
+    ])('keeps the parent draft and explains validation: %s', async (message) => {
+      mockBoardStore.updateCard.mockRejectedValue({ response: { status: 400, data: { errorCode: 'ValidationError', message } } })
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      await nextTick()
+      ctx.result.parentCardId.value = 'selected-parent'
+
+      await ctx.result.handleSave()
+
+      expect(ctx.result.saveError.value).toBe(`${message} Your draft is kept.`)
+      expect(ctx.result.parentCardId.value).toBe('selected-parent')
+      expect(ctx.onUpdated).not.toHaveBeenCalled()
+      expect(ctx.onClose).not.toHaveBeenCalled()
+    })
+
     it('handles updateCard failure gracefully', async () => {
       mockBoardStore.updateCard.mockRejectedValue(new Error('Save failed'))
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -703,9 +727,10 @@ describe('useCardModal', () => {
       const ctx = mountComposable()
       await nextTick()
 
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
-      expect(mockBoardStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1')
+      expect(mockBoardStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({ expectedChildrenFingerprint: 'v1:fixed' }))
       expect(ctx.result.showDeleteConfirm.value).toBe(false)
       expect(ctx.onUpdated).toHaveBeenCalled()
       expect(ctx.onClose).toHaveBeenCalled()
@@ -717,6 +742,7 @@ describe('useCardModal', () => {
       await nextTick()
 
       ctx.result.isDeleting.value = true
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
       expect(mockBoardStore.deleteCard).not.toHaveBeenCalled()
@@ -729,6 +755,7 @@ describe('useCardModal', () => {
       const ctx = mountComposable()
       await nextTick()
 
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
       expect(consoleSpy).toHaveBeenCalledWith('Failed to delete card:', expect.any(Error))
@@ -881,6 +908,37 @@ describe('useCardModal', () => {
   })
 
   describe('handleSaveEditComment', () => {
+    it.each(['success', 'failure'] as const)(
+      'keeps card-save recovery usable after comment update %s',
+      async (outcome) => {
+        const ctx = mountComposable()
+        await nextTick()
+        ctx.result.workItemType.value = 'Epic'
+        mockBoardStore.updateCard.mockRejectedValueOnce(new Error('card save unavailable'))
+        await ctx.result.handleSave()
+        const cardSaveError = ctx.result.saveError.value
+        expect(cardSaveError).toBeTruthy()
+
+        ctx.result.editingCommentId.value = 'c-1'
+        ctx.result.editingCommentContent.value = 'Edited comment'
+        if (outcome === 'failure') {
+          mockBoardStore.updateCardComment.mockRejectedValueOnce(new Error('comment save unavailable'))
+        }
+        await ctx.result.handleSaveEditComment('c-1')
+
+        expect(ctx.result.isSaving.value).toBe(false)
+        expect(ctx.result.saveError.value).toBe(cardSaveError)
+        expect(ctx.result.workItemType.value).toBe('Epic')
+        await ctx.result.handleSave()
+        expect(mockBoardStore.updateCard).toHaveBeenCalledTimes(2)
+        expect(mockBoardStore.updateCard).toHaveBeenLastCalledWith(
+          'board-1', 'card-1', expect.objectContaining({ workItemType: 'Epic' }),
+        )
+        expect(ctx.onClose).toHaveBeenCalledOnce()
+        ctx.wrapper.unmount()
+      },
+    )
+
     it('updates the comment and clears editing state', async () => {
       const ctx = mountComposable()
       await nextTick()

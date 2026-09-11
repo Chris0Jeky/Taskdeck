@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { computed, nextTick, reactive, ref } from 'vue'
 import PaperBoardView from '../../../views/paper/PaperBoardView.vue'
 import { useBoardKeyboardNav } from '../../../composables/useBoardKeyboardNav'
@@ -131,6 +132,8 @@ function columnEl(id: string) {
 }
 
 beforeEach(() => {
+  window.localStorage.removeItem('td.workspace.layout.v1')
+  setActivePinia(createPinia())
   routerMock.push.mockClear()
   for (const value of Object.values(mockBoardStore)) {
     if (typeof value === 'function' && 'mockClear' in value) {

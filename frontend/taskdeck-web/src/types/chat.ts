@@ -2,7 +2,7 @@ export type ChatSessionStatus = 'Active' | 'Archived'
 export type ChatSessionStatusValue = ChatSessionStatus | number
 export type ChatRole = 'User' | 'Assistant' | 'System'
 export type ChatRoleValue = ChatRole | number
-export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status' | 'degraded' | 'parse-hint' | 'clarification'
+export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status' | 'degraded' | 'parse-hint' | 'clarification' | 'action-needs-board' | 'action-no-proposal'
 
 export interface ParseHintPayload {
   supportedPatterns: string[]
@@ -36,6 +36,33 @@ export interface ChatMessage {
   createdAt: string
   degradedReason?: string | null
   toolCallMetadataJson?: string | null
+  context?: ChatContextSelection | null
+  contextSources?: ChatContextSource[] | null
+}
+
+export interface ChatContextSelection {
+  cardId: string | null
+  includeThinking: boolean
+  memories: { id: string; revision: number }[]
+  assets?: ChatAssetReference[]
+}
+
+export interface ChatAssetReference { memoryId: string; revision: number; assetId: string; contentHash: string }
+export interface ChatAssetOption {
+  id: string; name: string; contentHash: string; byteSize: number
+  supersededByAssetId: string | null; excerpt: string; truncated: boolean; ordinal: number
+}
+export interface ChatAssetPage { memoryId: string; revision: number; items: ChatAssetOption[]; nextOffset: number | null; nextAfterOrdinal: number | null }
+
+export interface ChatContextSource {
+  kind: 'card' | 'thinking' | 'private-memory' | 'private-source'
+  id: string
+  title: string
+  revision: number | null
+  truncated: boolean
+  memoryId?: string | null
+  contentHash?: string | null
+  supersededByAssetId?: string | null
 }
 
 export interface ChatSession {
@@ -73,4 +100,9 @@ export interface CreateChatSessionRequest {
 export interface SendChatMessageRequest {
   content: string
   requestProposal?: boolean
+  context?: ChatContextSelection
+}
+
+export interface BindChatSessionBoardRequest {
+  boardId: string
 }

@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Card, Column } from '../../types/board'
-import PaperBoardCard, { type PaperBoardCardVariant } from './PaperBoardCard.vue'
+import PaperBoardCard, { type PaperBoardCardVariant, type PaperBoardPresentation } from './PaperBoardCard.vue'
 import PaperCardComposer from './board/PaperCardComposer.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 import PaperIcon from '../../components/paper/PaperIcon.vue'
@@ -37,6 +38,7 @@ const props = withDefaults(
     collapsed?: boolean
     /** Card visual variant — propagated to every card in the column. */
     cardVariant?: PaperBoardCardVariant
+    presentation?: PaperBoardPresentation
     selectedCardId?: string | null
     /** When true the column shows the drop-target highlight. */
     isDragOver?: boolean
@@ -55,6 +57,7 @@ const props = withDefaults(
   }>(),
   {
     cardVariant: 'index',
+    presentation: 'classic',
     collapsed: false,
     selectedCardId: null,
     isDragOver: false,
@@ -173,6 +176,7 @@ function onCardDrop(card: Card, e: DragEvent) {
 function onCardDragOver(card: Card, e: DragEvent) {
   emit('card-dragover', card, e)
 }
+const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
 </script>
 
 <template>
@@ -184,12 +188,14 @@ function onCardDragOver(card: Card, e: DragEvent) {
       'paper-board-column--selected': selected,
     }"
     :data-column-id="column.id"
+    :data-proposal-change="proposalMarker ? true : undefined"
     :data-collapsed="collapsed"
     role="group"
     :aria-label="`Column ${column.name}`"
     :aria-current="selected ? 'true' : undefined"
   >
     <header class="paper-board-column__header">
+      <span v-if="proposalMarker" class="td-proposal-marker">{{ proposalMarker }}</span>
       <div
         class="paper-board-column__heading"
         data-action="drag-column-handle"
@@ -272,6 +278,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
           :key="card.id"
           :card="card"
           :variant="cardVariant"
+          :presentation="presentation"
           :selected="card.id === selectedCardId"
           @click="onCardClick"
           @dragstart="onCardDragStart"

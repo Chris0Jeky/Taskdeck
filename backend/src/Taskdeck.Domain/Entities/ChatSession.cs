@@ -11,7 +11,14 @@ public class ChatSession : Entity
     public ChatSessionStatus Status { get; private set; }
 
     private readonly List<ChatMessage> _messages = new();
-    public IReadOnlyList<ChatMessage> Messages => _messages.AsReadOnly();
+    // EF Core populates the backing field during relationship fixup and does not promise
+    // collection order. Expose a fresh, immutable transcript snapshot in chronological order, with
+    // Id as a deterministic tie-break, so every consumer observes the same history.
+    public IReadOnlyList<ChatMessage> Messages => _messages
+        .OrderBy(message => message.CreatedAt)
+        .ThenBy(message => message.Id)
+        .ToList()
+        .AsReadOnly();
 
     private ChatSession() { } // EF Core
 
@@ -41,6 +48,23 @@ public class ChatSession : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Title cannot exceed 200 characters");
 
         Title = title;
+        Touch();
+    }
+
+    public void BindBoard(Guid boardId)
+    {
+        if (boardId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "BoardId cannot be empty");
+        if (Status == ChatSessionStatus.Archived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Cannot bind an archived chat session");
+        if (BoardId == boardId)
+            return;
+        if (BoardId.HasValue)
+            throw new DomainException(
+                ErrorCodes.Conflict,
+                "This chat session is already linked to a different board. Start a new session to use another board.");
+
+        BoardId = boardId;
         Touch();
     }
 

@@ -1,10 +1,12 @@
 import { onBeforeUnmount, ref, computed, watch } from 'vue'
+import { cardsApi } from '../api/cardsApi'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
-import type { Card, CardCaptureProvenance, Label, UpdateCardDto } from '../types/board'
+import type { CardDetachPreview, CardWorkItemType, Card, CardCaptureProvenance, Label, UpdateCardDto } from '../types/board'
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
+import { getValidationReason, isValidationError } from './useErrorMapper'
 import {
   calendarDateKeyToMidnightUtc,
   formatCalendarDate,
@@ -26,6 +28,13 @@ export function useCardModal(options: UseCardModalOptions) {
   const toast = useToastStore()
 
   // Form state
+  const parentCardId = ref<string | null>(null)
+  const detachPreview = ref<CardDetachPreview | null>(null)
+  const deletePreviewError = ref<string | null>(null)
+  const deletePreviewLoading = ref(false)
+  const workItemType = ref<CardWorkItemType>('Task')
+  const isSaving = ref(false)
+  const saveError = ref<string | null>(null)
   const title = ref('')
   const description = ref('')
   const dueDate = ref('')
@@ -89,6 +98,8 @@ export function useCardModal(options: UseCardModalOptions) {
   const hasUnsavedChanges = computed(() => {
     const currentCard = card.value
     return (
+      parentCardId.value !== (currentCard.parentCardId ?? null) ||
+      workItemType.value !== (currentCard.workItemType ?? 'Task') ||
       title.value !== currentCard.title ||
       description.value !== (currentCard.description || '') ||
       dueDate.value !== (toCalendarDateKey(currentCard.dueDate) ?? '') ||
@@ -107,8 +118,14 @@ export function useCardModal(options: UseCardModalOptions) {
     if (newCard) {
       const switchedCards = Boolean(previousCard && previousCard.id !== newCard.id)
       if (switchedCards) {
+        isSaving.value = false
+        saveError.value = null
         cardSessionVersion += 1
       }
+      parentCardId.value = newCard.parentCardId ?? null
+      detachPreview.value = null
+      deletePreviewError.value = null
+      workItemType.value = newCard.workItemType ?? 'Task'
       title.value = newCard.title
       description.value = newCard.description || ''
       dueDate.value = toCalendarDateKey(newCard.dueDate) ?? ''
@@ -148,6 +165,7 @@ export function useCardModal(options: UseCardModalOptions) {
     () => options.getIsOpen(),
     async (isOpen) => {
       if (isOpen) {
+        saveError.value = null
         expectedUpdatedAt.value = card.value.updatedAt
         void loadCardComments(card.value)
         await loadCaptureProvenance()
@@ -219,7 +237,7 @@ export function useCardModal(options: UseCardModalOptions) {
 
   // Save
   async function handleSave() {
-    if (!isFormValid.value) return
+    if (!isFormValid.value || isSaving.value) return
 
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
@@ -233,10 +251,17 @@ export function useCardModal(options: UseCardModalOptions) {
       labelIds: selectedLabelIds.value,
       expectedUpdatedAt: expectedUpdatedAt.value,
     }
+    if (parentCardId.value !== (targetCard.parentCardId ?? null)) {
+      if (parentCardId.value) update.parentCardId = parentCardId.value
+      else update.clearParent = true
+    }
+    if (workItemType.value !== (targetCard.workItemType ?? 'Task')) update.workItemType = workItemType.value
     if (dueDateChanged) {
       update.dueDate = dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null
       update.clearDueDate = Boolean(targetCard.dueDate) && !dueDate.value
     }
+    isSaving.value = true
+    saveError.value = null
     try {
       await boardStore.updateCard(targetCard.boardId, targetCard.id, update)
 
@@ -246,13 +271,36 @@ export function useCardModal(options: UseCardModalOptions) {
     } catch (error) {
       logError('Failed to update card:', error)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
-      toast.error('Failed to save card changes. Please try again.')
+      const status = (error as { response?: { status?: number } })?.response?.status
+      saveError.value = isValidationError(error)
+        ? `${getValidationReason(error) ?? 'Please check the card fields.'} Your draft is kept.`
+        : status === 409
+        ? 'The card changed or is read-only. Your draft is kept. Refresh the board and reopen the card before saving again.'
+        : status === 403
+          ? 'You no longer have permission to edit this card. Your draft is kept.'
+          : 'Could not confirm the save. Your draft is kept. Refresh the board before trying again.'
+      toast.error(saveError.value)
+    } finally {
+      if (isCurrentCardSession(targetCard.id, targetSessionVersion)) isSaving.value = false
     }
   }
 
   // Delete
-  function handleDeleteClick() {
+  async function handleDeleteClick() {
+    const target = card.value
+    const session = cardSessionVersion
     showDeleteConfirm.value = true
+    detachPreview.value = null
+    deletePreviewError.value = null
+    deletePreviewLoading.value = true
+    try {
+      const preview = await cardsApi.previewDetach(target.boardId, target.id)
+      if (isCurrentCardSession(target.id, session) && showDeleteConfirm.value) detachPreview.value = preview
+    } catch {
+      if (isCurrentCardSession(target.id, session)) deletePreviewError.value = 'Could not load the full child list. Close and refresh before deleting.'
+    } finally {
+      if (isCurrentCardSession(target.id, session)) deletePreviewLoading.value = false
+    }
   }
 
   function handleDeleteCancel() {
@@ -260,16 +308,17 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleDeleteConfirm() {
-    if (isDeleting.value) return
+    if (isDeleting.value || !detachPreview.value || deletePreviewError.value) return
     isDeleting.value = true
     try {
-      await boardStore.deleteCard(card.value.boardId, card.value.id)
+      await boardStore.deleteCard(card.value.boardId, card.value.id, detachPreview.value)
       showDeleteConfirm.value = false
       options.onUpdated()
       options.onClose()
     } catch (error) {
       logError('Failed to delete card:', error)
-      toast.error('Failed to delete card. Please try again.')
+      deletePreviewError.value = 'Card or children changed, or deletion could not be confirmed. Close and refresh before confirming again.'
+      toast.error(deletePreviewError.value)
     } finally {
       isDeleting.value = false
     }
@@ -434,6 +483,11 @@ export function useCardModal(options: UseCardModalOptions) {
 
   return {
     // Form state
+    parentCardId,
+    detachPreview,
+    deletePreviewError,
+    deletePreviewLoading,
+    workItemType,
     title,
     description,
     dueDate,
@@ -484,6 +538,8 @@ export function useCardModal(options: UseCardModalOptions) {
     handleDeleteConfirm,
 
     // Save
+    isSaving,
+    saveError,
     handleSave,
   }
 }

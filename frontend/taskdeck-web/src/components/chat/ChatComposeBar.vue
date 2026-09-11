@@ -1,14 +1,13 @@
 <script setup lang="ts">
 defineProps<{
   messageContent: string
-  requestProposal: boolean
   sendingMessage: boolean
+  sendBlocked?: boolean
   lastMessageIsClarification: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:messageContent', value: string): void
-  (e: 'update:requestProposal', value: boolean): void
   (e: 'send-message'): void
   (e: 'skip-clarification'): void
 }>()
@@ -20,7 +19,7 @@ const emit = defineEmits<{
       <span class="td-clarification-skip__hint">The assistant is asking for more details.</span>
       <button
         class="td-btn td-btn--secondary td-btn--sm"
-        :disabled="sendingMessage"
+        :disabled="sendingMessage || sendBlocked"
         @click="emit('skip-clarification')"
       >
         Skip, just do your best
@@ -33,17 +32,9 @@ const emit = defineEmits<{
       rows="3"
       placeholder="Describe an automation instruction..."
       @input="emit('update:messageContent', ($event.target as HTMLTextAreaElement).value)"
-      @keydown.ctrl.enter.prevent="emit('send-message')"
+      @keydown.ctrl.enter.prevent="!sendingMessage && !sendBlocked && emit('send-message')"
     ></textarea>
-    <label class="td-checkbox">
-      <input
-        :checked="requestProposal"
-        type="checkbox"
-        @change="emit('update:requestProposal', ($event.target as HTMLInputElement).checked)"
-      />
-      Request proposal generation
-    </label>
-    <button class="td-btn td-btn--primary" @click="emit('send-message')" :disabled="sendingMessage">
+    <button class="td-btn td-btn--primary" @click="emit('send-message')" :disabled="sendingMessage || sendBlocked">
       {{ sendingMessage ? 'Sending...' : 'Send Message' }}
     </button>
   </div>
@@ -78,14 +69,6 @@ const emit = defineEmits<{
   border-radius: var(--td-radius-md);
   font-size: var(--td-font-sm);
   resize: vertical;
-}
-
-.td-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--td-space-1);
-  font-size: var(--td-font-xs);
-  color: var(--td-text-secondary);
 }
 
 .td-btn {

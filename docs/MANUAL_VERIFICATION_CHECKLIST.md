@@ -28,7 +28,7 @@ Covers: 5 open PRs (#665-#669) and recent merged PRs (#568-#664).
 **What changed:** Review proposal cards now have max-height with scroll, sticky action footer, and capped entity/operation sections.
 
 ### Prerequisites
-- At least 2-3 proposals in the Review queue (create board-scoped chat sessions, send actionable messages with "Request proposal generation" enabled, or triage inbox captures)
+- At least 2-3 proposals in the Review queue (create board-scoped chat sessions, send actionable messages (proposal attempts are enabled by default), or triage inbox captures)
 - At least one proposal with many affected entities (apply a starter pack to generate a multi-entity proposal)
 
 ### Verifications
@@ -168,7 +168,7 @@ Covers: 5 open PRs (#665-#669) and recent merged PRs (#568-#664).
 ### Verifications — Fallback Behavior
 
 - [ ] Send a non-board message like "What is the capital of France?" Verify the LLM responds with text (no tool calls) and does not crash or error.
-- [ ] Send an actionable instruction with proposal generation enabled: "Create a card called Test in Backlog." Verify the existing proposal creation path still works — a proposal is generated, not a tool-call-only response.
+- [ ] Send an actionable instruction using the default proposal-attempt flow: "Create a card called Test in Backlog." Verify the existing proposal creation path still works — a proposal is generated, not a tool-call-only response.
 
 ### Verifications — Status Events
 
@@ -234,7 +234,7 @@ Covers: 5 open PRs (#665-#669) and recent merged PRs (#568-#664).
 
 ### Verifications
 
-- [ ] Open `/workspace/automations/chat`. Create a board-scoped session. Send an actionable message like "Create a card called Weekly Standup in the To Do column" with proposal generation enabled. Verify a proposal reference appears in the response — not just prose text.
+- [ ] Open `/workspace/automations/chat`. Create a board-scoped session. Send an actionable message like "Create a card called Weekly Standup in the To Do column" using the default proposal-attempt flow. Verify a proposal reference appears in the response — not just prose text.
 - [ ] Send a message that would produce a long response. Verify the response is NOT truncated mid-sentence or mid-JSON. If truncation occurs, verify a user-friendly "Response was truncated" message appears instead of raw partial JSON.
 - [ ] Send a message and verify the response never shows raw JSON (e.g., `{ "reply": "..." }`) to the user. All responses should be rendered as readable text.
 - [ ] Send a multi-instruction message: "Create a card called A and another called B." Verify both instructions are parsed and reflected in the proposal.
@@ -438,7 +438,7 @@ These are previously reported bugs. Verify they remain fixed or track their curr
 ### Verifications — MCP Full Inventory (#739)
 
 - [ ] Start API with `--mcp` flag. From MCP client, list available resources. Verify 9 resources under `taskdeck://` scheme: boards, board/{id}, board/{id}/columns, board/{id}/cards, card/{id}, captures, proposals, board/{id}/labels, and proposal/{id}.
-- [ ] List available tools. Verify 11 tools: `search_cards`, `get_board_summary`, `create_card`, `move_card`, `update_card`, `archive_card`, `create_capture`, `create_column`, `get_proposal_status`, `list_proposals`, `dismiss_proposal`.
+- [ ] List available tools. Verify the current 13 tools: `search_cards`, `get_board_summary`, `create_card`, `move_card`, `update_card`, `archive_card`, `archive_card_lifecycle`, `restore_archived_card`, `create_capture`, `create_column`, `get_proposal_status`, `list_proposals`, `dismiss_proposal`. The two lifecycle additions propose changes for Review; legacy `archive_card` still means Block.
 - [ ] Use a write tool (e.g., `create_card`). Verify it returns a proposal ID, not a direct card creation.
 - [ ] Verify `approve_proposal` tool does NOT exist (intentionally excluded per GP-06).
 - [ ] Attempt to access another user's proposal via `get_proposal_status`. Verify access denied.

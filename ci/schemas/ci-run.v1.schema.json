@@ -19,7 +19,7 @@
         "additionalProperties": false,
         "required": ["code", "detail"],
         "properties": {
-          "code": { "enum": ["plan-missing", "plan-invalid", "planner-error", "plan-job-failed", "plan-job-cancelled", "head-sha-mismatch", "base-sha-mismatch", "policy-digest-mismatch", "trust-mismatch", "labels-mismatch", "mode-mismatch", "evidence-unavailable", "selected-evidence-missing", "selected-not-success", "evidence-sha-missing", "evidence-wrong-sha", "skipped-without-reason"] },
+          "code": { "enum": ["plan-missing", "plan-invalid", "planner-error", "plan-job-failed", "plan-job-cancelled", "head-sha-mismatch", "base-sha-mismatch", "merge-base-binding-mismatch", "policy-digest-mismatch", "trust-mismatch", "labels-mismatch", "mode-mismatch", "evidence-unavailable", "selected-evidence-missing", "selected-not-success", "evidence-sha-missing", "evidence-wrong-sha", "skipped-without-reason"] },
           "detail": { "type": "string" }
         }
       }
@@ -32,6 +32,8 @@
     "headSha": { "type": ["string", "null"] },
     "mergeSha": { "type": ["string", "null"] },
     "mergeTreeSha": { "type": ["string", "null"] },
+    "mergeBaseSha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "observed merge-ref first parent copied from the plan; null when the plan is missing, legacy, non-PR, or errored" },
+    "mergeBaseTipSha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "authenticated moved-base tip copied from the plan; null for an exact control-base match or unavailable binding" },
     "risk": { "type": ["string", "null"] },
     "trust": { "type": ["string", "null"] },
     "escalated": { "type": ["boolean", "null"] },
@@ -54,5 +56,9 @@
       }
     },
     "generatedAtUtc": { "type": "string", "format": "date-time" }
+  },
+  "dependentRequired": {
+    "mergeBaseSha": ["mergeBaseTipSha"],
+    "mergeBaseTipSha": ["mergeBaseSha"]
   }
 }

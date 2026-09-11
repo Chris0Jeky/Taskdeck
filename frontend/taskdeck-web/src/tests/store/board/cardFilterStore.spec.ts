@@ -3,6 +3,21 @@ import { ref } from 'vue'
 import { createCardFilterActions } from '../../../store/board/cardFilterStore'
 import { createBoardState, initialCardFilters } from '../../../store/board/boardState'
 import type { Card } from '../../../types/board'
+import { addCalendarDays, calendarDateKeyToMidnightUtc, localCalendarDateKey } from '../../../utils/dueDates'
+
+const FIXED_NOW = '2026-09-07T23:30:00.000Z'
+
+function freezeDate() {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(FIXED_NOW))
+}
+
+function dueDateFor(daysFromToday: number): string {
+  const dueDateKey = addCalendarDays(localCalendarDateKey(), daysFromToday)
+  const dueDate = dueDateKey ? calendarDateKeyToMidnightUtc(dueDateKey) : null
+  if (!dueDate) throw new Error(`Unable to build test due date for offset ${daysFromToday}`)
+  return dueDate
+}
 
 function makeCard(overrides: Partial<Card> = {}): Card {
   return {
@@ -99,10 +114,10 @@ describe('cardFilterStore', () => {
   })
 
   describe('cardMatchesFilters — due date filter', () => {
+    beforeEach(freezeDate)
+
     it('overdue: includes cards with past due date', () => {
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const cards = [makeCard({ dueDate: yesterday.toISOString() })]
+      const cards = [makeCard({ dueDate: dueDateFor(-1) })]
       const state = createMockState(cards)
       const { filteredCardCount } = createCardFilterActions(state as any)
       state.filters.value.dueDateFilter = 'overdue'
@@ -118,9 +133,7 @@ describe('cardFilterStore', () => {
     })
 
     it('due-today: includes cards due today', () => {
-      const today = new Date()
-      today.setHours(12, 0, 0, 0)
-      const cards = [makeCard({ dueDate: today.toISOString() })]
+      const cards = [makeCard({ dueDate: dueDateFor(0) })]
       const state = createMockState(cards)
       const { filteredCardCount } = createCardFilterActions(state as any)
       state.filters.value.dueDateFilter = 'due-today'
@@ -128,9 +141,7 @@ describe('cardFilterStore', () => {
     })
 
     it('due-today: excludes cards due tomorrow', () => {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      const cards = [makeCard({ dueDate: tomorrow.toISOString() })]
+      const cards = [makeCard({ dueDate: dueDateFor(1) })]
       const state = createMockState(cards)
       const { filteredCardCount } = createCardFilterActions(state as any)
       state.filters.value.dueDateFilter = 'due-today'
@@ -153,9 +164,7 @@ describe('cardFilterStore', () => {
     })
 
     it('due-week: includes cards due within 7 days', () => {
-      const inThreeDays = new Date()
-      inThreeDays.setDate(inThreeDays.getDate() + 3)
-      const cards = [makeCard({ dueDate: inThreeDays.toISOString() })]
+      const cards = [makeCard({ dueDate: dueDateFor(3) })]
       const state = createMockState(cards)
       const { filteredCardCount } = createCardFilterActions(state as any)
       state.filters.value.dueDateFilter = 'due-week'
@@ -163,9 +172,7 @@ describe('cardFilterStore', () => {
     })
 
     it('due-week: excludes cards due in more than 7 days', () => {
-      const inTenDays = new Date()
-      inTenDays.setDate(inTenDays.getDate() + 10)
-      const cards = [makeCard({ dueDate: inTenDays.toISOString() })]
+      const cards = [makeCard({ dueDate: dueDateFor(10) })]
       const state = createMockState(cards)
       const { filteredCardCount } = createCardFilterActions(state as any)
       state.filters.value.dueDateFilter = 'due-week'

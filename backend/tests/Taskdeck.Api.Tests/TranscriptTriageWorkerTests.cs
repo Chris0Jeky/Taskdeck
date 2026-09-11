@@ -167,6 +167,39 @@ public class TranscriptTriageWorkerTests
     }
 
     [Fact]
+    public async Task ProcessBatch_ProcessingCorrectedTranscript_UsesReplacementCanonicalForProposal()
+    {
+        var item = CreateTranscriptTriageItem(
+            payload: CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.TranscriptPaste, "stale queue text")));
+        var replacement = new Transcript(
+            item.UserId,
+            CaptureSource.TranscriptPaste,
+            "corrected canonical text",
+            createdFromCaptureId: item.Id);
+        item.AttachTranscript(replacement.Id);
+        var transcriptRepository = CreateTranscriptRepositoryMock();
+        transcriptRepository
+            .Setup(repository => repository.GetByIdForUserAsync(
+                replacement.Id,
+                item.UserId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(replacement);
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var triageService = new FakeCaptureTriageService();
+        using var sp = BuildServiceProvider(queueRepo, triageService, transcriptRepository.Object);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        triageService.CallCount.Should().Be(1);
+        triageService.LastTranscriptId.Should().Be(replacement.Id);
+        triageService.LastPayload.Should().NotBeNull();
+        triageService.LastPayload!.Text.Should().Be("corrected canonical text");
+        item.Status.Should().Be(RequestStatus.Completed);
+    }
+
+    [Fact]
     public async Task ProcessBatch_TranscriptItem_AnchorsToTheQueueRowsCaptureDay_NotTheTriageDay()
     {
         // #2193, transcript lane: this item was captured 9 days ago and is only being drained now.

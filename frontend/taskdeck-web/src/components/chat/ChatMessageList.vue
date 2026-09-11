@@ -3,23 +3,41 @@ import { computed, ref } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { ChatMessage, ToolCallMetadata } from '../../types/chat'
+import type { Board } from '../../types/board'
 import { normalizeChatRole, extractParseHint } from '../../utils/chat'
 import type { ParsedHintMessage } from '../../utils/chat'
 import ChatParseHintCard from './ChatParseHintCard.vue'
 import ChatToolCallDetails from './ChatToolCallDetails.vue'
+import ChatProposalPreview from './ChatProposalPreview.vue'
 
 const props = defineProps<{
   messages: ChatMessage[]
   sendingMessage: boolean
+  sendBlocked?: boolean
+  eligibleBoards: Board[]
+  loadingBoards: boolean
+  selectedSessionBoardId: string | null
+  selectedSessionBoardName: string
+  pendingBoardMessageId: string | null
+  bindingBoard: boolean
+  bindingMessageId: string | null
+  boardBindingError: string | null
+  boardBindingReceipt: string | null
+  boardLoadError: string | null
 }>()
 
 const emit = defineEmits<{
   (e: 'apply-hint-suggestion', example: string): void
   (e: 'open-proposal-review', proposalId: string): void
+  (e: 'bind-board', messageId: string, boardId: string): void
+  (e: 'continue-instruction', messageId: string): void
+  (e: 'open-boards'): void
+  (e: 'reload-boards'): void
 }>()
 
 const expandedHintIds = ref<Set<string>>(new Set())
 const expandedToolMetaIds = ref<Set<string>>(new Set())
+const selectedBoardIds = ref<Record<string, string>>({})
 
 const truncationNotice = 'This response was cut short. Try a simpler question or rephrase.'
 
@@ -112,6 +130,23 @@ function toggleToolMeta(messageId: string) {
   }
   expandedToolMetaIds.value = updated
 }
+
+function selectedBoardId(messageId: string): string {
+  return selectedBoardIds.value[messageId]
+    ?? (props.eligibleBoards.length === 1 ? props.eligibleBoards[0]!.id : '')
+}
+
+function updateSelectedBoardId(messageId: string, boardId: string) {
+  selectedBoardIds.value = {
+    ...selectedBoardIds.value,
+    [messageId]: boardId,
+  }
+}
+
+function bindSelectedBoard(messageId: string) {
+  const boardId = selectedBoardId(messageId)
+  if (boardId) emit('bind-board', messageId, boardId)
+}
 </script>
 
 <template>
@@ -143,6 +178,12 @@ function toggleToolMeta(messageId: string) {
       <div v-if="message.messageType === 'clarification'" class="td-message-clarification-badge">
         Asking for clarification
       </div>
+      <div v-if="message.messageType === 'action-needs-board'" class="td-message-outcome-badge">
+        Board needed before a proposal can be created
+      </div>
+      <div v-if="message.messageType === 'action-no-proposal'" class="td-message-outcome-badge">
+        No proposal was created
+      </div>
       <template v-if="message.messageType === 'parse-hint' && getParseHint(message)">
         <div
           class="td-message-content td-message-content--markdown"
@@ -170,6 +211,19 @@ function toggleToolMeta(messageId: string) {
         ></div>
         <div v-else class="td-message-content">{{ message.content }}</div>
       </template>
+      <details v-if="message.contextSources?.length" class="td-context-receipt">
+        <summary>Sources included in this turn ({{ message.contextSources.length }})</summary>
+        <ul>
+          <li v-for="source in message.contextSources" :key="`${source.kind}:${source.id}`">
+            {{ source.title }} — {{ source.kind === 'private-source' ? 'Private original' : source.kind === 'private-memory' ? 'Private memory' : source.kind === 'thinking' ? 'Shared thinking' : 'Card' }}
+            <span v-if="source.kind !== 'card' && source.revision !== null"> · version {{ source.revision }}</span>
+            <span v-if="source.truncated"> · excerpt</span>
+            <span v-if="source.supersededByAssetId"> · superseded historical source</span>
+            <details v-if="source.contentHash"><summary>Source fingerprint</summary><code style="overflow-wrap: anywhere">{{ source.contentHash }}</code></details>
+          </li>
+        </ul>
+        <p>These sources were checked when this message was sent. Answers can remain in this private conversation after a source changes.</p>
+      </details>
       <div v-if="message.proposalId && message.messageType === 'proposal-reference'" class="td-message-proposal">
         <span>Proposal: {{ message.proposalId }}</span>
         <button
@@ -186,6 +240,81 @@ function toggleToolMeta(messageId: string) {
         :expanded="expandedToolMetaIds.has(message.id)"
         @toggle="toggleToolMeta"
       />
+      <ChatProposalPreview
+        v-if="message.proposalId && message.messageType === 'proposal-reference'"
+        :proposal-id="message.proposalId"
+        :board-id="selectedSessionBoardId"
+      />
+      <section
+        v-if="message.id === pendingBoardMessageId"
+        class="td-board-recovery"
+        aria-label="Link a board to continue this instruction"
+      >
+        <template v-if="selectedSessionBoardId">
+          <p class="td-board-recovery__receipt" role="status">
+            Linked to {{ boardBindingReceipt ?? selectedSessionBoardName }}. The retained instruction has not been sent again.
+          </p>
+          <button
+            class="td-btn td-btn--primary td-btn--sm"
+            :disabled="sendingMessage || sendBlocked"
+            @click="emit('continue-instruction', message.id)"
+          >
+            {{ sendingMessage ? 'Continuing...' : 'Continue retained instruction' }}
+          </button>
+        </template>
+        <template v-else>
+          <template v-if="boardLoadError">
+            <p class="td-board-recovery__error" role="alert">
+              Unable to load writable boards: {{ boardLoadError }}
+            </p>
+            <button
+              class="td-btn td-btn--secondary td-btn--sm"
+              :disabled="loadingBoards"
+              @click="emit('reload-boards')"
+            >
+              {{ loadingBoards ? 'Retrying...' : 'Retry loading boards' }}
+            </button>
+          </template>
+          <template v-if="loadingBoards">
+            <p class="td-board-recovery__copy">Loading writable boards...</p>
+          </template>
+          <template v-else-if="eligibleBoards.length === 0 && !boardLoadError">
+            <p class="td-board-recovery__copy">
+              There are no active boards you can edit. Create a board or ask an owner for edit access, then reload boards.
+            </p>
+            <button class="td-btn td-btn--secondary td-btn--sm" @click="emit('open-boards')">
+              Open Boards
+            </button>
+          </template>
+          <template v-else-if="eligibleBoards.length > 0">
+            <label class="td-board-recovery__label" :for="`chat-board-${message.id}`">
+              Board for this session
+            </label>
+            <select
+              :id="`chat-board-${message.id}`"
+              class="td-board-recovery__select"
+              :value="selectedBoardId(message.id)"
+              :disabled="bindingBoard && bindingMessageId === message.id"
+              @change="updateSelectedBoardId(message.id, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-if="eligibleBoards.length > 1" value="">Choose a board</option>
+              <option v-for="board in eligibleBoards" :key="board.id" :value="board.id">
+                {{ board.name }}
+              </option>
+            </select>
+            <button
+              class="td-btn td-btn--primary td-btn--sm"
+              :disabled="!selectedBoardId(message.id) || (bindingBoard && bindingMessageId === message.id)"
+              @click="bindSelectedBoard(message.id)"
+            >
+              {{ bindingBoard && bindingMessageId === message.id ? 'Linking...' : 'Link board' }}
+            </button>
+          </template>
+        </template>
+        <p v-if="boardBindingError" class="td-board-recovery__error" role="alert">
+          {{ boardBindingError }}
+        </p>
+      </section>
     </div>
 
     <div v-if="sendingMessage" class="td-message td-message--tool-status" data-message-type="tool-status">
@@ -331,6 +460,58 @@ function toggleToolMeta(messageId: string) {
   margin-bottom: var(--td-space-1);
 }
 
+.td-message-outcome-badge {
+  font-size: var(--td-font-xs);
+  color: var(--td-color-warning, #9c5b00);
+  font-weight: 700;
+  margin-bottom: var(--td-space-1);
+}
+
+.td-board-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--td-space-2);
+  margin-top: var(--td-space-3);
+  padding: var(--td-space-3);
+  border: 1px solid var(--td-color-info, #3182ce);
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-secondary);
+}
+
+.td-board-recovery__label {
+  width: 100%;
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+}
+
+.td-board-recovery__select {
+  min-width: 180px;
+  flex: 1;
+  padding: var(--td-space-2);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-primary);
+  color: var(--td-text-primary);
+}
+
+.td-board-recovery__copy,
+.td-board-recovery__receipt,
+.td-board-recovery__error {
+  width: 100%;
+  margin: 0;
+  font-size: var(--td-font-sm);
+}
+
+.td-board-recovery__receipt {
+  color: var(--td-color-success, #26734d);
+  font-weight: 700;
+}
+
+.td-board-recovery__error {
+  color: var(--td-color-danger, #b42318);
+}
+
 .td-message-proposal {
   margin-top: var(--td-space-1);
   font-size: var(--td-font-xs);
@@ -375,7 +556,11 @@ function toggleToolMeta(messageId: string) {
 .td-empty__copy { margin: 0; max-width: 420px; line-height: 1.5; }
 
 .td-btn { padding: var(--td-space-2) var(--td-space-4); border: none; border-radius: var(--td-radius-md); font-size: var(--td-font-sm); font-weight: 600; cursor: pointer; }
+.td-btn--sm { padding: var(--td-space-1) var(--td-space-3); font-size: var(--td-font-xs); }
 .td-btn--xs { padding: 2px 8px; font-size: 11px; }
+.td-btn--primary { background: var(--td-color-primary); color: var(--td-text-inverse); }
 .td-btn--secondary { background: var(--td-surface-tertiary); color: var(--td-text-primary); border: 1px solid var(--td-border-default); }
+.td-btn--primary:hover:not(:disabled) { background: var(--td-color-primary-hover); }
 .td-btn--secondary:hover:not(:disabled) { background: var(--td-surface-hover); }
+.td-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

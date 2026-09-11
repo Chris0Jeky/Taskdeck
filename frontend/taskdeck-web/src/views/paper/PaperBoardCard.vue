@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /* eslint-disable vuejs-accessibility/no-static-element-interactions -- the article and aria-hidden drag glyph are pointer drag boundaries; named-button activation and board keyboard movement remain separate */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
+import type { WorkspacePresentation } from '../../store/workspaceLayoutStore'
 import type { Card, Label } from '../../types/board'
 import { formatCalendarDate, isCalendarDateOverdue } from '../../utils/dueDates'
 
@@ -16,10 +18,12 @@ import { formatCalendarDate, isCalendarDateOverdue } from '../../utils/dueDates'
  * driven by parent listeners. No store coupling here.
  */
 export type PaperBoardCardVariant = 'index' | 'ribbon'
+export type PaperBoardPresentation = WorkspacePresentation | 'classic'
 
 const props = withDefaults(
   defineProps<{
     card: Card
+    presentation?: PaperBoardPresentation
     variant?: PaperBoardCardVariant
     /** Subtask completion ratio shown in the metadata strip. */
     subtasks?: { done: number; total: number } | null
@@ -35,6 +39,7 @@ const props = withDefaults(
   }>(),
   {
     variant: 'index',
+    presentation: 'classic',
     subtasks: null,
     tone: null,
     selected: false,
@@ -46,6 +51,12 @@ const emit = defineEmits<{
   (event: 'dragstart', card: Card, e: DragEvent): void
   (event: 'dragend'): void
 }>()
+
+// Disclosure is local view state. A presentation switch never replaces the card
+// or reaches its mutation handlers, and returning to Zen retains the disclosure.
+const detailsExpanded = ref(false)
+const isZen = computed(() => props.presentation === 'zen')
+const showSecondaryDetails = computed(() => !isZen.value || detailsExpanded.value)
 
 /** Mono serial — `C-` plus first 8 hex chars of card.id (or full id if short). */
 const serial = computed(() => {
@@ -149,6 +160,7 @@ function onDragEnd() {
 function onDragHandleMouseDown() {
   window.getSelection()?.removeAllRanges()
 }
+const proposalMarker = useBoardProposalMarker('card', () => props.card.id)
 </script>
 
 <template>
@@ -159,12 +171,15 @@ function onDragHandleMouseDown() {
       selected ? 'paper-board-card--selected' : '',
     ]"
     :data-card-id="card.id"
+    :data-proposal-change="proposalMarker ? true : undefined"
     :data-variant="variant"
     :data-tone="tone || undefined"
+    :data-presentation="presentation"
     draggable="false"
     @dragstart="onDragStart"
     @dragend="onDragEnd"
   >
+    <span v-if="proposalMarker" class="td-proposal-marker">{{ proposalMarker }}</span>
     <button
       type="button"
       class="paper-board-card__open"
@@ -184,7 +199,7 @@ function onDragHandleMouseDown() {
 
     <div class="paper-board-card__body">
       <header class="paper-board-card__header">
-        <span class="tk-serial paper-board-card__serial">{{ serial }}</span>
+        <span v-show="showSecondaryDetails" class="tk-serial paper-board-card__serial">{{ serial }}</span>
         <span class="paper-board-card__header-actions">
           <span
             v-if="tagstampTone"
@@ -210,14 +225,20 @@ function onDragHandleMouseDown() {
 
       <h4 class="paper-board-card__title">{{ card.title }}</h4>
 
+      <p v-if="presentation !== 'classic' && card.isBlocked" class="paper-board-card__blocked">
+        <strong>Blocked</strong><span v-if="card.blockReason"> · {{ card.blockReason }}</span>
+      </p>
+
       <p
         v-if="card.description"
+        v-show="showSecondaryDetails"
         class="paper-board-card__excerpt tk-body"
       >{{ card.description }}</p>
 
       <footer class="paper-board-card__meta">
         <span
           v-for="label in card.labels"
+          v-show="showSecondaryDetails"
           :key="label.id"
           class="paper-board-card__label"
           :style="{ color: label.colorHex }"
@@ -233,10 +254,19 @@ function onDragHandleMouseDown() {
         </span>
         <span
           v-if="ageLabel"
+          v-show="showSecondaryDetails"
           class="paper-board-card__age"
+          :title="presentation === 'control' ? `Updated ${card.updatedAt}` : undefined"
           :style="{ color: isOverdue ? 'var(--overdue)' : 'var(--mute)' }"
         >{{ ageLabel }}</span>
       </footer>
+      <button v-if="isZen && (card.description || card.labels.length || ageLabel)" type="button"
+        class="paper-board-card__disclosure" :aria-expanded="detailsExpanded"
+        :aria-label="`${detailsExpanded ? 'Hide' : 'Show'} details for ${card.title}`"
+        @click.stop="detailsExpanded = !detailsExpanded" @keydown.enter.stop @keydown.space.stop>
+        {{ detailsExpanded ? 'Less detail' : 'More detail' }} <span aria-hidden="true">{{ detailsExpanded ? '−' : '+' }}</span>
+      </button>
+      <span v-if="presentation === 'control'" class="paper-board-card__operation-note">{{ card.labels.length }} {{ card.labels.length === 1 ? 'label' : 'labels' }} · {{ card.isBlocked ? 'Needs unblocking' : 'Not blocked' }}</span>
     </div>
   </article>
 </template>
@@ -246,7 +276,6 @@ function onDragHandleMouseDown() {
   position: relative;
   display: block;
   width: 100%;
-  max-width: 248px;
   background: var(--paper-card);
   border: 1px solid var(--line);
   border-radius: var(--r-2);
@@ -429,4 +458,22 @@ function onDragHandleMouseDown() {
 .paper-board-card__due-date--overdue {
   color: var(--overdue);
 }
+</style>
+
+<style scoped>
+.paper-board-card__blocked { margin: 4px 0; padding: 6px 8px; border-left: 2px solid var(--overdue); background: var(--overdue-tint); color: var(--overdue); font: 12px/1.5 var(--sans); overflow-wrap: anywhere; }
+.paper-board-card__disclosure { position: relative; z-index: 2; display: flex; justify-content: space-between; width: 100%; padding: 8px 0 2px; border: 0; background: transparent; color: var(--mute); font: 11px var(--sans); text-align: left; cursor: pointer; }
+.paper-board-card__disclosure:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+.paper-board-card__operation-note { font: 10px/1.4 var(--mono); color: var(--mute); }
+.paper-board-card[data-presentation="zen"] { border-radius: 12px; box-shadow: none; }
+.paper-board-card[data-presentation="zen"] .paper-board-card__body { padding: 18px; gap: 8px; }
+.paper-board-card[data-presentation="zen"] .paper-board-card__title { font: 500 19px/1.4 var(--serif); }
+.paper-board-card[data-presentation="zen"] .paper-board-card__header { justify-content: flex-end; }
+.paper-board-card[data-presentation="zen"] .paper-board-card__excerpt { -webkit-line-clamp: 3; line-clamp: 3; }
+.paper-board-card[data-presentation="zen"] .paper-board-card__meta { margin-top: 0; border-top: 0; padding-top: 0; }
+.paper-board-card[data-presentation="control"] { border-radius: 2px; box-shadow: none; border-left: 3px solid var(--line); }
+.paper-board-card[data-presentation="control"] .paper-board-card__body { padding: 7px 10px; gap: 2px; }
+.paper-board-card[data-presentation="control"] .paper-board-card__title { font: 600 13px/1.35 var(--sans); }
+.paper-board-card[data-presentation="control"] .paper-board-card__meta { margin-top: 3px; padding-top: 3px; gap: 5px; }
+.paper-board-card[data-presentation="control"] .paper-board-card__blocked { margin: 2px 0; padding: 3px 6px; }
 </style>

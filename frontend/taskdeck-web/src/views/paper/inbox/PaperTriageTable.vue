@@ -61,6 +61,8 @@ const props = withDefaults(defineProps<{
   scopeReplacement?: boolean
   actionBusyItemId?: string | null
   triagePollingItemId?: string | null
+  triagePollingItemIds?: Set<string>
+  triagePollingProblems?: Record<string, 'retrying' | 'unavailable'>
   scopeLabel?: string
   scopeClearLabel?: string
   readOnly?: boolean
@@ -550,6 +552,7 @@ function isActionDisabled(
 
   return props.readOnly ||
     hasMutationInFlight.value ||
+    props.triagePollingItemIds?.has(item.id) ||
     props.triagePollingItemId === item.id ||
     !actionPermitted ||
     isEditing(item) ||
@@ -582,6 +585,9 @@ function onEdit(item: CaptureItemSummary) {
  */
 function closeEdit() {
   const itemId = editItemId.value
+  const activeElement = typeof document === 'undefined' ? null : document.activeElement
+  const editorOwnedFocus = activeElement instanceof HTMLElement &&
+    activeElement.closest('[data-testid="capture-edit"]') !== null
   if (itemId !== null) {
     const report = readOpenEditor()
     if (report.state === 'ready') {
@@ -593,6 +599,18 @@ function closeEdit() {
   }
   editItemId.value = null
   editItemLabel.value = null
+
+  // A Cancel click leaves focus on the editor that is about to disappear.
+  // Return it to this row's Edit control only in that case; a persistent row
+  // control or dialog may have taken focus while the editor was closing.
+  if (itemId !== null && editorOwnedFocus) {
+    void nextTick(() => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>('.paper-triage__row'))
+        .find(candidate => candidate.dataset.itemId === itemId)
+      const editButton = row?.querySelector<HTMLButtonElement>('button[data-action="edit"]')
+      if (editButton && !editButton.disabled) editButton.focus()
+    })
+  }
 }
 
 /** The editor has put a held correction back; say which one, once it is true. */
@@ -700,6 +718,7 @@ type TriageRowState = CaptureRowState | 'keeping' | 'archiving' | 'kept' | 'arch
  * honest failure mode; the row simply stays quiet until the refresh lands.
  */
 function rowState(item: CaptureItemSummary): TriageRowState {
+  if (props.triagePollingItemIds?.has(item.id)) return 'sending'
   const pending = pendingAction.value
   if (props.actionBusyItemId === item.id && pending?.itemId === item.id) {
     if (pending.kind === 'keep') return 'keeping'
@@ -717,6 +736,7 @@ function rowState(item: CaptureItemSummary): TriageRowState {
  * row is genuinely still waiting on the user.
  */
 function decisionLine(item: CaptureItemSummary): string | null {
+  if (props.triagePollingItemIds?.has(item.id)) return t('inbox.polling.waiting')
   const state = rowState(item)
   if (state === 'undecided' || state === 'unknown') return null
   if (state === 'nothingToPropose' && item.canEditSuggestion === false) {
@@ -1264,6 +1284,9 @@ function recordedOr(value: string | null | undefined): string {
           />
         </div>
 
+        <p v-if="triagePollingProblems?.[item.id]" role="status" data-testid="capture-polling-problem">
+          {{ t(`inbox.polling.${triagePollingProblems[item.id]}`) }}
+        </p>
         <p
           v-if="decisionLine(item)"
           class="paper-triage__decision"

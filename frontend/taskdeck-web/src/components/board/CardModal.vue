@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
 import { useVisualViewport } from '../../composables/useVisualViewport'
 import TdDialog from '../ui/TdDialog.vue'
+import CardParentField from './CardParentField.vue'
+import CardDetachList from './CardDetachList.vue'
+import CardArchiveAction from './CardArchiveAction.vue'
+import { useBoardStore } from '../../store/boardStore'
 import {
   CardModalHeader,
   CardModalForm,
@@ -20,8 +25,12 @@ const props = withDefaults(defineProps<{
   isOpen: boolean
   labels: Label[]
   presentation?: 'modal' | 'inspector'
+  suppressDiscardPrompt?: boolean
+  skipFocusRestore?: boolean
 }>(), {
   presentation: 'modal',
+  suppressDiscardPrompt: false,
+  skipFocusRestore: false,
 })
 
 const emit = defineEmits<{
@@ -31,6 +40,13 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const router = useRouter()
+const boardStore = useBoardStore()
+async function refreshArchiveState() {
+  emit('close')
+  await boardStore.fetchBoard(props.card.boardId)
+}
+const pendingThinkingPath = ref<string | null>(null)
 
 const dialogRef = ref<HTMLElement | null>(null)
 const showDiscardConfirm = ref(false)
@@ -59,6 +75,21 @@ function focusInitialControl() {
   const firstFocusable = dialog.querySelector<HTMLElement>(focusableSelector)
   const initialControl = closeButton ?? firstFocusable ?? dialog
   initialControl.focus()
+}
+
+function shouldPreserveFocusDuringPresentationTransition() {
+  const dialog = dialogRef.value
+  if (!dialog) return true
+
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement) {
+    if (dialog.contains(activeElement)) return true
+    if (activeElement.closest('[role="dialog"]')) return true
+  }
+
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+  ).some((candidate) => candidate !== dialog && !dialog.contains(candidate))
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -95,25 +126,74 @@ watch(
       await nextTick()
       focusInitialControl()
     } else if (wasOpen) {
-      restoreFocus()
+      if (props.skipFocusRestore) {
+        previouslyFocusedElement = null
+      } else {
+        restoreFocus()
+      }
     }
   },
   { immediate: true },
 )
 
+// A desktop inspector stays mounted while another card is selected. Move focus
+// to the new editor's close control so keyboard users arrive at the newly
+// selected card instead of remaining in a control whose contents just changed.
+watch(
+  () => props.card.id,
+  async (cardId, previousCardId) => {
+    if (!props.isOpen || cardId === previousCardId) return
+    await nextTick()
+    focusInitialControl()
+  },
+)
+
+watch(
+  isInspector,
+  async (inspector, wasInspector) => {
+    if (!props.isOpen || inspector || !wasInspector) return
+    await nextTick()
+    if (!props.isOpen || isInspector.value || shouldPreserveFocusDuringPresentationTransition()) return
+    focusInitialControl()
+  },
+)
+
 onUnmounted(() => {
-  if (props.isOpen) {
+  if (props.isOpen && !props.skipFocusRestore) {
     restoreFocus()
   }
 })
 
 function closeWithoutPrompt() {
+  const destination = pendingThinkingPath.value
+  pendingThinkingPath.value = null
   showDiscardConfirm.value = false
   emit('close')
+  if (destination) void router.push(destination)
+}
+
+function openThinkingDeck() {
+  const destination = `/workspace/boards/${props.card.boardId}/cards/${props.card.id}/thinking`
+  if (hasUnsavedChanges.value) {
+    pendingThinkingPath.value = destination
+    showDiscardConfirm.value = true
+    return
+  }
+  void router.push(destination)
+}
+
+function keepEditing() {
+  pendingThinkingPath.value = null
+  showDiscardConfirm.value = false
 }
 
 const {
   // Form state
+  parentCardId,
+  detachPreview,
+  deletePreviewError,
+  deletePreviewLoading,
+  workItemType,
   title,
   description,
   dueDate,
@@ -122,6 +202,8 @@ const {
   selectedLabelIds,
   isFormValid,
   hasUnsavedChanges,
+  isSaving,
+  saveError,
 
   // Due date
   formattedDueDate,
@@ -176,7 +258,16 @@ watch(hasUnsavedChanges, (dirty) => {
   emit('dirty-change', dirty)
 }, { immediate: true })
 
+watch(() => props.suppressDiscardPrompt, (suppress) => {
+  if (!suppress) return
+
+  pendingThinkingPath.value = null
+  showDiscardConfirm.value = false
+}, { immediate: true })
+
 function handleClose() {
+  if (props.suppressDiscardPrompt) return
+
   if (hasUnsavedChanges.value) {
     showDiscardConfirm.value = true
     return
@@ -187,6 +278,7 @@ function handleClose() {
 useEscapeToClose(
   () =>
     props.isOpen &&
+    !props.suppressDiscardPrompt &&
     !showDiscardConfirm.value &&
     !showDeleteConfirm.value &&
     !showCommentDeleteConfirm.value,
@@ -224,11 +316,18 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
+        <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || !!card.isArchived" />
+        <CardArchiveAction :key="card.updatedAt" :card="card" :disabled="hasUnsavedChanges"
+          @changed="emit('updated'); emit('close')" @refresh="refreshArchiveState" />
+        <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
-        <div class="space-y-4">
+        <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
+        <fieldset :disabled="card.isArchived || isSaving" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
+            v-model:work-item-type="workItemType"
+            :can-edit-type="boardStore.currentBoard?.id === card.boardId && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived && !card.isArchived"
             v-model:description="description"
             v-model:due-date="dueDate"
             v-model:is-blocked="isBlocked"
@@ -269,10 +368,11 @@ useEscapeToClose(
             :capture-href-fn="captureHref"
             :proposal-href-fn="proposalHref"
           />
-        </div>
+        </fieldset>
 
       <CardModalActions
-          :is-form-valid="isFormValid"
+          :is-form-valid="isFormValid && !card.isArchived && !isSaving"
+          :is-saving="isSaving"
           :card="card"
           @save="handleSave"
           @close="handleClose"
@@ -286,14 +386,14 @@ useEscapeToClose(
     :open="showDiscardConfirm"
     title="Discard card changes?"
     description="This card has unsaved changes. Discard them and close the editor?"
-    @close="showDiscardConfirm = false"
+    @close="keepEditing"
   >
     <template #footer>
       <button
         type="button"
         class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
         data-testid="card-discard-cancel"
-        @click="showDiscardConfirm = false"
+        @click="keepEditing"
       >
         Keep editing
       </button>
@@ -315,6 +415,9 @@ useEscapeToClose(
     :close-on-backdrop="!isDeleting"
     @close="handleDeleteCancel"
   >
+    <p v-if="deletePreviewLoading" role="status">Loading every affected child...</p>
+    <p v-if="deletePreviewError" role="alert">{{ deletePreviewError }}</p>
+    <CardDetachList v-if="detachPreview" :preview="detachPreview" />
     <template #footer>
       <button
         type="button"
@@ -326,7 +429,7 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeleting"
+        :disabled="isDeleting || !detachPreview || !!deletePreviewError"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         @click="handleDeleteConfirm"
       >

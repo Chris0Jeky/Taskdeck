@@ -28,6 +28,13 @@ public sealed class EfCaptureStore : ICaptureStore
         await _context.Captures.AddAsync(capture, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Capture>> NativeByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+        => await _context.Captures.AsNoTracking()
+            .Where(capture => capture.UserId == userId && capture.LegacyRequestId == null)
+            .OrderBy(capture => capture.Id).Skip(offset).Take(Math.Clamp(limit, 1, 100))
+            .Include(capture => capture.SourceAssets).ThenInclude(asset => asset.TextPayload)
+            .ToListAsync(cancellationToken);
+
     public Task<Capture?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
         => _context.Captures
             .AsNoTracking()
@@ -97,7 +104,8 @@ public sealed class EfCaptureStore : ICaptureStore
                 capture.Id,
                 capture.LegacySourceSnapshot,
                 capture.CapturedAtServer,
-                capture.UpdatedAt
+                capture.UpdatedAt,
+                capture.LegacyReconciliationVersion
             })
             .ToListAsync(cancellationToken);
 
@@ -133,7 +141,8 @@ public sealed class EfCaptureStore : ICaptureStore
                 header.LegacySourceSnapshot,
                 header.CapturedAtServer,
                 header.UpdatedAt,
-                textByCapture.TryGetValue(header.Id, out var text) ? text : null))
+                textByCapture.TryGetValue(header.Id, out var text) ? text : null,
+                header.LegacyReconciliationVersion))
             .ToList();
     }
 
@@ -145,6 +154,14 @@ public sealed class EfCaptureStore : ICaptureStore
 
     public async Task<int> DeleteByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        // Native audio receipts and representation lineage hold source-asset FKs. Erase these
+        // owned dependants before the existing explicit source-child deletion below.
+        var ownedCaptureIds = _context.Captures.Where(x => x.UserId == userId).Select(x => x.Id);
+        var ownedRepresentationIds = _context.Representations.Where(x => x.UserId == userId && x.CaptureId.HasValue && ownedCaptureIds.Contains(x.CaptureId.Value)).Select(x => x.Id);
+        await _context.AudioTranscriptionAttempts.Where(x => x.UserId == userId && ownedCaptureIds.Contains(x.CaptureId)).ExecuteDeleteAsync(cancellationToken);
+        await _context.ThinkingAudioAnswers.Where(x => x.UserId == userId && ownedCaptureIds.Contains(x.CaptureId)).ExecuteDeleteAsync(cancellationToken);
+        await _context.RepresentationSupersessions.Where(x => ownedRepresentationIds.Contains(x.RepresentationId)).ExecuteDeleteAsync(cancellationToken);
+        await _context.Representations.Where(x => ownedRepresentationIds.Contains(x.Id)).ExecuteDeleteAsync(cancellationToken);
         // Set-based, children first: explicit rather than relying on the database honouring the
         // cascade, so the erasure is the same on every provider the store may run on.
         var ownedAssets = _context.SourceAssets

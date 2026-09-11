@@ -68,6 +68,9 @@ export interface CaptureItemSummary {
   canEditSuggestion?: boolean
 }
 
+export type CaptureTriageStatus = Pick<CaptureItemSummary,
+  'id' | 'status' | 'processedAt' | 'errorMessage' | 'disposition' | 'canEditSuggestion'>
+
 export interface CaptureProvenance {
   captureItemId: string
   triageRunId: string | null

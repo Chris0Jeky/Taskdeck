@@ -86,9 +86,40 @@ public class OperationHandlerRegistry
             case "archive":
                 return await ArchiveCardAsync(parameters, cancellationToken);
 
+            case "delete":
+                return await DeleteCardAsync(parameters, cancellationToken);
+
+            case "archive-lifecycle":
+            case "restore-lifecycle":
+                return await SetCardArchivedAsync(parameters, actionType == "archive-lifecycle", cancellationToken);
+
             default:
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported card action: {actionType}");
         }
+    }
+
+    private async Task<Result> DeleteCardAsync(JsonElement parameters, CancellationToken ct)
+    {
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
+            return Result.Failure(ErrorCodes.ValidationError, error);
+        if (!parameters.TryGetProperty("expectedUpdatedAt", out var stamp) || stamp.ValueKind != JsonValueKind.String || !stamp.TryGetDateTimeOffset(out var expected))
+            return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt is required");
+        return await _cardService.DeleteCardAsync(cardId, cancellationToken: ct,
+            confirmation: new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")));
+    }
+
+    private async Task<Result> SetCardArchivedAsync(JsonElement parameters, bool archive, CancellationToken cancellationToken)
+    {
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
+            return Result.Failure(ErrorCodes.ValidationError, error);
+        if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+            timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+            return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+        var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+        if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+        var result = await _cardService.SetArchivedAsync(card.BoardId, cardId, archive,
+            new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")), cancellationToken: cancellationToken);
+        return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 
     private async Task<Result> CreateCardAsync(
@@ -99,7 +130,11 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryGetRequiredString(parameters, "title", out var title, out var titleError))
             return Result.Failure(ErrorCodes.ValidationError, titleError);
 
+        if (!ProposalHierarchyValidator.TryReadParent(parameters, out var parentId, out var clearParent, out var parentError))
+            return Result.Failure(ErrorCodes.ValidationError, parentError);
         var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+            return Result.Failure(ErrorCodes.ValidationError, typeError);
 
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 parameters, "dueDate", out _, out var dueDate, out var dueDateError))
@@ -137,7 +172,7 @@ public class OperationHandlerRegistry
         if (!labelResolution.IsSuccess)
             return Result.Failure(labelResolution.ErrorCode, labelResolution.ErrorMessage);
 
-        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value);
+        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value, workItemType, parentId);
         var result = await _cardService.CreateCardAsync(dto, cardId, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
@@ -149,7 +184,11 @@ public class OperationHandlerRegistry
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
         var title = OperationParameterParser.GetOptionalString(parameters, "title");
+        if (!ProposalHierarchyValidator.TryReadParent(parameters, out var parentId, out var clearParent, out var parentError))
+            return Result.Failure(ErrorCodes.ValidationError, parentError);
         var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+            return Result.Failure(ErrorCodes.ValidationError, typeError);
 
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 parameters, "dueDate", out var dueDateProvided, out var dueDate, out var dueDateError))
@@ -170,10 +209,10 @@ public class OperationHandlerRegistry
             return Result.Failure(ErrorCodes.ValidationError, labelIdsError);
 
         var shouldClearDueDate = clearDueDate || (dueDateProvided && !dueDate.HasValue);
-        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided)
+        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided && workItemType is null && !parentId.HasValue && !clearParent)
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
 
         List<Guid>? labelIds = null;
         if (labelsProvided || labelIdsProvided)
@@ -195,6 +234,14 @@ public class OperationHandlerRegistry
             labelIds = labelResolution.Value;
         }
 
+        DateTimeOffset? expectedUpdatedAt = null;
+        if (workItemType is not null || parentId.HasValue || clearParent)
+        {
+            if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+                timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+                return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+            expectedUpdatedAt = expected;
+        }
         var dto = new UpdateCardDto(
             title,
             description,
@@ -202,7 +249,7 @@ public class OperationHandlerRegistry
             null,
             null,
             labelIds,
-            ClearDueDate: shouldClearDueDate);
+            ExpectedUpdatedAt: expectedUpdatedAt, ClearDueDate: shouldClearDueDate, WorkItemType: workItemType, ParentCardId: parentId, ClearParent: clearParent);
         var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);

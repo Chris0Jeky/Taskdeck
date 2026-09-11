@@ -5,6 +5,7 @@
  * card editor used by both Paper and Legacy board views.
  */
 export default {
+  workItemType: { label: 'Work item type', task: 'Task', epic: 'Epic', spike: 'Spike' },
   commentDelete: {
     title: 'Delete comment?',
     description: 'This comment will be deleted. This action cannot be undone.',

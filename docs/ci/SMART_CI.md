@@ -83,9 +83,10 @@ The lanes are the existing reusable workflows (ADR-0013), parameterized rather t
 | dependency-signals / sast | `reusable-dependency-security-signals.yml`, `reusable-sast-scanning.yml` | hosted Linux | required contexts (ADR-0035) |
 | architecture | `reusable-backend-architecture.yml` | hosted Linux → self-hosted Linux | |
 | backend-unit | `reusable-backend-unit.yml` (Domain/Application/CLI) | Linux semantic; Windows only via the contract | |
-| api-integration | `reusable-api-integration.yml` → behavioural shards (CI-06) | Linux semantic; Windows contract shard | |
+| api-integration | `reusable-api-integration.yml`, separate Linux/Windows callers | full hosted suite on both platforms; contract shards remain CI-06 work | E2E waits for Linux API; Windows remains required qualification |
 | migration | `reusable-migration-validation.yml` | hosted Linux | selected by persistence groups |
-| frontend | `reusable-frontend-unit.yml` | Linux once (launcher suite Linux-only since CI-07 #2331); Windows platform subset without the launcher suite | CI-08 |
+| frontend | `reusable-frontend-unit.yml` | full Linux/Windows semantic matrix | narrower Windows subset remains CI-08 work |
+| source-launcher-linux | independent `source-launcher` job in `reusable-frontend-unit.yml` | hosted Linux only under SC-3 | check: `Frontend Unit / Source Launcher (Linux)` |
 | e2e-journey | `reusable-e2e-smoke.yml` by journey | self-hosted Linux / hosted | CI-08 |
 | containers | `reusable-container-images.yml`, `reusable-container-integration.yml` | self-hosted Linux / hosted | risk-gated (CI-08) |
 | windows-compat | worktree-helper harness, launchers, dev-up, MCP host, SQLite, desktop | Windows (self-hosted after CI-04) | CI-07 |
@@ -112,9 +113,12 @@ event head (`CONTROL_HEAD`) to match the merge ref's second parent **exactly** �
 untrusted side and is never negotiable — while the first parent may be either the dispatch-time
 control base (`CONTROL_BASE`) or the base branch's live tip on origin — the same branch whose
 commit already supplies the control-plane tooling — which the resolver reads itself with
-`--base-ref` before accepting. Nothing untrusted enters the binding. An accepted move is recorded as a `merge-ref-moved` planner note in the receipt.
+`--base-ref` before accepting. Nothing untrusted enters the binding. The plan records the accepted
+observation structurally: `mergeBaseSha` is the merge commit's observed first parent, and
+`mergeBaseTipSha` is the authenticated live tip only for an accepted move (otherwise `null`). The
+optional `merge-ref-moved` note is explanatory text and is never parsed as evidence.
 Any other first parent, an unreadable base branch tip, or any head mismatch still fails closed with no
-merge/tree outputs, which the planner turns into a `planner-error` plan. Before this rule
+merge/tree/base outputs, which the planner turns into a `planner-error` plan. Before this rule
 (CI-03 #2327) an ordinary base push produced a false red on a healthy PR; because an error plan pins
 its trust class to `T3` by construction, the gate's re-derivation also emitted a misleading
 `trust-mismatch` failure alongside it — that comparison is now reported as a note instead, and
@@ -134,7 +138,8 @@ decided on that observation evidence, not in advance (SC-4, no pre-ruling 2026-0
 ## 8. Receipts and reports
 
 Every gate run writes `ci-run.json` (schema `ci/schemas/ci-run.v1.schema.json`): SHAs and merge
-tree, policy digest, risk/trust, selected/skipped with reasons, per-job runner class / hosted flag /
+tree, observed merge first parent and optional authenticated moved-base tip, policy digest,
+risk/trust, selected/skipped with reasons, per-job runner class / hosted flag /
 queue / setup / test / total seconds / allowance-minute estimate / tests run-failed-skipped / rerun /
 cache hit / artifact bytes; summary critical path, aggregate runner seconds, hosted minutes and cost
 estimate, self-hosted wall seconds, flake and duplicate-qualification flags. Names, ids, timestamps
@@ -143,11 +148,19 @@ P50/P95 critical path, minutes per merged PR, hosted cost, queue delay, selectio
 per lane, flake rate, slow-test regressions, duplicate exact-SHA runs, cache utility and storage.
 Provisional budgets: R0/R1 ≤5 min, R2 ≤10, R3 ≤20, main verifier ≤5 — a regression names the lane.
 
+The version-1 executable reader accepts a legacy plan only when both `mergeBaseSha` and
+`mergeBaseTipSha` are absent; it then uses `baseSha` as the historical parent fallback and explicitly
+makes no claim that the new first-parent receipt was captured. A partial pair, malformed SHA, or
+binding mismatch is invalid. New successful PR plans always carry both fields; non-PR and error plans
+carry both as `null`. Because the old documentation schemas use `additionalProperties: false`, an old
+schema cannot validate a new receipt containing these fields; consumers must use the updated schema.
+
 The shadow recall report is read-only and uses GitHub REST plus `gh run download`; it does not need
 GraphQL project quota. It counts unique merged PRs, while retaining every measurable head and rerun
 attempt so an earlier failure cannot disappear behind a later green run. A PR is usable only when all
 of its collected evidence is exact and its final head has a successful required run. The plan's fetched
-merge commit must have the recorded base and head parents and merge tree, and the landed merge commit
+merge commit must have the recorded observed first parent and head parent plus merge tree; the observed
+first parent must be `baseSha` or the matching recorded `mergeBaseTipSha`. The landed merge commit
 must match the final base, head and tree. Missing, duplicate, expired, stale or mismatched evidence
 fails closed. A lane family is ready only after at least 20 usable merged PRs, an actual failure in that
 family, 100% recall and no missed failure anywhere in the sample. Exit codes are `0` ready, `1`

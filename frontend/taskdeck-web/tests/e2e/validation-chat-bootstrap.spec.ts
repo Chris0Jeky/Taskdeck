@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { API_BASE_URL, API_ORIGIN, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
 
@@ -8,6 +8,15 @@ import { assertOk } from './support/httpAsserts'
 interface ChatSessionListDto {
   id: string
   title: string
+}
+
+interface ChatSessionDto extends ChatSessionListDto {
+  boardId: string | null
+  recentMessages: Array<{
+    id: string
+    messageType: string
+    proposalId: string | null
+  }>
 }
 
 // --- Tests ---
@@ -69,10 +78,10 @@ test.describe('TST09 Chat Session Behavior', () => {
     expect(count).toBe(0)
   })
 
-  test('SC-005: actionable prompt with proposal generation creates proposal without mutating board', async ({
+  test('SC-005: unbound actionable prompt links the session, continues explicitly, and reaches Review without mutating board', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardWithColumn(request, auth, seed, {
       boardNamePrefix: 'SliceC Actionable',
@@ -84,16 +93,44 @@ test.describe('TST09 Chat Session Behavior', () => {
 
     await page.goto('/workspace/automations/chat')
     await page.getByPlaceholder('Session title').fill(`Actionable ${seed}`)
-    await page.getByPlaceholder('Board context (optional)').fill(boardId)
     await page.getByRole('button', { name: 'Create Session' }).click()
 
+    const sessionId = await page.locator('.paper-chat__meta').getAttribute('data-session-id')
+    if (!sessionId) throw new Error('Expected selected chat session id')
+
     await page.getByPlaceholder('Describe an automation instruction...').fill(`create card "${uniqueCardTitle}"`)
-    const requestProposalCheckbox = page.getByRole('checkbox', { name: 'Request proposal generation' })
-    await requestProposalCheckbox.check()
+    await expect(page.getByRole('checkbox', { name: 'Request proposal generation' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Send Message' }).click()
 
-    // Wait for assistant response
-    await expect(page.getByText('Assistant').first()).toBeVisible()
+    const recoveryTurn = page.locator('[data-message-type="action-needs-board"]').last()
+    await expect(recoveryTurn).toBeVisible()
+    await expect(recoveryTurn.getByText('Board needed before a proposal can be created')).toBeVisible()
+
+    const beforeBindingResponse = await request.get(
+      `${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    await assertOk(beforeBindingResponse, 'get unbound chat outcome')
+    const beforeBinding = (await beforeBindingResponse.json()) as ChatSessionDto
+    expect(beforeBinding.boardId).toBeNull()
+    const messageCountBeforeBinding = beforeBinding.recentMessages.length
+
+    await recoveryTurn.getByRole('button', { name: 'Link board' }).click()
+    await expect(recoveryTurn.getByText(/Linked to SliceC Actionable/)).toBeVisible()
+
+    const boundResponse = await request.get(
+      `${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    await assertOk(boundResponse, 'get linked chat session')
+    const bound = (await boundResponse.json()) as ChatSessionDto
+    expect(bound.boardId).toBe(boardId)
+    expect(bound.recentMessages).toHaveLength(messageCountBeforeBinding)
+
+    await recoveryTurn.getByRole('button', { name: 'Continue retained instruction' }).click()
+    const proposalTurn = page.locator('[data-message-type="proposal-reference"]').last()
+    await expect(proposalTurn).toBeVisible()
+    await expect(proposalTurn.getByRole('button', { name: 'Open in Review' })).toBeVisible()
 
     // Verify board state unchanged (GP-06 compliance)
     const cardsResponse = await request.get(
@@ -103,6 +140,85 @@ test.describe('TST09 Chat Session Behavior', () => {
     await assertOk(cardsResponse, 'list cards after proposal')
     const cards = (await cardsResponse.json()) as Array<{ title: string }>
     expect(cards.some((c) => c.title === uniqueCardTitle)).toBeFalsy()
+
+    await proposalTurn.getByRole('button', { name: 'Open in Review' }).click()
+    await expect(page).toHaveURL(/\/workspace\/review/)
+    await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
+
+    const reloadedResponse = await request.get(
+      `${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    const reloaded = (await reloadedResponse.json()) as ChatSessionDto
+    const proposalId = reloaded.recentMessages.find((message) => message.proposalId)?.proposalId
+    expect(proposalId).toBeTruthy()
+    await expect(page.locator(`#proposal-${proposalId}`)).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('chat-to-review.png'), fullPage: true })
+
+    const cardsInReviewResponse = await request.get(
+      `${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    await assertOk(cardsInReviewResponse, 'list cards in Review before Apply')
+    const cardsInReview = (await cardsInReviewResponse.json()) as Array<{ title: string }>
+    expect(cardsInReview.some((card) => card.title === uniqueCardTitle)).toBeFalsy()
+  })
+
+  test('SC-005b: failed refresh after continuation does not retain the pre-bind fallback turn', async ({ page, request }) => {
+    let sessionDetailReads = 0
+    let messagePosts = 0
+    await page.route((url) => (
+      url.origin === API_ORIGIN && /^\/api\/llm\/chat\/sessions\/[^/]+(?:\/messages)?$/.test(url.pathname)
+    ), async (route) => {
+      const path = new URL(route.request().url()).pathname
+      const method = route.request().method()
+      if (method === 'GET' && /^\/api\/llm\/chat\/sessions\/[^/]+$/.test(path)) {
+        sessionDetailReads += 1
+        if (sessionDetailReads >= 2) {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ errorCode: 'SyntheticRefreshFailure', message: 'Refresh unavailable' }),
+          })
+          return
+        }
+      }
+      if (method === 'POST' && path.endsWith('/messages')) {
+        messagePosts += 1
+      }
+      await route.continue()
+    })
+
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+    const boardId = await createBoardWithColumn(request, auth, seed, {
+      boardNamePrefix: 'SliceC Refresh Recovery',
+      description: 'failed refresh recovery validation board',
+      columnNamePrefix: 'Todo',
+    })
+    const instruction = `create card "Refresh Recovery ${seed}"`
+
+    await page.goto('/workspace/automations/chat')
+    await page.getByPlaceholder('Session title').fill(`Refresh Recovery ${seed}`)
+    await page.getByRole('button', { name: 'Create Session' }).click()
+
+    await page.getByPlaceholder('Describe an automation instruction...').fill(instruction)
+    await page.getByRole('button', { name: 'Send Message' }).click()
+
+    const recoveryTurn = page.locator('[data-message-type="action-needs-board"]').last()
+    await expect(recoveryTurn).toBeVisible()
+    await recoveryTurn.getByRole('button', { name: 'Link board' }).click()
+    await expect(recoveryTurn.getByRole('button', { name: 'Continue retained instruction' })).toBeVisible()
+
+    await recoveryTurn.getByRole('button', { name: 'Continue retained instruction' }).click()
+    await expect(page.locator('[data-message-type="proposal-reference"]').last()).toBeVisible()
+
+    const visibleInstructionTurns = page
+      .locator('[data-message-type="text"] .td-message-content')
+      .filter({ hasText: instruction })
+    await expect(visibleInstructionTurns).toHaveCount(2)
+    expect(messagePosts).toBe(2)
+    expect(sessionDetailReads).toBeGreaterThanOrEqual(3)
+    expect(boardId).toBeTruthy()
   })
 
   test('SC-038: LLM health banner displays correct state for mock provider', async ({ page }) => {

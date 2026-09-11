@@ -24,6 +24,78 @@ public class MigrationBootstrapTests : IDisposable
     private readonly string _dbPath;
     private readonly TaskdeckDbContext _context;
 
+    [Fact]
+    public async Task ParentHierarchyMigration_DefaultsOldCardsToNull_AndDownPreservesRows()
+    {
+        var migrations = _context.Database.GetMigrations().ToList();
+        var index = migrations.FindIndex(name => name.EndsWith("_AddCardParentHierarchy"));
+        index.Should().BeGreaterThan(0);
+        var migrator = _context.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[index - 1]);
+        var user = new User("migration-parent", "migration-parent@example.com", "hash");
+        var board = new Board("Parents", ownerId: user.Id);
+        var column = new Column(board.Id, "Original", 0);
+        _context.AddRange(user, board, column);
+        await _context.SaveChangesAsync();
+        var id = Guid.NewGuid().ToString().ToUpperInvariant();
+        await _context.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Cards (Id, BoardId, ColumnId, Title, Description, IsBlocked, IsArchived, Position, CreatedAt, UpdatedAt, WorkItemType) VALUES ({id}, {board.Id}, {column.Id}, 'Legacy parent', 'Keep', 1, 1, 3, '2026-01-01', '2026-01-01', 2)");
+        await migrator.MigrateAsync(migrations[index]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM Cards WHERE ParentCardId IS NULL AND Title='Legacy parent'").SingleAsync()).Should().Be(1);
+        await migrator.MigrateAsync(migrations[index - 1]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT Position AS Value FROM Cards WHERE Title='Legacy parent'").SingleAsync()).Should().Be(3);
+        (await _context.Database.SqlQueryRaw<int>("SELECT WorkItemType AS Value FROM Cards WHERE Title='Legacy parent'").SingleAsync()).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task WorkItemTypeMigration_UpDefaultsOldCardsToTask_AndDownPreservesIdentity()
+    {
+        var migrations = _context.Database.GetMigrations().ToList();
+        var index = migrations.FindIndex(name => name.EndsWith("_AddCardWorkItemType"));
+        index.Should().BeGreaterThan(0);
+        var migrator = _context.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[index - 1]);
+        var user = new User("migration-type", "migration-type@example.com", "hash");
+        var board = new Board("Types", ownerId: user.Id);
+        var column = new Column(board.Id, "Original", 0);
+        _context.AddRange(user, board, column);
+        await _context.SaveChangesAsync();
+        var id = Guid.NewGuid().ToString().ToUpperInvariant();
+        await _context.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Cards (Id, BoardId, ColumnId, Title, Description, IsBlocked, IsArchived, Position, CreatedAt, UpdatedAt) VALUES ({id}, {board.Id}, {column.Id}, 'Legacy type', 'Keep', 1, 1, 3, '2026-01-01', '2026-01-01')");
+        await migrator.MigrateAsync(migrations[index]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT WorkItemType AS Value FROM Cards WHERE Title='Legacy type'").SingleAsync()).Should().Be(0);
+        await _context.Database.ExecuteSqlRawAsync("UPDATE Cards SET WorkItemType=2 WHERE Title='Legacy type'");
+        await migrator.MigrateAsync(migrations[index - 1]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT Position AS Value FROM Cards WHERE Title='Legacy type'").SingleAsync()).Should().Be(3);
+        (await _context.Database.SqlQueryRaw<int>("SELECT IsArchived AS Value FROM Cards WHERE Title='Legacy type'").SingleAsync()).Should().Be(1);
+        await migrator.MigrateAsync(migrations[index]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT WorkItemType AS Value FROM Cards WHERE Title='Legacy type'").SingleAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CardArchiveMigration_UpDefaultsExistingCardsActive_AndDownPreservesRows()
+    {
+        var migrations = _context.Database.GetMigrations().ToList();
+        var archiveIndex = migrations.FindIndex(name => name.EndsWith("_AddCardArchiveLifecycle"));
+        archiveIndex.Should().BeGreaterThan(0);
+        var migrator = _context.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[archiveIndex - 1]);
+        var id = Guid.NewGuid().ToString().ToUpperInvariant();
+        var user = new User("migration-archive", "migration-archive@example.com", "hash");
+        var board = new Board("Migration archive", ownerId: user.Id);
+        var column = new Column(board.Id, "Original", 0);
+        _context.AddRange(user, board, column);
+        await _context.SaveChangesAsync();
+        // Insert through the old schema, before the IsArchived column exists.
+        await _context.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Cards (Id, BoardId, ColumnId, Title, Description, IsBlocked, Position, CreatedAt, UpdatedAt) VALUES ({id}, {board.Id}, {column.Id}, 'Legacy', '', 0, 0, '2026-01-01', '2026-01-01')");
+        await migrator.MigrateAsync(migrations[archiveIndex]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT IsArchived AS Value FROM Cards WHERE Title='Legacy'").SingleAsync()).Should().Be(0);
+        await _context.Database.ExecuteSqlRawAsync("UPDATE Cards SET IsArchived=1 WHERE Title='Legacy'");
+        await migrator.MigrateAsync(migrations[archiveIndex - 1]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM Cards WHERE Title='Legacy'").SingleAsync()).Should().Be(1);
+        await migrator.MigrateAsync(migrations[archiveIndex]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT IsArchived AS Value FROM Cards WHERE Title='Legacy'").SingleAsync()).Should().Be(0);
+    }
+
     public MigrationBootstrapTests()
     {
         _dbPath = Path.Combine(

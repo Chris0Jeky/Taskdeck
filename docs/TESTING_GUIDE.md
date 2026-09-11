@@ -12,13 +12,48 @@ old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputCon
 is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
 
 
-Last Updated: 2026-09-05
+Last Updated: 2026-09-10
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Card archive/restore (#2920)
+
+From the repository root, run the lifecycle and dependency regression seam:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CardLifecycle|FullyQualifiedName~BoardDependencyApiTests|FullyQualifiedName~CardUpdateConflictTests|FullyQualifiedName~McpToolsTests"
+```
+
+Also run the full backend solution and frontend checks below. The browser journey is
+`frontend/taskdeck-web/tests/e2e/card-archive.spec.ts` (Paper and Legacy, synthetic Mock state).
+Cover archive/history/restore, original placement and WIP rejection, stale writes, migration
+up/down, export/import, and dependency GET while archived followed by restore and stale PUT.
+That last write must conflict without losing retained edges; failed restore must not advance
+the graph revision. Historical `ArchiveItem` snapshot recovery is a separate lifecycle.
+
+The current MCP inventory has 13 tools, including proposal-only `archive_card_lifecycle` and
+`restore_archived_card`. Legacy `archive_card` still proposes Block. The historical 11-tool
+delivery receipt below and the separate 11-tool Chat orchestrator are unchanged.
+
+## Context Fabric benchmark corpus (#2319)
+
+The first CF-24A slice validates nine synthetic text/transcript fixtures and scores supplied
+candidate predictions by kind. From the repository root:
+
+```powershell
+py -3 -B -m unittest discover -s scripts/context_fabric -p "test_*.py"
+py -3 -B scripts/context_fabric/benchmark_fixtures.py tests/fixtures/context_fabric/benchmark/fixtures.json
+```
+
+The validator checks exact source hashes, licence/reference metadata, hostile-injection markers
+and a 16 KiB source-byte budget. Without predictions, metrics are explicitly unavailable. See the
+[corpus README](../tests/fixtures/context_fabric/benchmark/README.md) for the optional scoring
+command and deliberately imperfect example predictions. This command does not execute a processor;
+audio, image, PDF, latency, memory, cost and processor-quality measurements remain follow-on work.
 
 ## 2026-09-02 v0.3 post-RC integration wave
 
@@ -2359,8 +2394,10 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 
-  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs as a step of this job on
-  the **Linux leg only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
+  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs in the independent
+  `source-launcher` job of the reusable frontend workflow, reported as
+  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`.
+  It remains **Linux only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
   cases therefore still run on every PR; the PowerShell launcher cases are local Windows evidence,
   run from the repository root on Windows with
   `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`, until the
@@ -2757,3 +2794,19 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 - `#717` — Property-based and adversarial input tests (211 tests)
 
 **All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.
+
+## Paper Wide-card regression (#2090)
+
+From `frontend/taskdeck-web`, run `npx playwright test tests/e2e/paper-responsive.spec.ts --grep "Wide Paper lanes" --project=chromium --reporter=line` against the isolated Mock test stack. It creates its own authenticated board/card, selects Wide, and compares actual rendered card width with the lane's card-content width. Focused unit coverage is in `BoardView.spec.ts`, `PaperBoardView.spec.ts`, and `CardModal.spec.ts`; standard typecheck/build and full frontend qualification still apply. Keep screenshot inspection separate from geometry assertions and report any known #2789 calendar-fixture failures explicitly.
+
+## Accountable Automation Chat (ADR-0069 / #2004)
+
+Backend verification uses the required `dotnet test backend/Taskdeck.sln -c Release -m:1` command. Binding API tests and `ChatSessionRepositoryConcurrencyTests` exercise ownership, same/different-board races, and the real EF tracking behavior; `SendNaturalExistingCardUpdate_ShouldPersistGroundedReviewProposalWithoutMutatingCard` proves a persisted existing-card proposal with the actual target and no pre-Apply mutation. ChatService cases exercise default intent, persisted clarification, degradation, and duplicate-receipt prevention.
+
+From `frontend/taskdeck-web`, use the standard lint/typecheck/build/Vitest gates, with no API-base override for the full unit suite. The `validation-chat-bootstrap.spec.ts` SC-005 Chromium journey runs against an isolated Mock backend and worktree-local database; it checks inline binding, no automatic resend, explicit continuation, and Review visibility without board mutation. A screenshot verifies only the visible state; API assertions and the retained trace establish persistence and network effects. A live-provider run remains separate evidence. Known local/UTC boundary fixture failures are tracked in #2789 and must be reported explicitly if encountered.
+
+## Nightly baseline observation contract (#2334, CI10-2)
+
+From the repository root, `node --test scripts/ci/smart-ci/*.test.mjs` exercises the deterministic coordinator and authenticated-baseline fixtures. `node scripts/ci/smart-ci/action-pins.mjs --check` checks workflow pinning. These are additive local checks: CI-control changes require the hosted run at the exact PR head.
+
+Fixtures cover successful same-head CI Nightly/Nightly Quality pairs, missing or unsuccessful jobs, latest-attempt and workflow identity mismatches, bounded pagination/artifact handling, and head/tree/diff consistency. They do not prove a real Actions artifact download or a quiet-night/week result. The observer job records the intended plan while the existing deep jobs continue unconditionally; a plan artifact alone is never evidence of completed qualification.

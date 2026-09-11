@@ -12,6 +12,56 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class OllamaLlmProviderTests
 {
+    [Fact]
+    public async Task CompleteAsync_TracksTheActualDispatchedProviderAndModel()
+    {
+        var settings = BuildSettings();
+        var transport = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"message\":{\"content\":\"done\"},\"done\":true,\"eval_count\":3}",
+                Encoding.UTF8,
+                "application/json")
+        });
+        var provider = new OllamaLlmProvider(
+            new HttpClient(new LlmDispatchTrackingHandler { InnerHandler = transport }),
+            settings,
+            NullLogger<OllamaLlmProvider>.Instance);
+        var request = new ChatCompletionRequest([new ChatCompletionMessage("User", "hello")]);
+
+        await provider.CompleteAsync(request);
+
+        request.DispatchContext.ReadSnapshot().Should().Be(new LlmDispatchSnapshot(
+            LlmDispatchPhase.Dispatched,
+            "Ollama",
+            settings.Ollama!.Model));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_InvalidConfiguration_DoesNotMarkDispatch()
+    {
+        var settings = BuildSettings();
+        settings.Ollama!.Model = string.Empty;
+        var transportCalled = false;
+        var provider = new OllamaLlmProvider(
+            new HttpClient(new StubHttpMessageHandler(_ =>
+            {
+                transportCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            })),
+            settings,
+            NullLogger<OllamaLlmProvider>.Instance);
+        var request = new ChatCompletionRequest([new ChatCompletionMessage("User", "hello")]);
+
+        await provider.CompleteAsync(request);
+
+        transportCalled.Should().BeFalse();
+        request.DispatchContext.ReadSnapshot().Should().Be(new LlmDispatchSnapshot(
+            LlmDispatchPhase.ObservedPreDispatch,
+            "Ollama",
+            "ollama-unknown-model"));
+    }
+
     // -----------------------------------------------------------------------
     // TryParseResponse — static parsing of Ollama /api/chat responses
     // -----------------------------------------------------------------------

@@ -688,6 +688,34 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         return rowsAffected > 0;
     }
 
+    public async Task<bool> TryCorrectLinkedTranscriptCaptureAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        Guid expectedTranscriptId,
+        string expectedPayload,
+        Guid replacementTranscriptId,
+        string replacementPayload,
+        CancellationToken cancellationToken = default)
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE LlmRequests
+            SET Payload = {replacementPayload}, TranscriptId = {replacementTranscriptId}, UpdatedAt = {updatedAt}
+            WHERE Id = {requestId}
+              AND Status = {(int)expectedStatus}
+              AND UpdatedAt = {expectedUpdatedAt}
+              AND TranscriptId = {expectedTranscriptId}
+              AND Payload = {expectedPayload}
+              AND RequestType LIKE {CaptureRequestTypeLike}
+            """,
+            cancellationToken);
+
+        await ReloadTrackedRequestAsync(requestId, cancellationToken);
+        return rowsAffected > 0;
+    }
+
     private async Task ReloadTrackedRequestAsync(Guid requestId, CancellationToken cancellationToken)
     {
         var tracked = _context.LlmRequests.Local.FirstOrDefault(request => request.Id == requestId);
