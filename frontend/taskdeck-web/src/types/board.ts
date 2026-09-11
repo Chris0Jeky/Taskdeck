@@ -35,6 +35,8 @@ export interface Column {
   updatedAt: string
 }
 
+export type CardWorkItemType = 'Task' | 'Epic' | 'Spike'
+
 export interface Card {
   id: string
   boardId: string
@@ -43,6 +45,10 @@ export interface Card {
   description: string
   dueDate: string | null
   isBlocked: boolean
+  /** Older cached card payloads default to active. */
+  isArchived?: boolean
+  parentCardId?: string | null
+  workItemType?: CardWorkItemType
   blockReason: string | null
   position: number
   labels: Label[]
@@ -102,6 +108,8 @@ export interface UpdateColumnDto {
 }
 
 export interface CreateCardDto {
+  parentCardId?: string | null
+  workItemType?: CardWorkItemType
   columnId: string
   title: string
   description?: string | null
@@ -110,6 +118,9 @@ export interface CreateCardDto {
 }
 
 export interface UpdateCardDto {
+  clearParent?: boolean
+  parentCardId?: string | null
+  workItemType?: CardWorkItemType | null
   title?: string | null
   description?: string | null
   dueDate?: string | null
@@ -133,4 +144,11 @@ export interface CreateLabelDto {
 export interface UpdateLabelDto {
   name?: string | null
   colorHex?: string | null
+}
+
+export interface CardDetachPreview {
+  cardId: string
+  expectedUpdatedAt: string
+  expectedChildrenFingerprint: string
+  children: { id: string; parentCardId: string; title: string; isArchived: boolean; updatedAt: string }[]
 }

@@ -13,6 +13,36 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
+    [Fact]
+    public async Task ArchivedCards_RoundTripWithoutRevival_AndKeepFreshImportIds()
+    {
+        await EnsureAuthenticatedAsync();
+        var sourceId = Guid.NewGuid();
+        var payload = new ImportBoardDto("Archive portability", null,
+            [new ImportColumnDto("Original", 0, null)],
+            [new ImportCardDto("Historical", "Evidence", "Original", 4, null, ["Retained"], SourceId: sourceId, IsArchived: true)],
+            [new ImportLabelDto("Retained", "#123456")]);
+        var imported = await _client.PostAsJsonAsync("/api/import/boards", payload);
+        imported.StatusCode.Should().Be(HttpStatusCode.OK);
+        var boardId = (await imported.Content.ReadFromJsonAsync<ImportResultDto>())!.BoardId!.Value;
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{boardId}/cards"))!.Should().BeEmpty();
+        var historical = (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{boardId}/cards/archived"))!.Single();
+        historical.Id.Should().NotBe(sourceId);
+        historical.Labels.Should().ContainSingle().Which.Name.Should().Be("Retained");
+        var exported = await _client.GetAsync($"/api/export/boards/{boardId}/json");
+        exported.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reimported = await _client.PostAsync("/api/import/boards/json",
+            new StringContent(await exported.Content.ReadAsStringAsync(), System.Text.Encoding.UTF8, "application/json"));
+        reimported.StatusCode.Should().Be(HttpStatusCode.OK);
+        var newBoardId = (await reimported.Content.ReadFromJsonAsync<ImportResultDto>())!.BoardId!.Value;
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{newBoardId}/cards"))!.Should().BeEmpty();
+        var restored = (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{newBoardId}/cards/archived"))!.Single();
+        restored.Id.Should().NotBe(historical.Id);
+        restored.Position.Should().Be(4);
+        restored.IsArchived.Should().BeTrue();
+        restored.Labels.Should().ContainSingle().Which.Name.Should().Be("Retained");
+    }
+
     public ExportApiTests(TestWebApplicationFactory factory)
     {
         _client = factory.CreateClient();

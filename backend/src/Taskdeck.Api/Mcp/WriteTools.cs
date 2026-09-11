@@ -94,7 +94,9 @@ public class WriteTools
         [Description("Optional. Label IDs to apply to the card (comma-separated UUIDs).")]
         string? label_ids = null,
         [Description("Optional. Due date as YYYY-MM-DD or an ISO-8601 timestamp with an explicit offset.")]
-        string? due_date = null)
+        string? due_date = null,
+        [Description("Optional. Work item type: Task, Epic, or Spike. Defaults to Task.")]
+        string? work_item_type = null)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
@@ -133,6 +135,11 @@ public class WriteTools
             ["columnId"] = column.Id
         };
 
+        if (work_item_type is not null)
+        {
+            if (work_item_type is not ("Task" or "Epic" or "Spike")) return Error("work_item_type must be Task, Epic, or Spike");
+            parameters["workItemType"] = work_item_type;
+        }
         if (!string.IsNullOrWhiteSpace(description))
             parameters["description"] = description;
 
@@ -259,7 +266,13 @@ public class WriteTools
         [Description("Optional. New due date as YYYY-MM-DD or an ISO-8601 timestamp with an explicit offset.")]
         string? due_date = null,
         [Description("Optional. Set true to remove the current due date.")]
-        bool clear_due_date = false)
+        bool clear_due_date = false,
+        [Description("Optional. Work item type: Task, Epic, or Spike.")]
+        string? work_item_type = null,
+        [Description("Required for type or parent changes. Current card updatedAt timestamp from a fresh read.")]
+        string? expected_updated_at = null,
+        [Description("Optional. Same-board parent card ID. Requires expected_updated_at.")] string? parent_card_id = null,
+        [Description("Remove the current parent. Requires expected_updated_at.")] bool clear_parent = false)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
@@ -268,7 +281,7 @@ public class WriteTools
         if (!Guid.TryParse(card_id, out var cardGuid))
             return Error("Invalid card_id format");
 
-        if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date)
+        if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date && work_item_type == null && parent_card_id == null && !clear_parent)
             return Error("At least one field (title, description, due_date, clear_due_date, or label_ids) must be provided");
 
         var parameters = new Dictionary<string, object?>
@@ -277,6 +290,27 @@ public class WriteTools
             ["cardId"] = cardGuid
         };
 
+        if (work_item_type is not null || parent_card_id is not null || clear_parent)
+        {
+            var access = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+            if (!access.IsSuccess) return Error(access);
+            if (!access.Value) return Error("Not authorized to update cards on this board");
+            if (work_item_type is not null && work_item_type is not ("Task" or "Epic" or "Spike")) return Error("work_item_type must be Task, Epic, or Spike");
+            if (!DateTimeOffset.TryParse(expected_updated_at, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var expected))
+                return Error("expected_updated_at is required for a type or parent change");
+            var card = await _unitOfWork.Cards.GetByIdAsync(cardGuid);
+            if (card is null || card.BoardId != boardGuid) return Error("Card not found on board");
+            if (card.IsArchived || card.UpdatedAt != expected) return Error("Card is archived or changed. Refresh it before proposing a type or parent change.");
+            if (work_item_type is not null) parameters["workItemType"] = work_item_type;
+            if (parent_card_id is not null)
+            {
+                if (!Guid.TryParse(parent_card_id, out var parentId) || parentId == Guid.Empty || clear_parent) return Error("Provide a valid parent_card_id or clear_parent, never both");
+                parameters["parentCardId"] = parentId;
+            }
+            if (clear_parent) parameters["clearParent"] = true;
+            parameters["expectedUpdatedAt"] = expected;
+        }
         if (title != null) parameters["title"] = title;
         if (description != null) parameters["description"] = description;
         if (label_ids != null)
@@ -381,6 +415,39 @@ public class WriteTools
         return ProposalCreated(
             result.Value.Id,
             "Proposal created. Review and approve in Taskdeck; Apply will mark the card blocked with reason 'Archived by an approved proposal.'");
+    }
+
+    [McpServerTool(Name = "archive_card_lifecycle"), Description(
+        "Creates a PROPOSAL to archive a card in place, hiding it from active work while retaining its ID, labels and history. Requires the current card updatedAt. Explicit review, approval and Apply are required; nothing changes immediately.")]
+    public Task<string> ArchiveCardLifecycle(string board_id, string card_id, string expected_updated_at, string? expected_children_fingerprint = null)
+        => ProposeCardLifecycle(board_id, card_id, expected_updated_at, true, expected_children_fingerprint);
+
+    [McpServerTool(Name = "restore_archived_card"), Description(
+        "Creates a PROPOSAL to restore an archived card to its original column and position. Requires the archived card updatedAt. Explicit review, approval and Apply are required; nothing changes immediately.")]
+    public Task<string> RestoreArchivedCard(string board_id, string card_id, string expected_updated_at)
+        => ProposeCardLifecycle(board_id, card_id, expected_updated_at, false);
+
+    private async Task<string> ProposeCardLifecycle(string boardId, string cardId, string timestamp, bool archive, string? fingerprint = null)
+    {
+        var userId = await _userContext.GetCurrentUserIdAsync();
+        if (!Guid.TryParse(boardId, out var boardGuid) || !Guid.TryParse(cardId, out var cardGuid))
+            return Error("Invalid board_id or card_id format");
+        if (!DateTimeOffset.TryParse(timestamp, out var expected)) return Error("Invalid expected_updated_at timestamp");
+        var canWrite = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+        if (!canWrite.IsSuccess)
+            return Error(canWrite);
+        if (!canWrite.Value)
+            return Error("Not authorized to archive or restore cards on this board");
+        var lifecycleParameters = new Dictionary<string, object> { ["boardId"] = boardGuid, ["cardId"] = cardGuid, ["expectedUpdatedAt"] = expected };
+        if (fingerprint is not null) lifecycleParameters["expectedChildrenFingerprint"] = fingerprint;
+        var parameters = JsonSerializer.Serialize(lifecycleParameters);
+        var result = await _proposalService.CreateProposalAsync(new CreateProposalDto(
+            SourceType: ProposalSourceType.Manual, RequestedByUserId: userId,
+            Summary: archive ? "Archive card" : "Restore card", RiskLevel: RiskLevel.High,
+            CorrelationId: Guid.NewGuid().ToString(), BoardId: boardGuid,
+            Operations: new List<CreateProposalOperationDto> { new(0, archive ? "archive-lifecycle" : "restore-lifecycle",
+                "card", parameters, Guid.NewGuid().ToString(), cardGuid.ToString()) }));
+        return result.IsSuccess ? ProposalCreated(result.Value.Id, "Proposal created. Review, approve and Apply explicitly in Taskdeck.") : Error(result);
     }
 
     /// <summary>

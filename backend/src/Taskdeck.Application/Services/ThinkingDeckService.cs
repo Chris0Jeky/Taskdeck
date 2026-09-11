@@ -13,7 +13,8 @@ public sealed class ThinkingDeckService(ICardRepository cards, IThinkingDeckRepo
         var access = await CheckAsync(actorId, boardId, cardId, false, ct);
         if (!access.IsSuccess) return Result.Failure<ThinkingDeckDto>(access.ErrorCode, access.ErrorMessage);
         var writable = await authorization.CanWriteBoardAsync(actorId, boardId);
-        return Result.Success(Map(await decks.GetAsync(cardId, ct) ?? new ThinkingDeck(cardId), !access.Value.IsArchived && writable.IsSuccess && writable.Value));
+        var card = await cards.GetByIdAsync(cardId, ct);
+        return Result.Success(Map(await decks.GetAsync(cardId, ct) ?? new ThinkingDeck(cardId), card is { IsArchived: false } && !access.Value.IsArchived && writable.IsSuccess && writable.Value));
     }
 
     public async Task<Result<ThinkingDeckDto>> SaveAsync(Guid actorId, Guid boardId, Guid cardId, SaveThinkingDeckDto dto, CancellationToken ct)
@@ -45,6 +46,8 @@ public sealed class ThinkingDeckService(ICardRepository cards, IThinkingDeckRepo
         if (!permission.Value) return Result.Failure<Board>(ErrorCodes.Forbidden, "You do not have access to this board.");
         var card = await cards.GetByIdAsync(cardId, ct);
         if (card?.BoardId != boardId) return Result.Failure<Board>(ErrorCodes.NotFound, "Card not found on this board.");
+        if (write && card.IsArchived)
+            return Result.Failure<Board>(ErrorCodes.InvalidOperation, "Restore the archived card before editing its thinking.");
         var board = await boards.GetByIdAsync(boardId, ct);
         if (board is null) return Result.Failure<Board>(ErrorCodes.NotFound, "Board not found.");
         if (write && board.IsArchived)

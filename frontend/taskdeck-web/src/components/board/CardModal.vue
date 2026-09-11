@@ -6,6 +6,10 @@ import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
 import { useVisualViewport } from '../../composables/useVisualViewport'
 import TdDialog from '../ui/TdDialog.vue'
+import CardParentField from './CardParentField.vue'
+import CardDetachList from './CardDetachList.vue'
+import CardArchiveAction from './CardArchiveAction.vue'
+import { useBoardStore } from '../../store/boardStore'
 import {
   CardModalHeader,
   CardModalForm,
@@ -37,6 +41,11 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const router = useRouter()
+const boardStore = useBoardStore()
+async function refreshArchiveState() {
+  emit('close')
+  await boardStore.fetchBoard(props.card.boardId)
+}
 const pendingThinkingPath = ref<string | null>(null)
 
 const dialogRef = ref<HTMLElement | null>(null)
@@ -180,6 +189,11 @@ function keepEditing() {
 
 const {
   // Form state
+  parentCardId,
+  detachPreview,
+  deletePreviewError,
+  deletePreviewLoading,
+  workItemType,
   title,
   description,
   dueDate,
@@ -188,6 +202,8 @@ const {
   selectedLabelIds,
   isFormValid,
   hasUnsavedChanges,
+  isSaving,
+  saveError,
 
   // Due date
   formattedDueDate,
@@ -300,12 +316,18 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
+        <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || !!card.isArchived" />
+        <CardArchiveAction :key="card.updatedAt" :card="card" :disabled="hasUnsavedChanges"
+          @changed="emit('updated'); emit('close')" @refresh="refreshArchiveState" />
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
-        <div class="space-y-4">
+        <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
+        <fieldset :disabled="card.isArchived || isSaving" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
+            v-model:work-item-type="workItemType"
+            :can-edit-type="boardStore.currentBoard?.id === card.boardId && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived && !card.isArchived"
             v-model:description="description"
             v-model:due-date="dueDate"
             v-model:is-blocked="isBlocked"
@@ -346,10 +368,11 @@ useEscapeToClose(
             :capture-href-fn="captureHref"
             :proposal-href-fn="proposalHref"
           />
-        </div>
+        </fieldset>
 
       <CardModalActions
-          :is-form-valid="isFormValid"
+          :is-form-valid="isFormValid && !card.isArchived && !isSaving"
+          :is-saving="isSaving"
           :card="card"
           @save="handleSave"
           @close="handleClose"
@@ -392,6 +415,9 @@ useEscapeToClose(
     :close-on-backdrop="!isDeleting"
     @close="handleDeleteCancel"
   >
+    <p v-if="deletePreviewLoading" role="status">Loading every affected child...</p>
+    <p v-if="deletePreviewError" role="alert">{{ deletePreviewError }}</p>
+    <CardDetachList v-if="detachPreview" :preview="detachPreview" />
     <template #footer>
       <button
         type="button"
@@ -403,7 +429,7 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeleting"
+        :disabled="isDeleting || !detachPreview || !!deletePreviewError"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         @click="handleDeleteConfirm"
       >

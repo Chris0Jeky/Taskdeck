@@ -498,7 +498,7 @@ watch(
 )
 
 const unavailableReturnRef = ref<HTMLButtonElement | null>(null)
-const unavailableAnnouncementInBatchDialog = ref(false)
+const unavailableAnnouncementOwner = ref<'page' | 'approve' | 'execute'>('page')
 const unavailableAnnouncement = computed(() => unavailableProposalId.value && !queueAccessRevoked.value
   ? `${t(unavailableProposalMalformed.value ? 'review.empty.unavailable.malformedBody' : 'review.empty.unavailable.body', { id: unavailableProposalId.value })} ${t('review.empty.unavailable.return')}`
   : '')
@@ -508,7 +508,9 @@ const unavailableAnnouncement = computed(() => unavailableProposalId.value && !q
 // or dialog the reviewer focused while the lookup was pending.
 watch(unavailableProposalId, (id) => {
   // Keep one announcement owner for this result, even after the dialog closes.
-  unavailableAnnouncementInBatchDialog.value = Boolean(id && batchConfirmationOpen.value)
+  unavailableAnnouncementOwner.value = id && batchExecuteOpen.value
+    ? 'execute'
+    : id && batchConfirmationOpen.value ? 'approve' : 'page'
   if (!id) return
   const previousFocus = document.activeElement
   activeProposalSettledElsewhere.value = null
@@ -2810,7 +2812,7 @@ async function onClearBoardScope() {
       aria-live="polite"
       aria-atomic="true"
       data-testid="paper-review-unavailable-announcement"
-    >{{ unavailableAnnouncementInBatchDialog ? '' : unavailableAnnouncement }}</p>
+    >{{ unavailableAnnouncementOwner === 'page' ? unavailableAnnouncement : '' }}</p>
 
     <ReviewQueueRail
       ref="queueRailRef"
@@ -3232,7 +3234,7 @@ async function onClearBoardScope() {
       :open="batchConfirmationOpen"
       :count="batchSelectedCount"
       :busy="batchApproveBusy"
-      :announcement="unavailableAnnouncementInBatchDialog && batchConfirmationOpen ? unavailableAnnouncement : ''"
+      :announcement="unavailableAnnouncementOwner === 'approve' && batchConfirmationOpen ? unavailableAnnouncement : ''"
       @confirm="confirmBatchApproval"
       @cancel="cancelBatchApproval"
     />
@@ -3242,6 +3244,7 @@ async function onClearBoardScope() {
       :count="batchExecuteConfirmationCount"
       :busy="batchExecuteBusy"
       :receipts="batchExecuteReceipts"
+      :announcement="unavailableAnnouncementOwner === 'execute' && batchExecuteOpen ? unavailableAnnouncement : ''"
       @confirm="confirmBatchExecute"
       @close="cancelBatchExecute"
     />

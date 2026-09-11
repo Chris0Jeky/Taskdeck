@@ -21,6 +21,8 @@ export type BoardFetchIntent = 'explicit' | 'background'
 
 export interface BoardFetchOptions {
   intent?: BoardFetchIntent
+  /** Report a failed refresh of an already committed mutation only while this read owns the context. */
+  backgroundFailureMessage?: string
 }
 
 export interface BoardListFetchOptions {
@@ -58,12 +60,14 @@ interface ActiveBoardFetch {
   boardId: string
   intent: BoardFetchIntent
   generation: number
+  backgroundFailureMessage?: string
   controller: AbortController
   promise: Promise<boolean>
 }
 
 interface QueuedBackgroundBoardFetch {
   boardId: string
+  backgroundFailureMessage?: string
   promise: Promise<boolean>
   resolve: (committed: boolean) => void
 }
@@ -287,8 +291,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     queued?.resolve(committed)
   }
 
-  function queueBackgroundBoardFetch(id: string): Promise<boolean> {
+  function queueBackgroundBoardFetch(id: string, backgroundFailureMessage?: string): Promise<boolean> {
     if (queuedBackgroundBoardFetch?.boardId === id) {
+      if (backgroundFailureMessage) queuedBackgroundBoardFetch.backgroundFailureMessage = backgroundFailureMessage
       return queuedBackgroundBoardFetch.promise
     }
 
@@ -297,7 +302,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const promise = new Promise<boolean>((innerResolve) => {
       resolve = innerResolve
     })
-    queuedBackgroundBoardFetch = { boardId: id, promise, resolve }
+    queuedBackgroundBoardFetch = { boardId: id, promise, resolve, backgroundFailureMessage }
     return promise
   }
 
@@ -312,7 +317,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     }
 
     queuedBackgroundBoardFetch = null
-    void startBoardFetch(queued.boardId, 'background').then(queued.resolve, () => {
+    void startBoardFetch(queued.boardId, 'background', queued.backgroundFailureMessage).then(queued.resolve, () => {
       queued.resolve(false)
     })
   }
@@ -347,9 +352,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       }
 
       if (activeBoardFetch.intent === 'explicit') {
-        return queueBackgroundBoardFetch(id)
+        return queueBackgroundBoardFetch(id, options.backgroundFailureMessage)
       }
 
+      if (options.backgroundFailureMessage) activeBoardFetch.backgroundFailureMessage = options.backgroundFailureMessage
       return activeBoardFetch.promise
     }
 
@@ -359,10 +365,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       settleQueuedBackgroundBoardFetch()
     }
 
-    return startBoardFetch(id, intent)
+    return startBoardFetch(id, intent, options.backgroundFailureMessage)
   }
 
-  function startBoardFetch(id: string, intent: BoardFetchIntent): Promise<boolean> {
+  function startBoardFetch(id: string, intent: BoardFetchIntent, backgroundFailureMessage?: string): Promise<boolean> {
     const requestGeneration = ++boardFetchGeneration
     activeBoardFetch?.controller.abort()
     const controller = new AbortController()
@@ -371,6 +377,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       boardId: id,
       intent,
       generation: requestGeneration,
+      backgroundFailureMessage,
       controller,
       promise: Promise.resolve(false),
     } satisfies ActiveBoardFetch
@@ -396,7 +403,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         return
       }
 
-      void queueBackgroundBoardFetch(id)
+      void queueBackgroundBoardFetch(id, request.backgroundFailureMessage)
     }
 
     const performFetch = async (): Promise<boolean> => {
@@ -477,6 +484,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
               new Error(BOARD_ACCESS_REVOKED_MESSAGE),
               BOARD_ACCESS_REVOKED_MESSAGE,
             )
+          } else if (request.backgroundFailureMessage) {
+            helpers.toast.warning(request.backgroundFailureMessage)
           }
           return false
         }

@@ -20,6 +20,64 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly TestWebApplicationFactory _factory;
 
+    [Fact]
+    public async Task AccountCardExport_IncludesArchiveStateWithBufferedStreamParity_AndExcludesOtherUsersBoards()
+    {
+        using var owner = _factory.CreateClient();
+        using var outsider = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(owner, "archive-export-owner");
+        await ApiTestHarness.AuthenticateAsync(outsider, "archive-export-outsider");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(owner, "Card export owner");
+        var board = (await owner.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var created = await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, board.Columns[0].Id, "Export retained card", "Public board evidence", null, null));
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        var parentResponse = await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, board.Columns[0].Id, "Export parent", null, null, null));
+        var parent = (await parentResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        var assigned = await owner.PatchAsJsonAsync($"/api/boards/{boardId}/cards/{card.Id}",
+            new { parentCardId = parent.Id, expectedUpdatedAt = card.UpdatedAt });
+        card = (await assigned.Content.ReadFromJsonAsync<CardDto>())!;
+        (await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards/{card.Id}/archive", new CardLifecycleDto(card.UpdatedAt)))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var buffered = await owner.GetFromJsonAsync<JsonElement>("/api/account/export");
+        var streamed = await owner.GetFromJsonAsync<JsonElement>("/api/account/export/stream");
+        var bufferedCards = buffered.GetProperty("data").GetProperty("cards");
+        var streamedCards = streamed.GetProperty("data").GetProperty("cards");
+        JsonNode.DeepEquals(JsonNode.Parse(bufferedCards.GetRawText()), JsonNode.Parse(streamedCards.GetRawText())).Should().BeTrue();
+        var exported = bufferedCards.EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == card.Id);
+        exported.GetProperty("isArchived").GetBoolean().Should().BeTrue();
+        exported.GetProperty("parentCardId").GetGuid().Should().Be(parent.Id);
+        exported.GetProperty("columnId").GetGuid().Should().Be(card.ColumnId);
+        foreach (var path in new[] { "/api/account/export", "/api/account/export/stream" })
+        {
+            var other = await outsider.GetFromJsonAsync<JsonElement>(path);
+            other.GetProperty("data").GetProperty("cards").EnumerateArray().Should().NotContain(c => c.GetProperty("id").GetGuid() == card.Id);
+        }
+    }
+
+    [Fact]
+    public async Task AccountDeletionWithHierarchyPreservesOtherAccountsCards()
+    {
+        using var owner = _factory.CreateClient(); using var other = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(owner, "hierarchy-erasure");
+        await ApiTestHarness.AuthenticateAsync(other, "hierarchy-retained");
+        async Task<Guid> Seed(HttpClient client)
+        {
+            var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "Erase hierarchy");
+            var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+            var p = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards", new CreateCardDto(boardId, board.Columns[0].Id, "Parent", null, null, null));
+            var parent = (await p.Content.ReadFromJsonAsync<CardDto>())!;
+            (await client.PostAsJsonAsync($"/api/boards/{boardId}/cards", new CreateCardDto(boardId, board.Columns[0].Id, "Child", null, null, null, ParentCardId: parent.Id))).EnsureSuccessStatusCode();
+            return boardId;
+        }
+        await Seed(owner); var retained = await Seed(other);
+        (await owner.PostAsJsonAsync("/api/account/delete", new AccountDeletionRequest("password123", "DELETE MY ACCOUNT"))).EnsureSuccessStatusCode();
+        var cards = (await other.GetFromJsonAsync<List<CardDto>>($"/api/boards/{retained}/cards"))!;
+        cards.Should().HaveCount(2);
+        cards.Single(card => card.Title == "Child").ParentCardId.Should().Be(cards.Single(card => card.Title == "Parent").Id);
+    }
+
     public DataPortabilityApiTests(TestWebApplicationFactory factory)
     {
         _factory = factory;

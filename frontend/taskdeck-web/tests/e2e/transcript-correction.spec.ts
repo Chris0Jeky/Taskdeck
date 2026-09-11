@@ -63,6 +63,12 @@ test('Paper wires correction Save before an explicit Ask AI request (mocked capt
       return
     }
 
+    if (method === 'GET' && path === `${itemPath}/status`) {
+      const { id, status, processedAt, errorMessage, disposition, canEditSuggestion } = summary()
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id, status, processedAt, errorMessage, disposition, canEditSuggestion }) })
+      return
+    }
+
     if (method === 'GET' && path === itemPath) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(detail()) })
       return

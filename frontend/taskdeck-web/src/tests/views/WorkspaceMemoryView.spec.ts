@@ -127,6 +127,15 @@ describe('WorkspaceMemoryView', () => {
     expect(wrapper.text()).toContain('Copy review is still being assigned.')
   })
 
+  it('shows an API error message when memory loading fails', async () => {
+    api.getMemories.mockRejectedValueOnce({ response: { data: { message: 'Memory service unavailable' } } })
+    const wrapper = mount(WorkspaceMemoryView)
+    await settle()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('Memory service unavailable')
+    wrapper.unmount()
+  })
+
   it('creates a private memory for the selected board', async () => {
     const wrapper = mount(WorkspaceMemoryView)
     await settle()

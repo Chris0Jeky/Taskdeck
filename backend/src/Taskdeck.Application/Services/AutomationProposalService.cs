@@ -22,6 +22,8 @@ public class AutomationProposalService : IAutomationProposalService
         "add",
         "apply",
         "archive",
+        "archive-lifecycle",
+        "restore-lifecycle",
         "assign",
         "attach",
         "block",
@@ -1477,7 +1479,7 @@ public class AutomationProposalService : IAutomationProposalService
                 .ToList();
 
             var revisedDiff = await BuildReadableDiffAsync(proposal.BoardId, revisedViews, cancellationToken);
-            return Result.Success(revisedDiff);
+            return revisedDiff;
         }
 
         var originalOperations = proposal.Operations
@@ -1522,7 +1524,7 @@ public class AutomationProposalService : IAutomationProposalService
         if (!originalValidation.IsSuccess)
             return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
 
-        if (useStoredOriginal && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
+        if (useStoredOriginal && !originalOperations.Any(op => OperationParameterParser.TryDeserializeParameters(op.Parameters, out var p, out _) && ProposalHierarchyValidator.AffectsHierarchy(op.ActionType, op.TargetType, p)) && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
         var orderedViews = originalOperations
@@ -1530,7 +1532,7 @@ public class AutomationProposalService : IAutomationProposalService
             .ToList();
 
         var generatedDiff = await BuildReadableDiffAsync(proposal.BoardId, orderedViews, cancellationToken);
-        return Result.Success(generatedDiff);
+        return generatedDiff;
     }
 
     public async Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default)
@@ -1606,11 +1608,15 @@ public class AutomationProposalService : IAutomationProposalService
     /// the original-operations path and the revision-aware path so both render
     /// identically (#1235).
     /// </summary>
-    private async Task<string> BuildReadableDiffAsync(
+    private async Task<Result<string>> BuildReadableDiffAsync(
         Guid? boardId,
         IReadOnlyList<DiffOperationView> orderedOperations,
         CancellationToken cancellationToken)
     {
+        var hierarchy = await ProposalHierarchyValidator.ValidateAsync(_unitOfWork, boardId,
+            orderedOperations.Select(op => new ProposalOperationDto(Guid.Empty, Guid.Empty, op.Sequence, op.ActionType,
+                op.TargetType, op.TargetId, op.Parameters, "", null)), cancellationToken);
+        if (!hierarchy.IsSuccess) return Result.Failure<string>(hierarchy.ErrorCode, hierarchy.ErrorMessage);
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
@@ -1625,11 +1631,12 @@ public class AutomationProposalService : IAutomationProposalService
                 foreach (var column in columns)
                     columnNames[column.Id] = column.Name;
 
-                var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
+                var cards = (await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken))
+                    .Concat(await _unitOfWork.Cards.GetArchivedByBoardIdAsync(boardId.Value, cancellationToken));
                 foreach (var card in cards)
                 {
                     cardTitles[card.Id] = card.Title;
-                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason);
+                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason, card.IsArchived, card.WorkItemType.ToString());
                 }
 
                 var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
@@ -1645,12 +1652,15 @@ public class AutomationProposalService : IAutomationProposalService
         var descriptions = new List<string>(orderedOperations.Count);
         foreach (var operation in orderedOperations)
         {
-            descriptions.Add(DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames));
+            var description = DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames);
+            if (hierarchy.Value.TryGetValue(operation.Sequence, out var hierarchyDescription))
+                description += Environment.NewLine + hierarchyDescription;
+            descriptions.Add(description);
             ApplyPreviewCreatedCardState(operation, cardTitles, cardStates);
             ApplyPreviewCardArchiveState(operation, cardStates);
         }
 
-        return string.Join(Environment.NewLine, descriptions);
+        return Result.Success(string.Join(Environment.NewLine, descriptions));
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -1954,7 +1964,7 @@ public class AutomationProposalService : IAutomationProposalService
         string? TargetId,
         string Parameters);
 
-    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason);
+    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason, bool IsArchived = false, string WorkItemType = "Task");
 
     private static void ApplyPreviewCreatedCardState(
         DiffOperationView operation,
@@ -1972,7 +1982,7 @@ public class AutomationProposalService : IAutomationProposalService
         if (title is not null)
             cardTitles[plannedCardId] = title;
 
-        cardStates[plannedCardId] = new CardDiffState(false, null);
+        cardStates[plannedCardId] = new CardDiffState(false, null, WorkItemType: ExtractStringParameter(operation.Parameters, "workItemType") ?? "Task");
     }
 
     private static void ApplyPreviewCardArchiveState(
@@ -2042,6 +2052,15 @@ public class AutomationProposalService : IAutomationProposalService
                     : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
             var preposition = labelAction == CardLabelOperationAction.Add ? "to" : "from";
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
+        }
+
+        if (isCardTarget && operation.ActionType.ToLowerInvariant() is "archive-lifecycle" or "restore-lifecycle")
+        {
+            var cardId = ExtractGuidParameter(operation.Parameters, "cardId");
+            var display = cardId.HasValue && cardTitles.TryGetValue(cardId.Value, out var title) ? title : cardId?.ToString() ?? "(unspecified)";
+            return operation.ActionType.Equals("archive-lifecycle", StringComparison.OrdinalIgnoreCase)
+                ? $"{operation.Sequence}. Archive card {display}; Archived: false -> true; retain original column, labels and history."
+                : $"{operation.Sequence}. Restore card {display}; Archived: true -> false; return to its original column and position.";
         }
 
         if (isCardTarget && string.Equals(operation.ActionType, "archive", StringComparison.OrdinalIgnoreCase))
@@ -2121,6 +2140,14 @@ public class AutomationProposalService : IAutomationProposalService
                 description += $" in column {columnDisplay}";
         }
 
+        var workItemType = ExtractStringParameter(operation.Parameters, "workItemType");
+        if (isCardTarget && workItemType is not null)
+        {
+            var typeCardId = ExtractGuidParameter(operation.Parameters, "cardId");
+            var before = typeCardId.HasValue && cardStates.TryGetValue(typeCardId.Value, out var typeState)
+                ? typeState.WorkItemType : "(new card)";
+            description += $"; Work item type: {before} -> {workItemType}";
+        }
         var cardEffects = DescribeCardParameterEffects(operation.Parameters, labelNames);
         if (isCardTarget && cardEffects.Count > 0)
             description += $"; {string.Join("; ", cardEffects)}";

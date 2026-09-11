@@ -138,7 +138,7 @@ public sealed class ArchivedBoardCardWriteConcurrencyTests
     }
 
     [Fact]
-    public async Task UpdateCardAsync_WithoutExpectedUpdatedAt_WhenTwoWritersReadTheSameBoard_LastWriterSucceeds()
+    public async Task UpdateCardAsync_WithoutExpectedUpdatedAt_WhenTwoWritersReadTheSameCard_StaleWriterCannotOverwrite()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-card-update-race-{Guid.NewGuid():N}.db");
         try
@@ -163,15 +163,15 @@ public sealed class ArchivedBoardCardWriteConcurrencyTests
             var firstResult = await firstService.UpdateCardAsync(
                 cardId,
                 new UpdateCardDto("First writer", null, null, null, null, null));
-            var secondResult = await secondService.UpdateCardAsync(
+            var staleWrite = () => secondService.UpdateCardAsync(
                 cardId,
                 new UpdateCardDto("Last writer", null, null, null, null, null));
 
             firstResult.IsSuccess.Should().BeTrue();
-            secondResult.IsSuccess.Should().BeTrue();
+            await staleWrite.Should().ThrowAsync<DbUpdateConcurrencyException>();
 
             await using var verifyDb = new TaskdeckDbContext(options);
-            (await verifyDb.Cards.SingleAsync(card => card.Id == cardId)).Title.Should().Be("Last writer");
+            (await verifyDb.Cards.SingleAsync(card => card.Id == cardId)).Title.Should().Be("First writer");
         }
         finally
         {

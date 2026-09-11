@@ -22,8 +22,35 @@ public class CardServiceTests
     private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly CardService _service;
 
+    [Fact]
+    public async Task Archive_PersistsAuditBeforeRealtime_AndRestoreRejectsMissingColumn()
+    {
+        var board = new Board("Archive audit");
+        var card = new Card(board.Id, Guid.NewGuid(), "Retained");
+        var actor = Guid.NewGuid();
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        var notifier = new Mock<IBoardRealtimeNotifier>();
+        var saved = false;
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).Callback(() => saved = true).ReturnsAsync(1);
+        notifier.Setup(n => n.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), It.IsAny<CancellationToken>()))
+            .Callback(() => saved.Should().BeTrue()).Returns(Task.CompletedTask);
+        var service = new CardService(_unitOfWorkMock.Object, notifier.Object);
+        var result = await service.SetArchivedAsync(board.Id, card.Id, true, new(card.UpdatedAt), actor);
+        result.IsSuccess.Should().BeTrue();
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<AuditLog>(log => log.EntityId == card.Id && log.UserId == actor &&
+            log.Action == Taskdeck.Domain.Enums.AuditAction.Archived), It.IsAny<CancellationToken>()), Times.Once);
+        notifier.Verify(n => n.NotifyBoardMutationAsync(It.Is<BoardRealtimeEvent>(e => e.BoardId == board.Id && e.EntityId == card.Id && e.Operation == "archived"), It.IsAny<CancellationToken>()), Times.Once);
+        var restore = await service.SetArchivedAsync(board.Id, card.Id, false, new(card.UpdatedAt), actor);
+        restore.IsSuccess.Should().BeFalse();
+        restore.ErrorMessage.Should().Contain("original column");
+        card.IsArchived.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     public CardServiceTests()
     {
+
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _boardRepoMock = new Mock<IBoardRepository>();
         _columnRepoMock = new Mock<IColumnRepository>();
@@ -35,6 +62,7 @@ public class CardServiceTests
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _cardRepoMock.Setup(r => r.GetHierarchyByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
         _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_automationProposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
@@ -1159,7 +1187,7 @@ public class CardServiceTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        board.ConcurrencyToken.Should().Be(originalConcurrencyToken);
+        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
         _cardRepoMock.Verify(r => r.DeleteAsync(card, default), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }

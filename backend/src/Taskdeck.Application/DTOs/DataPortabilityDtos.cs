@@ -32,7 +32,8 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
     IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
     IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null,
-    SourceStorageExportDto? SourceStorage = null);
+    SourceStorageExportDto? SourceStorage = null,
+    IReadOnlyList<CardDto>? Cards = null);
 
 public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
 

@@ -1,5 +1,6 @@
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Domain.Entities;
 
@@ -10,6 +11,8 @@ public class Card : Entity
 
     public Guid BoardId { get; private set; }
     public Board Board { get; private set; } = null!;
+
+    public Guid? ParentCardId { get; private set; }
 
     public Guid ColumnId { get; private set; }
     public Column Column { get; private set; } = null!;
@@ -32,6 +35,8 @@ public class Card : Entity
     public string Description { get; private set; } = string.Empty;
     public DateTimeOffset? DueDate { get; private set; }
     public bool IsBlocked { get; private set; }
+    public bool IsArchived { get; private set; }
+    public CardWorkItemType WorkItemType { get; private set; } = CardWorkItemType.Task;
     public string? BlockReason { get; private set; }
     public int Position { get; private set; }
 
@@ -56,6 +61,7 @@ public class Card : Entity
 
     public void Update(string? title = null, string? description = null, DateTimeOffset? dueDate = null)
     {
+        EnsureActive();
         if (title != null)
             Title = title;
 
@@ -71,7 +77,25 @@ public class Card : Entity
 
     public void ClearDueDate()
     {
+        EnsureActive();
         DueDate = null;
+        Touch();
+    }
+
+    public static CardWorkItemType ParseWorkItemType(string value) => value switch
+    {
+        "Task" => CardWorkItemType.Task,
+        "Epic" => CardWorkItemType.Epic,
+        "Spike" => CardWorkItemType.Spike,
+        _ => throw new DomainException(ErrorCodes.ValidationError, "WorkItemType must be Task, Epic, or Spike")
+    };
+
+    public void SetWorkItemType(CardWorkItemType workItemType)
+    {
+        EnsureActive();
+        if (!Enum.IsDefined(workItemType))
+            throw new DomainException(ErrorCodes.ValidationError, "WorkItemType must be Task, Epic, or Spike");
+        WorkItemType = workItemType;
         Touch();
     }
 
@@ -85,6 +109,7 @@ public class Card : Entity
 
     public void SetPosition(int position)
     {
+        EnsureActive();
         if (position < 0)
             throw new DomainException(ErrorCodes.ValidationError, "Position cannot be negative");
 
@@ -94,12 +119,14 @@ public class Card : Entity
 
     public void MoveToColumn(Guid columnId, int position)
     {
+        EnsureActive();
         ColumnId = columnId;
         SetPosition(position);
     }
 
     public void Block(string reason)
     {
+        EnsureActive();
         if (string.IsNullOrWhiteSpace(reason))
             throw new DomainException(ErrorCodes.ValidationError, "Block reason cannot be empty");
 
@@ -110,6 +137,7 @@ public class Card : Entity
 
     public void Unblock()
     {
+        EnsureActive();
         IsBlocked = false;
         BlockReason = null;
         Touch();
@@ -118,20 +146,64 @@ public class Card : Entity
     // Label management (called by application services)
     public void AddLabel(CardLabel cardLabel)
     {
+        EnsureActive();
         if (_cardLabels.Any(cl => cl.LabelId == cardLabel.LabelId))
             throw new DomainException(ErrorCodes.ValidationError, "Label is already assigned to this card");
 
         _cardLabels.Add(cardLabel);
+        Touch();
     }
 
     public void RemoveLabel(CardLabel cardLabel)
     {
+        EnsureActive();
         _cardLabels.Remove(cardLabel);
+        Touch();
     }
 
     public void ClearLabels()
     {
+        EnsureActive();
         _cardLabels.Clear();
+        Touch();
+    }
+
+    public void SetParent(Guid? parentCardId)
+    {
+        EnsureActive();
+        if (parentCardId == Id || parentCardId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "A card cannot be its own parent or have an empty parent ID.");
+        ParentCardId = parentCardId;
+        Touch();
+    }
+
+    // Lifecycle detachment also covers archived children without restoring them.
+    public void DetachParent()
+    {
+        ParentCardId = null;
+        Touch();
+    }
+
+    public void Archive()
+    {
+        if (IsArchived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Card is already archived. Refresh its history.");
+        IsArchived = true;
+        Touch();
+    }
+
+    public void Restore()
+    {
+        if (!IsArchived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Card is already active. Refresh the board.");
+        IsArchived = false;
+        Touch();
+    }
+
+    private void EnsureActive()
+    {
+        if (IsArchived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Card is archived. Restore the card before editing.");
     }
 
     private void Initialize(

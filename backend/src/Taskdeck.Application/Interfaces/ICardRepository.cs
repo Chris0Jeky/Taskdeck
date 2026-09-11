@@ -4,6 +4,10 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface ICardRepository : IRepository<Card>
 {
+    Task<IReadOnlyList<Card>> GetHierarchyByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);
+    Task StageDependencyProjectionInvalidationAsync(Guid boardId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<Card>> GetArchivedByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Card>> GetExportPageByUserIdAsync(Guid userId, int offset, int limit, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetAgendaByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);

@@ -68,7 +68,7 @@ public class OperationHandlerRegistryTests
     public async Task ExecuteOperationAsync_ShouldReturnFailure_ForUnsupportedCardAction()
     {
         var operation = new ProposalOperationDto(
-            Guid.NewGuid(), Guid.NewGuid(), 0, "delete", "card", null,
+            Guid.NewGuid(), Guid.NewGuid(), 0, "unsupported", "card", null,
             """{"cardId":"some-id"}""", "key1", null);
 
         var result = await _registry.ExecuteOperationAsync(operation, default);
@@ -265,7 +265,7 @@ public class OperationHandlerRegistryTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
     }
 
     [Fact]

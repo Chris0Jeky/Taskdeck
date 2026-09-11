@@ -948,8 +948,16 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("DueDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsArchived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsBlocked")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ParentCardId")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Position")
                         .HasColumnType("INTEGER");
@@ -960,7 +968,13 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkItemType")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
 
                     b.HasKey("Id");
 

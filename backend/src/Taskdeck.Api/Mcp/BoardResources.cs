@@ -174,6 +174,9 @@ public class BoardResources
         {
             id = c.Id,
             title = c.Title,
+            workItemType = c.WorkItemType,
+            parentCardId = c.ParentCardId,
+            updatedAt = c.UpdatedAt,
             position = c.Position,
             labels = c.Labels.Select(l => l.Name),
             hasDescription = !string.IsNullOrWhiteSpace(c.Description),
@@ -211,13 +214,13 @@ public class BoardResources
         if (!boardResult.IsSuccess)
             throw new InvalidOperationException($"MCP: failed to access board: {PublicFailureMessage(boardResult)}");
 
-        var cardsResult = await _cardService.SearchCardsAsync(boardGuid);
-        if (!cardsResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to search cards: {PublicFailureMessage(cardsResult)}");
-
-        var card = cardsResult.Value.FirstOrDefault(c => c.Id == cardGuid);
-        if (card == null)
-            throw new InvalidOperationException($"MCP: card {cardId} not found in board {boardId}");
+        var cardResult = await _cardService.GetCardAsync(boardGuid, cardGuid);
+        if (!cardResult.IsSuccess)
+            throw new InvalidOperationException($"MCP: failed to read card: {PublicFailureMessage(cardResult)}");
+        var card = cardResult.Value;
+        var detachPreview = await _cardService.PreviewDetachAsync(boardGuid, cardGuid);
+        if (!detachPreview.IsSuccess)
+            throw new InvalidOperationException($"MCP: failed to read child detachment preview: {PublicFailureMessage(detachPreview)}");
 
         // Find the column name
         var columnName = boardResult.Value.Columns
@@ -233,6 +236,10 @@ public class BoardResources
             description = card.Description,
             position = card.Position,
             isBlocked = card.IsBlocked,
+            isArchived = card.IsArchived,
+            workItemType = card.WorkItemType.ToString(),
+            parentCardId = card.ParentCardId,
+            detachPreview = detachPreview.Value,
             blockReason = card.BlockReason,
             dueDate = card.DueDate,
             labels = card.Labels.Select(l => new { id = l.Id, name = l.Name, color = l.ColorHex }),

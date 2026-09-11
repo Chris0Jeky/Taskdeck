@@ -14,6 +14,24 @@ changes.
 
 ## Unreleased workspace overhaul
 
+Card hierarchy adds nullable `Cards.ParentCardId` through the
+`20260910214635_AddCardParentHierarchy` migration. Existing cards remain parentless and keep their
+IDs and placement. A hierarchy supports three parent-child links (four levels). Archiving or deleting
+a parent requires confirmation of its direct-child detachments; restoring it does not reattach them.
+Board JSON containing parent links uses the `taskdeck-board` version-3 envelope. Older importers
+reject it; current importers still accept plain and version-2 files and remap parent links to fresh
+card IDs. Developer rollback drops parent links while retaining cards, so reapplying the migration
+does not recover those links. Back up the database before upgrading; application downgrades are not
+established by this rollback test. [Hierarchy contract](docs/product/CARD_HIERARCHY.md).
+
+Card work-item types add a required `Cards.WorkItemType` column through the
+`20260910195339_AddCardWorkItemType` migration. Existing cards become Task; Epic and Spike
+are explicit choices in card details. **BREAKING: none.** Existing clients that omit the type
+keep the saved type on update and create Task cards. Board JSON and account exports include it.
+The migration's developer rollback drops type metadata while preserving cards; applying it again
+defaults those cards to Task, so former Epic/Spike distinctions are lost. Back up the database
+before upgrading; this rollback behavior does not establish support for application downgrades.
+
 Private audio answers add `StoredBlobs`, `StoredBlobChunks`, `StoredBlobReferences`, `Representations`,
 `RepresentationSupersessions` and `ThinkingAudioAnswers`. Three additive migrations introduce these
 tables; existing audio/artefact bytes and legacy transcript rows are not rewritten or backfilled.
