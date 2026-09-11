@@ -235,7 +235,7 @@ public sealed class ExternalImportService : IExternalImportService
             RowsSkipped: rowsSkipped,
             Conflicts: conflicts);
 
-        if (request.DryRun || preview.HasConflicts)
+        if (preview.HasConflicts)
         {
             return Result.Success(preview);
         }
@@ -248,6 +248,9 @@ public sealed class ExternalImportService : IExternalImportService
                 ErrorCodes.WipLimitExceeded,
                 $"Cannot import cards, target column '{targetColumn.Name}' has reached its WIP limit of {targetColumn.WipLimit}.");
         }
+
+        if (request.DryRun)
+            return Result.Success(preview);
 
         var transactionStarted = false;
 
@@ -379,7 +382,7 @@ public sealed class ExternalImportService : IExternalImportService
             return false;
         }
 
-        var projectedCardCount = targetColumn.Cards.Count + cardsMovingIntoTarget;
+        var projectedCardCount = targetColumn.Cards.Count(card => !card.IsArchived) + cardsMovingIntoTarget;
         return projectedCardCount > targetColumn.WipLimit.Value;
     }
 
