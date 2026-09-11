@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services.Pipeline;
@@ -355,8 +355,12 @@ public class AutomationExecutorService : IAutomationExecutorService
                     break;
                 }
 
-                // Create audit log for the operation
-                await _auditRecorder.RecordAsync(operation, effectiveProposal, cancellationToken);
+                // Create audit log for the operation. The actor is the authenticated applier, not
+                // the requester (#2978): when B applies A's proposal, execution history and the
+                // handler's own mutation rows must name the same person. The requester stays
+                // readable in the row's provenance text.
+                await _auditRecorder.RecordAsync(operation, effectiveProposal, cancellationToken,
+                    actorUserId: callerUserId);
             }
 
             if (failedOperation >= 0)

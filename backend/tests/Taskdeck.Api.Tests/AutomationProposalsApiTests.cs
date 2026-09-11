@@ -2362,4 +2362,92 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }
+
+    [Fact]
+    public async Task RestoreProposal_WhenAnEarlierOperationTakesTheLastWipSlot_IsRejectedAtApproveAndMutatesNothing()
+    {
+        // #2926: ProposalOperationContractValidator measured every restore-lifecycle against the
+        // column's count at the moment of validation, but Apply runs operations in Sequence order.
+        // A create into the restore target column took the last WIP slot first, so the proposal
+        // passed preview and failed halfway through execute, rolling back. The contract now
+        // projects the preceding operations' occupancy, so the whole proposal is refused at the
+        // approve gate with the existing WipLimitExceeded shape and the board is never touched.
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "cumulative-restore-wip");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "cumulative-restore-wip");
+        var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var columnId = board.Columns.First().Id;
+
+        var limited = await client.PatchAsJsonAsync($"/api/boards/{boardId}/columns/{columnId}",
+            new UpdateColumnDto(null, null, 1));
+        limited.StatusCode.Should().Be(HttpStatusCode.OK, await limited.Content.ReadAsStringAsync());
+
+        var createdCard = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, columnId, "Archived occupant", null, null, null));
+        createdCard.StatusCode.Should().Be(HttpStatusCode.Created, await createdCard.Content.ReadAsStringAsync());
+        var archivedCard = (await createdCard.Content.ReadFromJsonAsync<CardDto>())!;
+        var archived = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards/{archivedCard.Id}/archive",
+            new CardLifecycleDto(archivedCard.UpdatedAt));
+        archived.StatusCode.Should().Be(HttpStatusCode.OK, await archived.Content.ReadAsStringAsync());
+        archivedCard = (await archived.Content.ReadFromJsonAsync<CardDto>())!;
+
+        // The column now holds one archived card and no active ones, so a lone restore fits.
+        var newCardId = Guid.NewGuid();
+        CreateProposalDto BuildProposal() => new(
+            ProposalSourceType.Manual, user.UserId, "Fill the slot, then restore", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId, Operations:
+            [
+                new CreateProposalOperationDto(0, "create", "card",
+                    JsonSerializer.Serialize(new { boardId, columnId, title = "Takes the last slot" }),
+                    Guid.NewGuid().ToString(), newCardId.ToString()),
+                new CreateProposalOperationDto(1, "restore-lifecycle", "card",
+                    JsonSerializer.Serialize(new { boardId, cardId = archivedCard.Id, expectedUpdatedAt = archivedCard.UpdatedAt }),
+                    Guid.NewGuid().ToString(), archivedCard.Id.ToString())
+            ]);
+
+        var created = await client.PostAsJsonAsync("/api/automation/proposals", BuildProposal());
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        var proposal = (await created.Content.ReadFromJsonAsync<ProposalDto>())!;
+
+        var approve = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        var approveBody = await approve.Content.ReadAsStringAsync();
+        approve.StatusCode.Should().Be(HttpStatusCode.BadRequest, approveBody);
+        approveBody.Should().Contain("original column is full");
+
+        // A refused approve leaves the proposal PendingReview, and AutomationExecutorService's
+        // status gate turns execute away before it materializes or revalidates anything. That is
+        // what this half pins - no execute lane exists around a refused approval - NOT the
+        // contract revalidation at execute, which this sequence cannot reach.
+        using var execute = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        execute.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var refusedExecute = await client.SendAsync(execute);
+        refusedExecute.IsSuccessStatusCode.Should().BeFalse();
+        (await refusedExecute.Content.ReadAsStringAsync()).Should().Contain("PendingReview");
+
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{archivedCard.Id}"))!
+            .IsArchived.Should().BeTrue();
+        (await client.GetAsync($"/api/boards/{boardId}/cards/{newCardId}"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // Control: the identical proposal fits once the column has room for both cards, and it
+        // applies end to end - the projection must not be a blanket refusal of mixed proposals.
+        var widened = await client.PatchAsJsonAsync($"/api/boards/{boardId}/columns/{columnId}",
+            new UpdateColumnDto(null, null, 2));
+        widened.StatusCode.Should().Be(HttpStatusCode.OK, await widened.Content.ReadAsStringAsync());
+
+        var retryCreated = await client.PostAsJsonAsync("/api/automation/proposals", BuildProposal());
+        retryCreated.StatusCode.Should().Be(HttpStatusCode.Created, await retryCreated.Content.ReadAsStringAsync());
+        var retry = (await retryCreated.Content.ReadFromJsonAsync<ProposalDto>())!;
+        var retryApprove = await client.PostAsync($"/api/automation/proposals/{retry.Id}/approve", null);
+        retryApprove.StatusCode.Should().Be(HttpStatusCode.OK, await retryApprove.Content.ReadAsStringAsync());
+        using var retryExecute = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{retry.Id}/execute");
+        retryExecute.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var applied = await client.SendAsync(retryExecute);
+        applied.StatusCode.Should().Be(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync());
+
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{archivedCard.Id}"))!
+            .IsArchived.Should().BeFalse();
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{newCardId}"))!
+            .ColumnId.Should().Be(columnId);
+    }
 }
