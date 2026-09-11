@@ -2414,11 +2414,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         approve.StatusCode.Should().Be(HttpStatusCode.BadRequest, approveBody);
         approveBody.Should().Contain("original column is full");
 
-        // Execute revalidates the revision-materialized operations, so the same refusal holds
-        // there and Apply is never reached.
+        // A refused approve leaves the proposal PendingReview, and AutomationExecutorService's
+        // status gate turns execute away before it materializes or revalidates anything. That is
+        // what this half pins - no execute lane exists around a refused approval - NOT the
+        // contract revalidation at execute, which this sequence cannot reach.
         using var execute = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
         execute.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
-        (await client.SendAsync(execute)).IsSuccessStatusCode.Should().BeFalse();
+        var refusedExecute = await client.SendAsync(execute);
+        refusedExecute.IsSuccessStatusCode.Should().BeFalse();
+        (await refusedExecute.Content.ReadAsStringAsync()).Should().Contain("PendingReview");
 
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{archivedCard.Id}"))!
             .IsArchived.Should().BeTrue();

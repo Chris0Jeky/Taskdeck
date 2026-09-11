@@ -52,7 +52,7 @@ limits live in the [validation ledger](WORKSPACE_OVERHAUL_VALIDATION.md).
 
 | Surface | User-visible behavior | Boundaries / evidence |
 | --- | --- | --- |
-| Card archive/restore | Hide retained work from active surfaces; restore it to its original column subject to WIP. | Legacy archive proposals still mean Block. Active-card WIP and observation follow-ups are merged; restore preview now counts the occupancy the same proposal's earlier operations create or free (#2926). The conflict-warning projection still omits lifecycle effects (#3012). |
+| Card archive/restore | Hide retained work from active surfaces; restore it to its original column subject to WIP. | Legacy archive proposals still mean Block. Active-card WIP and observation follow-ups are merged; restore preview now counts the occupancy the same proposal's earlier create/move operations take or free (#2926); batch archive/restore in one proposal stays refused outright. Create and move are still not WIP-checked at preview (#3020) and the conflict-warning projection still omits lifecycle effects (#3012). |
 | [Card types](CARD_WORK_ITEM_TYPES.md) | Select Task, Epic or Spike in Paper or Legacy; existing cards default to Task. | Explicit metadata, independent of triage classification, parent and block state. |
 | [Card parents](CARD_HIERARCHY.md) | Select one same-board parent, with three links/four levels maximum. Archive/delete confirms direct-child detach; restore does not reattach. | Complete graph includes archived descendants; version/fingerprint conflicts require a new preview. No cascade or cross-board hierarchy. |
 

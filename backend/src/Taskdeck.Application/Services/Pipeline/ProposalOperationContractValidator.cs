@@ -739,9 +739,9 @@ public static class ProposalOperationContractValidator
         /// Only operations that Apply turns into a change in a column's ACTIVE card count
         /// participate: card create, card move, and the two lifecycle actions. The legacy
         /// <c>archive</c> verb keeps Block semantics and leaves the card active, so it
-        /// contributes nothing. <c>delete</c> is deliberately not projected: its cascade to
-        /// child cards is not modelled here, and an unprojected delete can only leave the
-        /// restore check stricter than Apply, never looser.
+        /// contributes nothing. <c>delete</c> is deliberately not projected: it is hierarchy-
+        /// affecting, so it can never precede a restore under the gate described below, and an
+        /// unprojected delete can only leave the restore check stricter than Apply, never looser.
         /// The two lifecycle deltas are latent today, because
         /// <see cref="ProposalHierarchyValidator"/> admits at most one hierarchy-affecting
         /// operation per proposal and so no lifecycle operation can precede a restore. They are
@@ -777,6 +777,11 @@ public static class ProposalOperationContractValidator
                     // Apply skips the WIP check for a same-column move, and so does this projection.
                     if (sourceColumnId == targetColumnId)
                         return;
+                    // The source decrement is unconditional because ValidateCardArchiveStateAsync
+                    // has already refused a move of an archived card, so the moved card is proven
+                    // to be in the source column's ACTIVE count. Relaxing the one-lifecycle gate
+                    // would let a restore precede a move of that same card, and this branch would
+                    // then need the projected archive state, not just the projected column.
                     if (sourceColumnId.HasValue)
                         AddProjectedColumnDelta(sourceColumnId.Value, -1);
                     AddProjectedColumnDelta(targetColumnId, 1);

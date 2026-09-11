@@ -946,8 +946,11 @@ public class ProposalOperationContractValidatorTests
         result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
         result.ErrorMessage.Should().Contain("original column is full");
 
-        // Preview == Apply: with the restore first, Apply restores into the free slot and the
-        // occupying operation is the one that would fail, so the restore contract itself passes.
+        // Order-sensitivity control: with the restore first, Apply restores into the still-free
+        // slot and the RESTORE contract is satisfied, so the projection must not reject it. Note
+        // what this does and does not say - Apply would then fail on the following create/move,
+        // because this validator has never WIP-checked create or move at preview and this change
+        // does not add that. The assertion is scoped to the restore contract only.
         var reordered = new[]
         {
             CreateOperation(0, "restore-lifecycle", archived.Id,
