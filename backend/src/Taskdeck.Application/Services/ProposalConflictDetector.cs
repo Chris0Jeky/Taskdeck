@@ -189,7 +189,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             if (!projection.ReceivesCards)
                 continue;
 
-            var projectedCount = column.Cards.Count + projection.Delta;
+            var projectedCount = column.Cards.Count(card => !card.IsArchived) + projection.Delta;
             if (column.WipLimit.HasValue && projectedCount > column.WipLimit.Value)
             {
                 flaggedColumnIds.Add(columnId);
@@ -344,7 +344,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
             if (column is null) continue;
 
-            var projectedCount = column.Cards.Count + projection.Delta;
+            var projectedCount = column.Cards.Count(card => !card.IsArchived) + projection.Delta;
             if (column.WipLimit.HasValue && projectedCount <= column.WipLimit.Value)
             {
                 rows.Add(new ConflictRow(
