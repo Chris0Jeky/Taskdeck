@@ -113,6 +113,92 @@ public class ExecutionAuditRecorderTests
             default), Times.Once);
     }
 
+    [Fact]
+    public async Task RecordAsync_ShouldAttributeActorToApplyingUser_AndKeepRequesterInProvenance()
+    {
+        // #2978: when editor B applies a proposal authored by A, the handler's own mutation rows
+        // name B. The execution-history row used to name A, so one board change showed two rows
+        // with contradictory actors. The actor is now the applier; A survives as provenance text.
+        var requester = Guid.NewGuid();
+        var applier = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), proposalId, 4, "replace-assignments", "card", cardId.ToString(),
+            $$"""{"cardId":"{{cardId}}","userIds":[]}""", "key1", null);
+        var proposal = CreateProposal(proposalId: proposalId, requestedByUserId: requester);
+
+        await _recorder.RecordAsync(operation, proposal, default, actorUserId: applier);
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(a =>
+                a.UserId == applier &&
+                a.Changes != null &&
+                a.Changes.Contains(requester.ToString()) &&
+                a.Changes.Contains(proposalId.ToString())),
+            default), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("archive-lifecycle", AuditAction.Archived)]
+    [InlineData("restore-lifecycle", AuditAction.Unarchived)]
+    public async Task RecordAsync_ShouldAttributeLifecycleReceiptToApplyingUser(string actionType, AuditAction expectedAction)
+    {
+        // #2978 + #2939: the lifecycle receipt is the ONLY row for a proposal-applied
+        // archive/restore, so if it named the requester the applier would be invisible.
+        var requester = Guid.NewGuid();
+        var applier = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, actionType, "card", cardId.ToString(),
+            $$"""{"cardId":"{{cardId}}"}""", "key1", null);
+        var proposal = CreateProposal(requestedByUserId: requester);
+
+        await _recorder.RecordAsync(operation, proposal, default, actorUserId: applier);
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(a =>
+                a.Action == expectedAction &&
+                a.UserId == applier &&
+                a.Changes != null &&
+                a.Changes.Contains(requester.ToString())),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecordAsync_ShouldFallBackToRequester_WhenNoAuthenticatedApplier()
+    {
+        // Internal lanes execute without an authenticated caller; the requester stays the best
+        // available actor there, which is also the pre-#2978 behaviour for same-user applies.
+        var requester = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "update", "card", Guid.NewGuid().ToString(),
+            """{"title":"Test"}""", "key1", null);
+        var proposal = CreateProposal(requestedByUserId: requester);
+
+        await _recorder.RecordAsync(operation, proposal, default, actorUserId: null);
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(a => a.UserId == requester), default), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecordAsync_ShouldFallBackToRequester_WhenApplierIdIsEmpty()
+    {
+        // AuditLog rejects Guid.Empty, and this runs inside the execution transaction - an empty
+        // actor must degrade to the requester rather than throw and roll the apply back.
+        var requester = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "update", "card", Guid.NewGuid().ToString(),
+            """{"title":"Test"}""", "key1", null);
+        var proposal = CreateProposal(requestedByUserId: requester);
+
+        await _recorder.RecordAsync(operation, proposal, default, actorUserId: Guid.Empty);
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(a => a.UserId == requester), default), Times.Once);
+    }
+
     #region ResolveAuditEntity
 
     [Fact]
@@ -208,6 +294,21 @@ public class ExecutionAuditRecorderTests
         changes.Should().Contain(proposalId.ToString());
         changes.Should().Contain("sequence 3");
         changes.Should().Contain("update card");
+    }
+
+    [Fact]
+    public void BuildAuditChanges_ShouldNameTheRequester()
+    {
+        // #2978: the row's actor is the applier, so the requester is only discoverable here.
+        var requester = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 1, "update", "card", null,
+            """{"cardId":"abc"}""", "key1", null);
+        var proposal = CreateProposal(requestedByUserId: requester);
+
+        var changes = ExecutionAuditRecorder.BuildAuditChanges(operation, proposal);
+
+        changes.Should().Contain($"requested by user {requester}");
     }
 
     [Fact]
