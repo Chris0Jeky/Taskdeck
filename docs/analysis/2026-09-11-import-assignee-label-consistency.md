@@ -1,7 +1,7 @@
 # Import assignee label consistency
 
 Date: 2026-09-11. Issue: GH-2980. Base: `4c479a7ff311912ffb96da027f6e525521bb70df`.
-Status: proposed validation repair; native .NET qualification outstanding.
+Status: validation repair, qualified on 2026-09-12 (see "Verification and landing").
 
 ## Why this belongs in the shared validator
 
@@ -29,7 +29,7 @@ Every rejection asserts no board/column/card/label/audit Add, no SaveChanges, no
 
 The original source was reconstructed from connector reads and verified byte-for-byte against Git blob `5d8a669ae588471a1cbd42417ca49218bbb3d4b3` before the patch. The implementation blob is `90f0cf3c55efb72f1a2142d806aaf5b40936912a`. Only the intended validation block changes.
 
-This environment lacks the .NET SDK and direct package/repository-network access. Native compilation, tests and the repository docs checks were NOT RUN locally. A static source inspection is not a passing test claim. Qualify the exact PR head with:
+The drafting environment lacked the .NET SDK and direct package/repository-network access, so native compilation, tests and the repository docs checks were NOT RUN when this note was written, and a static source inspection was not offered as a passing test claim. The commands used to qualify the exact PR head are:
 
 ```sh
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~BoardImportAssigneeConsistencyTests|FullyQualifiedName~ExportImportServiceTests"
@@ -38,4 +38,6 @@ node scripts/check-docs-governance.mjs
 node scripts/check-doc-links.mjs
 ```
 
-Keep the PR draft until hosted evidence and independent review are recorded. The landing coordinator should add the one-label-per-key sentence to `docs/product/CARD_ASSIGNMENTS.md` and the bounded shipped-state entry to STATUS after qualification. Those shared files were not edited in this draft to avoid concurrent assignment-lane changes; this note records the full proposed contract without claiming it shipped. No OUTSTANDING_TASKS human item was checked off.
+Updated 2026-09-12 (landing lane, with the SDK available): the 18 new cases pass; with the service reverted to the `origin/main` source, eight of them go red - both Apply routes, all three preview label rows and the same-card conflict - so the coverage genuinely pins the reported defect. 103 existing export/import Application cases pass, and both docs checks pass. The draft gate above is therefore satisfied and the PR is marked ready.
+
+The landing commit adds the one-label-per-key paragraph to `docs/product/CARD_ASSIGNMENTS.md` and the bounded shipped-state entry to `docs/STATUS.md`, which the drafting session deliberately left to landing; do not add them again. No OUTSTANDING_TASKS human item was checked off.

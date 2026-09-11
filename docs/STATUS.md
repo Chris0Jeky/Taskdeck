@@ -11,8 +11,11 @@ introduced, and the existing bounded-field, missing-mapping, unknown-key and imp
 are unchanged. Evidence: 18 new Application tests (eight proven red against the pre-fix validator,
 each rejection asserting no repository Add, no SaveChanges, no commit and one rollback) plus 103
 passing export/import cases. These are mocked-repository application-boundary assertions, not a real
-SQLite proof. This is a bounded validator repair inside the import path; the wider #2240 assignment
-slice is untouched and its status is unchanged.
+SQLite proof. Scope: a bounded repair to the board-import
+validator that already guards `POST /api/import/boards/preview`, `POST /api/import/boards` and
+`POST /api/import/boards/json` on main. The separate #2240 multiple-assignments slice is untouched and
+its status is unchanged; the delivery paragraph below still says "explicit import mapping" is not
+delivered, which #3036 tracks for reconciliation against those routes.
 
 Card archive/restore (#2920): explicit, version-checked lifecycle actions preserve card identity,
 placement, labels, block state and history. Active surfaces exclude archived cards; Paper and
