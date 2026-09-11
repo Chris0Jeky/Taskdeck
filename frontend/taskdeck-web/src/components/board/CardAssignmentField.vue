@@ -28,18 +28,19 @@ const needsRefresh = ref(false)
  * as an uncertain save and offering a retry sends the user round a loop the
  * server will keep refusing. It is the one sticky class. A Viewer still reads
  * participants and the card successfully, so a completed refresh is NOT evidence
- * of write permission and must not unlock the controls; a board `canWrite`
- * cached from before the downgrade is not evidence either. Only the parent's
- * server-derived `readOnly` input turning writable again, or a different
- * card/session, clears it. Every other class stays a per-attempt outcome the
- * user can act on. Narrower than `isAccessDeniedError` (403 OR 404) on purpose:
- * a 404 here is a card/board-gone fact, not a permission signal.
+ * of write permission and must not unlock the selector or Save; a board
+ * `canWrite` cached from before the downgrade is not evidence either. Only the
+ * parent's server-derived `readOnly` input turning writable again — which the
+ * background board refetch delivers — or reopening the card clears it. Every
+ * other class stays a per-attempt outcome the user can act on. Narrower than
+ * `isAccessDeniedError` (403 OR 404) on purpose: a 404 here is a
+ * card/board-gone fact, not a permission signal.
  */
 const saveFailure = ref<'permission' | 'conflict' | 'ineligible' | 'unknown' | null>(null)
 let generation = 0
 const permissionLost = computed(() => saveFailure.value === 'permission')
 const error = computed(() => {
-  if (permissionLost.value) return 'Your edit permission was revoked, so this assignment save was refused. Assignment editing stays locked until your board access is restored — refreshing will not unlock it. Your draft and the current assignees stay readable.'
+  if (permissionLost.value) return 'Your edit permission was revoked, so this assignment save was refused. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft and the current assignees stay readable, and Clear and Cancel still work.'
   if (loadFailed.value) return 'Could not load current participants. Your draft is kept.'
   if (saveFailure.value === 'conflict') return 'The card changed. Refresh current assignments, review your kept draft, then save again.'
   if (saveFailure.value === 'ineligible') return 'A selected person is no longer eligible. Refresh participants and correct your kept draft.'
@@ -47,7 +48,17 @@ const error = computed(() => {
   return ''
 })
 const dirty = computed(() => [...selected.value].sort().join() !== [...baseline.value].sort().join())
-const locked = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value || permissionLost.value)
+/*
+ * `busy` is every reason the whole field — the draft-side Clear and Cancel
+ * included — is non-interactive. `locked` adds the reasons that block only a
+ * write: the selector and Save. A revoked permission must NOT reach `busy`,
+ * or Cancel dies with it and the draft can never be returned to baseline: the
+ * host reads `dirty-change`, so a permanently dirty field would keep the card
+ * modal's own save and archive disabled and raise a discard prompt on every
+ * close path, for the life of the mount.
+ */
+const busy = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value)
+const locked = computed(() => busy.value || permissionLost.value)
 watch(dirty, value => emit('dirty-change', value))
 /*
  * A submitted PUT cannot be recalled. The host editor needs the in-flight state
@@ -140,9 +151,13 @@ async function save() {
       : status === 409 ? 'conflict'
         : status === 400 ? 'ineligible'
           : 'unknown'
-    // Read access survives a downgrade, so the refresh stays available for the
-    // current assignees even when it can no longer lead back to a save.
-    needsRefresh.value = true
+    /*
+     * A refusal is not a stale-state claim, and `needsRefresh` also disables the
+     * draft-side controls — so the permission class carries its own lock instead.
+     * Read access survives a downgrade, so the refresh affordance below stays
+     * offered for the current assignees even when it cannot lead back to a save.
+     */
+    needsRefresh.value = !permissionLost.value
   } finally { if (request === generation) saving.value = false }
 }
 const unavailable = computed(() => props.readOnly ? [] : selected.value.filter(id => !participants.value.some(p => p.userId === id)))
@@ -157,7 +172,7 @@ onBeforeUnmount(() => { generation++ })
     <p v-if="loading" role="status">Loading participants…</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="saving" role="status">Saving assignments… this change was sent and cannot be discarded.</p>
-    <button v-if="needsRefresh" type="button" :disabled="loading || saving" @click="load(true)">Refresh current assignments</button>
+    <button v-if="needsRefresh || permissionLost" type="button" :disabled="loading || saving" @click="load(true)">Refresh current assignments</button>
     <fieldset :disabled="locked" class="space-y-1">
       <legend class="sr-only">Choose board participants</legend>
       <label v-for="person in participants" :key="person.userId" class="flex gap-2">
@@ -168,13 +183,14 @@ onBeforeUnmount(() => { generation++ })
         <input v-model="selected" type="checkbox" :value="id" /> Unavailable participant — remove to continue
       </label>
       <p v-if="!loading && !selected.length" class="text-sm">Unassigned</p>
-      <div v-if="!readOnly" class="flex gap-3">
-        <button type="button" :disabled="!selected.length" @click="selected = []">Clear</button>
-        <button type="button" :disabled="!dirty" @click="cancel">Cancel assignment changes</button>
-        <!-- `locked` is on the ancestor fieldset too; naming it here keeps the write control
-             itself reflect its disabled state rather than relying on ancestor propagation. -->
-        <button type="button" :disabled="locked || !dirty || unavailable.length > 0" @click="save">{{ saving ? 'Saving…' : 'Save assignments' }}</button>
-      </div>
     </fieldset>
+    <!-- Outside the selector fieldset on purpose: Clear and Cancel only edit the local
+         draft, so they follow `busy` and survive a revoked permission. Save is the write
+         and names `locked` itself rather than relying on ancestor propagation. -->
+    <div v-if="!readOnly" class="flex gap-3">
+      <button type="button" :disabled="busy || !selected.length" @click="selected = []">Clear</button>
+      <button type="button" :disabled="busy || !dirty" @click="cancel">Cancel assignment changes</button>
+      <button type="button" :disabled="locked || !dirty || unavailable.length > 0" @click="save">{{ saving ? 'Saving…' : 'Save assignments' }}</button>
+    </div>
   </section>
 </template>

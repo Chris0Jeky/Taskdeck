@@ -150,8 +150,28 @@ describe('CardAssignmentField', () => {
       expect(wrapper.text()).toContain('Your edit permission was revoked')
       expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
       expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
-      await button(wrapper, 'Save assignments').trigger('click'); await flushPromises()
+      /*
+       * test-utils skips the dispatch on a disabled button, so clicking Save here
+       * would only re-assert the attribute. Call the handler directly so the
+       * `if (locked.value) return` guard inside save() is the thing under test.
+       */
+      await (wrapper.vm as unknown as { save: () => Promise<void> }).save(); await flushPromises()
       expect(cardsApi.replaceAssignments).toHaveBeenCalledTimes(1)
+    })
+
+    it('still lets the draft be cancelled, so the host is not left permanently dirty', async () => {
+      const wrapper = await downgradedDuringSave()
+      expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([true])
+      const cancel = button(wrapper, 'Cancel assignment changes')
+      expect(cancel.attributes('disabled')).toBeUndefined()
+      await cancel.trigger('click'); await flushPromises()
+      expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([false])
+      expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(false)
+      expect(cardsApi.replaceAssignments).toHaveBeenCalledTimes(1)
+      // Cancelling the draft is not regaining permission.
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain('Your edit permission was revoked')
+      expect(button(wrapper, 'Save assignments').attributes('disabled')).toBeDefined()
     })
 
     it('unlocks only when the parent reports write permission again', async () => {
