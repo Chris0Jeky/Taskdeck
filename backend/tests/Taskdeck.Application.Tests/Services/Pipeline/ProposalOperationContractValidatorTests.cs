@@ -61,6 +61,52 @@ public class ProposalOperationContractValidatorTests
         card.Archive();
         (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [second])).ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
     }
+    [Theory]
+    [InlineData("archive-lifecycle")]
+    [InlineData("restore-lifecycle")]
+    public async Task Lifecycle_RejectsTargetIdThatDisagreesWithParameterCardId(string action)
+    {
+        // #2939: ExecutionAuditRecorder keys the single lifecycle receipt on operation.TargetId
+        // while the handler mutates parameters.cardId, so the two must be proven to agree. This
+        // pins the shared identity-agreement guard for both lifecycle actions; loosening it would
+        // let one card be archived while the receipt landed on an unrelated id.
+        var board = new Board("Lifecycle target binding");
+        var boardId = board.Id;
+        var column = new Column(boardId, "Now", 0);
+        var card = new Card(boardId, column.Id, "Real lifecycle target");
+        var decoy = new Card(boardId, column.Id, "Unrelated receipt target");
+        if (action == "restore-lifecycle") card.Archive();
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unit.Setup(u => u.Columns).Returns(columns.Object);
+        columns.Setup(r => r.GetByIdWithCardsAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        unit.Setup(u => u.Cards).Returns(cards.Object);
+        cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        cards.Setup(r => r.GetByIdAsync(decoy.Id, It.IsAny<CancellationToken>())).ReturnsAsync(decoy);
+        cards.Setup(r => r.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { card, decoy });
+        var boards = new Mock<IBoardRepository>();
+        unit.SetupGet(u => u.Boards).Returns(boards.Object);
+        boards.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+
+        object parameters = new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt };
+
+        var mismatched = CreateOperation(0, action, decoy.Id, parameters);
+        var mismatchResult = await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [mismatched]);
+        mismatchResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        mismatchResult.ErrorMessage.Should().Contain("targetId must match parameter 'cardId'");
+
+        var matching = CreateOperation(0, action, card.Id, parameters);
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [matching]))
+            .IsSuccess.Should().BeTrue();
+
+        // With no typed targetId the recorder falls back to parameters.cardId, so there is
+        // nothing to disagree with and the operation stays valid.
+        var noTargetId = CreateOperation(0, action, null, parameters);
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [noTargetId]))
+            .IsSuccess.Should().BeTrue();
+    }
+
     [Fact]
     public async Task ValidateAsync_ShouldCacheBoundedEntityLookupsAcrossOperations()
     {

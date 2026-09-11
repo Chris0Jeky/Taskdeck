@@ -1011,6 +1011,90 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         actions.Should().Contain(AuditAction.Archived).And.Contain(AuditAction.Unarchived);
     }
 
+    [Theory]
+    [InlineData("archive-lifecycle")]
+    [InlineData("restore-lifecycle")]
+    public async Task CardLifecycleProposal_WithTargetIdMismatchingParameterCardId_IsRejectedAndMutatesNothing(string action)
+    {
+        // #2939 review follow-up. ExecutionAuditRecorder keys the lifecycle receipt on
+        // operation.TargetId when it parses as a GUID, while the handler archives
+        // parameters.cardId. If those two could disagree at Apply, one card would be archived and
+        // the receipt stamped on another - which the pre-#2939 CardService row used to mask.
+        // They cannot disagree: ProposalOperationContractValidator's shared identity-agreement
+        // guard rejects any card-targeted operation whose targetId differs from parameters.cardId,
+        // and it runs on both the approve and the execute path. This pins that guard, because the
+        // single-receipt design above now depends on it.
+        using var client = _factory.CreateClient();
+        var stem = action == "archive-lifecycle" ? "lc-mismatch-arch" : "lc-mismatch-rest";
+        var user = await ApiTestHarness.AuthenticateAsync(client, stem);
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, stem);
+        var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var columnId = board.Columns.First().Id;
+
+        async Task<CardDto> CreateCardAsync(string title)
+        {
+            var created = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+                new CreateCardDto(boardId, columnId, title, null, null, null));
+            created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+            return (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+
+        var realCard = await CreateCardAsync("Real lifecycle target");
+        var decoyCard = await CreateCardAsync("Unrelated receipt target");
+        if (action == "restore-lifecycle")
+        {
+            var archived = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards/{realCard.Id}/archive",
+                new CardLifecycleDto(realCard.UpdatedAt));
+            archived.StatusCode.Should().Be(HttpStatusCode.OK, await archived.Content.ReadAsStringAsync());
+            realCard = (await archived.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+
+        var response = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
+            ProposalSourceType.Manual, user.UserId, "Mismatched lifecycle target", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId, Operations:
+            [
+                new CreateProposalOperationDto(0, action, "card",
+                    JsonSerializer.Serialize(new { boardId, cardId = realCard.Id, expectedUpdatedAt = realCard.UpdatedAt }),
+                    Guid.NewGuid().ToString(), decoyCard.Id.ToString())
+            ]));
+
+        // Creation itself is deliberately permissive (a proposal may be created in a transient
+        // shape and revised into validity, #1423). The identity-agreement guard runs in
+        // AutomationPolicyEngine.ValidatePermissionsAsync, which gates BOTH approve and execute -
+        // and execute revalidates the revision-materialized effective operations, so a mismatch
+        // introduced by a post-approval revision is caught too. Accept a rejection at either gate;
+        // what must never happen is reaching Apply.
+        if (response.StatusCode == HttpStatusCode.Created)
+        {
+            var rejected = (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
+            var approve = await client.PostAsync($"/api/automation/proposals/{rejected.Id}/approve", null);
+            var approveBody = await approve.Content.ReadAsStringAsync();
+            approve.StatusCode.Should().Be(HttpStatusCode.BadRequest, approveBody);
+            approveBody.Should().Contain("targetId must match parameter 'cardId'");
+
+            using var exec = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{rejected.Id}/execute");
+            exec.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+            var applied = await client.SendAsync(exec);
+            applied.IsSuccessStatusCode.Should().BeFalse(await applied.Content.ReadAsStringAsync());
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        }
+
+        // Neither card moved, and no lifecycle receipt was stamped on the unrelated id.
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{realCard.Id}"))!
+            .IsArchived.Should().Be(action == "restore-lifecycle");
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{decoyCard.Id}"))!
+            .IsArchived.Should().BeFalse();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var decoyAudits = await db.AuditLogs.Where(log => log.EntityId == decoyCard.Id).ToListAsync();
+        decoyAudits.Should().NotContain(log =>
+            log.Action == AuditAction.Archived || log.Action == AuditAction.Unarchived);
+    }
+
     [Fact]
     public async Task CardLifecycleAudit_ProposalApplyAndDirectApi_EachPersistExactlyOneTypedReceipt()
     {
