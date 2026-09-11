@@ -13,7 +13,7 @@ vi.mock('../../api/cardsApi', () => ({ cardsApi: { getCards: vi.fn() } }))
 vi.mock('../../api/boardsApi', () => ({ boardsApi: { getBoard: vi.fn() } }))
 const graph = { boardId: 'board', revision: 2, canWrite: true, edges: [{ cardId: 'a', dependsOnCardId: 'b' }] }
 const cards = [{ id: 'a', title: 'Ship', columnId: 'next' }, { id: 'b', title: 'Prepare', columnId: 'next', isBlocked: true, blockReason: 'Waiting for source' }, { id: 'c', title: 'Check', columnId: 'next' }] as Card[]
-function create(canWrite = true) { return mount(CardDependencies, { props: { boardId: 'board', cardId: 'a', canWrite }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }) }
+function create(canWrite = true, refreshPermission?: () => Promise<unknown>) { return mount(CardDependencies, { props: { boardId: 'board', cardId: 'a', canWrite, refreshPermission }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }) }
 async function open(wrapper: ReturnType<typeof create>) { await wrapper.get('button').trigger('click'); await flushPromises() }
 describe('CardDependencies', () => {
   beforeEach(() => {
@@ -88,6 +88,27 @@ describe('CardDependencies', () => {
     resolve(graph); await flushPromises()
     expect(wrapper.text()).not.toContain('Prepare')
     expect(wrapper.get('button').attributes('aria-expanded')).toBe('false')
+  })
+  it('revalidates the card permission with every dependency read', async () => {
+    const refreshPermission = vi.fn().mockResolvedValue(undefined)
+    const wrapper = create(true, refreshPermission)
+    await open(wrapper)
+    expect(refreshPermission).toHaveBeenCalledTimes(1)
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh dependencies')!.trigger('click')
+    await flushPromises()
+    expect(refreshPermission).toHaveBeenCalledTimes(2)
+    expect(boardDependenciesApi.get).toHaveBeenCalledTimes(2)
+  })
+  it('keeps controls read-only and surfaces the failure when the card permission read fails', async () => {
+    const refreshPermission = vi.fn().mockRejectedValue({ response: { status: 403, data: { errorCode: 'Forbidden' } } })
+    const wrapper = create(true, refreshPermission)
+    await open(wrapper)
+    expect(wrapper.get('[role="alert"]').text()).toContain('You do not have permission')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Reload dependencies')
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.find('[aria-label^="Remove prerequisite"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Prepare')
+    expect(boardDependenciesApi.save).not.toHaveBeenCalled()
   })
   it('shows incoming relationships and no write controls for viewers', async () => {
     vi.mocked(boardDependenciesApi.get).mockResolvedValue({ ...graph, canWrite: false, edges: [{ cardId: 'b', dependsOnCardId: 'a' }] })

@@ -7,7 +7,11 @@ import { getErrorDisplay } from '../../composables/useErrorMapper'
 import { useSessionStore } from '../../store/sessionStore'
 import type { BoardDetail, Card } from '../../types/board'
 
-const props = defineProps<{ boardId: string; cardId: string; canWrite: boolean }>()
+// `refreshPermission` revalidates the parent's server-authoritative card permission (archive state and
+// board role) as part of every dependency read, so a restore or an access grant made elsewhere lands
+// here without a page reload (#2958). It must reject when that read fails: a failed refresh keeps the
+// graph unloaded, which keeps every write control hidden.
+const props = defineProps<{ boardId: string; cardId: string; canWrite: boolean; refreshPermission?: () => Promise<unknown> }>()
 const emit = defineEmits<{ busy: [value: boolean] }>()
 const session = useSessionStore()
 const expanded = ref(false)
@@ -32,6 +36,7 @@ async function load() {
   try {
     const [nextGraph, nextCards, nextBoard] = await Promise.all([
       boardDependenciesApi.get(props.boardId), cardsApi.getCards(props.boardId), boardsApi.getBoard(props.boardId),
+      props.refreshPermission?.(),
     ])
     if (current !== generation) return
     graph.value = nextGraph; cards.value = nextCards; board.value = nextBoard

@@ -1,8 +1,11 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { thinkingApi } from '../api/thinkingApi'
+import { isAccessDeniedError } from './useErrorMapper'
+import { useSessionStore } from '../store/sessionStore'
 import type { ThinkingDeck, ThinkingKind, ThinkingLayer } from '../types/thinking'
 
 export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
+  const session = useSessionStore()
   const layers = ref<ThinkingLayer[]>([])
   const revision = ref(0)
   const baseline = ref('[]')
@@ -33,6 +36,28 @@ export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
       if (current === generation) error.value = 'Could not load this thinking deck. Check your connection and board access, then retry.'
     } finally {
       if (current === generation) loading.value = false
+    }
+  }
+
+  // Revalidate ONLY the server-authoritative write permission for this card (#2958). The card can be
+  // restored, archived again, or have board access granted or withdrawn in another session while this
+  // route stays mounted, and the deck is loaded once per board/card change. Layers, revision and
+  // baseline are deliberately left alone so an unsaved draft and explicit-save semantics survive.
+  // The response is dropped when the route or the signed-in account changed while it was in flight;
+  // a rejection is rethrown so the caller can show the failure, and never grants write access.
+  async function refreshPermission() {
+    const current = generation
+    const actor = session.userId
+    try {
+      const deck = await thinkingApi.get(boardId.value, cardId.value)
+      if (current !== generation || actor !== session.userId) return
+      canWrite.value = deck.canWrite
+    } catch (cause) {
+      // A 403/404 is positive evidence that access to this card is gone, so close the controls.
+      // A transient failure leaves the last confirmed permission alone rather than revoking an
+      // editing session over a dropped connection; the server still guards every save.
+      if (current === generation && actor === session.userId && isAccessDeniedError(cause)) canWrite.value = false
+      throw cause
     }
   }
 
@@ -74,5 +99,5 @@ export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
     if (layer) layers.value.splice(target, 0, layer)
   }
   watch([boardId, cardId], () => { layers.value = []; baseline.value = '[]'; void load() }, { immediate: true })
-  return { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, save, add, move, acceptPromotion }
+  return { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, refreshPermission, save, add, move, acceptPromotion }
 }
