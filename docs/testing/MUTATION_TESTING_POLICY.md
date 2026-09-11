@@ -91,9 +91,14 @@ Reproduce that exact shape in seconds, without waiting for a mutation run:
 
 ```bash
 cd frontend/taskdeck-web
-npm run test:stryker-pool                     # whole suite, Stryker's pool shape
-npm run test:stryker-pool -- src/tests/utils/timeZone.spec.ts   # one spec
+# Whole suite in Stryker's pool shape (~7 min on a dev box):
+npx vitest --run --pool=threads --maxWorkers=1 --maxConcurrency=1
+# One spec, seconds:
+npx vitest --run --pool=threads --maxWorkers=1 src/tests/utils/timeZone.spec.ts
 ```
+
+Deliberately not an npm script: `frontend/taskdeck-web/package.json` is a declared control path
+(`ci/policy.v1.json`), so adding one would make an otherwise ordinary test change an R4 PR.
 
 **Known pool-dependent trap — timezone stubs (#2943).** `vi.stubEnv('TZ', zone)` changes the runtime
 zone only as a side effect of Node's real environment store notifying V8. That notification does not

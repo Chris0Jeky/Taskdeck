@@ -19,7 +19,7 @@ import {
  * file is green under both pools and on a host in any zone. Run it under the
  * exact dry-run shape with:
  *
- *   npm run test:stryker-pool -- src/tests/utils/timeZone.spec.ts
+ *   npx vitest --run --pool=threads --maxWorkers=1 src/tests/utils/timeZone.spec.ts
  */
 describe('timeZone test helper (#2943)', () => {
   let restore: (() => void) | null = null

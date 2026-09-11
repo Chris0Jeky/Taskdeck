@@ -24,7 +24,6 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "node -e \"require('fs').mkdirSync('test-results',{recursive:true})\" && vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=./test-results/vitest.coverage.junit.xml",
-    "test:stryker-pool": "vitest run --pool=threads --maxWorkers=1 --maxConcurrency=1",
     "test:pwa-generated-worker": "vite build && npm run test:pwa-generated-worker:built",
     "test:pwa-generated-worker:built": "vitest run --config vitest.pwa-generated-worker.config.ts --maxWorkers=2",
     "test:e2e": "playwright test",
