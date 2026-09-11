@@ -41,6 +41,7 @@ import {
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { formatRecordedOperationActionLabel } from '../../utils/recordedOperationPresentation'
+import { splitQuotedSummary } from '../../utils/paperReviewPresentation'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -896,34 +897,6 @@ const titleParts = computed(() => {
   // backend annotates highlight ranges, we wrap any quoted phrase in <em>.
   return splitQuotedSummary(p.summary ?? '')
 })
-
-function splitQuotedSummary(summary: string): Array<{ text: string; emphasis?: boolean }> {
-  if (!summary) return [{ text: '' }]
-  const parts: Array<{ text: string; emphasis?: boolean }> = []
-  let cursor = 0
-
-  while (cursor < summary.length) {
-    const straight = summary.indexOf('"', cursor)
-    const curly = summary.indexOf('“', cursor)
-    const startCandidates = [straight, curly].filter((index) => index >= 0)
-    if (startCandidates.length === 0) break
-    const start = Math.min(...startCandidates)
-    const endQuote = summary[start] === '“' ? '”' : '"'
-    const end = summary.indexOf(endQuote, start + 1)
-    if (end < 0) break
-
-    if (start > cursor) {
-      parts.push({ text: summary.slice(cursor, start) })
-    }
-    parts.push({ text: `“${summary.slice(start + 1, end)}”`, emphasis: true })
-    cursor = end + 1
-  }
-
-  if (cursor < summary.length) {
-    parts.push({ text: summary.slice(cursor) })
-  }
-  return parts.length > 0 ? parts : [{ text: summary, emphasis: true }]
-}
 
 const lede = computed(
   () => activeProposal.value?.presentation?.plainSummary ?? t('review.main.ledeFallback'),
