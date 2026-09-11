@@ -551,4 +551,39 @@ public class OperationHandlerRegistryTests
         third.Position.Should().Be(1);
         mover.Position.Should().Be(2);
     }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldAppendMovedCard_WhenTargetColumnHoldsAnArchivedCard()
+    {
+        // #3025, second trigger. Archived cards keep their stored position (that is how restore
+        // returns a card to its original placement) but ICardRepository.GetByColumnIdAsync - the
+        // list CardService.MoveCardAsync reorders - excludes them. A column holding one active
+        // card at 0 and an archived card at 1 therefore has max(Position) + 1 = 2 against a
+        // one-card list. The append index counts active occupants only.
+        var board = TestDataBuilder.CreateBoard();
+        var active = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Active", position: 0);
+        var shelved = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Archived", position: 1);
+        shelved.Archive();
+        var targetColumn = TestDataBuilder.CreateColumnWithCards(board.Id, "Doing", new[] { active, shelved }, 1);
+        var mover = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Mover", position: 0);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(targetColumn.Id, default))
+            .ReturnsAsync(new List<Card> { active });
+
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "move", "card", mover.Id.ToString(),
+            $$"""{"cardId":"{{mover.Id}}","columnId":"{{targetColumn.Id}}"}""", "move-archived", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mover.ColumnId.Should().Be(targetColumn.Id);
+        active.Position.Should().Be(0);
+        mover.Position.Should().Be(1);
+        // The archived card is not in the reordered list, so its stored placement is untouched.
+        shelved.Position.Should().Be(1);
+    }
 }
