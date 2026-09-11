@@ -18,8 +18,22 @@ export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
   let generation = 0
   const dirty = computed(() => JSON.stringify(layers.value) !== baseline.value)
 
+  // Permission evidence is ordered by when its request STARTED. Every read takes a ticket and only
+  // applies when no newer read has already been applied, so overlapping reads - the dependency panel
+  // hidden and reopened while one is in flight - can never re-enable controls from a superseded read.
+  // A read that fails applies nothing and consumes no ticket, so a still-pending earlier read is
+  // still allowed to land.
+  let permissionTicket = 0
+  let appliedPermission = 0
+  function applyPermission(ticket: number, deckGeneration: number, value: boolean) {
+    if (deckGeneration !== generation || ticket <= appliedPermission) return
+    appliedPermission = ticket
+    canWrite.value = value
+  }
+
   async function load() {
     const current = ++generation
+    const ticket = ++permissionTicket
     loading.value = true
     ready.value = false
     error.value = ''
@@ -28,7 +42,7 @@ export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
       if (current !== generation) return
       layers.value = deck.layers
       revision.value = deck.revision
-      canWrite.value = deck.canWrite
+      applyPermission(ticket, current, deck.canWrite)
       baseline.value = JSON.stringify(deck.layers)
       conflict.value = false
       ready.value = true
@@ -47,16 +61,16 @@ export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
   // a rejection is rethrown so the caller can show the failure, and never grants write access.
   async function refreshPermission() {
     const current = generation
+    const ticket = ++permissionTicket
     const actor = session.userId
     try {
       const deck = await thinkingApi.get(boardId.value, cardId.value)
-      if (current !== generation || actor !== session.userId) return
-      canWrite.value = deck.canWrite
+      if (actor === session.userId) applyPermission(ticket, current, deck.canWrite)
     } catch (cause) {
       // A 403/404 is positive evidence that access to this card is gone, so close the controls.
       // A transient failure leaves the last confirmed permission alone rather than revoking an
       // editing session over a dropped connection; the server still guards every save.
-      if (current === generation && actor === session.userId && isAccessDeniedError(cause)) canWrite.value = false
+      if (actor === session.userId && isAccessDeniedError(cause)) applyPermission(ticket, current, false)
       throw cause
     }
   }

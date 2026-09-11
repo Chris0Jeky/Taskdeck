@@ -199,6 +199,26 @@ describe('ThinkingDeckPanel dependency refresh permission', () => {
     wrapper.unmount()
   })
 
+  it('ignores a superseded permission read when two refreshes overlap', async () => {
+    const wrapper = open(); await flushPromises()
+    await expand(wrapper)
+    expect(writable(wrapper)).toBe(true)
+    let superseded!: (value: ReturnType<typeof deck>) => void
+    vi.mocked(thinkingApi.get).mockReturnValueOnce(new Promise(r => { superseded = r }))
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh dependencies')!.trigger('click')
+    // The panel can be hidden and reopened while that read is still in flight, which starts a newer
+    // read; here the newer one sees the card archived again.
+    await wrapper.findAll('button').find(button => button.text() === 'Hide dependencies')!.trigger('click')
+    vi.mocked(thinkingApi.get).mockResolvedValue(deck(false))
+    await expand(wrapper)
+    expect(writable(wrapper)).toBe(false)
+    superseded(deck(true))
+    await flushPromises()
+    expect(writable(wrapper)).toBe(false)
+    expect(wrapper.find('form').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('drops a permission refresh that resolves after the route moved to another card', async () => {
     vi.mocked(thinkingApi.get).mockResolvedValue(deck(false))
     const wrapper = open(); await flushPromises()
