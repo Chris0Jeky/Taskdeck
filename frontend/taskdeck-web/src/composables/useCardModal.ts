@@ -64,6 +64,11 @@ export function useCardModal(options: UseCardModalOptions) {
   // Delete state
   const showDeleteConfirm = ref(false)
   const isDeleting = ref(false)
+  // Ownership token for the delete preview. Each attempt takes the next value; cancelling,
+  // reopening, switching cards, closing the modal and unmounting all bump it, so a late
+  // success, failure or finally effect from a superseded attempt can never populate the
+  // current dialog, clear its loading state, or replace a newer preview.
+  let deletePreviewGeneration = 0
 
   // Computed
   const card = computed(() => options.getCard())
@@ -121,6 +126,7 @@ export function useCardModal(options: UseCardModalOptions) {
         isSaving.value = false
         saveError.value = null
         cardSessionVersion += 1
+        invalidateDeletePreview()
       }
       parentCardId.value = newCard.parentCardId ?? null
       detachPreview.value = null
@@ -186,6 +192,8 @@ export function useCardModal(options: UseCardModalOptions) {
       loadedCaptureProvenanceCardId.value = null
       loadingCaptureProvenanceCardId = null
       provenanceLoadVersion += 1
+      showDeleteConfirm.value = false
+      invalidateDeletePreview()
 
       if (boardStore.editingCardId === card.value.id) {
         boardStore.setEditingCard(null)
@@ -286,25 +294,47 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   // Delete
+  /**
+   * Retires the delete preview attempt that owns the current generation. Everything the
+   * dialog renders is reset together with the token so no stale view survives the bump.
+   */
+  function invalidateDeletePreview() {
+    deletePreviewGeneration += 1
+    detachPreview.value = null
+    deletePreviewError.value = null
+    deletePreviewLoading.value = false
+  }
+
+  /** True only while `generation` is still the attempt the open dialog is waiting on. */
+  function ownsDeletePreview(generation: number, cardId: string, session: number): boolean {
+    return (
+      generation === deletePreviewGeneration &&
+      showDeleteConfirm.value &&
+      isCurrentCardSession(cardId, session)
+    )
+  }
+
   async function handleDeleteClick() {
     const target = card.value
     const session = cardSessionVersion
+    // Supersede any attempt still in flight before starting this one.
+    invalidateDeletePreview()
+    const generation = deletePreviewGeneration
     showDeleteConfirm.value = true
-    detachPreview.value = null
-    deletePreviewError.value = null
     deletePreviewLoading.value = true
     try {
       const preview = await cardsApi.previewDetach(target.boardId, target.id)
-      if (isCurrentCardSession(target.id, session) && showDeleteConfirm.value) detachPreview.value = preview
+      if (ownsDeletePreview(generation, target.id, session)) detachPreview.value = preview
     } catch {
-      if (isCurrentCardSession(target.id, session)) deletePreviewError.value = 'Could not load the full child list. Close and refresh before deleting.'
+      if (ownsDeletePreview(generation, target.id, session)) deletePreviewError.value = 'Could not load the full child list. Close and refresh before deleting.'
     } finally {
-      if (isCurrentCardSession(target.id, session)) deletePreviewLoading.value = false
+      if (ownsDeletePreview(generation, target.id, session)) deletePreviewLoading.value = false
     }
   }
 
   function handleDeleteCancel() {
     showDeleteConfirm.value = false
+    invalidateDeletePreview()
   }
 
   async function handleDeleteConfirm() {
@@ -479,6 +509,8 @@ export function useCardModal(options: UseCardModalOptions) {
     loadingCaptureProvenanceCardId = null
     provenanceLoadVersion += 1
     cardSessionVersion += 1
+    showDeleteConfirm.value = false
+    invalidateDeletePreview()
   })
 
   return {
