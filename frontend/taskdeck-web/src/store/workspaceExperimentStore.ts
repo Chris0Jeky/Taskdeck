@@ -1,13 +1,19 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { useSessionStore } from './sessionStore'
+import {
+  isWorkspaceExperience,
+  isWorkspacePresentation,
+  type WorkspaceExperience,
+  type WorkspacePresentation,
+} from './workspaceLayoutStore'
 import { frontendBuildIdentity } from '../utils/frontendBuildIdentity'
 import { comparisonChecksum, comparisonId } from '../utils/comparisonIdentity'
 
 export interface WorkspaceTrial {
   id: string
-  experience: string
-  presentation: string
+  experience: WorkspaceExperience
+  presentation: WorkspacePresentation
   theme: string
   build: string | null
   frontendBuild: string | null
@@ -58,8 +64,7 @@ export const useWorkspaceExperimentStore = defineStore('workspaceExperiment', ()
     const ease = trial.ease ?? null
     if (!session.userId || trials.value.length >= MAX_COMPARISON_TRIALS || !isScenario(trial.scenario) || !isCompletionOutcome(trial.completionOutcome)) return false
     if (ease !== null && (!Number.isInteger(ease) || ease < 1 || ease > 5)) return false
-    if (!['classic', 'studio', 'companion', 'unified'].includes(trial.experience) ||
-        !['zen', 'studio', 'control'].includes(trial.presentation)) return false
+    if (!isWorkspaceExperience(trial.experience) || !isWorkspacePresentation(trial.presentation)) return false
     const build = typeof trial.build === 'string' && trial.build.trim() ? trial.build.trim().slice(0, 256) : null
     if (typeof trial.theme !== 'string' || !trial.theme || trial.theme.length > 64 || typeof trial.note !== 'string') return false
     trials.value.push({ ...trial, id: comparisonId(), frontendBuild: frontendBuildIdentity, build, ease, note: trial.note.slice(0, 2000), recordedAt: new Date().toISOString() })
@@ -123,8 +128,7 @@ function validateImportedTrial(input: unknown, version: number): WorkspaceTrial 
   const bad = () => new Error('The file contains an invalid observation. Nothing was imported.')
   if (!input || typeof input !== 'object') throw bad()
   const x = input as Record<string, unknown>
-  if (typeof x.experience !== 'string' || !['classic', 'studio', 'companion', 'unified'].includes(x.experience)
-    || typeof x.presentation !== 'string' || !['zen', 'studio', 'control'].includes(x.presentation)
+  if (!isWorkspaceExperience(x.experience) || !isWorkspacePresentation(x.presentation)
     || typeof x.theme !== 'string' || !x.theme || x.theme.length > 64
     || !isScenario(x.scenario) || !isCompletionOutcome(x.completionOutcome)
     || (x.ease !== null && (!Number.isInteger(x.ease) || (x.ease as number) < 1 || (x.ease as number) > 5))

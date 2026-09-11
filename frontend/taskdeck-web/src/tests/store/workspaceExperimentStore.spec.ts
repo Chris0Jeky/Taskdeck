@@ -6,8 +6,8 @@ import { useWorkspaceExperimentStore } from '../../store/workspaceExperimentStor
 const session = reactive({ userId: 'first' as string | null })
 vi.mock('../../store/sessionStore', () => ({ useSessionStore: () => session }))
 const trial = {
-  experience: 'studio',
-  presentation: 'zen',
+  experience: 'studio' as const,
+  presentation: 'zen' as const,
   theme: 'grove',
   build: 'v0.3.0',
   scenario: 'capture-review-board' as const,
@@ -46,7 +46,8 @@ describe('workspace comparison observations', () => {
     const store = useWorkspaceExperimentStore()
     expect(store.record({ ...trial, ease: 0 })).toBe(false)
     expect(store.record({ ...trial, ease: 4.5 })).toBe(false)
-    expect(store.record({ ...trial, experience: 'automatic' })).toBe(false)
+    expect(store.record({ ...trial, experience: 'automatic' as never })).toBe(false)
+    expect(store.record({ ...trial, presentation: 'unsupported' as never })).toBe(false)
     expect(store.record({ ...trial, scenario: 'free-form' as never })).toBe(false)
     expect(store.record({ ...trial, completionOutcome: 'assumed' as never })).toBe(false)
     expect(store.trials).toEqual([])
@@ -96,6 +97,14 @@ describe('workspace comparison observations', () => {
     await expect(store.importJson(JSON.stringify(invalid))).rejects.toThrow('invalid observation')
     expect(store.exportJson()).toBe(original)
     await expect(store.importJson(' '.repeat(2 * 1024 * 1024 + 1))).rejects.toThrow('2 MiB')
+  })
+  it('rejects imported choices outside the canonical workspace layout contract', async () => {
+    const store = useWorkspaceExperimentStore()
+    store.record(trial)
+    const invalid = JSON.parse(store.exportJson())
+    invalid.trials[0].presentation = 'unsupported'
+    await expect(store.importJson(JSON.stringify(invalid))).rejects.toThrow('invalid observation')
+    expect(store.trials).toHaveLength(1)
   })
   it('groups comparable conditions while leaving unobserved ratings out of the average', () => {
     const store = useWorkspaceExperimentStore()
