@@ -7,7 +7,7 @@ import { getErrorDisplay } from '../../composables/useErrorMapper'
 import { useSessionStore } from '../../store/sessionStore'
 import type { BoardDetail, Card } from '../../types/board'
 
-const props = defineProps<{ boardId: string; cardId: string }>()
+const props = defineProps<{ boardId: string; cardId: string; canWrite: boolean }>()
 const emit = defineEmits<{ busy: [value: boolean] }>()
 const session = useSessionStore()
 const expanded = ref(false)
@@ -19,6 +19,7 @@ const board = ref<BoardDetail | null>(null)
 const selected = ref('')
 const error = ref('')
 let generation = 0
+const canEdit = computed(() => props.canWrite && graph.value?.canWrite === true)
 const prerequisites = computed(() => cards.value.filter(card => graph.value?.edges.some(edge => edge.cardId === props.cardId && edge.dependsOnCardId === card.id)))
 const dependents = computed(() => cards.value.filter(card => graph.value?.edges.some(edge => edge.dependsOnCardId === props.cardId && edge.cardId === card.id)))
 const choices = computed(() => cards.value.filter(card => card.id !== props.cardId && !prerequisites.value.some(value => value.id === card.id)))
@@ -40,7 +41,7 @@ async function load() {
 }
 function toggle() { expanded.value = !expanded.value; if (expanded.value) void load() }
 async function save(edges: CardDependency[]) {
-  if (!graph.value?.canWrite || saving.value || loading.value) return
+  if (!canEdit.value || !graph.value || saving.value || loading.value) return
   const current = generation
   saving.value = true; emit('busy', true); error.value = ''
   try {
@@ -70,22 +71,23 @@ onUnmounted(() => { generation++ })
       <p v-if="loading" role="status">Loading connections…</p>
       <div v-if="error" role="alert"><p>{{ error }}</p><button type="button" :disabled="loading || saving" @click="load">Reload dependencies</button></div>
       <template v-if="graph">
-        <p v-if="!graph.canWrite" class="hint">Read-only · Editing needs access to an active board.</p>
+        <p v-if="!canEdit" class="hint">Read-only · Editing needs an active card and board write access.</p>
+        <p class="hint">Connections involving archived cards are hidden until those cards are restored.</p>
         <h4>This card depends on</h4>
-        <p v-if="!prerequisites.length" class="hint">No prerequisites chosen.</p>
+        <p v-if="!prerequisites.length" class="hint">No active prerequisites shown.</p>
         <ul>
           <li v-for="card in prerequisites" :key="card.id">
             <div><RouterLink :to="`/workspace/boards/${boardId}/cards/${card.id}/thinking`">{{ card.title }}</RouterLink><small>{{ columnName(card) }}{{ card.isBlocked ? ` · Blocked: ${card.blockReason || 'Reason not provided'}` : '' }}</small></div>
-            <button v-if="graph.canWrite" type="button" :disabled="saving" :aria-label="`Remove prerequisite ${card.title}`" @click="remove(card.id)">Remove link</button>
+            <button v-if="canEdit" type="button" :disabled="saving" :aria-label="`Remove prerequisite ${card.title}`" @click="remove(card.id)">Remove link</button>
           </li>
         </ul>
-        <form v-if="graph.canWrite" @submit.prevent="add">
+        <form v-if="canEdit" @submit.prevent="add">
           <label>Prerequisite card<select v-model="selected" aria-label="Prerequisite card" :disabled="saving || graph.edges.length >= 500"><option value="">Choose a card on this board</option><option v-for="card in choices" :key="card.id" :value="card.id">{{ card.title }}</option></select></label>
           <button type="submit" :disabled="!selected || saving || graph.edges.length >= 500">{{ saving ? 'Saving…' : 'Add prerequisite' }}</button>
         </form>
         <p v-if="graph.edges.length >= 500" class="hint">This board has reached its 500 dependency limit.</p>
         <h4>Cards that depend on this</h4>
-        <p v-if="!dependents.length" class="hint">No cards depend on this one.</p>
+        <p v-if="!dependents.length" class="hint">No active dependent cards shown.</p>
         <ul><li v-for="card in dependents" :key="card.id"><div><RouterLink :to="`/workspace/boards/${boardId}/cards/${card.id}/thinking`">{{ card.title }}</RouterLink><small>{{ columnName(card) }}{{ card.isBlocked ? ' · Blocked' : '' }}</small></div></li></ul>
         <p class="hint">Removing a link keeps both cards. Open a dependent card to change its prerequisites.</p>
       </template>
