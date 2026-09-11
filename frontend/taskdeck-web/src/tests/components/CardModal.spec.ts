@@ -20,6 +20,7 @@ function createDeferred<T>() {
 
 vi.mock('../../api/cardsApi', () => ({ cardsApi: {
   getCards: vi.fn().mockResolvedValue([]),
+  getParticipants: vi.fn().mockResolvedValue([]),
   previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
 } }))
 

@@ -986,6 +986,29 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("Cards", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.CardAssignment", b =>
+                {
+                    b.Property<Guid>("CardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AssignedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("CardId", "UserId");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("CardAssignments", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.CardComment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3378,6 +3401,31 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Column");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.CardAssignment", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Card", "Card")
+                        .WithMany("Assignments")
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Card");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.CardComment", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", "AuthorUser")
@@ -3929,6 +3977,8 @@ namespace Taskdeck.Infrastructure.Migrations
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Card", b =>
                 {
+                    b.Navigation("Assignments");
+
                     b.Navigation("CardLabels");
                 });
 

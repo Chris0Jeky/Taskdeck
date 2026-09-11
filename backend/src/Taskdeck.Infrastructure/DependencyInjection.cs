@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<IWorkspaceObservationReader, WorkspaceObservationReader>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
         services.AddScoped<ICardRepository, CardRepository>();
+        services.AddScoped<ICardAssignmentStore, CardAssignmentStore>();
         services.AddScoped<IThinkingDeckRepository, ThinkingDeckRepository>();
         services.AddScoped<IBoardDependencyRepository, BoardDependencyRepository>();
         services.AddScoped<IWorkspacePlanRepository, WorkspacePlanRepository>();

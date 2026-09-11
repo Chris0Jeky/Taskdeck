@@ -414,7 +414,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 "Idempotency-Key header is required"));
         }
 
-        var executionResult = await _executorService.ExecuteProposalAsync(id, idempotencyHeader.ToString(), cancellationToken);
+        var executionResult = await _executorService.ExecuteProposalWithReceiptAsync(id, idempotencyHeader.ToString(), callerUserId, cancellationToken);
         if (!executionResult.IsSuccess)
             return executionResult.ToErrorActionResult();
 

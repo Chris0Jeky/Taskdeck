@@ -55,7 +55,9 @@ Board JSON with parents uses the `taskdeck-board` version-3 envelope, so old imp
 instead of silently dropping relationships. Existing plain and version-2 files remain accepted.
 Import preallocates fresh IDs for all source cards, remaps parents even when children come first,
 and validates the complete graph before commit. Missing, duplicate or cyclic references roll back
-the whole import. Buffered and streamed account exports include parents within existing read scopes;
-account deletion retains the existing account boundary.
+the whole import. A payload naming an archived card as a parent is rejected before any board, column
+or card is created, matching the create, update and proposal lanes; an archived child whose parent
+stays active still imports. Buffered and streamed account exports include parents within existing
+read scopes; account deletion retains the existing account boundary.
 
 Typed relationships, cascaded lifecycle actions and cross-board parents are outside this contract.

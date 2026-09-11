@@ -236,4 +236,5 @@ public record AccountDeletionResultDto(
     int DurableCapturesDeleted = 0,
     int WorkspaceMemoriesDeleted = 0,
     int WorkspaceMemoryRevisionsDeleted = 0,
-    int QuietInsightsDeleted = 0);
+    int QuietInsightsDeleted = 0,
+    int CardAssignmentsRemoved = 0);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CardAssignees from './CardAssignees.vue'
 import { ref } from 'vue'
 import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
 import type { Card, Column } from '../../types/board'
@@ -226,6 +227,7 @@ function isOverdue(dateString: string | null): boolean {
 
     <!-- Card Title -->
     <h4 class="td-board-card__title">{{ card.title }}</h4>
+    <CardAssignees :assignments="card.assignments" />
 
     <!-- Card Description (if exists) -->
     <p v-if="card.description" class="td-board-card__description">

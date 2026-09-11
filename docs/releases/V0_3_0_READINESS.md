@@ -1,6 +1,6 @@
 # v0.3.0 release readiness
 
-Last Updated: 2026-09-10. This file is refreshed in parts, not all at once; the table in section 1 says when each part was last measured and against what.
+Last Updated: 2026-09-11. This file is refreshed in parts, not all at once; the table in section 1 says when each part was last measured and against what.
 
 **What this file is.** A standing view of what actually stands between `main` and the final `v0.3.0`
 tag, so the open v0.3 milestone count is never mistaken for the blocker count. It classifies work into
@@ -21,7 +21,7 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Per-clause proven
 | Clause 4 (`main` green) | 2026-09-10 | `CI` run `34494959248` at `a1f797913` |
 | Clause 5's branch-protection read | 2026-09-10 | live branch protection on `main` |
 | Section 3, the human-gate table | rows re-read 2026-09-10; the rest 2026-09-05 04:00Z | `main` `a1f797913` for the SC-9 and SC-10 rows, `42d3007f0` for the others |
-| Section 2, the clause-5 chain | 2026-09-04 | not re-measured since |
+| Section 2, the clause-5 chain | preface re-measured 2026-09-10 and updated 2026-09-11; the numbered narrative below it 2026-09-04 | `main` `a1f797913` for the preface; live GitHub and current `main` for the 2026-09-11 update |
 | Clauses 1 and 3 | 2026-09-03 | not re-measured since |
 | Section 4, trackers | 2026-09-05 | not re-measured since |
 
@@ -45,6 +45,23 @@ after the ruling inherit it unless their seeding says otherwise.
 
 These are the issues whose state a Codex lane can change and that a gate clause actually depends on.
 Everything else in the milestone is section 4 or section 5.
+
+**Re-measured 2026-09-10 against `main` `a1f797913`; the numbered narrative below it is the 2026-09-04 measurement, kept because its evidence is still the record of how the chain got here.** Four things have moved, and the first makes the list below misleading if read as current:
+
+- **`#2506` merged on 2026-09-06 (`79d7efdb7`).** Item 1 names it as "the first open blocker on clause 5"; it is not open. It landed as the first step of the SC-10 chain the maintainer delegated that morning.
+- **The `planner-error` class it was meant to close is still live.** It is now tracked as `#2562`, with three observed triggers rather than one: a stacked PR whose base is another PR's branch; a retained merge ref whose parent is the old base after a retarget (the lane's 2026-09-10 note on `#2897`); and a plain unstacked PR whose base simply moved under it between branch creation and the gate run, observed today on `#2925` (run `34509907288`, `CONTROL_BASE` `b3edd1ee1`, a merge that landed about twenty minutes earlier). The third needs no unusual setup at all, so this is not a stacked-PR-only defect and `#2562` has been retitled to say so.
+- **The recall report exists and reads not-ready.** The beta lane published one on `#2336` at 2026-09-10T02:57:50Z over the 2026-09-09 to 2026-09-10 window: **usable merged PRs 7 of 42 against a floor of 20**, usable revision/attempt observations 9 of 88, failed lanes observed 3, **missed 3, recall 0.0%**, ready for selection **no**. So SC-4's condition fails on two counts at once — the sample is far below the floor, and recall on the sample it does have is zero.
+- **The landed-commit verifier still does not exist.** There is no such module under `scripts/ci/smart-ci/`, which holds `plan.mjs`, `evaluate-gate.mjs`, `resolve-merge-ref.mjs`, `recall-report.mjs`, `nightly-coordinator.mjs`, `nightly-baseline.mjs`, `action-pins.mjs`, `artifact-cleanup.mjs`, `measure-ci-estate.mjs` and the `continuation/` tree. The three `landed` mentions in the tree are in tests and `ci-required.yml`, not an implementation.
+
+**What that leaves as genuinely takeable now.** `#2327`'s two halves are different shapes and only one is implementable: the landed verifier is code nobody has written, while the observation window is evidence that restarted on 2026-09-06 (a false red at 19:34Z retracted that morning's clean tally) and cannot rebuild until `#2562` is fixed. **The window itself can close while the repository is public; what waits for SC-6 is registering `Smart CI / Required Gate` in branch protection**, because while the repository is public a fork's `pull_request` run can create a job with the gate's name and protection would accept that spoofed context. `OUTSTANDING_TASKS.md` SC-4 draws exactly that line, and the checklist keeps them as separate §C items. A lane taking `#2327` should take the verifier and leave the window to accumulate. `#2562` is the other takeable item and it taxes every PR opened while `main` is busy — superseded by the 2026-09-11 update below, which found a PR on it.
+
+**Also measured 2026-09-10, on the cutover sections this chain depends on** (evidence on `#2337`, `#2335`, `#2327` and `#2334`; `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` is the CI region's and was not edited): §G is four-of-five done, leaving `persist-credentials: false` — PR `#2838`'s entire scope — as its only open non-maintainer item; §C's planner side is green locally at 512/512; §H's nightly coordinator exists and is wired but `ci-nightly.yml` states in its own words that the job is observation only and every deep job remains unconditional, so **selective execution is not shipped**.
+
+**Updated 2026-09-11 against live GitHub.** Three things moved since the preface above, and the first two point at the same unanswered question:
+
+- **`#2562` now has a PR, and that PR is parked.** `#2987` "Fail closed on retained Smart CI merge refs" (open, head `5d62bf104`, `Closes #2562`) validates each retained merge ref against the authenticated named base tip and fails closed on head mismatches, unreadable base refs, compare failures and unrelated parents. So `#2562` is no longer takeable work. The **landed-commit verifier is now the only unclaimed half of this chain** and it still does not exist: `scripts/ci/smart-ci/` was re-listed on 2026-09-11 and holds no such module.
+- **Three control-plane PRs are parked on the same answer, `OUTSTANDING_TASKS.md` §J.3 (b).** `#2987` (its own body names the ADR-0066 maintainer review as a merge gate), `#2838` (`#2335` checkout-credential persistence and Pages permission scoping, head `f076baab1`) and `#2931` (frontend mutation activation smoke guard, head `0e367fb3a`, which also edits `.github/workflows/mutation-testing.yml`) are all open, and all three are control-plane by `ci/policy.v1.json`. Until §J.3 (b) is answered the ADR-0066 amendment stands as written, so none of them merges on agent authority. That keeps `#2838` as the only open non-maintainer item in cutover §G, and it now also keeps the fix for the defect that broke SC-4's observation window sitting in a queue. **§J.3 (b) is the bottleneck on this chain, not lane capacity.**
+- **The reviewed queue landed, and none of it is control-plane.** Sixteen PRs merged on 2026-09-11 between 00:02:15Z and 16:53:17Z: `#2951`, `#2938`, `#2955`, `#2959`, `#2961`, `#2964`, `#2970`, `#2971`, `#2972`, `#2973`, `#2975`, `#2976`, `#2983`, `#2985`, `#2986` and `#2988`. Each one's file list was swept against all 36 `ci/policy.v1.json` control paths — the same method that found §J.3's twelve — and **zero files matched**, so the §J.3 disclosure list does not grow and nothing in the queue moved this chain. Clause 2's open count was **not** re-derived by this update; section 1's 32 is still the 2026-09-10 measurement and several of these merges close v0.4 work rather than v0.3 issues.
 
 **The clause-5 chain, in order.** Clause 5 needs `Smart CI / Required Gate` enforced. Branch protection
 on `main` today requires exactly three contexts, all security: `Dependency Security / Dependency

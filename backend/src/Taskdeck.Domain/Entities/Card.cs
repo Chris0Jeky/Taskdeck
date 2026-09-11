@@ -8,6 +8,30 @@ public class Card : Entity
 {
     private string _title = string.Empty;
     private readonly List<CardLabel> _cardLabels = new();
+    private readonly List<CardAssignment> _assignments = new();
+    public IReadOnlyCollection<CardAssignment> Assignments => _assignments.AsReadOnly();
+
+    public bool ReplaceAssignments(IEnumerable<Guid> userIds, Guid actorUserId)
+    {
+        EnsureActive();
+        var requested = userIds.ToHashSet();
+        if (requested.Contains(Guid.Empty) || actorUserId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Assignment identities cannot be empty.");
+        if (requested.SetEquals(_assignments.Select(a => a.UserId))) return false;
+        _assignments.RemoveAll(a => !requested.Contains(a.UserId));
+        foreach (var userId in requested.Except(_assignments.Select(a => a.UserId)))
+            _assignments.Add(new CardAssignment(Id, userId, actorUserId));
+        Touch();
+        return true;
+    }
+
+    // Eligibility cleanup also applies to archived cards.
+    public bool DetachAssignment(Guid userId)
+    {
+        if (_assignments.RemoveAll(a => a.UserId == userId) == 0) return false;
+        Touch();
+        return true;
+    }
 
     public Guid BoardId { get; private set; }
     public Board Board { get; private set; } = null!;

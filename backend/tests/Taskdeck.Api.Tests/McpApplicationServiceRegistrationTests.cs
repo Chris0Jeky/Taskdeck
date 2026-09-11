@@ -47,6 +47,7 @@ public class McpApplicationServiceRegistrationTests
         services.AddSingleton<IConfiguration>(configuration);
         services.AddScoped(_ => new Mock<IUnitOfWork>().Object);
         services.AddScoped(_ => new Mock<ICaptureStore>().Object);
+        services.AddScoped(_ => new Mock<ICardAssignmentStore>().Object);
         services.AddMcpApplicationServices();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
