@@ -1412,7 +1412,7 @@ CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uplo
 ### Mutation Testing (TST-05, `#90`/`#796`)
 
 Backend (Stryker.NET 4.16.0): targets `Taskdeck.Domain` from the `Taskdeck.Domain.Tests` project context. Thresholds: break=0, low=60, high=80. The checked-in preflight rejects obsolete config keys and solution-context/workflow drift before the long mutation run.
-Frontend (Stryker JS): targets `captureStore`, `boardStore`, and `board/*.ts` submodules with the Vitest runner. The repository pins the Stryker-compatible Vitest 4.1.x line; run the focused activation smoke before the full report.
+Frontend (Stryker JS): targets `captureStore`, `boardStore`, and `board/*.ts` submodules with the Vitest runner. Run the focused activation smoke (`npm run mutation:smoke`) before the full report; it drives Vitest through Stryker's command runner so it stays independent of the `@stryker-mutator/vitest-runner` / Vitest pairing, and `scripts/check-mutation-smoke.mjs` fails the command when the probe yields no mutants.
 
 Run commands:
 ```bash

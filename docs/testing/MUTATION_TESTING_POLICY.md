@@ -26,7 +26,10 @@ This is a **quality signal**, not a gatekeeping mechanism. Mutation testing comp
 - **Test runner**: Vitest
 - **Rationale**: These two Pinia stores are the core data flow layer for the capture-to-board pipeline. Mutations here have direct product impact on the golden path.
 - **Config**: `frontend/taskdeck-web/stryker.config.mjs`
-- **Activation smoke test**: `npm run mutation:smoke` runs four board-list deletion mutants against the focused CRUD suite with a 100% break threshold. Keep the Stryker/Vitest pair compatible; a local comparison with this repository's Stryker 10 setup produced zero per-mutant executions with Vitest 5.0.0, while the pinned Vitest 4.1.x line killed all four mutants.
+- **Activation smoke test**: `npm run mutation:smoke` runs four board-list deletion mutants against the focused CRUD suite with a 100% break threshold, then asserts the result with `scripts/check-mutation-smoke.mjs`.
+  - **Config**: `frontend/taskdeck-web/stryker.smoke.config.mjs`
+  - **Why the command runner**: the smoke does not use `@stryker-mutator/vitest-runner`. Measured 2026-09-12 on Stryker 10.0.0 with the repository's Vitest 5.0.0 line, that runner reports `Ran 0.00 tests per mutant` and all four mutants survive; the same probe driven through Stryker's `command` runner (`npx vitest --run …`) kills 4/4 in ~13 s. Shelling out to the ordinary Vitest CLI keeps the probe working across Vitest majors instead of pinning the repository's Vitest line to the runner's tested pairing.
+  - **Why the extra assertion**: `thresholds.break` cannot catch an empty probe. When the mutated line/column range no longer holds an expression, Stryker instruments zero mutants, reports a score of `NaN`, logs "NaN is greater than or equal to break threshold 100" and exits 0. `scripts/check-mutation-smoke.mjs` requires exactly four mutants and all of them `Killed`, so a moved seam fails loudly instead of turning the guard green over nothing.
 
 ## Threshold Strategy
 
