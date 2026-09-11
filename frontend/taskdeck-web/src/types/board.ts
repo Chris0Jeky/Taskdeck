@@ -38,6 +38,7 @@ export interface Column {
 export type CardWorkItemType = 'Task' | 'Epic' | 'Spike'
 
 export interface Card {
+  assignments?: CardAssignment[]
   id: string
   boardId: string
   columnId: string
@@ -55,6 +56,14 @@ export interface Card {
   createdAt: string
   updatedAt: string
 }
+
+export interface CardAssignment {
+  userId: string
+  displayName: string
+  assignedAt: string
+  assignedByUserId: string
+}
+export interface BoardParticipant { userId: string; displayName: string }
 
 export type CardProvenanceProposalStatus = 'PendingReview' | 'Approved' | 'Rejected' | 'Applied' | 'Failed' | 'Expired' | number
 

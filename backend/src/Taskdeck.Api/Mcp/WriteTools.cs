@@ -427,6 +427,27 @@ public class WriteTools
     public Task<string> RestoreArchivedCard(string board_id, string card_id, string expected_updated_at)
         => ProposeCardLifecycle(board_id, card_id, expected_updated_at, false);
 
+    [McpServerTool(Name = "replace_card_assignments"), Description(
+        "Creates a PROPOSAL to replace a card's assignee set. Use eligible board participant UUIDs, [] to clear, and the current updatedAt. Requires explicit review, approval and Apply; never mutates the card directly.")]
+    public async Task<string> ReplaceCardAssignments(string board_id, string card_id, string[] user_ids, string expected_updated_at)
+    {
+        var actor = await _userContext.GetCurrentUserIdAsync();
+        if (!Guid.TryParse(board_id, out var boardId) || !Guid.TryParse(card_id, out var cardId) ||
+            !DateTimeOffset.TryParse(expected_updated_at, out var expected) ||
+            user_ids is null || user_ids.Any(id => !Guid.TryParse(id, out _)))
+            return Error("Provide board_id, card_id, user_ids and expected_updated_at.");
+        var permission = await _authorizationService.CanWriteBoardAsync(actor, boardId);
+        if (!permission.IsSuccess || !permission.Value) return Error("Not authorized to assign this card.");
+        var parameters = JsonSerializer.Serialize(new { cardId, userIds = user_ids.Select(Guid.Parse).Distinct().ToArray(), expectedUpdatedAt = expected });
+        using var parsed = JsonDocument.Parse(parameters);
+        var valid = await ProposalAssignmentContract.ValidateAsync(_unitOfWork, boardId, parsed.RootElement, default);
+        if (!valid.IsSuccess) return Error(valid);
+        var result = await _proposalService.CreateProposalAsync(new CreateProposalDto(
+            ProposalSourceType.Manual, actor, valid.Value, RiskLevel.Medium, Guid.NewGuid().ToString(), boardId,
+            Operations: [new(0, ProposalAssignmentContract.Action, "card", parameters, Guid.NewGuid().ToString(), cardId.ToString())]));
+        return result.IsSuccess ? ProposalCreated(result.Value.Id, "Review, approve and Apply explicitly in Taskdeck.") : Error(result);
+    }
+
     private async Task<string> ProposeCardLifecycle(string boardId, string cardId, string timestamp, bool archive, string? fingerprint = null)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();

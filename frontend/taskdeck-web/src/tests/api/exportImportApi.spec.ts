@@ -30,7 +30,7 @@ describe('exportImportApi', () => {
 
     await exportImportApi.importBoard(payload)
 
-    expect(http.post).toHaveBeenCalledWith('/import/boards', payload)
+    expect(http.post).toHaveBeenCalledWith('/import/boards', payload, { skipRetry: true })
   })
 
   it('importBoardJson parses JSON and posts parsed payload', async () => {

@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { cardsApi } from '../../api/cardsApi'
+import { ASSIGNMENT_SAVE_TIMEOUT_MS, cardsApi } from '../../api/cardsApi'
 import http from '../../api/http'
 
 vi.mock('../../api/http', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
   },
@@ -106,6 +107,21 @@ describe('cardsApi', () => {
 
       expect(http.post).toHaveBeenCalledWith('/boards/board-1/cards/card-1/move', moveData)
       expect(result).toEqual(movedCard)
+    })
+  })
+
+  describe('replaceAssignments', () => {
+    it('bounds the unrecallable assignment save so it always settles (#2981)', async () => {
+      vi.mocked(http.put).mockResolvedValue({ data: { id: 'card-1' } })
+
+      await cardsApi.replaceAssignments('board-1', 'card-1', ['user-2'], 'v1')
+
+      expect(http.put).toHaveBeenCalledWith(
+        '/boards/board-1/cards/card-1/assignments',
+        { userIds: ['user-2'], expectedUpdatedAt: 'v1' },
+        { skipRetry: true, timeout: ASSIGNMENT_SAVE_TIMEOUT_MS },
+      )
+      expect(ASSIGNMENT_SAVE_TIMEOUT_MS).toBeGreaterThan(0)
     })
   })
 

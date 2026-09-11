@@ -17,8 +17,13 @@ public record CardDto(
     DateTimeOffset UpdatedAt,
     bool IsArchived = false,
     string WorkItemType = "Task",
-    Guid? ParentCardId = null
+    Guid? ParentCardId = null,
+    IReadOnlyList<CardAssignmentDto>? Assignments = null
 );
+
+public record CardAssignmentDto(Guid UserId, string DisplayName, DateTimeOffset AssignedAt, Guid AssignedByUserId);
+public record BoardParticipantDto(Guid UserId, string DisplayName);
+public record ReplaceCardAssignmentsDto(IReadOnlyList<Guid>? UserIds, DateTimeOffset? ExpectedUpdatedAt);
 
 public record CardLifecycleDto(DateTimeOffset? ExpectedUpdatedAt, string? ExpectedChildrenFingerprint = null);
 

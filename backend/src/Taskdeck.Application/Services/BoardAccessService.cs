@@ -10,15 +10,21 @@ public class BoardAccessService : IBoardAccessService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notificationService;
+    private readonly CardAssignmentService? _assignments;
+    private readonly ICardAssignmentStore? _assignmentStore;
 
     // No DevelopmentSandboxSettings dependency: the development sandbox never widens write-class
     // authorization (ADR-0068 / #1866). Board-access management stays owner-or-manager only.
     public BoardAccessService(
         IUnitOfWork unitOfWork,
-        INotificationService? notificationService = null)
+        INotificationService? notificationService = null,
+        CardAssignmentService? assignments = null,
+        ICardAssignmentStore? assignmentStore = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
+        _assignments = assignments;
+        _assignmentStore = assignmentStore;
     }
 
     public async Task<Result<BoardAccessDto>> GrantAccessAsync(GrantAccessDto dto, Guid grantedBy)
@@ -134,6 +140,22 @@ public class BoardAccessService : IBoardAccessService
 
     public async Task<Result> RevokeAccessAsync(Guid boardId, Guid accessId, Guid revokedBy)
     {
+        await _unitOfWork.BeginTransactionAsync();
+        try
+        {
+            if (_assignmentStore is not null) await _assignmentStore.RefreshAuthorityAsync(boardId, revokedBy, default);
+            var result = await StageRevokeAccessAsync(boardId, accessId, revokedBy);
+            if (!result.IsSuccess) { await _unitOfWork.RollbackTransactionAsync(); return result; }
+            await _unitOfWork.CommitTransactionAsync();
+            if (_assignments is not null)
+                await _assignments.NotifyAsync(boardId, Guid.Empty);
+            return result;
+        }
+        catch { await _unitOfWork.RollbackTransactionAsync(); throw; }
+    }
+
+    private async Task<Result> StageRevokeAccessAsync(Guid boardId, Guid accessId, Guid revokedBy)
+    {
         var access = await _unitOfWork.BoardAccesses.GetByIdAsync(accessId);
         if (access == null || access.BoardId != boardId)
             return Result.Failure(ErrorCodes.NotFound, $"Board access with ID {accessId} not found");
@@ -150,6 +172,9 @@ public class BoardAccessService : IBoardAccessService
         if (!canManage.IsSuccess)
             return Result.Failure(canManage.ErrorCode, canManage.ErrorMessage);
 
+        if (board.OwnerId != access.UserId && _assignments is not null)
+            await _assignments.StageDetachAsync(access.UserId, boardId, revokedBy, "access-revoked");
+        board.RecordHierarchyMutation();
         await _unitOfWork.BoardAccesses.DeleteAsync(access);
         await _unitOfWork.SaveChangesAsync();
 
