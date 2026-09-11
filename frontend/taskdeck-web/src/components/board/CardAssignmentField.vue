@@ -52,25 +52,27 @@ const error = computed(() => {
 })
 const dirty = computed(() => [...selected.value].sort().join() !== [...baseline.value].sort().join())
 /*
- * `busy` is every reason the whole field — the draft-side Clear and Cancel
- * included — is non-interactive. `locked` adds the reasons that block only a
- * write: the selector and Save. A revoked permission must NOT reach `busy`,
- * or Cancel dies with it and the draft can never be returned to baseline: the
- * host reads `dirty-change`, so a permanently dirty field would keep the card
- * modal's own save and archive disabled and raise a discard prompt on every
- * close path, for the life of the mount.
+ * Three gates, because a write and a draft discard are not the same act (#2982).
+ *
+ * `busy`       — the shared base: every reason this field is inert right now.
+ * `locked`     — `busy` plus a revoked permission. Gates the WRITE path: the
+ *                participant selector, Save assignments, and save() itself.
+ * `draftLocked`— gates Clear and Cancel, which only edit the local draft.
+ *
+ * Why `draftLocked` is not just `busy`: discarding a draft is a local action, so
+ * a revoked permission must never strand one. Both of the ways that used to
+ * happen are closed here. Folding the permission lock into one gate killed
+ * Cancel directly; and when the board refetch confirms the downgrade it turns
+ * `readOnly` true, which would take Clear and Cancel away through `busy` — the
+ * same stranded draft by the other route. The host reads `dirty-change`, so a
+ * field stuck dirty keeps the card modal's own save and archive disabled and
+ * raises a discard prompt on every close path, for the life of the mount. While
+ * `permissionLost` holds, `readOnly` alone therefore stops blocking the
+ * draft-side controls; every other reason still does, and Save disappears
+ * outright because the board does say this field is read-only.
  */
 const busy = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value)
 const locked = computed(() => busy.value || permissionLost.value)
-/*
- * Discarding a draft is a local action, never a write, so a revoked permission
- * must not strand one. The board refetch that confirms the downgrade turns
- * `readOnly` true, which would otherwise take Clear and Cancel away through
- * `busy` — the same permanently-dirty host the permission lock was fixed to
- * avoid, reached by the other route. So while `permissionLost` holds, `readOnly`
- * alone stops blocking the draft-side controls; every other reason still does,
- * and Save stays gone because the board says this field is read-only.
- */
 const draftLocked = computed(() => archived.value || props.disabled || loading.value || saving.value || needsRefresh.value || (props.readOnly && !permissionLost.value))
 watch(dirty, value => emit('dirty-change', value))
 /*
