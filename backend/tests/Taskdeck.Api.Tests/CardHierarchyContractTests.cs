@@ -71,6 +71,7 @@ public class CardHierarchyContractTests(TestWebApplicationFactory factory) : ICl
     [InlineData("missing")]
     [InlineData("duplicate")]
     [InlineData("cycle")]
+    [InlineData("archivedParent")]
     [InlineData("valid")]
     public async Task ImportRemapsChildBeforeParentAndRejectsBadGraphsAtomically(string shape)
     {
@@ -79,7 +80,7 @@ public class CardHierarchyContractTests(TestWebApplicationFactory factory) : ICl
         var parent = Guid.NewGuid(); var child = Guid.NewGuid();
         var cards = new[] {
             new ImportCardDto("Child first", "Keep", "Original", 0, null, [], SourceId: child, ParentCardId: shape == "missing" ? Guid.NewGuid() : parent),
-            new ImportCardDto("Parent second", "Keep", "Original", 1, null, [], SourceId: shape == "duplicate" ? child : parent, ParentCardId: shape == "cycle" ? child : null),
+            new ImportCardDto("Parent second", "Keep", "Original", 1, null, [], SourceId: shape == "duplicate" ? child : parent, IsArchived: shape == "archivedParent", ParentCardId: shape == "cycle" ? child : null),
         };
         using var scope = factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var before = await db.Boards.CountAsync();
