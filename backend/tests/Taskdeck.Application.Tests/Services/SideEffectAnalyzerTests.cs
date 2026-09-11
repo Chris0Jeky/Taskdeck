@@ -153,6 +153,26 @@ public class SideEffectAnalyzerTests
         cardsRow.Tone.Should().Be("active");
     }
 
+    [Theory]
+    [InlineData("archive-lifecycle")]
+    [InlineData("restore-lifecycle")]
+    [InlineData("ARCHIVE-LIFECYCLE")]
+    [InlineData("Restore-Lifecycle")]
+    public async Task AnalyzeAsync_CardsMutation_ShouldBeActive_WhenCardLifecycleOperation(string actionType)
+    {
+        // #2939: applying either lifecycle action flips the card's archived state, so the review
+        // disclosure must not claim "No board mutations" for the write being approved.
+        var proposal = CreateProposal(RiskLevel.Low, null, (actionType, "card"));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
+
+        var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
+        cardsRow.Tone.Should().Be("active");
+        cardsRow.Value.Should().NotBe("No board mutations");
+    }
+
     [Fact]
     public async Task AnalyzeAsync_CardsMutation_ShouldBeActive_WhenBulkMoveOperation()
     {
@@ -500,6 +520,33 @@ public class SideEffectAnalyzerTests
 
         var cardsRow = rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be(SideEffectTone.Active);
+    }
+
+    [Theory]
+    [InlineData("archive-lifecycle")]
+    [InlineData("restore-lifecycle")]
+    public void BuildSideEffectRows_WithCardLifecycleAction_ShouldSetCardsActive(string actionType)
+    {
+        var op = new AutomationProposalOperation(
+            Guid.NewGuid(), 0, actionType, "card", "{}", Guid.NewGuid().ToString());
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(new List<AutomationProposalOperation> { op }, false);
+
+        var cardsRow = rows.First(r => r.Key == "Cards");
+        cardsRow.Tone.Should().Be(SideEffectTone.Active);
+        cardsRow.Value.Should().NotBe("No board mutations");
+    }
+
+    [Fact]
+    public void BuildSideEffectRows_WithCardLifecycleActionTargetingNonCard_ShouldNotSetCardMutation()
+    {
+        // Guards the pairing: the action set only counts when the target really is a card.
+        var op = new AutomationProposalOperation(
+            Guid.NewGuid(), 0, "archive-lifecycle", "board", "{}", Guid.NewGuid().ToString());
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(new List<AutomationProposalOperation> { op }, false);
+
+        var cardsRow = rows.First(r => r.Key == "Cards");
+        cardsRow.Value.Should().Be("No board mutations");
+        cardsRow.Tone.Should().Be(SideEffectTone.Passive);
     }
 
     [Fact]

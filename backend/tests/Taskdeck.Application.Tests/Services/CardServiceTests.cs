@@ -48,6 +48,36 @@ public class CardServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SetArchived_WithRecordLifecycleAuditFalse_StagesNoServiceReceipt(bool archive)
+    {
+        // #2939 regression: on the proposal apply lane ExecutionAuditRecorder writes the single
+        // Archived/Unarchived receipt (with proposal provenance), so CardService must not stage a
+        // second one. Direct API calls keep the default (covered by the test above).
+        var board = new Board("Lifecycle audit suppression");
+        var column = new Column(board.Id, "Todo", 0);
+        var card = new Card(board.Id, column.Id, "Retained");
+        if (!archive) card.Archive();
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        var service = new CardService(_unitOfWorkMock.Object);
+
+        var result = await service.SetArchivedAsync(
+            board.Id, card.Id, archive, new(card.UpdatedAt), actorUserId: null, recordLifecycleAudit: false);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        card.IsArchived.Should().Be(archive);
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(log => log.EntityId == card.Id &&
+                (log.Action == Taskdeck.Domain.Enums.AuditAction.Archived ||
+                 log.Action == Taskdeck.Domain.Enums.AuditAction.Unarchived)),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     public CardServiceTests()
     {
 

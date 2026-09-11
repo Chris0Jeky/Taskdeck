@@ -47,6 +47,40 @@ public class ExecutionAuditRecorderTests
             default), Times.Once);
     }
 
+    [Theory]
+    [InlineData("archive-lifecycle", AuditAction.Archived, "Card archived; original placement retained")]
+    [InlineData("restore-lifecycle", AuditAction.Unarchived, "Card restored to original column")]
+    [InlineData("ARCHIVE-LIFECYCLE", AuditAction.Archived, "Card archived; original placement retained")]
+    [InlineData("Restore-Lifecycle", AuditAction.Unarchived, "Card restored to original column")]
+    public async Task RecordAsync_ShouldWriteTypedLifecycleReceiptWithProposalProvenance(
+        string actionType, AuditAction expectedAction, string expectedSummary)
+    {
+        // #2939: the proposal lane suppresses CardService's own lifecycle receipt, so this single
+        // entry must be correctly typed AND carry the proposal provenance - never an "Updated" fallback.
+        var cardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var requestedBy = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), proposalId, 2, actionType, "card", cardId.ToString(),
+            $$"""{"cardId":"{{cardId}}"}""", "key1", null);
+        var proposal = CreateProposal(proposalId: proposalId, requestedByUserId: requestedBy);
+
+        await _recorder.RecordAsync(operation, proposal, default);
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(a =>
+                a.Action == expectedAction &&
+                a.EntityType == "card" &&
+                a.EntityId == cardId &&
+                a.UserId == requestedBy &&
+                a.Changes != null &&
+                a.Changes.StartsWith(expectedSummary) &&
+                a.Changes.Contains(proposalId.ToString()) &&
+                a.Changes.Contains("sequence 2")),
+            default), Times.Once);
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.IsAny<AuditLog>(), default), Times.Once);
+    }
+
     [Fact]
     public async Task RecordAsync_ShouldDefaultToUpdated_ForUnknownActionType()
     {
@@ -177,6 +211,34 @@ public class ExecutionAuditRecorderTests
     }
 
     [Fact]
+    public void BuildAuditChanges_ShouldKeepLegacyLifecycleWording_AheadOfProvenance()
+    {
+        var proposalId = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), proposalId, 0, "archive-lifecycle", "card", null,
+            """{"cardId":"abc"}""", "key1", null);
+        var proposal = CreateProposal(proposalId: proposalId);
+
+        var changes = ExecutionAuditRecorder.BuildAuditChanges(operation, proposal);
+
+        changes.Should().StartWith("Card archived; original placement retained. ");
+        changes.Should().Contain($"Automation proposal {proposalId}");
+    }
+
+    [Fact]
+    public void BuildAuditChanges_ShouldNotPrefixLifecycleWording_ForNonLifecycleActions()
+    {
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "archive", "card", null,
+            """{"cardId":"abc"}""", "key1", null);
+        var proposal = CreateProposal();
+
+        var changes = ExecutionAuditRecorder.BuildAuditChanges(operation, proposal);
+
+        changes.Should().StartWith("Automation proposal ");
+    }
+
+    [Fact]
     public void BuildAuditChanges_ShouldTruncateLongParameters()
     {
         var longParams = new string('x', 600);
@@ -193,14 +255,14 @@ public class ExecutionAuditRecorderTests
 
     #endregion
 
-    private static ProposalDto CreateProposal(Guid? proposalId = null, Guid? boardId = null)
+    private static ProposalDto CreateProposal(Guid? proposalId = null, Guid? boardId = null, Guid? requestedByUserId = null)
     {
         return new ProposalDto(
             proposalId ?? Guid.NewGuid(),
             ProposalSourceType.Manual,
             null,
             boardId,
-            Guid.NewGuid(),
+            requestedByUserId ?? Guid.NewGuid(),
             ProposalStatus.Approved,
             RiskLevel.Low,
             "Test",
