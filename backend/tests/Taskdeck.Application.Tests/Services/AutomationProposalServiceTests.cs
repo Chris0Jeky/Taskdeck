@@ -2647,6 +2647,112 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectMoveCarryingUnsupportedWorkItemType()
+    {
+        // #2950: a move proposal with an extra workItemType previewed "Work item type: Task -> Epic"
+        // while OperationHandlerRegistry's move handler ignores the parameter entirely, so the
+        // approval preview overstated the approved change. Preview and Apply share
+        // ProposalOperationContractValidator, so the unsupported parameter is now refused on both
+        // sides rather than rendered on one.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "In Progress", 1);
+        var cardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Move card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            cardId,
+            columnId = column.Id,
+            workItemType = "Epic"
+        });
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "move", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: cardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        var card = new Card(cardId, boardId, column.Id, "Fix login bug");
+        cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Parameter 'workItemType' is not supported by card action 'move'");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRenderTypeTransition_ForUpdateThatAppliesIt()
+    {
+        // The other half of #2950: the operations that DO apply workItemType must keep their
+        // transition text, so the fix cannot be read as "stop previewing type changes".
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "In Progress", 1);
+        var cardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Promote card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var card = new Card(cardId, boardId, column.Id, "Fix login bug");
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            cardId,
+            workItemType = "Epic",
+            expectedUpdatedAt = card.UpdatedAt
+        });
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: cardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain("Work item type: Task -> Epic");
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldShowSequentialArchiveCardBlockTransitions()
     {
         var proposalId = Guid.NewGuid();
