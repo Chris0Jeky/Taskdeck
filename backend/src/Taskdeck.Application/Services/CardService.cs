@@ -46,8 +46,18 @@ public partial class CardService
             : Result.Success(MapToDto(card));
     }
 
+    /// <summary>
+    /// Flips a card's archive state, preserving its original placement.
+    /// <para>
+    /// <paramref name="recordLifecycleAudit"/> is false only on the proposal apply lane, where
+    /// <see cref="Pipeline.ExecutionAuditRecorder"/> writes the single Archived/Unarchived receipt
+    /// so it can carry the proposal's provenance. Direct API archive/restore calls leave it true
+    /// and keep the actor-stamped receipt staged here, so each lane produces exactly one entry.
+    /// </para>
+    /// </summary>
     public async Task<Result<CardDto>> SetArchivedAsync(Guid boardId, Guid cardId, bool archive,
-        CardLifecycleDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
+        CardLifecycleDto dto, Guid? actorUserId = null, bool recordLifecycleAudit = true,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -86,9 +96,10 @@ public partial class CardService
             }
             await _unitOfWork.Cards.StageDependencyProjectionInvalidationAsync(boardId, cancellationToken);
             board.RecordHierarchyMutation();
-            await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id,
-                archive ? AuditAction.Archived : AuditAction.Unarchived, actorUserId,
-                archive ? "Card archived; original placement retained" : "Card restored to original column"), cancellationToken);
+            if (recordLifecycleAudit)
+                await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id,
+                    archive ? AuditAction.Archived : AuditAction.Unarchived, actorUserId,
+                    archive ? "Card archived; original placement retained" : "Card restored to original column"), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(new BoardRealtimeEvent(boardId, "card",
                 archive ? "archived" : "restored", card.Id, DateTimeOffset.UtcNow), cancellationToken);

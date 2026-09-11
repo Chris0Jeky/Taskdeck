@@ -117,8 +117,11 @@ public class OperationHandlerRegistry
             return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
         var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
         if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+        // The Archived/Unarchived receipt for this operation is written by ExecutionAuditRecorder
+        // (which alone knows the proposal), so the service must not stage a second one.
         var result = await _cardService.SetArchivedAsync(card.BoardId, cardId, archive,
-            new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")), cancellationToken: cancellationToken);
+            new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")),
+            recordLifecycleAudit: false, cancellationToken: cancellationToken);
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 

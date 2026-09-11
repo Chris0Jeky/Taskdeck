@@ -1012,6 +1012,106 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task CardLifecycleAudit_ProposalApplyAndDirectApi_EachPersistExactlyOneTypedReceipt()
+    {
+        // #2939: a proposal-applied archive/restore used to persist TWO rows - CardService's typed
+        // Archived/Unarchived receipt plus an "Updated" fallback from ExecutionAuditRecorder whose
+        // action map did not know the lifecycle action names. The apply lane now emits a single
+        // correctly typed row carrying the proposal provenance; the direct API lane is untouched.
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "lifecycle-audit-receipts");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "lifecycle-audit-receipts");
+        var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var columnId = board.Columns.First().Id;
+
+        async Task<CardDto> CreateCardAsync(string title)
+        {
+            var response = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+                new CreateCardDto(boardId, columnId, title, null, null, null));
+            response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+            return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+
+        var proposalCard = await CreateCardAsync("Proposal lifecycle card");
+        var directCard = await CreateCardAsync("Direct lifecycle card");
+
+        // Proposal lane: archive then restore, each through explicit approve + explicit execute.
+        var proposalIds = new Dictionary<bool, Guid>();
+        foreach (var archive in new[] { true, false })
+        {
+            var created = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
+                ProposalSourceType.Manual, user.UserId, archive ? "Archive card" : "Restore card", RiskLevel.Low,
+                Guid.NewGuid().ToString(), boardId, Operations:
+                [
+                    new CreateProposalOperationDto(0, archive ? "archive-lifecycle" : "restore-lifecycle", "card",
+                        JsonSerializer.Serialize(new { boardId, cardId = proposalCard.Id, expectedUpdatedAt = proposalCard.UpdatedAt }),
+                        Guid.NewGuid().ToString(), proposalCard.Id.ToString())
+                ]));
+            created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+            var proposal = (await created.Content.ReadFromJsonAsync<ProposalDto>())!;
+            proposalIds[archive] = proposal.Id;
+
+            var sideEffects = await client.GetFromJsonAsync<ProposalSideEffectsDto>(
+                $"/api/automation/proposals/{proposal.Id}/side-effects");
+            sideEffects!.Rows.Single(row => row.Key == "Cards").Value.Should().NotBe("No board mutations");
+
+            (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+            using var execute = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+            execute.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+            var applied = await client.SendAsync(execute);
+            applied.StatusCode.Should().Be(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync());
+
+            proposalCard = (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{proposalCard.Id}"))!;
+            proposalCard.IsArchived.Should().Be(archive);
+        }
+
+        // Direct API lane: the same two transitions without any proposal.
+        foreach (var archive in new[] { true, false })
+        {
+            var response = await client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/cards/{directCard.Id}/{(archive ? "archive" : "restore")}",
+                new CardLifecycleDto(directCard.UpdatedAt));
+            response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+            directCard = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+            directCard.IsArchived.Should().Be(archive);
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+        var proposalAudits = await db.AuditLogs
+            .Where(log => log.EntityId == proposalCard.Id)
+            .ToListAsync();
+        proposalAudits.Count(log => log.Action == AuditAction.Archived).Should().Be(1);
+        proposalAudits.Count(log => log.Action == AuditAction.Unarchived).Should().Be(1);
+        proposalAudits.Should().NotContain(log => log.Action == AuditAction.Updated,
+            "the lifecycle action names are mapped, so no \"Updated\" fallback row is written");
+
+        var proposalArchive = proposalAudits.Single(log => log.Action == AuditAction.Archived);
+        proposalArchive.UserId.Should().Be(user.UserId);
+        proposalArchive.Changes.Should().StartWith("Card archived; original placement retained");
+        proposalArchive.Changes.Should().Contain(proposalIds[true].ToString());
+
+        var proposalRestore = proposalAudits.Single(log => log.Action == AuditAction.Unarchived);
+        proposalRestore.UserId.Should().Be(user.UserId);
+        proposalRestore.Changes.Should().StartWith("Card restored to original column");
+        proposalRestore.Changes.Should().Contain(proposalIds[false].ToString());
+
+        var directAudits = await db.AuditLogs
+            .Where(log => log.EntityId == directCard.Id)
+            .ToListAsync();
+        directAudits.Count(log => log.Action == AuditAction.Archived).Should().Be(1);
+        directAudits.Count(log => log.Action == AuditAction.Unarchived).Should().Be(1);
+        directAudits.Single(log => log.Action == AuditAction.Archived).Changes
+            .Should().Be("Card archived; original placement retained");
+        directAudits.Single(log => log.Action == AuditAction.Unarchived).Changes
+            .Should().Be("Card restored to original column");
+        directAudits.Where(log => log.Action == AuditAction.Archived || log.Action == AuditAction.Unarchived)
+            .Should().OnlyContain(log => log.UserId == user.UserId);
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ArchiveCard_ShouldPersistBlockedCardAppliedReceiptAndAudit()
     {
         var client = _factory.CreateClient();
