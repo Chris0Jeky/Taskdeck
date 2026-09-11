@@ -94,6 +94,12 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         var hasCardMutation = operations.Any(op =>
             CardMutatingActions.Contains(op.ActionType) &&
             string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase));
+        var hasCardRestore = operations.Any(op =>
+            string.Equals(op.ActionType, "restore-lifecycle", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase));
+        var cardMutationSummary = hasCardRestore
+            ? "Creates, moves, archives, or restores cards"
+            : "Creates, moves, or archives cards";
         var hasColumnMutation = operations.Any(op =>
             string.Equals(op.TargetType, "column", StringComparison.OrdinalIgnoreCase));
         var hasBoardMutation = hasCardMutation || hasColumnMutation;
@@ -105,9 +111,9 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
                 "Cards",
                 hasBoardMutation
                     ? hasCardMutation && hasColumnMutation
-                        ? "Creates, moves, or archives cards and adds columns on the board"
+                        ? $"{cardMutationSummary} and adds columns on the board"
                         : hasCardMutation
-                            ? "Creates, moves, or archives cards on the board"
+                            ? $"{cardMutationSummary} on the board"
                             : "Adds columns to the board (no direct card mutations)"
                     : "No board mutations",
                 hasBoardMutation ? SideEffectTone.Active : SideEffectTone.Passive),
