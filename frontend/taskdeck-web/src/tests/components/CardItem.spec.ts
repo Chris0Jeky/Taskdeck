@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CardItem from '../../components/board/CardItem.vue'
 import type { Card } from '../../types/board'
+import { installTimeZone } from '../utils/timeZone'
 
 function createCard(): Card {
   const now = new Date().toISOString()
@@ -21,8 +22,15 @@ function createCard(): Card {
   }
 }
 
+// `installTimeZone`, not `vi.stubEnv('TZ', ...)`: the env stub only moves the
+// runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+// forces `pool: 'threads'`, where it silently leaves the host zone in place
+// (#2943).
+let restoreZone: (() => void) | null = null
+
 afterEach(() => {
-  vi.unstubAllEnvs()
+  restoreZone?.()
+  restoreZone = null
   document.body.innerHTML = ''
 })
 
@@ -45,7 +53,7 @@ describe('CardItem — date display', () => {
   })
 
   it('keeps a midnight-UTC calendar day on the board west of UTC', () => {
-    vi.stubEnv('TZ', 'America/Los_Angeles')
+    restoreZone = installTimeZone('America/Los_Angeles')
     const card = createCard()
     card.dueDate = '2026-08-23T00:00:00.000Z'
     const wrapper = mount(CardItem, { props: { card } })

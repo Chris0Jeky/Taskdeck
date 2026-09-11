@@ -6,6 +6,7 @@ import { useCardModal, type UseCardModalOptions } from '../../composables/useCar
 import { cardsApi } from '../../api/cardsApi'
 import type { Card, CardDetachPreview, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
+import { installTimeZone } from '../utils/timeZone'
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -171,6 +172,17 @@ function mountComposable(optionOverrides: Partial<UseCardModalOptions> = {}) {
 // ---------------------------------------------------------------------------
 
 describe('useCardModal', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', ...)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where it silently leaves the host zone in place
+  // (#2943).
+  let restoreZone: (() => void) | null = null
+
+  afterEach(() => {
+    restoreZone?.()
+    restoreZone = null
+  })
+
   it('keeps other field drafts across assignment updates without advancing an unrelated stale version', async () => {
     const state = mountComposable()
     state.isOpenRef.value = true; await nextTick()
@@ -188,9 +200,6 @@ describe('useCardModal', () => {
     expect(mockBoardStore.updateCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({
       title: 'Unsaved thought', expectedUpdatedAt: 'own-assignment',
     }))
-  })
-  afterEach(() => {
-    vi.unstubAllEnvs()
   })
 
   beforeEach(() => {
@@ -225,7 +234,7 @@ describe('useCardModal', () => {
     })
 
     it('keeps the UTC calendar key in the date input west of UTC', async () => {
-      vi.stubEnv('TZ', 'America/Los_Angeles')
+      restoreZone = installTimeZone('America/Los_Angeles')
       const ctx = mountComposable()
       ctx.cardRef.value = makeCard({ dueDate: '2026-08-23T00:00:00.000Z' })
       await nextTick()

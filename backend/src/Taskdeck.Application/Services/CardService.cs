@@ -54,11 +54,20 @@ public partial class CardService
     /// so it can carry the proposal's provenance. Direct API archive/restore calls leave it true
     /// and keep the actor-stamped receipt staged here, so each lane produces exactly one entry.
     /// </para>
+    /// <para>
+    /// <paramref name="notificationSink"/> is supplied only on the proposal apply lane (#2934),
+    /// where this method's <c>SaveChangesAsync</c> is still inside the executor's outer
+    /// transaction: the lifecycle and detached-child events are staged in the sink and published
+    /// by the executor after it commits, so a later operation that rolls the transaction back
+    /// emits nothing. Direct API calls leave it null and notify immediately, as before.
+    /// </para>
     /// </summary>
     public async Task<Result<CardDto>> SetArchivedAsync(Guid boardId, Guid cardId, bool archive,
         CardLifecycleDto dto, Guid? actorUserId = null, bool recordLifecycleAudit = true,
+        IBoardRealtimeNotifier? notificationSink = null,
         CancellationToken cancellationToken = default)
     {
+        var notifier = notificationSink ?? _realtimeNotifier;
         try
         {
             if (!dto.ExpectedUpdatedAt.HasValue)
@@ -101,9 +110,9 @@ public partial class CardService
                     archive ? AuditAction.Archived : AuditAction.Unarchived, actorUserId,
                     archive ? "Card archived; original placement retained" : "Card restored to original column"), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _realtimeNotifier.NotifyBoardMutationAsync(new BoardRealtimeEvent(boardId, "card",
+            await notifier.NotifyBoardMutationAsync(new BoardRealtimeEvent(boardId, "card",
                 archive ? "archived" : "restored", card.Id, DateTimeOffset.UtcNow), cancellationToken);
-            await NotifyDetachedChildrenAsync(boardId, detachedChildren, cancellationToken);
+            await NotifyDetachedChildrenAsync(boardId, detachedChildren, cancellationToken, notifier);
             return Result.Success(MapToDto(card));
         }
         catch (DomainException ex) { return Result.Failure<CardDto>(ex.ErrorCode, ex.Message); }

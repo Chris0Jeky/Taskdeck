@@ -4,6 +4,7 @@ import { createCardFilterActions } from '../../../store/board/cardFilterStore'
 import { createBoardState, initialCardFilters } from '../../../store/board/boardState'
 import type { Card } from '../../../types/board'
 import { addCalendarDays, calendarDateKeyToMidnightUtc, localCalendarDateKey } from '../../../utils/dueDates'
+import { installTimeZone } from '../../utils/timeZone'
 
 const FIXED_NOW = '2026-09-07T23:30:00.000Z'
 
@@ -47,8 +48,15 @@ function createMockState(cards: Card[] = []) {
   }
 }
 
+// `installTimeZone`, not `vi.stubEnv('TZ', …)`: the env stub only moves the
+// runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+// forces `pool: 'threads'`, where the local-day row below silently measured the
+// host zone instead (#2943).
+let restoreZone: (() => void) | null = null
+
 afterEach(() => {
-  vi.unstubAllEnvs()
+  restoreZone?.()
+  restoreZone = null
   vi.useRealTimers()
 })
 
@@ -149,8 +157,8 @@ describe('cardFilterStore', () => {
     })
 
     it('due-today: compares UTC due keys with the browser local day', () => {
-      vi.stubEnv('TZ', 'America/Los_Angeles')
       vi.useFakeTimers()
+      restoreZone = installTimeZone('America/Los_Angeles')
       vi.setSystemTime(new Date('2026-08-23T06:30:00.000Z')) // Aug 22 locally
       const cards = [
         makeCard({ id: 'local-today', dueDate: '2026-08-22T00:00:00.000Z' }),

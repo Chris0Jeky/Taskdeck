@@ -404,4 +404,57 @@ public class CardAssignmentApiTests(TestWebApplicationFactory factory) : IClassF
         var cleared = await owner.PutAsJsonAsync(url, new ReplaceCardAssignmentsDto([], saved.UpdatedAt));
         cleared.EnsureSuccessStatusCode(); (await cleared.Content.ReadFromJsonAsync<CardDto>())!.Assignments.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task ProposalAppliedByACollaboratorAttributesEveryAuditRowToTheApplier()
+    {
+        // #2978: author A requests an assignment proposal, editor B approves and applies it. The
+        // authoritative assignment-replace row always named B; the generic ExecutionAuditRecorder
+        // row named A, so the same board change produced two rows with contradictory actors. Both
+        // rows must now name B, with A preserved as provenance text on the execution-history row.
+        using var author = factory.CreateClient();
+        using var applier = factory.CreateClient();
+        var requester = await ApiTestHarness.AuthenticateAsync(author, "assignment-actor-requester");
+        var editor = await ApiTestHarness.AuthenticateAsync(applier, "assignment-actor-applier");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(author, "Assignment actor attribution");
+        var board = (await author.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        (await author.PostAsJsonAsync($"/api/boards/{boardId}/access",
+            new GrantAccessDto(boardId, editor.UserId, UserRole.Editor))).EnsureSuccessStatusCode();
+
+        var created = await author.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, board.Columns[0].Id, "Attribution card", null, null, null));
+        created.EnsureSuccessStatusCode();
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+
+        var proposalResponse = await author.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
+            ProposalSourceType.Manual, requester.UserId, "Assign the collaborator", RiskLevel.Medium,
+            Guid.NewGuid().ToString(), boardId,
+            Operations: [new CreateProposalOperationDto(0, ProposalAssignmentContract.Action, "card",
+                JsonSerializer.Serialize(new { cardId = card.Id, userIds = new[] { editor.UserId }, expectedUpdatedAt = card.UpdatedAt }),
+                Guid.NewGuid().ToString(), card.Id.ToString())]));
+        proposalResponse.EnsureSuccessStatusCode();
+        var proposal = (await proposalResponse.Content.ReadFromJsonAsync<ProposalDto>())!;
+        proposal.RequestedByUserId.Should().Be(requester.UserId);
+
+        (await applier.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null)).EnsureSuccessStatusCode();
+        using var execute = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        execute.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        (await applier.SendAsync(execute)).EnsureSuccessStatusCode();
+        (await author.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{card.Id}"))!
+            .Assignments!.Select(a => a.UserId).Should().Equal(editor.UserId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var rows = await db.AuditLogs.Where(log => log.EntityId == card.Id).ToListAsync();
+
+        // Unchanged: the authoritative assignment audit already identified the applier.
+        rows.Single(log => log.Changes != null && log.Changes.Contains("assignment-replace"))
+            .UserId.Should().Be(editor.UserId);
+
+        var history = rows.Single(log => log.Changes != null && log.Changes.StartsWith("Automation proposal"));
+        history.UserId.Should().Be(editor.UserId, "execution history answers who changed the board");
+        history.Changes.Should().Contain($"requested by user {requester.UserId}");
+        rows.Should().NotContain(log => log.UserId == requester.UserId && log.Changes != null
+            && log.Changes.StartsWith("Automation proposal"));
+    }
 }

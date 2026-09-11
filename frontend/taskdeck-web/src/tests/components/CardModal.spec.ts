@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import CardModal from '../../components/board/CardModal.vue'
+import { cardsApi } from '../../api/cardsApi'
+import { boardsApi } from '../../api/boardsApi'
 import { useBoardStore } from '../../store/boardStore'
 import { useSessionStore } from '../../store/sessionStore'
 import type { Card, Label } from '../../types/board'
@@ -23,6 +25,10 @@ vi.mock('../../api/cardsApi', () => ({ cardsApi: {
   getParticipants: vi.fn().mockResolvedValue([]),
   previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
 } }))
+
+// #2952: the work-item type gate reads the board back when the loaded payload does not
+// state the caller's write permission. Every other case in this file leaves it unused.
+vi.mock('../../api/boardsApi', () => ({ boardsApi: { getBoard: vi.fn() } }))
 
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: vi.fn(),
@@ -82,6 +88,8 @@ describe('CardModal', () => {
       createCardComment: vi.fn().mockResolvedValue(undefined),
       updateCardComment: vi.fn().mockResolvedValue(undefined),
       deleteCardComment: vi.fn().mockResolvedValue(undefined),
+      setCardArchived: vi.fn().mockResolvedValue(undefined),
+      fetchBoard: vi.fn().mockResolvedValue(undefined),
       editingCardId: null,
       setEditingCard: vi.fn((cardId: string | null) => {
         mockStore.editingCardId = cardId
@@ -89,6 +97,7 @@ describe('CardModal', () => {
     }
     mockSessionStore = { userId: 'user-1' }
 
+    vi.mocked(boardsApi.getBoard).mockReset()
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
     vi.mocked(useSessionStore).mockReturnValue(mockSessionStore as any)
   })
@@ -118,6 +127,70 @@ describe('CardModal', () => {
     const selector = wrapper.get('#card-work-item-type').element as HTMLSelectElement
     expect(selector.value).toBe('Task')
     expect(selector.disabled).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  // #2952. A board payload cached before `canWrite` existed omits it; the contract in
+  // types/board.ts treats only an explicit false as read-only, so the gate asks the
+  // server rather than reading the silence as "no".
+  it('offers the type selector to a writer whose cached board payload omits canWrite', async () => {
+    mockStore.currentBoard = { id: card.boardId, isArchived: false }
+    vi.mocked(boardsApi.getBoard).mockResolvedValue({ id: card.boardId, canWrite: true, isArchived: false } as any)
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+
+    expect(wrapper.get('[data-testid="card-type-permission-checking"]').exists()).toBe(true)
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+
+    await flushPromises()
+
+    expect(boardsApi.getBoard).toHaveBeenCalledWith(card.boardId, expect.objectContaining({ skipRetry: true }))
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="card-type-permission-checking"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('offers an explicit permission refresh instead of a silently disabled type selector', async () => {
+    mockStore.currentBoard = { id: card.boardId, isArchived: false }
+    vi.mocked(boardsApi.getBoard).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.get('[data-testid="card-type-permission-unknown"]').exists()).toBe(true)
+
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce({ id: card.boardId, canWrite: true, isArchived: false } as any)
+    await wrapper.get('[data-testid="card-type-permission-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(2)
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps the type selector read-only on an archived card without asking for permission', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: false }
+    card.isArchived = true
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the type selector read-only on an archived board', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: true }
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -1094,5 +1167,259 @@ describe('CardModal', () => {
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
     expect(wrapper.text()).toContain('Unable to load capture provenance.')
     expect(wrapper.find('[data-testid="provenance-empty-state"]').exists()).toBe(false)
+  })
+
+  /*
+   * #2969. Archive recovery ("Refresh card state") and a completed
+   * archive/restore were the two close paths that emitted `close` without
+   * asking the dirty-close guard anything, so edits made after an archive
+   * failed — or while an archive request was still in flight — were dropped
+   * without a confirmation. These specs pin the guarded behaviour.
+   */
+  describe('archive recovery and completion over an unsaved draft', () => {
+    const DRAFT = 'Draft typed after the archive request'
+
+    beforeEach(() => {
+      document.body.innerHTML = ''
+      mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: false }
+    })
+
+    afterEach(() => {
+      document.body.innerHTML = ''
+    })
+
+    function mountEditor() {
+      return mount(CardModal, { props: { card, isOpen: true, labels }, attachTo: document.body })
+    }
+
+    function editorButton(wrapper: ReturnType<typeof mount>, text: string) {
+      return wrapper.findAll('button').find(candidate => candidate.text() === text)
+    }
+
+    // TdDialog teleports to <body>, so a dialog control is exactly a button that
+    // the editor's own subtree does not contain.
+    function dialogButton(wrapper: ReturnType<typeof mount>, text: string) {
+      return Array.from(document.body.querySelectorAll('button'))
+        .filter(candidate => !wrapper.element.contains(candidate))
+        .find(candidate => candidate.textContent?.trim() === text) as HTMLButtonElement | undefined
+    }
+
+    function titleValue(wrapper: ReturnType<typeof mount>) {
+      return (wrapper.get('#card-title').element as HTMLInputElement).value
+    }
+
+    /** Archive with a child preview that fails, leaving the page-level recovery control. */
+    async function mountWithFailedArchive() {
+      vi.mocked(cardsApi.previewDetach).mockRejectedValueOnce(new Error('preview unavailable'))
+      const wrapper = mountEditor()
+      await flushPromises()
+      await editorButton(wrapper, 'Archive card')!.trigger('click')
+      await flushPromises()
+      expect(editorButton(wrapper, 'Refresh card state')).toBeDefined()
+      return wrapper
+    }
+
+    /** Archive through the confirmation with a request that settles when the test says so. */
+    async function mountWithPendingArchive() {
+      const deferred = createDeferred<void>()
+      mockStore.setCardArchived.mockReturnValueOnce(deferred.promise)
+      const wrapper = mountEditor()
+      await flushPromises()
+      await editorButton(wrapper, 'Archive card')!.trigger('click')
+      await flushPromises()
+      dialogButton(wrapper, 'Confirm archive')!.click()
+      await nextTick()
+      expect(mockStore.setCardArchived).toHaveBeenCalledWith(
+        'board-1', 'card-1', true, '2025-06-15T00:00:00Z', 'v1:fixed')
+      return { wrapper, deferred }
+    }
+
+    it('confirms before archive recovery discards a draft, then completes the refresh', async () => {
+      const wrapper = await mountWithFailedArchive()
+      await wrapper.get('#card-title').setValue(DRAFT)
+
+      await editorButton(wrapper, 'Refresh card state')!.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+      expect(titleValue(wrapper)).toBe(DRAFT)
+      const discard = document.body.querySelector('[data-testid="card-discard-confirm"]') as HTMLButtonElement
+      expect(discard).not.toBeNull()
+
+      discard.click()
+      await flushPromises()
+
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1')
+      wrapper.unmount()
+    })
+
+    it('keeps the draft and the failed archive state when the confirmation is cancelled', async () => {
+      const wrapper = await mountWithFailedArchive()
+      await wrapper.get('#card-title').setValue(DRAFT)
+
+      await editorButton(wrapper, 'Refresh card state')!.trigger('click')
+      await flushPromises()
+      ;(document.body.querySelector('[data-testid="card-discard-cancel"]') as HTMLButtonElement).click()
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+      expect(titleValue(wrapper)).toBe(DRAFT)
+      expect(editorButton(wrapper, 'Refresh card state')).toBeDefined()
+
+      // The cancelled refresh is dropped, not held against the next close.
+      await editorButton(wrapper, 'Cancel')!.trigger('click')
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).not.toBeNull()
+      wrapper.unmount()
+    })
+
+    it('closes and refetches immediately when archive recovery finds no unsaved draft', async () => {
+      const wrapper = await mountWithFailedArchive()
+
+      await editorButton(wrapper, 'Refresh card state')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1')
+      wrapper.unmount()
+    })
+
+    it('keeps a newer draft open when the archive request succeeds behind it', async () => {
+      const { wrapper, deferred } = await mountWithPendingArchive()
+      await wrapper.get('#card-title').setValue(DRAFT)
+
+      deferred.resolve()
+      await flushPromises()
+
+      expect(wrapper.emitted('close')).toBeUndefined()
+      // Both hosts treat `updated` as "this editor is finished", so a kept draft
+      // must not emit it either.
+      expect(wrapper.emitted('updated')).toBeUndefined()
+      expect(titleValue(wrapper)).toBe(DRAFT)
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1')
+
+      // The notice describes what is actually possible from here: no save, and
+      // no restore from this editor while it still holds unsaved work.
+      const notice = wrapper.get('[data-testid="card-archive-kept-draft"]').text()
+      expect(notice).toContain('Your unsaved changes are still here')
+      expect(notice).toContain('This card is now archived, so they cannot be saved')
+      expect(notice).toContain('restore the card from the board and reopen it')
+
+      // Every gate reads the settled state, not the host's stale snapshot: the
+      // whole editor is read-only over an archived card while the draft stays
+      // visible, and no control offers a request the server would reject.
+      expect((editorButton(wrapper, 'Save Changes')!.element as HTMLButtonElement).disabled).toBe(true)
+      expect((wrapper.get('#card-title').element.closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true)
+      const assignments = wrapper.get('[aria-label="Card assignments"]')
+      expect(assignments.text()).toContain('Assignments are read-only.')
+      expect(assignments.findAll('button').some(button => button.text() === 'Save assignments')).toBe(false)
+      expect(editorButton(wrapper, 'Archive card')).toBeUndefined()
+      expect(editorButton(wrapper, 'Restore card')).toBeDefined()
+      // Restoring is still an explicit lifecycle change, refused while dirty.
+      expect((editorButton(wrapper, 'Restore card')!.element as HTMLButtonElement).disabled).toBe(true)
+
+      // Closing from here is still an explicit discard.
+      await editorButton(wrapper, 'Cancel')!.trigger('click')
+      await nextTick()
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).not.toBeNull()
+      wrapper.unmount()
+    })
+
+    it('closes on a completed archive when there is nothing unsaved to keep', async () => {
+      const { wrapper, deferred } = await mountWithPendingArchive()
+
+      deferred.resolve()
+      await flushPromises()
+
+      expect(wrapper.emitted('updated')).toHaveLength(1)
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(wrapper.find('[data-testid="card-archive-kept-draft"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('leaves a rejected archive request to close once, cleanly, with no update claimed', async () => {
+      mockStore.setCardArchived.mockRejectedValueOnce(new Error('version conflict'))
+      const wrapper = mountEditor()
+      await flushPromises()
+      await editorButton(wrapper, 'Archive card')!.trigger('click')
+      await flushPromises()
+      dialogButton(wrapper, 'Confirm archive')!.click()
+      await flushPromises()
+
+      expect(wrapper.emitted('updated')).toBeUndefined()
+      expect(wrapper.emitted('close')).toBeUndefined()
+      dialogButton(wrapper, 'Cancel')!.click()
+      await flushPromises()
+
+      await editorButton(wrapper, 'Cancel')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(wrapper.emitted('updated')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('does not close twice when an archive request succeeds after a clean close', async () => {
+      const { wrapper, deferred } = await mountWithPendingArchive()
+
+      await editorButton(wrapper, 'Cancel')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      await wrapper.setProps({ isOpen: false })
+
+      deferred.resolve()
+      await flushPromises()
+
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(wrapper.emitted('updated')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('leaves archive recovery to the host that owns the discard prompt', async () => {
+      vi.mocked(cardsApi.previewDetach).mockRejectedValueOnce(new Error('preview unavailable'))
+      const wrapper = mount(CardModal, {
+        props: { card, isOpen: true, labels, presentation: 'inspector', suppressDiscardPrompt: true },
+        attachTo: document.body,
+      })
+      await flushPromises()
+      await editorButton(wrapper, 'Archive card')!.trigger('click')
+      await flushPromises()
+
+      await editorButton(wrapper, 'Refresh card state')!.trigger('click')
+      await flushPromises()
+
+      // The Paper board suppresses this editor's prompts while its own dialog is
+      // open, and `handleClose` is inert then. The refresh is a deliberate
+      // no-op there rather than a close that walks out from under that dialog —
+      // and nothing is armed, so a later close cannot fire a stale refetch.
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+
+      await wrapper.setProps({ suppressDiscardPrompt: false })
+      await editorButton(wrapper, 'Cancel')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('closes an untouched editor without a confirmation or a refetch', async () => {
+      const wrapper = mountEditor()
+      await flushPromises()
+
+      await editorButton(wrapper, 'Cancel')!.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+      expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
   })
 })

@@ -33,9 +33,18 @@ axios, `@microsoft/signalr` board realtime). Orientation only.
   pinia-**4**-specific is only the `?.` guard: pinia 3.0.4's `if (value.effect)` *threw* a
   TypeError on a bare `null` instead of skipping it. Zero usages today; the note is preventive.
 
+- Timezone-dependent assertions use `src/tests/utils/timeZone.ts`, never `vi.stubEnv('TZ', …)`.
+  The env stub changes the runtime zone only under the default `forks` pool; under `pool: 'threads'`
+  — which `@stryker-mutator/vitest-runner` forces for its dry run — `process.env.TZ` reads back as
+  the requested zone while `Date`/`Intl` silently keep the host zone (#2943). Install fake timers
+  *before* `installTimeZone`: `vi.useFakeTimers()` replaces the whole `Intl` global.
+
 ## Verify
 - `npm run typecheck`, `npm run build`
 - `npx vitest --run` — full local run can OOM; prefer `--maxWorkers=2` or a targeted spec / `-t`.
+- `npx vitest --run --pool=threads --maxWorkers=1 [<spec>]` — the Vitest shape Stryker's dry run
+  forces; run it when touching clock/timezone-sensitive specs. Not an npm script on purpose:
+  `package.json` here is a declared control path (`ci/policy.v1.json`).
 - `npx playwright test tests/e2e/<file>.spec.ts --reporter=line` for flow changes.
 
 Seam map: `autodoc/AGENT_INDEX.md`

@@ -10,7 +10,19 @@ import type { Card, CardDetachPreview } from '../../types/board'
 const PREVIEW_FAILURE = 'Could not load every affected child. Refresh before archiving.'
 const CHANGE_FAILURE = 'The card state could not be confirmed. Refresh before trying again.'
 
-const props = defineProps<{ card: Card; disabled?: boolean }>()
+/*
+ * `archived` is an optional override for `card.isArchived`. A host can hold the
+ * card as a snapshot that never learns the card was archived — `CardModal`
+ * keeps its editor open over a completed archive when a draft would otherwise
+ * be lost (#2969) — and this control must never label or send an operation from
+ * a state it knows is stale. Hosts that pass a live card omit it, and the
+ * explicit `undefined` default is what keeps "omitted" distinguishable from
+ * "false": Vue casts an absent Boolean prop to `false` unless a default is
+ * declared, which would have told every existing caller its card is active.
+ */
+const props = withDefaults(defineProps<{ card: Card; disabled?: boolean; archived?: boolean }>(), {
+  archived: undefined,
+})
 const emit = defineEmits<{ changed: []; refresh: [] }>()
 const boardStore = useBoardStore()
 const preview = ref<CardDetachPreview | null>(null)
@@ -38,6 +50,7 @@ onBeforeUnmount(() => {
   contextGeneration++
   confirmationGeneration++
 })
+const archived = computed(() => props.archived ?? props.card.isArchived === true)
 const confirming = computed(() => preview.value !== null)
 const allowed = computed(() => boardStore.currentBoard?.id === props.card.boardId
   && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived)
@@ -55,7 +68,7 @@ async function focusRecovery(context = contextGeneration, confirmation = confirm
 }
 
 async function requestChange() {
-  if (props.card.isArchived) return change()
+  if (archived.value) return change()
   if (!allowed.value || props.disabled || busy.value || error.value) return
   const context = contextGeneration
   const confirmation = confirmationGeneration
@@ -118,7 +131,7 @@ async function change() {
   const confirmation = confirmationGeneration
   busy.value = true
   try {
-    await boardStore.setCardArchived(props.card.boardId, props.card.id, !props.card.isArchived, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
+    await boardStore.setCardArchived(props.card.boardId, props.card.id, !archived.value, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
     if (context !== contextGeneration) return
     preview.value = null
     refreshed.value = false
@@ -143,7 +156,7 @@ async function change() {
     <p v-else-if="disabled" class="text-sm text-on-surface-variant">Save or discard your changes before archiving.</p>
     <button type="button" class="rounded border border-outline-variant/40 px-3 py-2 text-sm disabled:opacity-40"
       :disabled="!allowed || disabled || busy || !!error" @click="requestChange">
-      {{ busy ? 'Saving…' : card.isArchived ? 'Restore card' : 'Archive card' }}
+      {{ busy ? 'Saving…' : archived ? 'Restore card' : 'Archive card' }}
     </button>
     <!-- Page-level failure: only while no confirmation is open. A failure raised by
          the open confirmation is rendered inside it instead (see below), never

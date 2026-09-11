@@ -42,7 +42,18 @@ public class ExecutionAuditRecorder
         _unitOfWork = unitOfWork;
     }
 
-    public async Task RecordAsync(ProposalOperationDto operation, ProposalDto proposal, CancellationToken cancellationToken)
+    /// <param name="actorUserId">
+    /// The authenticated user who applied the proposal. Execution history answers "who changed the
+    /// board", and on the apply lane that is the applier - not necessarily the requester, who may be
+    /// a different person entirely (#2978). The requester is preserved as provenance text by
+    /// <see cref="BuildAuditChanges"/> instead. Null only on internal lanes with no authenticated
+    /// caller, where the requester remains the best available actor.
+    /// </param>
+    public async Task RecordAsync(
+        ProposalOperationDto operation,
+        ProposalDto proposal,
+        CancellationToken cancellationToken,
+        Guid? actorUserId = null)
     {
         var auditAction = ActionMap.TryGetValue(operation.ActionType.ToLowerInvariant(), out var mapped)
             ? mapped
@@ -55,12 +66,21 @@ public class ExecutionAuditRecorder
             entityType,
             entityId,
             auditAction,
-            proposal.RequestedByUserId,
+            ResolveActor(actorUserId, proposal),
             changes
         );
 
         await _unitOfWork.AuditLogs.AddAsync(auditLog, cancellationToken);
     }
+
+    /// <summary>
+    /// The actor stamped on an execution-history row: the authenticated applying user when the
+    /// apply lane knows one, otherwise the proposal's requester. <see cref="AuditLog"/> refuses an
+    /// empty user id, so an empty actor is treated as "no authenticated caller" rather than being
+    /// allowed to throw inside the execution transaction.
+    /// </summary>
+    public static Guid ResolveActor(Guid? actorUserId, ProposalDto proposal) =>
+        actorUserId is Guid actor && actor != Guid.Empty ? actor : proposal.RequestedByUserId;
 
     public static (string EntityType, Guid EntityId) ResolveAuditEntity(ProposalOperationDto operation, ProposalDto proposal)
     {
@@ -91,7 +111,10 @@ public class ExecutionAuditRecorder
             ? operation.Parameters
             : operation.Parameters[..500] + "...";
 
-        var provenance = $"Automation proposal {proposal.Id}, sequence {operation.Sequence}: {operation.ActionType} {operation.TargetType}. Parameters: {parameterPreview}";
+        // The row's UserId is the applying user (#2978), so the requester has to survive somewhere:
+        // it is named here, keeping "who asked for this" readable next to "who applied it" even when
+        // they are two different people.
+        var provenance = $"Automation proposal {proposal.Id} requested by user {proposal.RequestedByUserId}, sequence {operation.Sequence}: {operation.ActionType} {operation.TargetType}. Parameters: {parameterPreview}";
 
         // Card lifecycle receipts keep the legacy CardService wording ahead of the proposal
         // provenance, so the single entry reads the same as a direct archive/restore receipt

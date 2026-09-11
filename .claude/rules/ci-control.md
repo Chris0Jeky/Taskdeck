@@ -51,6 +51,9 @@ does not class it as a control path. Everything else is a mirror, not a judgemen
 If you add a control path there, add it here in the same PR, or this rule silently stops loading for it —
 which is how `#2866` came to add 15 lines to `scripts/deploy/audio-response-policies.test.mjs`, a declared
 control path, with nothing telling the agent it had just made an R4 change.
+`node scripts/check-docs-governance.mjs` (the `ci-required` docs-governance job) now enforces that mirror:
+it fails and names the globs when a `controlPaths` entry is missing from the `paths:` list above, and fails
+closed when this frontmatter does not parse — an unparseable rule file loads for nothing, silently.
 
 - **Risk class R4** (ADR-0066 Smart CI Fabric, tracker CI-00 `#2324`). CI-control changes qualify
   **hosted-only**: the proving check is the hosted run on the exact PR head, never a local approximation.
