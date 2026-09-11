@@ -86,11 +86,146 @@ function parseFrontMatterScalar(rawValue) {
 }
 
 /**
+ * Report why a `key: value` scalar is not something this check can read, or null when it is fine.
+ *
+ * Only the shapes that make a YAML loader reject the document are named: an unbalanced quote and an
+ * unterminated flow sequence or mapping.
+ */
+function describeUnreadableScalar(rawValue) {
+  let quote = null
+  let depth = 0
+
+  for (let index = 0; index < rawValue.length; index += 1) {
+    const char = rawValue[index]
+
+    if (quote !== null) {
+      if (char === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+
+    if (char === '#' && (index === 0 || /\s/.test(rawValue[index - 1]))) {
+      break
+    }
+
+    if (char === '[' || char === '{') {
+      depth += 1
+      continue
+    }
+
+    if (char === ']' || char === '}') {
+      depth -= 1
+      if (depth < 0) {
+        return 'unbalanced bracket'
+      }
+    }
+  }
+
+  if (quote !== null) {
+    return 'unbalanced quote'
+  }
+
+  if (depth !== 0) {
+    return 'unterminated flow sequence or mapping'
+  }
+
+  return null
+}
+
+/**
+ * Validate the WHOLE front matter block, not just the `paths:` key.
+ *
+ * The rule file is dropped as a unit: malformed YAML anywhere between the `---` delimiters — after
+ * the `paths:` block, or a second `paths:` key that a loader would silently resolve to one of the
+ * two — takes the rule from loading on every declared path to loading on none. A check that stopped
+ * reading at the end of the `paths:` block would call that document green, which is the false safety
+ * property this function exists to remove.
+ *
+ * Accepted: `key:` and `key: scalar` lines at column 0, indented `- item` entries belonging to the
+ * immediately preceding block key, comments, and blank lines. Everything else is a hard error naming
+ * the line.
+ */
+function validateFrontMatterStructure(lines, rulePath) {
+  const structureErrors = []
+  const seenKeys = new Set()
+  let blockKey = null
+  // One malformed key line orphans every entry under it; report that once instead of once per entry,
+  // so the line that actually broke the document stays readable in the output.
+  let reportedOrphanEntry = false
+
+  for (const line of lines) {
+    if (line.trim() === '' || /^\s*#/.test(line)) {
+      continue
+    }
+
+    if (/^\s/.test(line)) {
+      if (/^\s+-(\s|$)/.test(line)) {
+        if (blockKey === null && !reportedOrphanEntry) {
+          reportedOrphanEntry = true
+          structureErrors.push(
+            `${rulePath} front matter has a list entry with no preceding key, which this check cannot parse: ${line.trim()} (further orphaned entries not listed)`,
+          )
+        }
+        continue
+      }
+
+      structureErrors.push(`${rulePath} front matter has a line this check cannot parse: ${line.trim()}`)
+      continue
+    }
+
+    if (/^-(\s|$)/.test(line)) {
+      structureErrors.push(
+        `${rulePath} front matter has a list entry at column 0 that this check cannot parse (entries must be indented): ${line.trim()}`,
+      )
+      continue
+    }
+
+    const keyMatch = line.match(/^([A-Za-z0-9_][A-Za-z0-9_.-]*)\s*:(.*)$/)
+    if (!keyMatch) {
+      structureErrors.push(`${rulePath} front matter has a line this check cannot parse: ${line.trim()}`)
+      blockKey = null
+      continue
+    }
+
+    const [, key, rawValue] = keyMatch
+    if (seenKeys.has(key)) {
+      structureErrors.push(
+        `${rulePath} front matter declares the key "${key}" twice; a YAML loader keeps only one of them`,
+      )
+    }
+    seenKeys.add(key)
+
+    const value = rawValue.trim()
+    if (value === '' || value.startsWith('#')) {
+      blockKey = key
+      continue
+    }
+
+    const unreadable = describeUnreadableScalar(value)
+    if (unreadable !== null) {
+      structureErrors.push(
+        `${rulePath} front matter has an ${unreadable} on key "${key}", which this check cannot parse: ${line.trim()}`,
+      )
+    }
+
+    blockKey = null
+  }
+
+  return structureErrors
+}
+
+/**
  * Parse the `paths:` block sequence out of an agent-rule file's YAML front matter.
  *
- * Fails closed on every shape it does not fully understand. Claude Code drops a rule file whose
- * front matter does not parse, silently and with no error anywhere, so "cannot parse" has to mean
- * "red check", never "no paths found".
+ * Fails closed on every shape it does not fully understand, and validates the complete front matter
+ * block first. Claude Code drops a rule file whose front matter does not parse, silently and with no
+ * error anywhere, so "cannot parse" has to mean "red check", never "no paths found".
  */
 export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_PATH) {
   const frontMatterMatch = ruleText.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/)
@@ -102,6 +237,12 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
   }
 
   const lines = frontMatterMatch[1].split(/\r?\n/)
+
+  const structureErrors = validateFrontMatterStructure(lines, rulePath)
+  if (structureErrors.length > 0) {
+    return { paths: [], errors: structureErrors }
+  }
+
   const keyIndex = lines.findIndex((line) => /^paths\s*:/.test(line))
   if (keyIndex === -1) {
     return { paths: [], errors: [`${rulePath} front matter has no paths: key`] }
@@ -118,7 +259,7 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
   const errors = []
   for (let index = keyIndex + 1; index < lines.length; index += 1) {
     const line = lines[index]
-    if (line.trim() === '') {
+    if (line.trim() === '' || /^\s*#/.test(line)) {
       continue
     }
 
@@ -142,7 +283,7 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
   }
 
   if (errors.length === 0 && paths.length === 0) {
-    errors.push(`${rulePath} front matter paths: declares no entries`)
+    errors.push(`${rulePath} front matter paths: declares no indented entries`)
   }
 
   return { paths, errors }

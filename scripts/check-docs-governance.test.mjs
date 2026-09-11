@@ -104,7 +104,84 @@ test('fails closed when the paths: block is empty', () => {
   const errors = collectControlPathMirrorErrors(policyFixture, '---\npaths:\n---\n\nBody.\n')
 
   assert.equal(errors.length, 1)
-  assert.match(errors[0], /declares no entries/)
+  assert.match(errors[0], /declares no indented entries/)
+})
+
+test('fails closed on malformed YAML AFTER the paths: block', () => {
+  const ruleText = `${ruleFixture(mirroredPaths, '').replace(/---\n$/, '')}broken: [\n---\n\nBody.\n`
+  const errors = collectControlPathMirrorErrors(policyFixture, ruleText)
+
+  assert.ok(errors.length > 0, 'malformed YAML after the block must not pass')
+  assert.ok(
+    errors.some((error) => /unterminated flow sequence or mapping/.test(error)),
+    errors.join(' | '),
+  )
+  assert.ok(errors.some((error) => /broken: \[/.test(error)), errors.join(' | '))
+})
+
+test('fails closed on malformed YAML BEFORE the paths: block', () => {
+  const ruleText = `---\ndescription: "rule\npaths:\n  - "ci/**"\n---\n\nBody.\n`
+  const errors = collectControlPathMirrorErrors(policyFixture, ruleText)
+
+  assert.ok(errors.length > 0, 'malformed YAML before the block must not pass')
+  assert.ok(errors.some((error) => /cannot parse/.test(error)), errors.join(' | '))
+})
+
+test('fails closed on a duplicate paths: key, which a loader would resolve to one of the two', () => {
+  const ruleText = '---\npaths:\n  - "ci/**"\n  - "scripts/ci/**"\n  - ".github/workflows/**"\n  - "global.json"\npaths:\n  - "docs/**"\n---\n\nBody.\n'
+  const errors = collectControlPathMirrorErrors(policyFixture, ruleText)
+
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /declares the key "paths" twice/)
+})
+
+test('fails closed on any duplicate top-level key, not only paths:', () => {
+  const ruleText = `---\ndescription: "one"\n${ruleFixture(mirroredPaths, '').slice(4).replace(/---\n$/, '')}description: "two"\n---\n\nBody.\n`
+  const errors = collectControlPathMirrorErrors(policyFixture, ruleText)
+
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /declares the key "description" twice/)
+})
+
+test('fails closed on a list entry at column 0 rather than reporting an empty block', () => {
+  const ruleText = '---\npaths:\n- "ci/**"\n---\n\nBody.\n'
+  const errors = collectControlPathMirrorErrors(policyFixture, ruleText)
+
+  assert.ok(errors.some((error) => /entries must be indented/.test(error)), errors.join(' | '))
+})
+
+test('reports an orphaned-entry cascade once, keeping the line that broke the document readable', () => {
+  const ruleText = `---\npaths: [broken\n${mirroredPaths.map((path) => `  - "${path}"`).join('\n')}\n---\n\nBody.\n`
+  const errors = collectControlPathMirrorErrors(policyFixture, ruleText)
+
+  assert.equal(errors.length, 2)
+  assert.match(errors[0], /unterminated flow sequence or mapping on key "paths"/)
+  assert.match(errors[1], /further orphaned entries not listed/)
+})
+
+test('accepts a legal second key after the paths: block', () => {
+  const ruleText = `${ruleFixture(mirroredPaths, '').replace(/---\n$/, '')}description: "CI-control region"\n---\n\nBody.\n`
+
+  assert.deepEqual(collectControlPathMirrorErrors(policyFixture, ruleText), [])
+})
+
+test('accepts comments on a key, inside the list, and at column 0', () => {
+  const ruleText = [
+    '---',
+    '# the mirror of ci/policy.v1.json controlPaths',
+    'paths: # authority: ci/policy.v1.json',
+    '  - "ci/**"',
+    '  # policy and planner live together',
+    '  - "scripts/ci/**"',
+    '  - ".github/workflows/**"',
+    '  - "global.json"',
+    '---',
+    '',
+    'Body.',
+    '',
+  ].join('\n')
+
+  assert.deepEqual(collectControlPathMirrorErrors(policyFixture, ruleText), [])
 })
 
 test('accepts unquoted globs and CRLF line endings', () => {
