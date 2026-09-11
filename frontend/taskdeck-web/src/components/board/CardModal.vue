@@ -44,9 +44,70 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const router = useRouter()
 const boardStore = useBoardStore()
-async function refreshArchiveState() {
-  emit('close')
-  await boardStore.fetchBoard(props.card.boardId)
+/*
+ * #2969. Archive recovery and archive completion were the two close paths that
+ * emitted `close` without asking what every other path asks first: is there an
+ * unsaved draft, and is a change already on its way to the server (#2981)? Both
+ * now funnel through the same guards.
+ *
+ * `pendingArchiveRefresh` carries the board refetch that "Refresh card state"
+ * owes with the close it requests, so the refetch runs when — and only when —
+ * the editor actually closes.
+ */
+const pendingArchiveRefresh = ref(false)
+// The completed archive/restore state, recorded when a request settles over a
+// kept draft. Both hosts hold the open card in a snapshot ref (`ColumnLane`,
+// `PaperBoardView`), so `props.card` does not learn that the card is now
+// archived while this editor stays open; the affordances this editor still owns
+// have to speak from the state the server actually holds.
+const archiveStateAfterChange = ref<boolean | null>(null)
+const archiveCompletedWithDraft = ref(false)
+const cardIsArchived = computed(() => archiveStateAfterChange.value ?? props.card.isArchived === true)
+const archiveDraftNotice = computed(() => cardIsArchived.value
+  ? 'This card was archived. Your unsaved changes are still here, so the editor stayed open. An archived card cannot be saved — restore it to save them, or close the editor to discard them.'
+  : 'This card was restored. Your unsaved changes are still here, so the editor stayed open. Save them or close the editor to discard them.')
+
+function forgetArchiveCompletion() {
+  archiveCompletedWithDraft.value = false
+  archiveStateAfterChange.value = null
+}
+
+/*
+ * "Refresh card state" is the recovery control on a failed archive: it drops
+ * this editor and refetches the board. It is a close, so it asks `handleClose`
+ * — which refuses while an assignment save is in flight (#2997) and raises the
+ * discard confirmation over an unsaved draft — instead of emitting `close`
+ * itself. A clean editor closes and refetches exactly as before.
+ */
+function refreshArchiveState() {
+  // A host that owns its own discard prompt (the Paper board, while its dialog
+  // is open) owns this close too: `handleClose` is inert there, so arm nothing.
+  if (props.suppressDiscardPrompt) return
+  pendingArchiveRefresh.value = true
+  handleClose()
+}
+
+/*
+ * A completed archive/restore. `updated` is not a neutral "something changed"
+ * signal — `ColumnLane` maps it straight to its close handler and the Paper
+ * board resolves a held navigation with it — so a draft that survives this
+ * request must not emit it either. The committed change still reaches the board
+ * through the store mutation plus the refetch the recovery path runs.
+ */
+function handleArchiveChanged() {
+  // A request that settles after the editor already closed has nothing left to
+  // close: emitting again would be a second close for one user action.
+  if (!props.isOpen) return
+
+  if (hasUnsavedChanges.value) {
+    archiveStateAfterChange.value = !cardIsArchived.value
+    archiveCompletedWithDraft.value = true
+    void boardStore.fetchBoard(props.card.boardId)
+    return
+  }
+
+  emit('updated')
+  closeWithoutPrompt()
 }
 const pendingThinkingPath = ref<string | null>(null)
 const assignmentDirty = ref(false)
@@ -149,6 +210,7 @@ watch(
     if (isOpen) {
       if (!wasOpen) {
         previouslyFocusedElement = document.activeElement as HTMLElement | null
+        forgetArchiveCompletion()
       }
       await nextTick()
       focusInitialControl()
@@ -169,6 +231,8 @@ watch(
 watch(
   () => props.card.id,
   async (cardId, previousCardId) => {
+    // Another card's archive state is not this one's.
+    forgetArchiveCompletion()
     if (!props.isOpen || cardId === previousCardId) return
     await nextTick()
     focusInitialControl()
@@ -198,10 +262,14 @@ function closeWithoutPrompt() {
   }
 
   const destination = pendingThinkingPath.value
+  const refreshBoard = pendingArchiveRefresh.value
   pendingThinkingPath.value = null
+  pendingArchiveRefresh.value = false
   showDiscardConfirm.value = false
+  forgetArchiveCompletion()
   emit('close')
   if (destination) void router.push(destination)
+  if (refreshBoard) void boardStore.fetchBoard(props.card.boardId)
 }
 
 function openThinkingDeck() {
@@ -221,6 +289,7 @@ function openThinkingDeck() {
 
 function keepEditing() {
   pendingThinkingPath.value = null
+  pendingArchiveRefresh.value = false
   showDiscardConfirm.value = false
 }
 
@@ -313,6 +382,7 @@ watch(() => props.suppressDiscardPrompt, (suppress) => {
   if (!suppress) return
 
   pendingThinkingPath.value = null
+  pendingArchiveRefresh.value = false
   showDiscardConfirm.value = false
 }, { immediate: true })
 
@@ -379,7 +449,10 @@ useEscapeToClose(
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
           @saved="acceptAssignments" />
         <CardArchiveAction :key="card.updatedAt" :card="card" :disabled="hasUnsavedChanges"
-          @changed="emit('updated'); emit('close')" @refresh="refreshArchiveState" />
+          @changed="handleArchiveChanged" @refresh="refreshArchiveState" />
+        <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
+          {{ archiveDraftNotice }}
+        </p>
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
         <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
@@ -434,7 +507,7 @@ useEscapeToClose(
       <p v-if="assignmentSaving" role="status" class="text-sm">Saving assignments… the editor stays open until the server answers.</p>
       <p v-else-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
       <CardModalActions
-          :is-form-valid="isFormValid && !card.isArchived && !isSaving && !assignmentDirty"
+          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty"
           :is-saving="isSaving"
           :card="card"
           @save="handleSave"
