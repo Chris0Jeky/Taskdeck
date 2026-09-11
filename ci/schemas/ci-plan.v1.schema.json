@@ -26,10 +26,11 @@
     },
     "baseSha": { "type": ["string", "null"] },
     "headSha": { "type": ["string", "null"] },
+    "mergeRefQualification": { "enum": ["qualified", "stale-base-unqualified", null], "description": "typed merge-ref state; optional only for legacy v1 receipts. stale-base-unqualified carries no merge qualification identities" },
     "mergeSha": { "type": ["string", "null"] },
     "mergeTreeSha": { "type": ["string", "null"], "description": "tree of refs/pull/N/merge at plan time — the binding the landed verifier matches against HEAD^{tree} (CI-03)" },
-    "mergeBaseSha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "observed first parent of the same accepted refs/pull/N/merge observation as mergeSha and mergeTreeSha; null for non-PR and error plans" },
-    "mergeBaseTipSha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "authenticated live base-ref tip when the accepted first parent moved after dispatch; null for an exact control-base match, non-PR plan, or error plan" },
+    "mergeBaseSha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "observed first parent of the same qualified refs/pull/N/merge observation as mergeSha and mergeTreeSha; null for stale-base-unqualified, non-PR, and error plans" },
+    "mergeBaseTipSha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "authenticated named base-ref tip when it differs from the control checkout; null for stale-base-unqualified, an exact control-base match, non-PR, or error plan" },
     "actor": {
       "type": "object",
       "additionalProperties": false,

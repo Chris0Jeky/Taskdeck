@@ -101,7 +101,7 @@ jobs:
             > artifacts/head-actors.txt
           printf 'head identities: %s\n' "$(cat artifacts/head-actors.txt)"
 
-      - name: Resolve the merge commit and tree (git objects only; nothing is executed)
+      - name: Resolve the merge commit, tree, and named-base qualification (nothing is executed)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,9 +109,8 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
-          # --base-ref lets the resolver accept a merge ref GitHub regenerated against the
-          # base branch live tip when the base advanced after dispatch (CI-03 #2327). The
-          # event head must still match exactly.
+          # --base-ref authenticates the event's named base tip. The event head must match
+          # exactly; a retained older first parent is diagnostic-only and never qualified.
           node scripts/ci/smart-ci/resolve-merge-ref.mjs \
             --pr "$PR_NUMBER" \
             --base "$CONTROL_BASE" \
@@ -121,6 +120,7 @@ jobs:
             --tree-out artifacts/merge-tree-sha.txt \
             --merge-base-out artifacts/merge-base-sha.txt \
             --merge-base-tip-out artifacts/merge-base-tip-sha.txt \
+            --qualification-out artifacts/merge-ref-qualification.txt \
             --note-out artifacts/merge-ref-note.txt
 
       - name: Plan
@@ -130,6 +130,9 @@ jobs:
         run: |
           set -euo pipefail
           plan_args=(--head-actors "$(cat artifacts/head-actors.txt)")
+          if [ -s artifacts/merge-ref-qualification.txt ]; then
+            plan_args+=(--merge-ref-qualification "$(cat artifacts/merge-ref-qualification.txt)")
+          fi
           if [ -s artifacts/merge-ref-note.txt ]; then
             plan_args+=(--note "$(cat artifacts/merge-ref-note.txt)")
           fi
