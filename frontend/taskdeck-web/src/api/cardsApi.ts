@@ -1,6 +1,17 @@
 import http, { type BoardReadOptions } from './http'
 import type { CardDetachPreview, Card, CardCaptureProvenance, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
 
+/**
+ * A submitted assignment replacement cannot be recalled, so the editor refuses
+ * to close while one is unanswered (#2981). That refusal is only safe if the
+ * request is guaranteed to settle: without a bound, a socket that never answers
+ * would hold the card editor open indefinitely. On expiry the caller sees the
+ * ordinary uncertain-save outcome — draft kept, refresh before retrying — which
+ * is exactly what a client timeout means, since it does not cancel the request
+ * the server may still be processing.
+ */
+export const ASSIGNMENT_SAVE_TIMEOUT_MS = 30_000
+
 export const cardsApi = {
   async getParticipants(boardId: string): Promise<import('../types/board').BoardParticipant[]> {
     const { data } = await http.get(`/boards/${boardId}/participants`, { skipRetry: true })
@@ -8,7 +19,7 @@ export const cardsApi = {
   },
   async replaceAssignments(boardId: string, cardId: string, userIds: string[], expectedUpdatedAt: string): Promise<Card> {
     const { data } = await http.put<Card>(`/boards/${boardId}/cards/${cardId}/assignments`,
-      { userIds, expectedUpdatedAt }, { skipRetry: true })
+      { userIds, expectedUpdatedAt }, { skipRetry: true, timeout: ASSIGNMENT_SAVE_TIMEOUT_MS })
     return data
   },
   async previewDetach(boardId: string, cardId: string): Promise<CardDetachPreview> {
