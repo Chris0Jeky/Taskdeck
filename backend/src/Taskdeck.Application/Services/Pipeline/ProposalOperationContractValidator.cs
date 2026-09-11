@@ -114,6 +114,11 @@ public static class ProposalOperationContractValidator
             {
                 validationContext.RegisterPlannedCard(createdCardId);
             }
+
+            // Record this operation's effect on column occupancy only after it has been
+            // accepted, so a later restore in the same proposal is measured against the
+            // board Apply will actually see at that point (#2926).
+            await validationContext.ProjectColumnOccupancyAsync(operation, parameters, cancellationToken);
         }
 
         return Result.Success();
@@ -677,6 +682,14 @@ public static class ProposalOperationContractValidator
         private readonly HashSet<Guid> _mutatedCards = [];
         private readonly HashSet<Guid> _lifecycleCards = [];
 
+        // Ordered projection of what this proposal does to each column's active-card count,
+        // plus the column each card is projected to occupy once the preceding operations have
+        // run. Apply mutates the board operation by operation, so the restore contract has to
+        // be measured against that moving count rather than the snapshot the proposal started
+        // from (#2926).
+        private readonly Dictionary<Guid, int> _projectedColumnActiveDelta = [];
+        private readonly Dictionary<Guid, Guid> _projectedCardColumns = [];
+
         public async Task<Result> ValidateCardArchiveStateAsync(ProposalOperationDto operation, JsonElement parameters, CancellationToken ct)
         {
             if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
@@ -713,13 +726,117 @@ public static class ProposalOperationContractValidator
                 var column = await unitOfWork.Columns.GetByIdWithCardsAsync(card.ColumnId, ct);
                 if (column is null || column.BoardId != card.BoardId)
                     return Result.Failure(ErrorCodes.InvalidOperation, "Restore the original column before restoring this card.");
-                if (column.WouldExceedWipLimitIfAdded())
+                if (WouldProjectedRestoreExceedWipLimit(column))
                     return Result.Failure(ErrorCodes.WipLimitExceeded, "The original column is full. Free space or adjust its WIP limit before restoring this card.");
             }
             return Result.Success();
         }
 
         public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
+
+        /// <summary>
+        /// Folds one already-accepted operation into the projected column occupancy.
+        /// Only operations that Apply turns into a change in a column's ACTIVE card count
+        /// participate: card create, card move, and the two lifecycle actions. The legacy
+        /// <c>archive</c> verb keeps Block semantics and leaves the card active, so it
+        /// contributes nothing. <c>delete</c> is deliberately not projected: its cascade to
+        /// child cards is not modelled here, and an unprojected delete can only leave the
+        /// restore check stricter than Apply, never looser.
+        /// </summary>
+        public async Task ProjectColumnOccupancyAsync(
+            ProposalOperationDto operation,
+            JsonElement parameters,
+            CancellationToken cancellationToken)
+        {
+            if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            switch (operation.ActionType.ToLowerInvariant())
+            {
+                case "create":
+                {
+                    if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out var createColumnId, out _))
+                        return;
+                    AddProjectedColumnDelta(createColumnId, 1);
+                    if (Guid.TryParse(operation.TargetId, out var createdCardId))
+                        _projectedCardColumns[createdCardId] = createColumnId;
+                    return;
+                }
+
+                case "move":
+                {
+                    if (!TryGetOperationCardId(operation, parameters, out var moveCardId) ||
+                        !OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out var targetColumnId, out _))
+                        return;
+                    var sourceColumnId = await GetProjectedCardColumnAsync(moveCardId, cancellationToken);
+                    // Apply skips the WIP check for a same-column move, and so does this projection.
+                    if (sourceColumnId == targetColumnId)
+                        return;
+                    if (sourceColumnId.HasValue)
+                        AddProjectedColumnDelta(sourceColumnId.Value, -1);
+                    AddProjectedColumnDelta(targetColumnId, 1);
+                    _projectedCardColumns[moveCardId] = targetColumnId;
+                    return;
+                }
+
+                case "archive-lifecycle":
+                case "restore-lifecycle":
+                {
+                    if (!TryGetOperationCardId(operation, parameters, out var lifecycleCardId))
+                        return;
+                    var card = await ReadCardAsync(lifecycleCardId, cancellationToken);
+                    if (card is null)
+                        return;
+                    var lifecycleColumnId = _projectedCardColumns.TryGetValue(lifecycleCardId, out var plannedColumnId)
+                        ? plannedColumnId
+                        : card.ColumnId;
+                    AddProjectedColumnDelta(
+                        lifecycleColumnId,
+                        operation.ActionType.Equals("archive-lifecycle", StringComparison.OrdinalIgnoreCase) ? -1 : 1);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The restore contract measured against the board Apply will see at this point in the
+        /// proposal. With no preceding occupancy change this is exactly
+        /// <see cref="Taskdeck.Domain.Entities.Column.WouldExceedWipLimitIfAdded"/>; the delta is
+        /// what stops two restores into a WIP-1 column from both passing preview and then failing
+        /// at execute with a full-proposal rollback (#2926).
+        /// </summary>
+        private bool WouldProjectedRestoreExceedWipLimit(Taskdeck.Domain.Entities.Column column)
+        {
+            if (!column.WipLimit.HasValue)
+                return false;
+
+            var projectedActiveCount = column.Cards.Count(card => !card.IsArchived) +
+                                       _projectedColumnActiveDelta.GetValueOrDefault(column.Id);
+            return projectedActiveCount >= column.WipLimit.Value;
+        }
+
+        private void AddProjectedColumnDelta(Guid columnId, int delta) =>
+            _projectedColumnActiveDelta[columnId] = _projectedColumnActiveDelta.GetValueOrDefault(columnId) + delta;
+
+        private async Task<Guid?> GetProjectedCardColumnAsync(Guid cardId, CancellationToken cancellationToken)
+        {
+            if (_projectedCardColumns.TryGetValue(cardId, out var plannedColumnId))
+                return plannedColumnId;
+            // A create with no targetId leaves Apply to generate the id, so a later move of that
+            // card cannot be paired with its source column; leaving it unknown keeps the target
+            // side of the delta and omits a source decrement we cannot attribute.
+            if (_plannedCardIds.Contains(cardId))
+                return null;
+            return (await ReadCardAsync(cardId, cancellationToken))?.ColumnId;
+        }
+
+        private static bool TryGetOperationCardId(ProposalOperationDto operation, JsonElement parameters, out Guid cardId)
+        {
+            // Scope validation has already proven these agree when both are present.
+            if (OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out cardId, out _))
+                return true;
+            return Guid.TryParse(operation.TargetId, out cardId);
+        }
 
         public Result ValidateOperationAfterPlannedBoardArchive(ProposalOperationDto operation, JsonElement parameters)
         {
