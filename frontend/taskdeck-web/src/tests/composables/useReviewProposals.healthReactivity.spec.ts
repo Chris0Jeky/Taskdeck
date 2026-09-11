@@ -298,6 +298,64 @@ describe('Review retained health with real Vue reactivity (#2915)', () => {
     expect(mocks.getProposal).toHaveBeenCalledWith('c-1')
   })
 
+  it.each(['stale', 'refused'] as const)('does not attach retained %s health to a fresh same-board hash row on return (#2930)', async (health) => {
+    const review = await prime(health, 'deferred')
+    await widen()
+    mocks.getProposal.mockResolvedValueOnce({
+      ...review.proposals.value[0], id: 'b-2', summary: 'Fresh board B target',
+    })
+    mocks.route.hash = '#proposal-b-2'
+    await nextTick()
+    await flushPromises()
+    expect(review.visibleProposals.value.map(p => p.id)).toEqual(['b-2'])
+
+    mocks.route.query = { boardId: 'board-b' }
+    await nextTick()
+    await flushPromises()
+
+    expect(review.visibleProposals.value.map(p => p.id)).toEqual(['b-2'])
+    expect(review.queueRefreshStale.value).toBe(false)
+    expect(review.queueRefreshRefused.value).toBe(false)
+
+    mocks.route.hash = '#proposal-b-1'
+    await nextTick()
+    await flushPromises()
+    expect(review.visibleProposals.value.map(p => p.id)).toEqual(['b-1'])
+    expect(review.queueRefreshStale.value).toBe(health === 'stale')
+    expect(review.queueRefreshRefused.value).toBe(health === 'refused')
+  })
+
+  it('announces recovery only after a full read clears the still-visible retained refusal (#2930)', async () => {
+    const review = await prime('refused')
+    await widen()
+    mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+    review.startQueueRefresh()
+    await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+    review.stopQueueRefresh()
+    expect(review.queueRefreshRefused.value).toBe(true)
+
+    mocks.getProposal.mockRejectedValue({ response: { status: 500 } })
+    mocks.route.hash = '#proposal-not-in-list'
+    await nextTick()
+    await flushPromises()
+    mocks.getProposals.mockResolvedValue([...review.proposals.value])
+    review.startQueueRefresh()
+    await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+    review.stopQueueRefresh()
+
+    expect(review.visibleProposals.value.map(p => p.id)).toEqual(['b-1'])
+    expect(review.queueRefreshRefused.value).toBe(true)
+    expect(review.queueRefreshRecovered.value).toBe(false)
+    expect(review.queueRefreshRecoveredKind.value).toBe(null)
+
+    mocks.route.hash = ''
+    await nextTick()
+    await review.loadProposals()
+    expect(review.queueRefreshRefused.value).toBe(false)
+    expect(review.queueRefreshRecovered.value).toBe(true)
+    expect(review.queueRefreshRecoveredKind.value).toBe('refused')
+  })
+
   it('drops retained health and rows on a failed All-board access check (#2930)', async () => {
     const review = await prime('stale', 'completed')
     mocks.getProposals.mockRejectedValue({ response: { status: 403 } })

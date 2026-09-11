@@ -9,7 +9,6 @@ import PaperTriageRowEdit, {
 } from './PaperTriageRowEdit.vue'
 import { useBoardStore } from '../../../store/boardStore'
 import {
-  canMutateSelection,
   captureRowState,
   sourceLabel,
   statusLabel,
@@ -19,6 +18,14 @@ import {
 import type { CaptureRowState } from '../../../components/inbox/inboxUtils'
 import type { Board } from '../../../types/board'
 import type { CaptureItem, CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
+import {
+  canEditCapture as canEdit,
+  canSetDisposition,
+  canTriageCapture as canTriage,
+  captureLabel,
+  isBoardWritable,
+  isPastEditing,
+} from '../../../utils/paperTriagePolicy'
 
 /**
  * PaperTriageTable — captured items list rendered in the paper-card ledger
@@ -188,37 +195,6 @@ function setReceipt(
   status = '',
 ) {
   draftReceipts.value.set(captureId, { captureId, kind, capture, status, dismissable: true })
-}
-
-/**
- * Statuses in which the SERVER itself would refuse a text edit.
- *
- * `CaptureService.IsSuggestionEditableStatus` allows New, Failed and Triaged,
- * and `Triaging` is a transient the capture is only passing through — so the
- * settled refusals are exactly these three. A held correction is dropped for
- * one of them and nothing else.
- *
- * Deliberately NOT this list's own `canMutate` gate: dropping a correction is
- * irreversible, and that gate is a product policy (#1999 item 2, the D-13
- * ruling on editing Triaged rows) which a decision can move. A Triaged capture
- * keeps its correction and says the list will not edit it; only the server's
- * settled no drops one. An out-of-contract status is not in the set either:
- * the conservative answer to "I do not recognise this" is to keep.
- */
-function isPastEditing(status: CaptureStatusValue): boolean {
-  return status === 3 || status === 'ProposalCreated' ||
-    status === 4 || status === 'Converted' ||
-    status === 5 || status === 'Ignored'
-}
-
-/**
- * The capture as this list names it. The excerpt is what the row shows, so the
- * line and the row agree; the id is the fallback the open button already uses
- * when there is nothing else to say.
- */
-function captureLabel(item: CaptureItemSummary): string {
-  const excerpt = typeof item.textExcerpt === 'string' ? item.textExcerpt.trim() : ''
-  return excerpt || item.id
 }
 
 function restoredDraftFor(item: CaptureItemSummary): PaperTriageDraft | null {
@@ -400,19 +376,6 @@ watch(
   },
 )
 
-/**
- * Write capability comes from the server (`BoardDto.CanWrite`, #1836) — a board
- * the user can only read would 403 at accept, so it is shown DISABLED and
- * annotated rather than filtered away: a Viewer should see why a board is
- * unavailable, not wonder where it went.
- *
- * Only an explicit `false` gates. A payload without the field (older cache,
- * a non-caller-scoped source) behaves as it did before the field existed.
- */
-function isBoardWritable(board: Board): boolean {
-  return board.canWrite !== false
-}
-
 function boardOptionLabel(board: Board): string {
   return isBoardWritable(board) ? board.name : t('inbox.boardPicker.viewOnlyOption', { name: board.name })
 }
@@ -480,28 +443,6 @@ const isBackgroundRefresh = computed(
 const hasMutationInFlight = computed(
   () => props.actionBusyItemId !== null && props.actionBusyItemId !== undefined,
 )
-
-function isTriagedWithoutProposal(item: CaptureItemSummary): boolean {
-  return item.status === 2 || item.status === 'Triaged'
-}
-
-function canEdit(item: CaptureItemSummary): boolean {
-  if (item.canEditSuggestion === false) return false
-  // A completed, proposal-less triage may be corrected and explicitly retried
-  // under the D-13 ruling. A summary only advertises that exception when the
-  // server supplied its source-specific edit capability; an older response
-  // fails closed rather than opening an editor whose save will be refused.
-  return canMutateSelection(item.status) ||
-    (isTriagedWithoutProposal(item) && item.canEditSuggestion === true)
-}
-
-function canTriage(item: CaptureItemSummary): boolean {
-  return canMutateSelection(item.status) || isTriagedWithoutProposal(item)
-}
-
-function canSetDisposition(item: CaptureItemSummary): boolean {
-  return canMutateSelection(item.status)
-}
 
 function isEditing(item: CaptureItemSummary): boolean {
   return editItemId.value === item.id

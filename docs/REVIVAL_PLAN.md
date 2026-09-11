@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-11
 
 **Status:** Active execution plan (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot). Product identity, direction, and the release-theme ladder are owned by `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23); this plan owns wave sequencing, the issue map, and ship gates.
 **Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
@@ -64,6 +64,26 @@ The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogf
 - **Later:** full Workspace/Project/WorkItem migration, boards as views over canonical items, formulas, thresholds, time logs, capacity planning, recurrence, templates, and managed multi-tenant SaaS.
 
 ADR-0060 and ADR-0062 are Accepted and ADR-0061 is Accepted as direction only, evidence pending (maintainer rulings of 2026-08-29, recorded in each ADR). The shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged until the work-model slices (`#2087`, `#2092`, `#2093` — moved to v0.4 on 2026-08-30, q-3 B; `#2240` is the v0.3 sub-slice) land under those rulings; ADR-0060 stages 4–5 remain gated on an ADR amendment, and the private shared instance stays gated on the pending CL-1 values and the Stage 1 prerequisites tracked on `#1772` (`#1777` stays parked).
+
+### Current work-model sequence (2026-09-11)
+
+This note supersedes the historical assignment timing and unimplemented-parent wording above.
+The archive/type/hierarchy chain is merged and #2087 is closed. Both #2240 and #2093 are currently
+v0.4. Assignment [PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977) is parked on HIGH
+[#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981), not delivered or awaiting a product
+decision. The maintainer has chosen explicit import mapping and effort minutes with hours/minutes
+display; no repeat question is required.
+
+Finish that bounded repair and existing Alpha delivery PRs, then take #2093's estimate/current-state
+totals and #2092's typed-link migration from their verified residuals. Serialize shared schema,
+card editor, proposal and portability paths. The estimate scalar is technically independent of
+assignment; current sequencing protects occupied paths, while participant totals depend on the
+assignment substrate. Preserve the existing same-board graph, archived edges and revision metadata.
+
+The [dated assessment](analysis/2026-09-11-product-trust-reconciliation.md) records exact delivery,
+architecture risks, proof gaps and owners. The [capability catalogue](product/FEATURE_CAPABILITIES.md)
+distinguishes shipped behavior from the remaining work. This does not make every v0.4 item a release
+blocker, change the hosted A/B/C/D gates, or authorize stages 4-5.
 
 ## 4. Phases and waves (the issue map)
 
@@ -270,6 +290,9 @@ The GEN-11 friends-family channel (`#1325`) adds a second signal stream — non-
 - **Scope regrowth** — the same failure mode the archive analysis diagnosed; mitigated by §5's finite `Now`/`Next` queue, tracked acceptance-ready issues, dependency/ownership checks, and the §7/ADR boundary for new surface.
 
 ## 10. Related documents
+
+- [September 11 product-trust assessment](analysis/2026-09-11-product-trust-reconciliation.md):
+  current migration, receipt, attribution, projection and aggregate risks with proving obligations.
 
 - `docs/decisions/ADR-0044-revival-pivot-open-beta.md` — the decision this plan executes
 - `docs/decisions/ADR-0046-generalist-expansion-single-app.md` — the Phase 4 amendment (artefact intake, dossiers, generalist reach; twin-app deferral)

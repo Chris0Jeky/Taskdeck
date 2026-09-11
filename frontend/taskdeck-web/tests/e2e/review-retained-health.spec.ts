@@ -8,6 +8,7 @@ test('re-exposing a snoozed retained proposal restores its refresh warning', asy
   const boardId = '22222222-2222-4222-8222-222222222222'
   const now = new Date()
   await page.clock.install({ time: now })
+  await page.clock.pauseAt(now)
   const collectionPath = apiRoutePath(API_BASE_URL, 'automation/proposals')
   let reads = 0
   await page.route(url => url.origin === API_ORIGIN && url.pathname === collectionPath, async route => {
@@ -61,6 +62,7 @@ test('a same-count hash swap restores only the landed proposal refresh warning (
   const freshBoardId = '42222222-2222-4222-8222-222222222222'
   const now = new Date()
   await page.clock.install({ time: now })
+  await page.clock.pauseAt(now)
   const retained = {
     id: retainedId, boardId, status: 'PendingReview', sourceType: 'Manual',
     sourceReferenceId: null, requestedByUserId: 'synthetic-owner', riskLevel: 'Low',
