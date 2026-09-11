@@ -198,8 +198,10 @@ onBeforeUnmount(() => { generation++ })
       <p v-if="!loading && !selected.length" class="text-sm">Unassigned</p>
     </fieldset>
     <!-- Outside the selector fieldset on purpose: Clear and Cancel only edit the local
-         draft, so they follow `busy` and survive a revoked permission. Save is the write
-         and names `locked` itself rather than relying on ancestor propagation. -->
+         draft, so they follow `draftLocked` and survive a revoked permission — including
+         after the board refetch turns this field read-only, which is why the row itself
+         still renders then. Save is the write: it names `locked`, rather than relying on
+         ancestor propagation, and disappears entirely once the board says read-only. -->
     <div v-if="!readOnly || permissionLost" class="flex gap-3">
       <button type="button" :disabled="draftLocked || !selected.length" @click="selected = []">Clear</button>
       <button type="button" :disabled="draftLocked || !dirty" @click="cancel">Cancel assignment changes</button>
