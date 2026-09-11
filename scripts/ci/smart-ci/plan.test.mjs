@@ -40,10 +40,11 @@ function ownerInput(changedFiles, overrides = {}) {
     isDraft: false,
     baseSha: BASE,
     headSha: HEAD,
+    mergeRefQualification: 'qualified',
     mergeBaseSha: BASE,
     mergeBaseTipSha: null,
-    mergeSha: null,
-    mergeTreeSha: null,
+    mergeSha: 'c'.repeat(40),
+    mergeTreeSha: 'd'.repeat(40),
     actorLogin: 'Chris0Jeky',
     actorType: 'User',
     authorAssociation: 'OWNER',
@@ -243,6 +244,37 @@ test('merge-base receipt metadata binds the observed first parent without rewrit
   assert.ok(wrongControlBase.failures.some((failure) => failure.code === 'base-sha-mismatch'));
 });
 
+test('a proven retained-base merge ref is unusable without becoming a shadow planner failure', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md'], {
+    mergeSha: null,
+    mergeTreeSha: null,
+    mergeBaseSha: null,
+    mergeBaseTipSha: null,
+    mergeRefQualification: 'stale-base-unqualified',
+  }), policy, digest);
+
+  assert.deepEqual(validatePlan(plan, policy), []);
+  assert.equal(plan.mergeRefQualification, 'stale-base-unqualified');
+  assert.equal(plan.mergeSha, null);
+  assert.equal(plan.mergeTreeSha, null);
+  assert.ok(plan.escalationReasons.includes('merge-ref-unqualified'));
+  assert.equal(plan.selected.length, Object.keys(policy.lanes).length);
+
+  const shadow = evaluateGate(plan, { mode: 'shadow', expectedBaseSha: BASE, policy });
+  assert.equal(shadow.ok, true);
+  assert.equal(shadow.wouldFail, true);
+  assert.ok(shadow.failures.some((failure) => failure.code === 'merge-ref-unqualified'));
+  assert.equal(shadow.plannerFailures.length, 0);
+
+  const results = Object.fromEntries(plan.selected.map((entry) => [entry.checkName, {
+    conclusion: 'success',
+    headSha: HEAD,
+  }]));
+  const enforce = evaluateGate(plan, { mode: 'enforce', expectedBaseSha: BASE, policy, results });
+  assert.equal(enforce.ok, false);
+  assert.ok(enforce.failures.some((failure) => failure.code === 'merge-ref-unqualified'));
+});
+
 test('partial, malformed, and mismatched merge-base metadata fail closed while truly absent legacy fields remain readable', () => {
   const exact = buildPlan(ownerInput(['docs/x.md']), policy, digest);
   const partial = structuredClone(exact);
@@ -260,7 +292,14 @@ test('partial, malformed, and mismatched merge-base metadata fail closed while t
   const redundantTip = { ...exact, mergeBaseTipSha: BASE };
   assert.ok(validatePlan(redundantTip).some((error) => error.includes('null when the merge ref used plan.baseSha')));
 
+  const unknownQualification = { ...exact, mergeRefQualification: 'maybe-qualified' };
+  assert.ok(validatePlan(unknownQualification).some((error) => error.includes('mergeRefQualification')));
+
+  const staleWithIdentity = { ...exact, mergeRefQualification: 'stale-base-unqualified' };
+  assert.ok(validatePlan(staleWithIdentity).some((error) => error.includes('null merge qualification identities')));
+
   const legacy = structuredClone(exact);
+  delete legacy.mergeRefQualification;
   delete legacy.mergeBaseSha;
   delete legacy.mergeBaseTipSha;
   assert.deepEqual(validatePlan(legacy), []);
@@ -276,7 +315,9 @@ test('version-1 documentation schemas expose the paired merge-base receipt field
     assert.deepEqual(schema.dependentRequired.mergeBaseSha, ['mergeBaseTipSha']);
     assert.deepEqual(schema.dependentRequired.mergeBaseTipSha, ['mergeBaseSha']);
   }
+  assert.ok(planReceiptSchema.properties.mergeRefQualification);
   assert.ok(runReceiptSchema.properties.failures.items.properties.code.enum.includes('merge-base-binding-mismatch'));
+  assert.ok(runReceiptSchema.properties.failures.items.properties.code.enum.includes('merge-ref-unqualified'));
 });
 
 test('non-PR plans record explicit null merge-base metadata', () => {
@@ -586,6 +627,7 @@ test('inputFromEvent reads pull_request payloads without content and detects for
     changedFilesAvailable: true,
     mergeSha: fetchedMergeSha,
     mergeTreeSha: fetchedMergeTreeSha,
+    mergeRefQualification: 'qualified',
     mergeBaseSha: BASE,
     mergeBaseTipSha: null,
   });
@@ -600,6 +642,7 @@ test('inputFromEvent reads pull_request payloads without content and detects for
   assert.equal(input.mergeTreeSha, fetchedMergeTreeSha);
   assert.equal(input.mergeBaseSha, BASE);
   assert.equal(input.mergeBaseTipSha, null);
+  assert.equal(input.mergeRefQualification, 'qualified');
   requirePullRequestMergeBinding(event, input);
   assert.throws(
     () => requirePullRequestMergeBinding(event, { ...input, mergeSha: null }),
@@ -608,6 +651,25 @@ test('inputFromEvent reads pull_request payloads without content and detects for
   assert.throws(
     () => requirePullRequestMergeBinding(event, { ...input, mergeBaseTipSha: undefined }),
     /observed first parent and live-tip metadata/,
+  );
+  const retainedBase = '9'.repeat(40);
+  const liveBase = '8'.repeat(40);
+  const unqualified = {
+    ...input,
+    mergeSha: null,
+    mergeTreeSha: null,
+    mergeBaseSha: null,
+    mergeBaseTipSha: null,
+    mergeRefQualification: 'stale-base-unqualified',
+  };
+  assert.doesNotThrow(() => requirePullRequestMergeBinding(event, unqualified));
+  assert.throws(
+    () => requirePullRequestMergeBinding(event, { ...unqualified, mergeSha: fetchedMergeSha }),
+    /must not carry merge qualification identities/,
+  );
+  assert.throws(
+    () => requirePullRequestMergeBinding(event, { ...input, mergeRefQualification: 'unknown' }),
+    /qualification is invalid/,
   );
   const plan = buildPlan(input, policy, digest);
   assert.equal(plan.trust, 'T3');
@@ -703,6 +765,7 @@ test('the shadow workflow binds resolver, planner, and gate to fixed control ide
   assert.match(workflow, /--tree-out artifacts\/merge-tree-sha\.txt/);
   assert.match(workflow, /--merge-base-out artifacts\/merge-base-sha\.txt/);
   assert.match(workflow, /--merge-base-tip-out artifacts\/merge-base-tip-sha\.txt/);
+  assert.match(workflow, /--qualification-out artifacts\/merge-ref-qualification\.txt/);
   assert.match(workflow, /--base-sha "\$CONTROL_BASE"/);
   assert.match(workflow, /EXPECTED_BASE: \$\{\{ env\.CONTROL_BASE \}\}/);
   assert.match(workflow, /EXPECTED_HEAD: \$\{\{ env\.CONTROL_HEAD \}\}/);
@@ -710,6 +773,7 @@ test('the shadow workflow binds resolver, planner, and gate to fixed control ide
   assert.match(workflow, /--merge-tree-sha "\$\(cat artifacts\/merge-tree-sha\.txt\)"/);
   assert.match(workflow, /--merge-base-sha "\$\(cat artifacts\/merge-base-sha\.txt\)"/);
   assert.match(workflow, /--merge-base-tip-sha "\$\(cat artifacts\/merge-base-tip-sha\.txt\)"/);
+  assert.match(workflow, /--merge-ref-qualification "\$\(cat artifacts\/merge-ref-qualification\.txt\)"/);
   assert.doesNotMatch(workflow, /auth_header=/);
 });
 
