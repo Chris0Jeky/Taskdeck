@@ -2450,4 +2450,94 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{newCardId}"))!
             .ColumnId.Should().Be(columnId);
     }
+
+    [Fact]
+    public async Task MoveIntoASparseColumnThenRestore_IsApprovedAtPreview_AndAppliesEndToEnd()
+    {
+        // #3025 preview/apply parity. The target column's stored positions are non-contiguous
+        // (0 and 2 after the middle card was deleted - delete does not renumber). The apply
+        // handler used to derive the append index from max(Position) + 1 = 3 and hand it to
+        // CardService.MoveCardAsync, which called List.Insert(3, ...) on a two-card list and
+        // threw, rolling the whole proposal back. Preview meanwhile counted the move as
+        // executable and released its source WIP slot for the following restore (#3019), so the
+        // pair passed approve and failed mid-apply. With the append index taken from the occupant
+        // count, preview's projection and apply's behaviour agree: both accept.
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "sparse-column-move");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "sparse-column-move");
+        var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var sourceColumnId = board.Columns.First().Id;
+
+        var createdTarget = await client.PostAsJsonAsync($"/api/boards/{boardId}/columns",
+            new CreateColumnDto(boardId, "Doing", 1, null));
+        createdTarget.StatusCode.Should().Be(HttpStatusCode.Created, await createdTarget.Content.ReadAsStringAsync());
+        var targetColumnId = (await createdTarget.Content.ReadFromJsonAsync<ColumnDto>())!.Id;
+
+        async Task<CardDto> CreateCardAsync(Guid columnId, string title)
+        {
+            var response = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+                new CreateCardDto(boardId, columnId, title, null, null, null));
+            response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+            return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+
+        var first = await CreateCardAsync(targetColumnId, "First");
+        var middle = await CreateCardAsync(targetColumnId, "Middle");
+        var last = await CreateCardAsync(targetColumnId, "Last");
+        new[] { first.Position, middle.Position, last.Position }.Should().Equal(0, 1, 2);
+
+        var deleted = await client.DeleteAsync(
+            $"/api/boards/{boardId}/cards/{middle.Id}?expectedUpdatedAt={Uri.EscapeDataString(middle.UpdatedAt.ToString("O"))}");
+        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent, await deleted.Content.ReadAsStringAsync());
+
+        // The fixture only reproduces #3025 while delete leaves a hole. If card deletion ever
+        // renumbers a column, this assertion says so instead of the test quietly passing.
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{first.Id}"))!.Position.Should().Be(0);
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{last.Id}"))!.Position.Should().Be(2);
+
+        // Source column: one archived card, then a WIP limit of 1, then the card whose move has to
+        // free the only slot before the restore can use it.
+        var archivedCard = await CreateCardAsync(sourceColumnId, "Archived occupant");
+        var archived = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards/{archivedCard.Id}/archive",
+            new CardLifecycleDto(archivedCard.UpdatedAt));
+        archived.StatusCode.Should().Be(HttpStatusCode.OK, await archived.Content.ReadAsStringAsync());
+        archivedCard = (await archived.Content.ReadFromJsonAsync<CardDto>())!;
+
+        var limited = await client.PatchAsJsonAsync($"/api/boards/{boardId}/columns/{sourceColumnId}",
+            new UpdateColumnDto(null, null, 1));
+        limited.StatusCode.Should().Be(HttpStatusCode.OK, await limited.Content.ReadAsStringAsync());
+
+        var mover = await CreateCardAsync(sourceColumnId, "Mover");
+
+        var created = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
+            ProposalSourceType.Manual, user.UserId, "Move out of the full column, then restore", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId, Operations:
+            [
+                new CreateProposalOperationDto(0, "move", "card",
+                    JsonSerializer.Serialize(new { boardId, cardId = mover.Id, columnId = targetColumnId }),
+                    Guid.NewGuid().ToString(), mover.Id.ToString()),
+                new CreateProposalOperationDto(1, "restore-lifecycle", "card",
+                    JsonSerializer.Serialize(new { boardId, cardId = archivedCard.Id, expectedUpdatedAt = archivedCard.UpdatedAt }),
+                    Guid.NewGuid().ToString(), archivedCard.Id.ToString())
+            ]));
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        var proposal = (await created.Content.ReadFromJsonAsync<ProposalDto>())!;
+
+        var approve = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approve.StatusCode.Should().Be(HttpStatusCode.OK, await approve.Content.ReadAsStringAsync());
+
+        using var execute = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        execute.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var applied = await client.SendAsync(execute);
+        applied.StatusCode.Should().Be(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync());
+        (await applied.Content.ReadFromJsonAsync<ProposalDto>())!.Status.Should().Be(ProposalStatus.Applied);
+
+        var movedCard = (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{mover.Id}"))!;
+        movedCard.ColumnId.Should().Be(targetColumnId);
+        movedCard.Position.Should().Be(2, "the move appends and the sparse target column is renumbered contiguously");
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{first.Id}"))!.Position.Should().Be(0);
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{last.Id}"))!.Position.Should().Be(1);
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{archivedCard.Id}"))!
+            .IsArchived.Should().BeFalse("the move really freed the source column's only WIP slot");
+    }
 }

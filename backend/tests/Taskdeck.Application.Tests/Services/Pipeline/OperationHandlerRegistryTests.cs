@@ -516,4 +516,39 @@ public class OperationHandlerRegistryTests
 
         result.IsSuccess.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldAppendMovedCard_WhenTargetColumnHasSparsePositions()
+    {
+        // #3025 regression: a column whose card positions are non-contiguous (0 and 2 after the
+        // middle card was deleted, or a sparse import) used to make this handler compute the
+        // append index as max(Position) + 1 = 3, and CardService.MoveCardAsync then called
+        // Insert(3, ...) on a two-item list, which threw and rolled the whole proposal back.
+        // The append index is the occupant count, which is sparsity-independent.
+        var board = TestDataBuilder.CreateBoard();
+        var sourceColumn = TestDataBuilder.CreateColumn(board.Id, "Inbox", 0);
+        var first = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "First", position: 0);
+        var third = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Third", position: 2);
+        var targetColumn = TestDataBuilder.CreateColumnWithCards(board.Id, "Doing", new[] { first, third }, 1);
+        var mover = TestDataBuilder.CreateCard(board.Id, sourceColumn.Id, "Mover", position: 0);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(targetColumn.Id, default))
+            .ReturnsAsync(new List<Card> { first, third });
+
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "move", "card", mover.Id.ToString(),
+            $$"""{"cardId":"{{mover.Id}}","columnId":"{{targetColumn.Id}}"}""", "move-sparse", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mover.ColumnId.Should().Be(targetColumn.Id);
+        // The move appends and the target column's positions are normalised in the same pass.
+        first.Position.Should().Be(0);
+        third.Position.Should().Be(1);
+        mover.Position.Should().Be(2);
+    }
 }

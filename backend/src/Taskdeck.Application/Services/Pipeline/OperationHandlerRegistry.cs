@@ -316,7 +316,11 @@ public class OperationHandlerRegistry
         if (targetColumn == null)
             return Result.Failure(ErrorCodes.NotFound, $"Column {columnId} not found");
 
-        var position = targetColumn.Cards.Any() ? targetColumn.Cards.Max(c => c.Position) + 1 : 0;
+        // Append: the index one past the last occupant, which is the occupant count. Deriving it
+        // from max(Position) + 1 instead broke whenever the column's stored positions were
+        // non-contiguous (#3025 - a deleted middle card leaves 0 and 2, so max + 1 = 3 on a
+        // two-card list), and CardService.MoveCardAsync then threw and rolled the proposal back.
+        var position = targetColumn.Cards.Count;
         var dto = new MoveCardDto(columnId, position);
         var result = await _cardService.MoveCardAsync(cardId, dto, cancellationToken);
 

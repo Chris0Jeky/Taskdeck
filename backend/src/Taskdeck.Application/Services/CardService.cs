@@ -456,7 +456,13 @@ public partial class CardService
                 .OrderBy(c => c.Position)
                 .ToList();
 
-            orderedCards.Insert(dto.TargetPosition, card);
+            // Insert at the requested index, clamped to the end when the request overshoots -
+            // the same idiom as ColumnService.ReorderColumnAsync. A request can legitimately
+            // overshoot whenever the column's stored positions are non-contiguous (#3025: a
+            // deleted middle card leaves 0 and 2, and an append index derived from max(Position)
+            // is then 3 on a two-card list). Negative positions are still refused, by
+            // Card.SetPosition above, before this line is reached.
+            orderedCards.Insert(Math.Min(dto.TargetPosition, orderedCards.Count), card);
 
             for (int i = 0; i < orderedCards.Count; i++)
             {
