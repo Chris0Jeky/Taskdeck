@@ -13,6 +13,8 @@ import { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspac
 import { workspaceInsightsApi } from '../api/workspaceInsights'
 import type { Board } from '../types/board'
 import type { Memory, MemoryStatus } from '../types/workspaceInsights'
+import { getErrorMessage } from '../utils/errorMessage'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const route = useRoute()
 const boardStore = useBoardStore()
@@ -45,13 +47,8 @@ const selectedBoard = computed(() => boards.value.find((board) => board.id === s
 const editorHeading = computed(() => editingId.value ? 'Correct memory' : 'Add a memory')
 
 function queryBoardId(): string | null {
-  const value = route.query.boardId
-  if (Array.isArray(value)) return value[0] ?? null
-  return typeof value === 'string' ? value : null
-}
-
-function errorMessage(value: unknown, fallback: string): string {
-  return value instanceof Error && value.message ? value.message : fallback
+  const value = normalizeBoardIdQueryParam(route.query.boardId)
+  return value || null
 }
 
 function boardHref(boardId: string): string {
@@ -103,7 +100,7 @@ async function loadBoards() {
       ? requested!
       : boards.value[0]?.id ?? ''
   } catch (value: unknown) {
-    boardError.value = errorMessage(value, 'Unable to load your boards.')
+    boardError.value = getErrorMessage(value, 'Unable to load your boards.')
   } finally {
     boardLoading.value = false
   }
@@ -127,7 +124,7 @@ async function loadMemories() {
     }
   } catch (value: unknown) {
     if (generation === memoryRequestGeneration && selectedBoardId.value === boardId) {
-      error.value = errorMessage(value, 'Unable to load workspace memory.')
+      error.value = getErrorMessage(value, 'Unable to load workspace memory.')
     }
   } finally {
     if (generation === memoryRequestGeneration) loading.value = false
@@ -200,7 +197,7 @@ async function saveMemory() {
     }
     closeEditor()
   } catch (value: unknown) {
-    formError.value = errorMessage(value, 'Unable to save this memory.')
+    formError.value = getErrorMessage(value, 'Unable to save this memory.')
   } finally {
     saving.value = false
   }
@@ -222,7 +219,7 @@ async function toggleArchived(memory: Memory) {
   } catch (value: unknown) {
     memoryErrors.value = {
       ...memoryErrors.value,
-      [memory.id]: errorMessage(value, 'Unable to update archive status.'),
+      [memory.id]: getErrorMessage(value, 'Unable to update archive status.'),
     }
   } finally {
     setBusy(memory.id, false)
