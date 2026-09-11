@@ -689,6 +689,7 @@ public static class ProposalOperationContractValidator
         // from (#2926).
         private readonly Dictionary<Guid, int> _projectedColumnActiveDelta = [];
         private readonly Dictionary<Guid, Guid> _projectedCardColumns = [];
+        private readonly Dictionary<Guid, Taskdeck.Domain.Entities.Column?> _columnsWithCards = [];
 
         public async Task<Result> ValidateCardArchiveStateAsync(ProposalOperationDto operation, JsonElement parameters, CancellationToken ct)
         {
@@ -726,7 +727,7 @@ public static class ProposalOperationContractValidator
                 var column = await unitOfWork.Columns.GetByIdWithCardsAsync(card.ColumnId, ct);
                 if (column is null || column.BoardId != card.BoardId)
                     return Result.Failure(ErrorCodes.InvalidOperation, "Restore the original column before restoring this card.");
-                if (WouldProjectedRestoreExceedWipLimit(column))
+                if (WouldProjectedAddExceedWipLimit(column))
                     return Result.Failure(ErrorCodes.WipLimitExceeded, "The original column is full. Free space or adjust its WIP limit before restoring this card.");
             }
             return Result.Success();
@@ -777,11 +778,22 @@ public static class ProposalOperationContractValidator
                     // Apply skips the WIP check for a same-column move, and so does this projection.
                     if (sourceColumnId == targetColumnId)
                         return;
-                    // The source decrement is unconditional because ValidateCardArchiveStateAsync
-                    // has already refused a move of an archived card, so the moved card is proven
-                    // to be in the source column's ACTIVE count. Relaxing the one-lifecycle gate
-                    // would let a restore precede a move of that same card, and this branch would
-                    // then need the projected archive state, not just the projected column.
+                    // Only a move Apply can actually perform frees its source slot. If the target
+                    // column is already at its limit, CardService.MoveCardAsync rejects the move
+                    // and the whole proposal rolls back, so releasing the source here would hand a
+                    // later restore capacity that never materializes - the same "passes approve,
+                    // fails mid-apply" shape this change exists to remove. Leaving the projection
+                    // untouched keeps that restore refused, exactly as before #2926. Checking the
+                    // move itself at preview is a wider gate change, tracked as #3020.
+                    var targetColumn = await ReadColumnWithCardsAsync(targetColumnId, cancellationToken);
+                    if (targetColumn is not null && WouldProjectedAddExceedWipLimit(targetColumn))
+                        return;
+                    // The source decrement is otherwise unconditional because
+                    // ValidateCardArchiveStateAsync has already refused a move of an archived card,
+                    // so the moved card is proven to be in the source column's ACTIVE count.
+                    // Relaxing the one-lifecycle gate would let a restore precede a move of that
+                    // same card, and this branch would then need the projected archive state, not
+                    // just the projected column.
                     if (sourceColumnId.HasValue)
                         AddProjectedColumnDelta(sourceColumnId.Value, -1);
                     AddProjectedColumnDelta(targetColumnId, 1);
@@ -809,13 +821,13 @@ public static class ProposalOperationContractValidator
         }
 
         /// <summary>
-        /// The restore contract measured against the board Apply will see at this point in the
-        /// proposal. With no preceding occupancy change this is exactly
-        /// <see cref="Taskdeck.Domain.Entities.Column.WouldExceedWipLimitIfAdded"/>; the delta is
-        /// what stops an operation that takes the last slot first from letting the restore pass
-        /// preview and then fail at execute with a full-proposal rollback (#2926).
+        /// Whether one more active card would breach <paramref name="column"/>'s WIP limit on the
+        /// board Apply will see at this point in the proposal. With no preceding occupancy change
+        /// this is exactly <see cref="Taskdeck.Domain.Entities.Column.WouldExceedWipLimitIfAdded"/>;
+        /// the delta is what stops an operation that takes the last slot first from letting a
+        /// restore pass preview and then fail at execute with a full-proposal rollback (#2926).
         /// </summary>
-        private bool WouldProjectedRestoreExceedWipLimit(Taskdeck.Domain.Entities.Column column)
+        private bool WouldProjectedAddExceedWipLimit(Taskdeck.Domain.Entities.Column column)
         {
             if (!column.WipLimit.HasValue)
                 return false;
@@ -823,6 +835,16 @@ public static class ProposalOperationContractValidator
             var projectedActiveCount = column.Cards.Count(card => !card.IsArchived) +
                                        _projectedColumnActiveDelta.GetValueOrDefault(column.Id);
             return projectedActiveCount >= column.WipLimit.Value;
+        }
+
+        private async Task<Taskdeck.Domain.Entities.Column?> ReadColumnWithCardsAsync(Guid columnId, CancellationToken cancellationToken)
+        {
+            if (!_columnsWithCards.TryGetValue(columnId, out var column))
+            {
+                column = await unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
+                _columnsWithCards[columnId] = column;
+            }
+            return column;
         }
 
         private void AddProjectedColumnDelta(Guid columnId, int delta) =>

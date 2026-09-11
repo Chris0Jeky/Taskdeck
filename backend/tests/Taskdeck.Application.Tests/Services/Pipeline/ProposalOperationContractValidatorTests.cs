@@ -993,6 +993,46 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task Restore_DoesNotCountASlotFreedByAMoveApplyWouldReject()
+    {
+        // Raised independently by the Codex review of #3019 and by the fresh-context review.
+        // Only a move Apply can actually perform frees its source slot. Column C (limit 1) holds
+        // active X plus archived A; column D (limit 1) is already full. "Move X to D, then restore
+        // A" must stay refused: CardService.MoveCardAsync rejects the move at D's WIP check, so the
+        // slot in C is never freed and approving this proposal would just move the failure to
+        // execute - the exact shape #2926 exists to remove.
+        var fixtureBoard = new Board("Impossible move");
+        var boardId = fixtureBoard.Id;
+        var column = new Column(boardId, "Now", 0, wipLimit: 1);
+        var full = new Column(boardId, "Later", 1, wipLimit: 1);
+        var occupant = new Card(boardId, column.Id, "Occupant");
+        var archived = new Card(boardId, column.Id, "Archived A");
+        archived.Archive();
+        column.AddCard(occupant);
+        column.AddCard(archived);
+        var blocker = new Card(boardId, full.Id, "Already there");
+        full.AddCard(blocker);
+        var unitOfWork = CreateLifecycleMocks(fixtureBoard, [column, full], [occupant, archived, blocker]);
+
+        var impossibleMove = CreateOperation(0, "move", occupant.Id, new { cardId = occupant.Id, columnId = full.Id });
+        var restore = CreateOperation(1, "restore-lifecycle", archived.Id,
+            new { cardId = archived.Id, expectedUpdatedAt = archived.UpdatedAt });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, [impossibleMove, restore]);
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+
+        // Control: the same move into a column with room does free the slot.
+        var roomy = new Column(boardId, "Roomy", 2, wipLimit: 5);
+        var roomyUnitOfWork = CreateLifecycleMocks(fixtureBoard, [column, roomy], [occupant, archived]);
+        var possibleMove = CreateOperation(0, "move", occupant.Id, new { cardId = occupant.Id, columnId = roomy.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(
+                roomyUnitOfWork.Object, boardId, [possibleMove, restore]))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Restore_AllowsAPrecedingOccupantWhenTheWipLimitStillHasRoom()
     {
         // Valid multi-operation control: the projection must not turn a proposal that fits into a
