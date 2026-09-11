@@ -12,7 +12,10 @@ new lifecycle proposals remain review-first. Concurrent stale card writes now re
 when an older client omits a version; refresh before retrying. Hierarchy #2087 is delivered in PR
 #2965: one same-board parent, maximum three links/four levels, confirmed atomic direct-child detach
 on archive/delete (including archived children), and no reattachment on restore. See
-[card parents](product/CARD_HIERARCHY.md). Cumulative multi-card restore preview remains #2926.
+[card parents](product/CARD_HIERARCHY.md). Restore preview now measures the original column's WIP against the occupancy the same proposal's
+earlier create, move and lifecycle operations produce, so a restore behind an operation that takes
+the last slot is refused at approve instead of failing mid-apply and rolling back (#2926). The
+Review conflict/capacity projection still omits lifecycle effects and is tracked as #3012.
 
 Work-model and Review deliveries, verified 2026-09-11 against live GitHub. Merged: Task/Epic/Spike card work-item types (#2949, `7695211a0`), same-board hierarchy (#2965, `86c6f1bdf`), true card archive and restore (#2932, `19dc823c3`), active-card WIP and import counts excluding archived cards (#2951, `02abedfe9`), archived cards excluded from new workspace analysis (#2957, `93ca1cd21`), Inbox captures that keep updating through long triage runs (#2945, `fad49351f`), and Review/Apply legibility (#2942, `e9316fd82`; #2948, `be0e1349f`). Three more landed on 2026-09-11 as their own delivery records: archived-card dependency controls read-only (#2955, `34d1a4c8f`), Inbox status polls ordered with detail refreshes (#2959, `b58c1da4b`), and Review warnings tied to retained rows with truthful recovery (#2961, `401fd648c`). **Assignment #2240 is NOT shipped.** Its PR #2977 is open and parked on HIGH #2981 (an assignment discard can misrepresent an in-flight save); #2240 sits in v0.4 under the 2026-09-06 ruling, so nothing about multiple card assignments or explicit import mapping is delivered. #2930 remains open on its delayed-pin announcement residual. What this paragraph verifies is merge-level: each PR shows a merge commit and the issue state was read live. The per-PR behavioural claims and their test counts were **not** re-run by this pass and remain the authoring lane's record on each PR.
 
