@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
+import { useCardTypePermission } from '../../composables/useCardTypePermission'
 import { useVisualViewport } from '../../composables/useVisualViewport'
 import TdDialog from '../ui/TdDialog.vue'
 import CardParentField from './CardParentField.vue'
@@ -149,6 +150,19 @@ function acceptAssignments(saved: Card, previousVersion?: string) {
   const index = boardStore.currentBoardCards.findIndex(c => c.id === saved.id)
   if (index >= 0) boardStore.currentBoardCards.splice(index, 1, saved)
 }
+
+/*
+ * #2952. The work-item type gate asks the server for the caller's board write
+ * permission when the loaded board payload does not state it, instead of reading
+ * an omitted optional field as "no". Viewer, archived board and archived card stay
+ * read-only exactly as before, and the write itself remains server-authoritative.
+ */
+const { canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown, refreshPermission: refreshTypePermission } =
+  useCardTypePermission({
+    getBoardId: () => props.card.boardId,
+    getIsOpen: () => props.isOpen,
+    getCardIsArchived: () => cardIsArchived.value,
+  })
 
 const dialogRef = ref<HTMLElement | null>(null)
 const showDiscardConfirm = ref(false)
@@ -475,7 +489,10 @@ useEscapeToClose(
             :card="card"
             v-model:title="title"
             v-model:work-item-type="workItemType"
-            :can-edit-type="boardStore.currentBoard?.id === card.boardId && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived && !cardIsArchived"
+            :can-edit-type="canEditType"
+            :type-permission-checking="typePermissionChecking"
+            :type-permission-unknown="typePermissionUnknown"
+            @refresh-type-permission="refreshTypePermission"
             v-model:description="description"
             v-model:due-date="dueDate"
             v-model:is-blocked="isBlocked"
