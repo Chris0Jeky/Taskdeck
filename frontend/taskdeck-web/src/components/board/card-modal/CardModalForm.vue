@@ -55,27 +55,28 @@ defineEmits<{
       <option value="Spike">{{ t('cardModal.workItemType.spike') }}</option>
     </select>
     <!--
-      An unknown write permission is a state the user can act on, so it says so and
-      offers the read again, instead of leaving a disabled control with no explanation.
+      An unknown write permission is a state the user can act on, so it says so and offers
+      the read again, instead of leaving a disabled control with no explanation. The message
+      changes around a retry control that STAYS mounted: unmounting the button a keyboard
+      user just activated would drop focus out of the editor's tab cycle.
     -->
-    <p
-      v-if="typePermissionChecking"
-      role="status"
-      data-testid="card-type-permission-checking"
-      class="mt-1 text-xs text-on-surface-variant"
-    >
-      {{ t('cardModal.workItemType.permissionChecking') }}
-    </p>
     <div
-      v-else-if="typePermissionUnknown"
-      data-testid="card-type-permission-unknown"
+      v-if="typePermissionChecking || typePermissionUnknown"
       class="mt-1 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant"
     >
-      <span role="status">{{ t('cardModal.workItemType.permissionUnknown') }}</span>
+      <span role="status">
+        <span v-if="typePermissionChecking" data-testid="card-type-permission-checking">
+          {{ t('cardModal.workItemType.permissionChecking') }}
+        </span>
+        <span v-else data-testid="card-type-permission-unknown">
+          {{ t('cardModal.workItemType.permissionUnknown') }}
+        </span>
+      </span>
       <button
         type="button"
         data-testid="card-type-permission-refresh"
-        class="rounded-md border border-outline-variant/40 px-2 py-1 text-xs text-on-surface hover:bg-surface-container-high"
+        :disabled="typePermissionChecking"
+        class="rounded-md border border-outline-variant/40 px-2 py-1 text-xs text-on-surface hover:bg-surface-container-high disabled:opacity-70"
         @click="$emit('refresh-type-permission')"
       >
         {{ t('cardModal.workItemType.permissionRefresh') }}

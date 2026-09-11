@@ -1,5 +1,7 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
+import { isDemoMode } from '../utils/demoMode'
 import { useBoardStore } from '../store/boardStore'
 
 export interface UseCardTypePermissionOptions {
@@ -46,6 +48,10 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   let generation = 0
   /** The board whose read is open right now, so a board change supersedes it rather than waiting. */
   let inFlightBoardId: string | null = null
+  // A superseded read is not merely ignored, it is cancelled: the editor can be closed or
+  // moved to another card long before a slow read answers, and an unanswered request that
+  // nothing is waiting for should not stay open.
+  let inFlightRequest: AbortController | null = null
 
   const boardForCard = computed(() => {
     const board = boardStore.currentBoard
@@ -71,12 +77,20 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
 
   /*
    * Permission is only one of the reasons this control can be read-only, and it is the
-   * only one this composable answers. An archived card, or no loaded board payload for
-   * the card at all, is read-only for a reason a permission read cannot change — so
-   * neither spends a request, and neither shows the recovery affordance, which would
-   * promise a refresh that changes nothing.
+   * only one this composable answers. An archived card cannot accept a type change at all,
+   * and demo mode has no server to ask (its board fixtures omit `canWrite` by construction,
+   * so a read would be a request to a backend that is not there) — so neither spends a
+   * request, and neither shows the recovery affordance, which would promise a refresh that
+   * changes nothing.
+   *
+   * A card whose board payload is not the loaded one is a deliberate exclusion rather than
+   * an impossibility: that read COULD be made, but this slice keeps the pre-existing
+   * behaviour for it (#2952 is about the loaded board's missing field) rather than adding a
+   * request to every card opened from a cross-board surface.
    */
-  const permissionDecides = computed(() => boardForCard.value !== null && !options.getCardIsArchived())
+  const permissionDecides = computed(() =>
+    !isDemoMode && boardForCard.value !== null && !options.getCardIsArchived(),
+  )
 
   const canEditType = computed(() => permissionDecides.value && permission.value === true)
   const permissionChecking = computed(() => permissionDecides.value && permission.value === null && checking.value)
@@ -84,11 +98,25 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
 
   async function read(boardId: string) {
     const current = ++generation
+    inFlightRequest?.abort()
+    const request = new AbortController()
+    inFlightRequest = request
     inFlightBoardId = boardId
     checking.value = true
     failedBoardId.value = null
     try {
-      const board = await boardsApi.getBoard(boardId)
+      /*
+       * The same read discipline every other board read uses (`boardCrudStore`): bounded by
+       * the board timeout, and NOT routed through the shared retry interceptor. A retried
+       * read would hold this control in "checking" for the whole backoff — up to a minute
+       * when a `Retry-After` is honoured — with the recovery affordance hidden behind it.
+       * One bounded attempt, then the user decides whether to ask again.
+       */
+      const board = await boardsApi.getBoard(boardId, {
+        signal: request.signal,
+        timeout: BOARD_REQUEST_TIMEOUT_MS,
+        skipRetry: true,
+      })
       if (current !== generation) return
       /*
        * A FRESH payload that still omits the field is not a stale cache — it is a server
@@ -105,10 +133,19 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     } finally {
       if (current === generation) {
         inFlightBoardId = null
+        inFlightRequest = null
         checking.value = false
       }
     }
   }
+
+  // A closed or replaced editor is not waiting for an answer, and must not be given one.
+  onScopeDispose(() => {
+    generation++
+    inFlightRequest?.abort()
+    inFlightRequest = null
+    inFlightBoardId = null
+  })
 
   /** Explicit recovery from an unknown permission state. */
   async function refreshPermission() {

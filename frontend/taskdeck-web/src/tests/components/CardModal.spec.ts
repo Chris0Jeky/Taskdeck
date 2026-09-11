@@ -145,7 +145,7 @@ describe('CardModal', () => {
 
     await flushPromises()
 
-    expect(boardsApi.getBoard).toHaveBeenCalledWith(card.boardId)
+    expect(boardsApi.getBoard).toHaveBeenCalledWith(card.boardId, expect.objectContaining({ skipRetry: true }))
     expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(false)
     expect(wrapper.find('[data-testid="card-type-permission-checking"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)

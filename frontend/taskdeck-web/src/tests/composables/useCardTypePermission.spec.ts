@@ -7,6 +7,9 @@ import type { Board, BoardDetail } from '../../types/board'
 
 vi.mock('../../api/boardsApi', () => ({ boardsApi: { getBoard: vi.fn() } }))
 
+const demo = vi.hoisted(() => ({ enabled: false }))
+vi.mock('../../utils/demoMode', () => ({ get isDemoMode() { return demo.enabled } }))
+
 const mockBoardStore = reactive<{ currentBoard: Board | null }>({ currentBoard: null })
 
 vi.mock('../../store/boardStore', () => ({
@@ -51,6 +54,7 @@ function create(options: { boardId?: string; isOpen?: boolean; cardIsArchived?: 
 
 describe('useCardTypePermission', () => {
   beforeEach(() => {
+    demo.enabled = false
     mockBoardStore.currentBoard = null
     vi.mocked(boardsApi.getBoard).mockReset()
   })
@@ -93,7 +97,13 @@ describe('useCardTypePermission', () => {
     await flushPromises()
 
     expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
-    expect(boardsApi.getBoard).toHaveBeenCalledWith('board-1')
+    // The same bounded read discipline as every other board read: no shared-interceptor
+    // retry holding the control in "checking", and a timeout rather than an open request.
+    expect(boardsApi.getBoard).toHaveBeenCalledWith('board-1', expect.objectContaining({
+      skipRetry: true,
+      timeout: 10_000,
+      signal: expect.any(AbortSignal),
+    }))
     expect(api.canEditType.value).toBe(true)
     expect(api.permissionChecking.value).toBe(false)
     wrapper.unmount()
@@ -198,6 +208,64 @@ describe('useCardTypePermission', () => {
 
     expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
     wrapper.unmount()
+  })
+
+  it('asks nothing in demo mode, which has no server to ask', async () => {
+    demo.enabled = true
+    mockBoardStore.currentBoard = board()
+    const { api, wrapper } = create()
+    await flushPromises()
+
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
+    expect(api.canEditType.value).toBe(false)
+    expect(api.permissionUnknown.value).toBe(false)
+    expect(api.permissionChecking.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('never answers a board with an older read for the SAME board', async () => {
+    mockBoardStore.currentBoard = board()
+    let resolveFirst!: (value: BoardDetail) => void
+    vi.mocked(boardsApi.getBoard).mockImplementationOnce(() => new Promise<BoardDetail>((resolve) => { resolveFirst = resolve }))
+    const { api, wrapper, boardId } = create()
+    await nextTick()
+
+    // Away to a board that also needs a read, then back: the third read owns board-1's
+    // answer, and the first one - whose board id matches it - must not be able to speak.
+    mockBoardStore.currentBoard = board({ id: 'board-2' })
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(detail({ id: 'board-2', canWrite: false }))
+    boardId.value = 'board-2'
+    await flushPromises()
+
+    mockBoardStore.currentBoard = board()
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(detail({ canWrite: false }))
+    boardId.value = 'board-1'
+    await flushPromises()
+
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(3)
+    expect(api.canEditType.value).toBe(false)
+
+    // The first read predates a withdrawal of access; answering with it would re-grant it.
+    resolveFirst(detail({ canWrite: true }))
+    await flushPromises()
+
+    expect(api.canEditType.value).toBe(false)
+    expect(api.permissionUnknown.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('abandons a read the editor is no longer waiting for', async () => {
+    mockBoardStore.currentBoard = board()
+    const abortReasons: unknown[] = []
+    vi.mocked(boardsApi.getBoard).mockImplementationOnce((_id, options) => new Promise<BoardDetail>(() => {
+      options?.signal?.addEventListener('abort', () => abortReasons.push(true))
+    }))
+    const { wrapper } = create()
+    await nextTick()
+
+    wrapper.unmount()
+
+    expect(abortReasons).toHaveLength(1)
   })
 
   it('never answers one board with the permission read for another', async () => {
