@@ -79,6 +79,36 @@ npm run mutation:test
 
 Report: `frontend/taskdeck-web/reports/mutation/mutation.html`
 
+#### Reproducing the Vitest dry run without a full mutation run
+
+Stryker runs the whole Vitest suite once as a **dry run** before it executes any mutant. If that dry
+run fails, the lane produces no report at all, whatever the mutation score would have been. The dry
+run does not use the repository's default Vitest pool: `@stryker-mutator/vitest-runner` (v10,
+`#getVitestPoolConfig`) forces `pool: 'threads', maxWorkers: 1`, overriding the `forks` pool the
+ordinary unit jobs use.
+
+Reproduce that exact shape in seconds, without waiting for a mutation run:
+
+```bash
+cd frontend/taskdeck-web
+npm run test:stryker-pool                     # whole suite, Stryker's pool shape
+npm run test:stryker-pool -- src/tests/utils/timeZone.spec.ts   # one spec
+```
+
+**Known pool-dependent trap — timezone stubs (#2943).** `vi.stubEnv('TZ', zone)` changes the runtime
+zone only as a side effect of Node's real environment store notifying V8. That notification does not
+happen under `pool: 'threads'`: `process.env.TZ` reads back as the requested zone while `Date` and
+`Intl` keep the host zone. A spec that stubs `TZ` and then asserts on a zone-derived value therefore
+measures the CI runner's zone during the dry run — which is how
+[run 34518952589](https://github.com/Chris0Jeky/Taskdeck/actions/runs/34518952589) failed on the
+PaperHomeView day-boundary rows (`expected -1, received 0`) while the ordinary frontend unit jobs
+passed on both Ubuntu and Windows.
+
+Use `frontend/taskdeck-web/src/tests/utils/timeZone.ts` instead of `vi.stubEnv('TZ', …)` for any
+assertion whose value depends on the zone. It derives everything from explicit
+`Intl.DateTimeFormat(…, { timeZone })` arguments, so it behaves identically in both pools and on a
+host in any zone.
+
 ### CI
 
 The mutation testing workflow runs:
