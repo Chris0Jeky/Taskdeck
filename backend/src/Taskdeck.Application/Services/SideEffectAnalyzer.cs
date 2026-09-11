@@ -13,10 +13,13 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
 {
-    // Action types that actively mutate cards
+    // Action types that actively mutate cards. "archive-lifecycle"/"restore-lifecycle" are the
+    // review-first card lifecycle actions: applying one flips the card's archived state, so the
+    // Cards row must disclose a board mutation rather than reporting "No board mutations".
     private static readonly HashSet<string> CardMutatingActions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "create", "move", "archive", "update", "delete", "bulk_move"
+        "create", "move", "archive", "update", "delete", "bulk_move",
+        "archive-lifecycle", "restore-lifecycle"
     };
 
     private readonly IUnitOfWork _unitOfWork;
