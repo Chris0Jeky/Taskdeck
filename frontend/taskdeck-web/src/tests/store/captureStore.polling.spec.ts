@@ -123,6 +123,98 @@ describe('ordinary Inbox triage status polling', () => {
     expect(store.triagePollingItemIds.has('A')).toBe(true)
   })
 
+  it('re-reads the full body a nonterminal status observation superseded while nothing was cached', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A', 'New')]
+    const uncached = deferred<CaptureItem>()
+    const outcome = vi.fn()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(uncached.promise)
+    const foreground = store.fetchDetail('A', { onCacheOutcome: outcome })
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    uncached.resolve({ ...detail('A', 'New'), rawText: 'obsolete body' })
+    await foreground
+    // The older body is still dropped; the status observation stays the authority.
+    expect(outcome).toHaveBeenCalledWith('superseded')
+    expect(store.detailById.A).toBeUndefined()
+    expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+    vi.mocked(captureApi.getItem).mockResolvedValue({ ...detail('A'), rawText: 'current body' })
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(captureApi.getItem).toHaveBeenCalledTimes(2)
+    expect(store.detailById.A?.rawText).toBe('current body')
+    expect(store.detailById.A?.status).toBe('Triaging')
+    expect(store.items[0]?.status).toBe('Triaging')
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    expect(counts).not.toHaveBeenCalled()
+    // One replacement read only: later nonterminal ticks stay status-only.
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(captureApi.getItem).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not re-read a full body when the superseded detail was already cached', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A', 'New')]
+    store.detailById.A = detail('A', 'New')
+    const old = deferred<CaptureItem>()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(old.promise)
+    const foreground = store.fetchDetail('A', { forceRefresh: true })
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    old.resolve({ ...detail('A', 'New'), rawText: 'obsolete body' })
+    await foreground
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+    expect(store.detailById.A?.rawText).toBe('private source')
+    expect(store.detailById.A?.status).toBe('Triaging')
+  })
+
+  it('lets a newer foreground body win over the replacement read it raced', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A', 'New')]
+    const uncached = deferred<CaptureItem>()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(uncached.promise)
+    const superseded = store.fetchDetail('A')
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    uncached.resolve(detail('A', 'New'))
+    await superseded
+    const replacement = deferred<CaptureItem>()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(replacement.promise)
+    await vi.advanceTimersByTimeAsync(4000)
+    vi.mocked(captureApi.getItem).mockResolvedValueOnce({ ...detail('A'), rawText: 'newer body' })
+    await store.fetchDetail('A', { forceRefresh: true })
+    replacement.resolve({ ...detail('A', 'New'), rawText: 'older replacement body' })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(store.detailById.A?.rawText).toBe('newer body')
+    expect(store.items[0]?.status).toBe('Triaging')
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    // The foreground body settled the gap: no further replacement reads.
+    const reads = vi.mocked(captureApi.getItem).mock.calls.length
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(captureApi.getItem).toHaveBeenCalledTimes(reads)
+  })
+
+  it('retries a failed replacement read on the next tick without reporting the status check as delayed', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A', 'New')]
+    const uncached = deferred<CaptureItem>()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(uncached.promise)
+    const superseded = store.fetchDetail('A')
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    uncached.resolve(detail('A', 'New'))
+    await superseded
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce({ response: { status: 500 } })
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(store.detailById.A).toBeUndefined()
+    expect(store.detailError).toBeNull()
+    expect(store.triagePollingProblems.A).toBeUndefined()
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    vi.mocked(captureApi.getItem).mockResolvedValue({ ...detail('A'), rawText: 'current body' })
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(store.detailById.A?.rawText).toBe('current body')
+  })
+
   it.each(['Triaging', 'Failed'] as const)('rejects delayed %s status after newer terminal foreground detail', async pollStatus => {
     const store = useCaptureStore()
     store.items = [detail('A')]

@@ -178,6 +178,30 @@ export const useCaptureStore = defineStore('capture', () => {
   // crosses a logout is dropped outright instead of being compared against
   // generations the reset has already discarded.
   let sessionEpoch = 0
+  /**
+   * Ids whose full detail was dropped as superseded with nothing cached (#2960).
+   *
+   * A status-only read takes per-item read authority, but it can only PATCH an
+   * existing `detailById` row — it never carries a body. So when it supersedes
+   * the first, uncached `fetchDetail` for an id, the older body is correctly
+   * dropped and no newer body ever replaces it: the id stays uncached for as
+   * long as its watch keeps returning a nonterminal status, because only a
+   * TERMINAL status starts a fresh full-detail read. This set is the handoff
+   * that closes that gap without weakening the ordering: the next status tick
+   * re-issues the full GET under the CURRENT read authority (below), so the
+   * recovery is always the newest read for the id rather than a revival of the
+   * superseded one.
+   *
+   * Marked in `fetchDetail`'s read-authority branch only, and only while
+   * `detailById` holds nothing for the id, so an ordinary supersession by
+   * another detail read — which caches its own, newer body — never marks. Any
+   * cache write clears it (`cacheDetail`), including the recovery's own, which
+   * is what bounds the recovery to one read per gap. A recovery that fails or
+   * is itself superseded leaves the mark set, so the retry rides the watch's
+   * existing backoff instead of a second retry clock. Cleared wholesale by
+   * `resetForLogout` alongside the other per-item maps.
+   */
+  const supersededDetailIds = new Set<string>()
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -201,6 +225,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
   function cacheDetail(detail: CaptureItem, syncSummary = true) {
     detailById.value[detail.id] = detail
+    supersededDetailIds.delete(detail.id)
     if (syncSummary) {
       upsertSummary(toSummary(detail))
     }
@@ -365,6 +390,12 @@ export const useCaptureStore = defineStore('capture', () => {
         outcome = 'generation'
       } else if (latestCaptureReadById.get(itemId) !== readAuthority) {
         outcome = 'superseded'
+        // A newer read owns the id, but only a detail read carries a body. If
+        // nothing is cached, the newer read may be status-only and leave the id
+        // with no full detail at all, so record the gap for the status tick to
+        // close (#2960). Checked at RESOLUTION time: a newer detail read that
+        // already cached its body has cleared the way past this branch.
+        if (!detailById.value[itemId]) supersededDetailIds.add(itemId)
       }
       if (outcome === 'cached') {
         cacheDetail(detail, syncSummary)
@@ -589,6 +620,51 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  /**
+   * Replace a full body this watch's status reads superseded but never carried
+   * (#2960), under the authority of the status read that just settled.
+   *
+   * Deliberately NOT a second ordering rule: it reuses the tick's own
+   * `readAuthority`, so it is the current read for the id and an older status
+   * or an older full body still cannot land on top of it, and it reuses
+   * `readTriage` for the same ten-second deadline, transport cancellation and
+   * late-result rejection as every other ordinary read. `syncSummary: false`
+   * and no `upsertSummary`: the status path owns the row's fields for this
+   * tick, and a nonterminal recovery must not add, reorder or rewrite a list
+   * row — only terminal hydration does that, and only for a row the list still
+   * contains.
+   *
+   * A failure here is NOT the status check being delayed: the status
+   * observation already succeeded and is what the retrying/unavailable notices
+   * describe, so a failed body read must not relabel it. The mark stays set
+   * instead, and the watch's own next tick retries on its existing backoff.
+   */
+  async function replaceSupersededDetail(
+    entry: TriageWatch,
+    readAuthority: symbol,
+    isCurrent: () => boolean,
+  ) {
+    if (!supersededDetailIds.has(entry.id)) return
+    if (detailById.value[entry.id]) {
+      supersededDetailIds.delete(entry.id)
+      return
+    }
+    try {
+      await readTriage(entry, options => fetchDetail(entry.id, {
+        readAuthority,
+        forceRefresh: true,
+        recordError: false,
+        showToast: false,
+        trackLoading: false,
+        syncSummary: false,
+        requestOptions: options,
+        shouldCache: () => isCurrent() && !options.signal?.aborted,
+      }))
+    } catch {
+      // Retried by the next tick; see the doc comment above.
+    }
+  }
+
   async function tickTriagePoll() {
     triageTimer = null
     const entry = Array.from(triageWatches.values()).find(candidate => candidate.due <= Date.now())
@@ -642,6 +718,8 @@ export const useCaptureStore = defineStore('capture', () => {
           retireTriageWatch(entry)
           notifyTriageCountChanged()
         }
+      } else {
+        await replaceSupersededDetail(entry, readAuthority, isCurrent)
       }
     } catch (error) {
       if (!isCurrent()) return
@@ -1179,6 +1257,7 @@ export const useCaptureStore = defineStore('capture', () => {
     latestDetailWriteGenerationById.clear()
     latestCaptureReadById.clear()
     latestSummaryGenerationById.clear()
+    supersededDetailIds.clear()
     sessionEpoch += 1
   }
 

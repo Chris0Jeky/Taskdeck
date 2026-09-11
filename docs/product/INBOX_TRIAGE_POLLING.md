@@ -1,6 +1,6 @@
 ﻿# Ordinary Inbox triage status polling
 
-Last Updated: 2026-09-10
+Last Updated: 2026-09-11
 
 Ordinary Accept / Start Triage watches every accepted capture independently in Paper and Legacy
 Inbox. Selecting another item or accepting another capture does not cancel earlier work. This
@@ -24,6 +24,9 @@ An abandoned underlying transport may remain active until it honors cancellation
 Status reads patch only status fields on existing rows and cached detail summaries. They never add,
 remove or reorder list rows, and do not replace source text or provenance. A terminal status starts
 a fresh full-detail read. Only a current terminal detail ends the watch and refreshes workload counts.
+When a status read supersedes a full-detail read for an item nothing is cached for, the next status
+tick re-issues that full body once under the current read authority and caches only the detail, so
+supersession alone cannot leave a watched item with no full detail while its status stays nonterminal.
 Status and full-detail requests share per-item read authority: an older response cannot replace a
 newer observation in either response order. A failed or cancelled newer read does not make an older
 request current again; the watch retains its next retry. Terminal hydration continues the authority
