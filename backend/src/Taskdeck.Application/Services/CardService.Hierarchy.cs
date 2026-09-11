@@ -55,10 +55,18 @@ public partial class CardService
         }
     }
 
-    private async Task NotifyDetachedChildrenAsync(Guid boardId, IReadOnlyList<Card> children, CancellationToken ct)
+    /// <summary>
+    /// Publishes the "child detached" events for an archive or delete. <paramref name="sink"/>
+    /// is non-null only on the proposal apply lane, where these events must wait for the
+    /// executor's outer transaction to commit (#2934); everywhere else the service's own
+    /// notifier publishes them immediately.
+    /// </summary>
+    private async Task NotifyDetachedChildrenAsync(Guid boardId, IReadOnlyList<Card> children, CancellationToken ct,
+        IBoardRealtimeNotifier? sink = null)
     {
+        var notifier = sink ?? _realtimeNotifier;
         foreach (var child in children)
-            await _realtimeNotifier.NotifyBoardMutationAsync(new BoardRealtimeEvent(
+            await notifier.NotifyBoardMutationAsync(new BoardRealtimeEvent(
                 boardId, "card", "updated", child.Id, DateTimeOffset.UtcNow), ct);
     }
 

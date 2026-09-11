@@ -20,6 +20,18 @@ public class AutomationExecutorService : IAutomationExecutorService
     private readonly ExecutionAuditRecorder _auditRecorder;
     private readonly ILogger<AutomationExecutorService>? _logger;
 
+    /// <summary>
+    /// Downstream channel for the per-execution notification buffer (#2934). Kept as the raw
+    /// notifier rather than a buffer: the buffer itself is created inside each execution, never
+    /// held here, so two executions sharing this scoped instance can never append to one list.
+    /// <para>
+    /// Null means no buffer is created at all. With nothing to flush into, buffering would
+    /// silently swallow the lifecycle event instead of falling back, so the handler lane is left
+    /// to notify through the card service's own notifier exactly as it did before this bridge.
+    /// </para>
+    /// </summary>
+    private readonly IBoardRealtimeNotifier? _realtimeNotifier;
+
     public AutomationExecutorService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
@@ -39,12 +51,15 @@ public class AutomationExecutorService : IAutomationExecutorService
         BoardService boardService,
         ColumnService columnService,
         ILogger<AutomationExecutorService>? logger,
-        CardAssignmentService? assignments = null)
+        CardAssignmentService? assignments = null,
+        IBoardRealtimeNotifier? realtimeNotifier = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
-        _handlerRegistry = new OperationHandlerRegistry(unitOfWork, cardService, boardService, columnService, assignments);
+        _realtimeNotifier = realtimeNotifier;
+        _handlerRegistry = new OperationHandlerRegistry(
+            unitOfWork, cardService, boardService, columnService, assignments);
         _auditRecorder = new ExecutionAuditRecorder(unitOfWork);
         _logger = logger;
     }
@@ -260,6 +275,13 @@ public class AutomationExecutorService : IAutomationExecutorService
             return Result.Failure<ProposalExecutionReceipt>(permissionResult.ErrorCode, errorMessage);
         }
 
+        // One buffer per execution, deliberately a local and never a field: this service is
+        // registered Scoped, and a field would be shared by every execution on that scope. The
+        // sequential-batch invariant is not this type's to enforce (#2934).
+        var deferredNotifications = _realtimeNotifier is null
+            ? null
+            : new DeferredBoardRealtimeNotifier(_realtimeNotifier);
+
         try
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -322,7 +344,7 @@ public class AutomationExecutorService : IAutomationExecutorService
             foreach (var operation in orderedOperations)
             {
                 var executionResult = await _handlerRegistry.ExecuteOperationAsync(operation, cancellationToken,
-                    callerUserId);
+                    callerUserId, deferredNotifications);
                 if (!executionResult.IsSuccess)
                 {
                     failedOperation = operation.Sequence;
@@ -392,6 +414,11 @@ public class AutomationExecutorService : IAutomationExecutorService
             }
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            // Only now is the lifecycle change real for subscribers — and this is the first
+            // statement after the commit on purpose: anything that throws later in this tail
+            // would otherwise reach the finally below and discard events for a change that is
+            // already durable. Every path that did not reach this line drops them, correctly.
+            await FlushDeferredNotificationsAsync(deferredNotifications, proposalId);
             await _handlerRegistry.NotifyAssignmentsCommittedAsync(orderedOperations, cancellationToken);
 
             var captureSyncResult = await SyncLinkedCaptureConversionAsync(
@@ -458,6 +485,47 @@ public class AutomationExecutorService : IAutomationExecutorService
             return Result.Failure<ProposalExecutionReceipt>(
                 ErrorCodes.UnexpectedError,
                 GenericUnexpectedErrorMessage);
+        }
+        finally
+        {
+            // Single drain point for every non-commit exit: the rollback returns, the guard
+            // refusals, the unexpected-error catch, and cancellation. A successful flush already
+            // emptied the buffer, so this is a no-op there.
+            deferredNotifications?.Discard();
+        }
+    }
+
+    /// <summary>
+    /// Publishes the board realtime events staged inside the committed transaction. Deliberately
+    /// takes no cancellation token: the board write is already durable, and a caller who walked
+    /// away (aborted request, proxy timeout) must not leave subscribers looking at a stale board.
+    /// <para>
+    /// The catch is load-bearing, not defensive tidiness: without it a throwing notifier would
+    /// reach this method's caller, unwind into the outer catch, roll back a transaction that is
+    /// already committed, and flip an Applied proposal to Failed. Delivery is best-effort here —
+    /// the notification channels own their own retry posture.
+    /// </para>
+    /// </summary>
+    private async Task FlushDeferredNotificationsAsync(
+        DeferredBoardRealtimeNotifier? deferredNotifications,
+        Guid proposalId)
+    {
+        if (deferredNotifications is null)
+            return;
+
+        try
+        {
+            await deferredNotifications.FlushAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // The exception is bound here, unlike the sanitized operation-failure logs above: this
+            // one comes from a realtime/webhook channel rather than from persistence, it never
+            // reaches the caller's result, and without it a dropped notification is undiagnosable.
+            _logger?.LogError(
+                ex,
+                "Automation proposal {ProposalId} committed but could not publish its deferred board notifications",
+                proposalId);
         }
     }
 
