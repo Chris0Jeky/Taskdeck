@@ -16,7 +16,9 @@ server before offering the control, and offers an explicit permission refresh in
 of a silently disabled selector when that read fails (#2952). That one read answers
 for the whole editor: the type selector, the parent selector, the archive/restore
 control and the assignment field share it, so none of them reads an omitted field as
-"no" while another reads the server's answer (#3028).
+"no" while another reads the server's answer (#3028). An archived card is the one
+exception, and it is deliberate: no read is spent on one, so on a payload that omits the
+field its restore control stays read-only exactly as before.
 Changing type retains the card ID, column, position, labels, block state and history.
 
 ## API and proposals

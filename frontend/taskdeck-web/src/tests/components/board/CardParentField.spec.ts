@@ -48,11 +48,15 @@ describe('CardParentField', () => {
     expect(wrapper.text()).toContain('Optional, on this board.')
   })
 
-  // #3028. The board payload here omits `canWrite` entirely — a payload cached before the
-  // field existed — which this field used to read as "no". It now answers from the host's
-  // one server-authoritative read instead, so an authorized writer keeps the selector.
-  it('offers the selector on the host answer, not on what the loaded payload states', async () => {
-    useBoardStore().currentBoard = { id: 'b', isArchived: false, columns: [] } as unknown as BoardDetail
+  /*
+   * #3028. This field reads no board payload at all any more: the host's one
+   * server-authoritative answer is the whole gate, which is what stops it reading an
+   * omitted optional `canWrite` as "no". The payload the store holds is left at the
+   * writer fixture here on purpose — what this case proves is that the prop alone
+   * decides. The omitted-payload journey itself is covered end to end in
+   * `CardModal.spec.ts` ("enables all four once the server answers").
+   */
+  it('offers the selector on the host answer alone', async () => {
     const wrapper = mountField(); await flushPromises()
     expect(wrapper.get('select').attributes('disabled')).toBeUndefined()
 
