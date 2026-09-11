@@ -163,7 +163,16 @@ describe('CardAssignmentField', () => {
       const wrapper = await downgradedDuringSave()
       expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([true])
       const cancel = button(wrapper, 'Cancel assignment changes')
+      /*
+       * The attribute alone proves nothing here: Cancel used to sit inside
+       * `<fieldset :disabled="locked">`, which disabled it in a real browser
+       * WITHOUT setting its own attribute — and jsdom does not reflect ancestor
+       * disabling onto `button.disabled`, so the attribute check and the click
+       * both passed while the control was dead on screen. Assert the ancestry.
+       */
       expect(cancel.attributes('disabled')).toBeUndefined()
+      expect(cancel.element.closest('fieldset[disabled]')).toBeNull()
+      expect(button(wrapper, 'Clear').element.closest('fieldset[disabled]')).toBeNull()
       await cancel.trigger('click'); await flushPromises()
       expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([false])
       expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(false)
