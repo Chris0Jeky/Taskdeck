@@ -134,13 +134,13 @@ function mountView(props: Record<string, unknown> = {}) {
         CardModal: {
           name: 'CardModal',
           props: ['card', 'isOpen', 'labels', 'presentation', 'suppressDiscardPrompt', 'skipFocusRestore'],
-          emits: ['dirty-change', 'updated', 'close'],
+          emits: ['dirty-change', 'saving-change', 'updated', 'close'],
           template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
         },
         TdDialog: {
           props: ['open', 'title', 'description'],
           emits: ['close'],
-          template: '<div v-if="open" role="dialog"><slot /><slot name="footer" /></div>',
+          template: '<div v-if="open" role="dialog"><p>{{ description }}</p><slot /><slot name="footer" /></div>',
         },
       },
     },
@@ -443,6 +443,92 @@ describe('PaperBoardView', () => {
     await nextTick()
     wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
   }
+
+  /*
+   * #2981. A submitted assignment PUT cannot be recalled, so the board's own
+   * discard affordances — switching card and leaving the route — must refuse
+   * rather than promise a discard the server will not honour.
+   */
+  async function openSavingCard(wrapper: ReturnType<typeof mountView>, card: Card) {
+    await openDirtyCard(wrapper, card)
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('saving-change', true)
+    await nextTick()
+  }
+
+  async function settleSave(wrapper: ReturnType<typeof mountView>) {
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('saving-change', false)
+    await nextTick()
+  }
+
+  it('refuses to switch card while an assignment save is in flight (#2981)', async () => {
+    const wrapper = mountView()
+    const firstColumn = wrapper.findAllComponents(PaperBoardColumn)[0]!
+    await openSavingCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
+    expect(wrapper.get('[role="dialog"]').text()).toContain('cannot be discarded or cancelled')
+
+    // Settling withdraws the notice and restores the ordinary confirmation.
+    await settleSave(wrapper)
+    expect(wrapper.find('[data-testid="card-save-pending-dismiss"]').exists()).toBe(false)
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('B')
+  })
+
+  it('refuses to leave the route while an assignment save is in flight (#2981)', async () => {
+    const wrapper = mountView()
+    await openSavingCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    expect(routeLeaveGuard!()).toBe(false)
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
+
+    // Once the save settles the guard falls back to the discard confirmation.
+    await settleSave(wrapper)
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await expect(navigation).resolves.toBe(true)
+  })
+
+  it('withdraws an open discard confirmation when a save starts behind it (#2981)', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    expect(wrapper.get('[data-testid="card-switch-confirm"]').exists()).toBe(true)
+
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('saving-change', true)
+    await expect(navigation).resolves.toBe(false)
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+  })
+
+  it('warns on unload while an assignment save is in flight (#2981)', async () => {
+    const wrapper = mountView()
+    await openSavingCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', false)
+    await nextTick()
+
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+  })
 
   async function emitSuccessfulSave(wrapper: ReturnType<typeof mountView>) {
     const modal = wrapper.findComponent({ name: 'CardModal' })

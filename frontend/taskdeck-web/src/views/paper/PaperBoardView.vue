@@ -507,7 +507,17 @@ function handleCardEditorDirtyChange(dirty: boolean) {
 
 function handleCardEditorSavingChange(saving: boolean) {
   cardEditorSaving.value = saving
-  if (!saving) savePendingNotice.value = false
+  if (!saving) {
+    savePendingNotice.value = false
+    return
+  }
+  // A discard prompt that is already open now offers something this board
+  // cannot deliver. Settle it as a cancellation — the card stays selected and
+  // the navigation is refused — and say why instead.
+  if (discardDialogOpen.value) {
+    cancelPendingDiscard()
+    savePendingNotice.value = true
+  }
 }
 
 function cancelPendingDiscard() {

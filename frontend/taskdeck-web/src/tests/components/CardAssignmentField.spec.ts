@@ -67,6 +67,54 @@ describe('CardAssignmentField', () => {
     expect(wrapper.emitted('saved')).toBeUndefined()
     expect((wrapper.findAll('input')[0]!.element as HTMLInputElement).checked).toBe(false)
   })
+  it('reports the in-flight save so the host cannot promise to discard it (#2981)', async () => {
+    let finish!: (value: Card) => void
+    vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+    await flushPromises()
+    expect(wrapper.emitted('saving-change')).toEqual([[false]])
+
+    await wrapper.findAll('input')[0]!.setValue(true)
+    await button(wrapper, 'Save assignments').trigger('click')
+    expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([true])
+    expect(wrapper.text()).toContain('cannot be discarded')
+
+    finish({ ...card, updatedAt: 'v2', assignments: [
+      { userId: 'me', displayName: 'Owner', assignedAt: 'now', assignedByUserId: 'me' },
+    ] })
+    await flushPromises()
+    expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+    expect(wrapper.text()).not.toContain('cannot be discarded')
+  })
+
+  it('reports the save as settled when it fails, keeping the draft (#2981)', async () => {
+    let fail!: (reason: unknown) => void
+    vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
+    const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+    await flushPromises()
+    await wrapper.findAll('input')[1]!.setValue(true)
+    await button(wrapper, 'Save assignments').trigger('click')
+    expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([true])
+
+    fail({ response: { status: 500 } })
+    await flushPromises()
+    expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+    expect(wrapper.text()).toContain('Could not confirm assignment save')
+    expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('reports a new card as not saving when a delayed save is left behind (#2981)', async () => {
+    vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise(() => {}))
+    const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+    await flushPromises()
+    await wrapper.findAll('input')[0]!.setValue(true)
+    await button(wrapper, 'Save assignments').trigger('click')
+    expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([true])
+
+    await wrapper.setProps({ card: { ...card, id: 'next' } }); await flushPromises()
+    expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+  })
+
   it('retains a selection across realtime prop updates and prevents readonly changes', async () => {
     const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
     await flushPromises(); await wrapper.findAll('input')[0]!.setValue(true)

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
@@ -61,6 +61,14 @@ function discardConfirmButton() {
   return document.body.querySelector('[data-testid="card-discard-confirm"]') as HTMLButtonElement | null
 }
 
+function savePendingDismissButton() {
+  return document.body.querySelector('[data-testid="card-assignment-save-pending-dismiss"]') as HTMLButtonElement | null
+}
+
+function noticeText() {
+  return savePendingDismissButton()?.closest('[role="dialog"]')?.textContent ?? ''
+}
+
 describe('CardModal assignment save in flight (#2981)', () => {
   let mockStore: Record<string, unknown>
 
@@ -85,6 +93,12 @@ describe('CardModal assignment save in flight (#2981)', () => {
     }
     vi.mocked(useBoardStore).mockReturnValue(mockStore as never)
     vi.mocked(useSessionStore).mockReturnValue({ userId: 'user-1' } as never)
+  })
+
+  // These specs mount into the body and assert on teleported dialogs, so no
+  // test may inherit another one's DOM.
+  afterEach(() => {
+    document.body.innerHTML = ''
   })
 
   /**
@@ -128,16 +142,147 @@ describe('CardModal assignment save in flight (#2981)', () => {
       // And the editor must not have offered that discard at all; it says what
       // is actually true instead.
       expect(discardConfirmButton()).toBeNull()
-      expect(document.body.textContent).toContain('cannot be discarded')
+      expect(savePendingDismissButton()).not.toBeNull()
+      expect(noticeText()).toContain('already sent to the server')
+      expect(noticeText()).toContain('cannot be discarded or cancelled')
 
       // The save the user was never allowed to "discard" commits, and the
       // editor shows the committed state instead of a false discard.
       deferred.resolve(savedCard)
       await flushPromises()
       expect(wrapper.emitted('close')).toBeUndefined()
-      expect(document.body.textContent).not.toContain('cannot be discarded')
+      expect(savePendingDismissButton()).toBeNull()
+      expect(mockStore.currentBoardCards).toEqual([savedCard])
+
+      wrapper.unmount()
+    })
+
+    it(`${surface}: refuses Escape, the backdrop and the header while the save is unanswered, then lets them through`, async () => {
+      const { wrapper, deferred } = await mountWithPendingAssignmentSave(presentation)
+
+      // The editor's own Escape binding on the dialog element.
+      const viewport = wrapper.get('.card-modal-viewport')
+      await viewport.trigger('keydown', { key: 'Escape' })
+      await nextTick()
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(savePendingDismissButton()).not.toBeNull()
+
+      // The shared Escape stack, with the notice dismissed first so the editor's
+      // handler is the one on top.
+      savePendingDismissButton()!.click()
+      await nextTick()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await nextTick()
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(savePendingDismissButton()).not.toBeNull()
+
+      // The backdrop (a self-click on the viewport).
+      savePendingDismissButton()!.click()
+      await nextTick()
+      await viewport.trigger('click')
+      await nextTick()
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(savePendingDismissButton()).not.toBeNull()
+      expect(discardConfirmButton()).toBeNull()
+
+      // Settlement withdraws the notice and restores the controls: the card is
+      // committed, nothing is dirty, and the header close now simply closes.
+      deferred.resolve(savedCard)
+      await flushPromises()
+      expect(savePendingDismissButton()).toBeNull()
+      expect(mockStore.currentBoardCards).toEqual([savedCard])
+      expect(wrapper.get('[aria-label="Card assignments"]').text()).toContain('Teammate')
+
+      await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+      await nextTick()
+      expect(discardConfirmButton()).toBeNull()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+
+      wrapper.unmount()
+    })
+
+    it(`${surface}: keeps the draft and the editor open when the delayed save fails`, async () => {
+      const { wrapper, deferred } = await mountWithPendingAssignmentSave(presentation)
+
+      await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+      await nextTick()
+      expect(savePendingDismissButton()).not.toBeNull()
+
+      deferred.reject({ response: { status: 500 } })
+      await flushPromises()
+
+      // The failure is reported, the draft is kept and the notice is gone.
+      expect(savePendingDismissButton()).toBeNull()
+      const assignments = wrapper.get('[aria-label="Card assignments"]')
+      expect(assignments.text()).toContain('Could not confirm assignment save')
+      expect((assignments.findAll('input[type="checkbox"]')[0]!.element as HTMLInputElement).checked).toBe(true)
+      expect(mockStore.currentBoardCards).toEqual([card])
+      expect(wrapper.emitted('close')).toBeUndefined()
+
+      // The change is now genuinely un-submitted, so the ordinary discard
+      // confirmation is offered again and honoured.
+      await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+      await nextTick()
+      expect(discardConfirmButton()).not.toBeNull()
+      discardConfirmButton()!.click()
+      await nextTick()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+
+      wrapper.unmount()
+    })
+
+    it(`${surface}: replaces an already-open discard confirmation when a save starts behind it`, async () => {
+      const deferred = createDeferred<Card>()
+      vi.mocked(cardsApi.replaceAssignments).mockReturnValue(deferred.promise)
+      const wrapper = mount(CardModal, {
+        props: { card, isOpen: true, labels, presentation },
+        attachTo: document.body,
+      })
+      await flushPromises()
+
+      // A card-field draft opens the discard confirmation first.
+      await wrapper.get('#card-title').setValue('Unsaved title')
+      await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+      await nextTick()
+      expect(discardConfirmButton()).not.toBeNull()
+
+      // The assignment save starts behind it.
+      const assignments = wrapper.get('[aria-label="Card assignments"]')
+      await assignments.findAll('input[type="checkbox"]')[0]!.setValue(true)
+      await fieldButton(wrapper, 'Save assignments')!.trigger('click')
+      await nextTick()
+
+      expect(discardConfirmButton()).toBeNull()
+      expect(savePendingDismissButton()).not.toBeNull()
+      expect(wrapper.emitted('close')).toBeUndefined()
+
+      deferred.resolve(savedCard)
+      await flushPromises()
+      expect(savePendingDismissButton()).toBeNull()
+      expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Unsaved title')
+      expect(wrapper.emitted('close')).toBeUndefined()
 
       wrapper.unmount()
     })
   }
+
+  it('still drops a delayed receipt that belongs to a card the editor has left', async () => {
+    const { wrapper, deferred } = await mountWithPendingAssignmentSave('inspector')
+    const otherCard: Card = { ...card, id: 'card-2', title: 'Another card', updatedAt: 'other-v1' }
+
+    await wrapper.setProps({ card: otherCard })
+    await flushPromises()
+
+    deferred.resolve(savedCard)
+    await flushPromises()
+
+    // The stale receipt neither commits to the board nor selects anyone on the
+    // card now being edited.
+    expect(mockStore.currentBoardCards).toEqual([card])
+    const assignments = wrapper.get('[aria-label="Card assignments"]')
+    expect((assignments.findAll('input[type="checkbox"]')[0]!.element as HTMLInputElement).checked).toBe(false)
+    expect(savePendingDismissButton()).toBeNull()
+
+    wrapper.unmount()
+  })
 })
