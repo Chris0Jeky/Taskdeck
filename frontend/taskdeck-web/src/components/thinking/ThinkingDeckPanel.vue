@@ -9,7 +9,7 @@ import { isThinkingItemLayer, thinkingItemLabel, thinkingKinds } from '../../uti
 
 const props = defineProps<{ boardId: string; cardId: string }>()
 const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; busy: [busy: boolean] }>()
-const { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, save, add, move, acceptPromotion } =
+const { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, refreshPermission, save, add, move, acceptPromotion } =
   useThinkingDeck(toRef(props, 'boardId'), toRef(props, 'cardId'))
 const view = ref<'stack' | 'path'>('stack')
 const confirmReload = ref(false)
@@ -104,7 +104,7 @@ function reload() { confirmReload.value = false; void load() }
         <span role="status">{{ dirty ? 'Unsaved thinking' : revision ? 'Thinking saved' : 'No layers yet' }}</span>
         <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict || answering" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
       </footer>
-      <CardDependencies :board-id="boardId" :card-id="cardId" :can-write="canWrite" @busy="dependenciesBusy = $event" />
+      <CardDependencies :board-id="boardId" :card-id="cardId" :can-write="canWrite" :refresh-permission="refreshPermission" @busy="dependenciesBusy = $event" />
     </template>
   </section>
 </template>
