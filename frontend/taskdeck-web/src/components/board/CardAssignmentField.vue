@@ -20,11 +20,34 @@ const displayedAssignments = ref<CardAssignment[]>([])
 const archived = ref(false)
 const loading = ref(false)
 const saving = ref(false)
-const error = ref('')
+const loadFailed = ref(false)
 const needsRefresh = ref(false)
+/*
+ * How the newest settled save failed (#2982). `permission` is a 403: edit
+ * permission was revoked between opening this card and the PUT, so describing it
+ * as an uncertain save and offering a retry sends the user round a loop the
+ * server will keep refusing. It is the one sticky class. A Viewer still reads
+ * participants and the card successfully, so a completed refresh is NOT evidence
+ * of write permission and must not unlock the controls; a board `canWrite`
+ * cached from before the downgrade is not evidence either. Only the parent's
+ * server-derived `readOnly` input turning writable again, or a different
+ * card/session, clears it. Every other class stays a per-attempt outcome the
+ * user can act on. Narrower than `isAccessDeniedError` (403 OR 404) on purpose:
+ * a 404 here is a card/board-gone fact, not a permission signal.
+ */
+const saveFailure = ref<'permission' | 'conflict' | 'ineligible' | 'unknown' | null>(null)
 let generation = 0
+const permissionLost = computed(() => saveFailure.value === 'permission')
+const error = computed(() => {
+  if (permissionLost.value) return 'Your edit permission was revoked, so this assignment save was refused. Assignment editing stays locked until your board access is restored — refreshing will not unlock it. Your draft and the current assignees stay readable.'
+  if (loadFailed.value) return 'Could not load current participants. Your draft is kept.'
+  if (saveFailure.value === 'conflict') return 'The card changed. Refresh current assignments, review your kept draft, then save again.'
+  if (saveFailure.value === 'ineligible') return 'A selected person is no longer eligible. Refresh participants and correct your kept draft.'
+  if (saveFailure.value === 'unknown') return 'Could not confirm assignment save. Refresh before retrying. Your draft is kept.'
+  return ''
+})
 const dirty = computed(() => [...selected.value].sort().join() !== [...baseline.value].sort().join())
-const locked = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value)
+const locked = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value || permissionLost.value)
 watch(dirty, value => emit('dirty-change', value))
 /*
  * A submitted PUT cannot be recalled. The host editor needs the in-flight state
@@ -46,7 +69,9 @@ async function load(refresh = false) {
   const request = ++generation
   const card = props.card
   loading.value = true
-  error.value = ''
+  loadFailed.value = false
+  // A read refresh clears what a retry can fix, never the revoked-permission lock.
+  if (!permissionLost.value) saveFailure.value = null
   try {
     const [people, current] = await Promise.all([
       cardsApi.getParticipants(card.boardId),
@@ -65,7 +90,7 @@ async function load(refresh = false) {
     needsRefresh.value = false
   } catch {
     if (request === generation) {
-      error.value = 'Could not load current participants. Your draft is kept.'
+      loadFailed.value = true
       needsRefresh.value = true
     }
   } finally { if (request === generation) loading.value = false }
@@ -75,10 +100,23 @@ watch(() => `${props.card.boardId}:${props.card.id}:${session.userId}`, () => {
   saving.value = false
   participants.value = []
   needsRefresh.value = false
+  loadFailed.value = false
+  saveFailure.value = null
   reset(props.card)
   if (!props.readOnly) void load()
 }, { immediate: true })
-watch(() => props.readOnly, readOnly => { if (!readOnly) void load() })
+/*
+ * `readOnly` is the parent's server-derived write permission for this card. A
+ * transition back to writable is the only in-place evidence this field gets that
+ * authoritative permission was re-read and now allows writing, so it — never a
+ * successful participant read — releases a revoked-permission lock.
+ */
+watch(() => props.readOnly, readOnly => {
+  if (!readOnly) {
+    saveFailure.value = null
+    void load()
+  }
+})
 watch(() => props.card.updatedAt, () => {
   if (!dirty.value && !saving.value) reset(props.card)
 })
@@ -88,7 +126,7 @@ async function save() {
   const request = ++generation
   const card = props.card
   saving.value = true
-  error.value = ''
+  saveFailure.value = null
   const previousVersion = version.value
   try {
     const saved = await cardsApi.replaceAssignments(card.boardId, card.id, [...selected.value], version.value)
@@ -98,9 +136,12 @@ async function save() {
   } catch (failure) {
     if (request !== generation) return
     const status = (failure as { response?: { status?: number } }).response?.status
-    error.value = status === 409 ? 'The card changed. Refresh current assignments, review your kept draft, then save again.'
-      : status === 400 ? 'A selected person is no longer eligible. Refresh participants and correct your kept draft.'
-        : 'Could not confirm assignment save. Refresh before retrying. Your draft is kept.'
+    saveFailure.value = status === 403 ? 'permission'
+      : status === 409 ? 'conflict'
+        : status === 400 ? 'ineligible'
+          : 'unknown'
+    // Read access survives a downgrade, so the refresh stays available for the
+    // current assignees even when it can no longer lead back to a save.
     needsRefresh.value = true
   } finally { if (request === generation) saving.value = false }
 }
@@ -130,7 +171,9 @@ onBeforeUnmount(() => { generation++ })
       <div v-if="!readOnly" class="flex gap-3">
         <button type="button" :disabled="!selected.length" @click="selected = []">Clear</button>
         <button type="button" :disabled="!dirty" @click="cancel">Cancel assignment changes</button>
-        <button type="button" :disabled="!dirty || unavailable.length > 0" @click="save">{{ saving ? 'Saving…' : 'Save assignments' }}</button>
+        <!-- `locked` is on the ancestor fieldset too; naming it here keeps the write control
+             itself reflect its disabled state rather than relying on ancestor propagation. -->
+        <button type="button" :disabled="locked || !dirty || unavailable.length > 0" @click="save">{{ saving ? 'Saving…' : 'Save assignments' }}</button>
       </div>
     </fieldset>
   </section>

@@ -115,6 +115,84 @@ describe('CardAssignmentField', () => {
     expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
   })
 
+  /*
+   * #2982. A downgrade to Viewer between the participant read and the PUT is a
+   * settled fact, not an uncertain outcome: the user keeps read access, so
+   * every read this field can make still succeeds and none of them is evidence
+   * that writing is allowed again.
+   */
+  describe('revoked edit permission (#2982)', () => {
+    async function downgradedDuringSave() {
+      const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+      await flushPromises()
+      await wrapper.findAll('input')[1]!.setValue(true)
+      vi.mocked(cardsApi.replaceAssignments).mockRejectedValue({ response: { status: 403 } })
+      await button(wrapper, 'Save assignments').trigger('click'); await flushPromises()
+      return wrapper
+    }
+
+    it('explains the revoked permission and locks the write controls, keeping the draft', async () => {
+      const wrapper = await downgradedDuringSave()
+      expect(wrapper.text()).toContain('Your edit permission was revoked')
+      expect(wrapper.text()).not.toContain('Could not confirm assignment save')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+      expect(button(wrapper, 'Save assignments').attributes('disabled')).toBeDefined()
+      // Draft kept for reading, and the participant list stays readable.
+      expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
+      expect(wrapper.text()).toContain('Viewer')
+    })
+
+    it('stays locked after a participant refresh a Viewer can still complete', async () => {
+      const wrapper = await downgradedDuringSave()
+      vi.mocked(cardsApi.getCard).mockResolvedValue({ ...card, updatedAt: 'v3' })
+      await button(wrapper, 'Refresh current assignments').trigger('click'); await flushPromises()
+      expect(vi.mocked(cardsApi.getParticipants)).toHaveBeenCalledTimes(2)
+      expect(wrapper.text()).toContain('Your edit permission was revoked')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+      expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
+      await button(wrapper, 'Save assignments').trigger('click'); await flushPromises()
+      expect(cardsApi.replaceAssignments).toHaveBeenCalledTimes(1)
+    })
+
+    it('unlocks only when the parent reports write permission again', async () => {
+      const wrapper = await downgradedDuringSave()
+      await wrapper.setProps({ readOnly: true }); await flushPromises()
+      await wrapper.setProps({ readOnly: false }); await flushPromises()
+      expect(wrapper.text()).not.toContain('Your edit permission was revoked')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeUndefined()
+      vi.mocked(cardsApi.replaceAssignments).mockResolvedValue({ ...card, updatedAt: 'v2' })
+      await button(wrapper, 'Save assignments').trigger('click'); await flushPromises()
+      expect(cardsApi.replaceAssignments).toHaveBeenLastCalledWith('board', 'card', ['viewer'], 'v1')
+    })
+
+    it('ignores a 403 that settles after a newer request superseded it', async () => {
+      let fail!: (reason: unknown) => void
+      vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
+      const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+      await flushPromises()
+      await wrapper.findAll('input')[0]!.setValue(true)
+      await button(wrapper, 'Save assignments').trigger('click')
+      await wrapper.setProps({ card: { ...card, id: 'next' } }); await flushPromises()
+      fail({ response: { status: 403 } }); await flushPromises()
+      expect(wrapper.text()).not.toContain('Your edit permission was revoked')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeUndefined()
+    })
+
+    it('leaves an ineligible-participant rejection refreshable and unlockable', async () => {
+      const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+      await flushPromises()
+      await wrapper.findAll('input')[1]!.setValue(true)
+      vi.mocked(cardsApi.replaceAssignments).mockRejectedValue({ response: { status: 400 } })
+      await button(wrapper, 'Save assignments').trigger('click'); await flushPromises()
+      expect(wrapper.text()).toContain('no longer eligible')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+      vi.mocked(cardsApi.getCard).mockResolvedValue({ ...card, updatedAt: 'v3' })
+      await button(wrapper, 'Refresh current assignments').trigger('click'); await flushPromises()
+      expect(wrapper.text()).not.toContain('no longer eligible')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeUndefined()
+    })
+  })
+
   it('retains a selection across realtime prop updates and prevents readonly changes', async () => {
     const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
     await flushPromises(); await wrapper.findAll('input')[0]!.setValue(true)
