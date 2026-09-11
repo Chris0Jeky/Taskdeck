@@ -13,7 +13,10 @@ shows recovery guidance. Archived cards and boards cannot accept type changes.
 When the loaded board payload does not state the caller's write permission - an older
 cached payload omits the optional field - the editor reads the board back from the
 server before offering the control, and offers an explicit permission refresh instead
-of a silently disabled selector when that read fails (#2952).
+of a silently disabled selector when that read fails (#2952). That one read answers
+for the whole editor: the type selector, the parent selector, the archive/restore
+control and the assignment field share it, so none of them reads an omitted field as
+"no" while another reads the server's answer (#3028).
 Changing type retains the card ID, column, position, labels, block state and history.
 
 ## API and proposals
