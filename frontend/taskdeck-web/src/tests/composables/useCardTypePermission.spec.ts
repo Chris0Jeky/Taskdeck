@@ -288,4 +288,87 @@ describe('useCardTypePermission', () => {
     expect(api.permissionUnknown.value).toBe(false)
     wrapper.unmount()
   })
+
+  // #3028. `canWrite` is the same resolved answer the whole card editor gates on, so the
+  // parent selector, the archive control and the assignment field stop reading an omitted
+  // optional field as "no" while the type selector reads the server's actual answer.
+  describe('canWrite, the answer every editor gate shares', () => {
+    it('resolves once and grants the whole editor on the server answer', async () => {
+      mockBoardStore.currentBoard = board()
+      vi.mocked(boardsApi.getBoard).mockResolvedValue(detail({ canWrite: true }))
+      const { api, wrapper } = create()
+
+      expect(api.canWrite.value).toBe(false)
+      await flushPromises()
+
+      expect(api.canWrite.value).toBe(true)
+      expect(api.canEditType.value).toBe(true)
+      expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
+
+    it('denies the whole editor for a viewer and for an archived board', async () => {
+      mockBoardStore.currentBoard = board({ canWrite: false })
+      const viewer = create()
+      await flushPromises()
+      expect(viewer.api.canWrite.value).toBe(false)
+      viewer.wrapper.unmount()
+
+      mockBoardStore.currentBoard = board({ canWrite: true, isArchived: true })
+      const archivedBoard = create()
+      await flushPromises()
+      expect(archivedBoard.api.canWrite.value).toBe(false)
+      expect(boardsApi.getBoard).not.toHaveBeenCalled()
+      archivedBoard.wrapper.unmount()
+    })
+
+    it('grants nothing while the read is in flight or after it failed', async () => {
+      mockBoardStore.currentBoard = board()
+      vi.mocked(boardsApi.getBoard).mockRejectedValueOnce(new Error('offline'))
+      const { api, wrapper } = create()
+
+      expect(api.canWrite.value).toBe(false)
+      await flushPromises()
+
+      expect(api.canWrite.value).toBe(false)
+      expect(api.permissionUnknown.value).toBe(true)
+
+      vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(detail({ canWrite: true }))
+      await api.refreshPermission()
+      await flushPromises()
+
+      expect(api.canWrite.value).toBe(true)
+      wrapper.unmount()
+    })
+
+    /*
+     * An archived CARD is not a read-only board: Restore is a write the archive control
+     * offers on exactly that card. A permission the payload already states must therefore
+     * still reach it, while the type selector stays read-only and nothing is asked of the
+     * server — the #2952 exclusion that keeps an archived card from spending a request.
+     */
+    it('keeps a stated permission for an archived card without asking the server', async () => {
+      mockBoardStore.currentBoard = board({ canWrite: true })
+      const { api, wrapper } = create({ cardIsArchived: true })
+      await flushPromises()
+
+      expect(api.canWrite.value).toBe(true)
+      expect(api.canEditType.value).toBe(false)
+      expect(api.permissionChecking.value).toBe(false)
+      expect(api.permissionUnknown.value).toBe(false)
+      expect(boardsApi.getBoard).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('grants nothing in demo mode, which has no server to ask', async () => {
+      demo.enabled = true
+      mockBoardStore.currentBoard = board({ canWrite: true })
+      const { api, wrapper } = create()
+      await flushPromises()
+
+      expect(api.canWrite.value).toBe(false)
+      expect(boardsApi.getBoard).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+  })
 })

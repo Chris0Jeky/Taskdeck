@@ -9,12 +9,24 @@ export interface UseCardTypePermissionOptions {
   getBoardId: () => string
   /** Whether the card editor is open; a closed editor asks the server nothing. */
   getIsOpen: () => boolean
-  /** The settled archive state of the open card (`CardModal`'s `cardIsArchived`). */
+  /**
+   * The settled archive state of the open card (`CardModal`'s `cardIsArchived`). It decides
+   * whether an unresolved permission is worth asking for, and whether the type may be edited;
+   * it does not decide `canWrite`, which an archived card's Restore control still needs.
+   */
   getCardIsArchived: () => boolean
 }
 
 /**
- * Server-authoritative write permission for the work-item type control (#2952).
+ * Server-authoritative board write permission for the open card editor (#2952, #3028).
+ *
+ * One read serves every write gate in the editor: the work-item type selector
+ * (`canEditType`), and — through `canWrite` — the parent selector, the archive/restore
+ * control and the assignment field's `readOnly` input. They asked the same question of the
+ * same payload and three of them still read an omitted optional field as "no"; a second,
+ * third and fourth request would answer nothing extra, so the answer is resolved once here
+ * and passed down. The name is kept from its first consumer so the in-flight #3030 slice
+ * keeps its file.
  *
  * The loaded board payload carries `BoardDto.CanWrite`, the server's own answer for
  * the calling user — but the field is optional, and the `Board` contract in
@@ -76,25 +88,33 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   const permission = computed<boolean | null>(() => statedPermission.value ?? confirmedPermission.value)
 
   /*
-   * Permission is only one of the reasons this control can be read-only, and it is the
-   * only one this composable answers. An archived card cannot accept a type change at all,
-   * and demo mode has no server to ask (its board fixtures omit `canWrite` by construction,
-   * so a read would be a request to a backend that is not there) — so neither spends a
-   * request, and neither shows the recovery affordance, which would promise a refresh that
-   * changes nothing.
-   *
-   * A card whose board payload is not the loaded one is a deliberate exclusion rather than
-   * an impossibility: that read COULD be made, but this slice keeps the pre-existing
-   * behaviour for it (#2952 is about the loaded board's missing field) rather than adding a
-   * request to every card opened from a cross-board surface.
+   * Whether this composable answers the permission question for the open card at all.
+   * Demo mode has no server to ask (its board fixtures omit `canWrite` by construction, so
+   * a read would be a request to a backend that is not there), and a card whose board
+   * payload is not the loaded one is a deliberate exclusion rather than an impossibility:
+   * that read COULD be made, but this slice keeps the pre-existing behaviour for it (#2952
+   * is about the loaded board's missing field) rather than adding a request to every card
+   * opened from a cross-board surface. In both cases the gates stay exactly as read-only as
+   * they were before this composable existed.
    */
-  const permissionDecides = computed(() =>
-    !isDemoMode && boardForCard.value !== null && !options.getCardIsArchived(),
-  )
+  const permissionDecides = computed(() => !isDemoMode && boardForCard.value !== null)
 
-  const canEditType = computed(() => permissionDecides.value && permission.value === true)
-  const permissionChecking = computed(() => permissionDecides.value && permission.value === null && checking.value)
-  const permissionUnknown = computed(() => permissionDecides.value && permission.value === null && !checking.value)
+  /*
+   * Whether an unresolved permission is worth a request and a recovery affordance.
+   * An archived card cannot accept an edit, so #2952 spent no request on one and showed no
+   * affordance that would promise a refresh changing nothing; that stands. It is deliberately
+   * NOT part of `canWrite`: restoring an archived card is a write the archive control offers
+   * ON an archived card, so a permission the payload already states must still reach it.
+   * The residual is narrow and pre-existing: an archived card whose board payload omits the
+   * field keeps its disabled Restore, because nothing asks.
+   */
+  const readDecides = computed(() => permissionDecides.value && !options.getCardIsArchived())
+
+  /** Board-level write permission: what every write gate in the editor is allowed to assume. */
+  const canWrite = computed(() => permissionDecides.value && permission.value === true)
+  const canEditType = computed(() => canWrite.value && !options.getCardIsArchived())
+  const permissionChecking = computed(() => readDecides.value && permission.value === null && checking.value)
+  const permissionUnknown = computed(() => readDecides.value && permission.value === null && !checking.value)
 
   async function read(boardId: string) {
     const current = ++generation
@@ -154,7 +174,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   }
 
   watch(
-    [() => options.getIsOpen(), () => options.getBoardId(), permission, permissionDecides],
+    [() => options.getIsOpen(), () => options.getBoardId(), permission, readDecides],
     ([isOpen, boardId, currentPermission, decides]) => {
       if (!isOpen || !decides || currentPermission !== null) return
       // One automatic attempt per board: a second failure is the user's to ask for.
@@ -167,5 +187,5 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     { immediate: true },
   )
 
-  return { canEditType, permissionChecking, permissionUnknown, refreshPermission }
+  return { canWrite, canEditType, permissionChecking, permissionUnknown, refreshPermission }
 }
