@@ -74,4 +74,63 @@ for (const theme of ['paper', 'legacy'] as const) {
     expect(imported[0].assignments).toHaveLength(1)
     expect(imported[0].assignments[0].userId).toBe(auth.user.id)
   })
+
+  /*
+   * #2981. A submitted assignment PUT cannot be recalled, so no close path may
+   * offer to discard it. This holds the real request open and drives the real
+   * editor: the discard confirmation must never appear, the editor must stay
+   * open, and the server must end up holding exactly the change the user saved.
+   */
+  test(`${theme}: a delayed assignment save is never offered as discardable`, async ({ page, request }) => {
+    test.setTimeout(90_000)
+    const auth = await registerAndAttachSession(page, request, `assign-pending-${theme}`, { theme })
+    const headers = { Authorization: `Bearer ${auth.token}` }
+    const boardId = await createBoardWithColumn(request, auth, `${Date.now()}-pending-${theme}`, {
+      boardNamePrefix: 'Assignment in flight', columnNamePrefix: 'Next', description: 'Synthetic pending save',
+    })
+    const board = await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()
+    const created = await request.post(`${API_BASE_URL}/boards/${boardId}/cards`, {
+      headers, data: { columnId: board.columns[0].id, title: 'Pending assignment' },
+    })
+    await assertOk(created, 'Create card'); const card = await created.json()
+    const read = async () => (await request.get(`${API_BASE_URL}/boards/${boardId}/cards/${card.id}`, { headers })).json()
+
+    // Hold the real PUT open until the close paths have been exercised.
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    await page.route('**/cards/*/assignments', async route => {
+      if (route.request().method() !== 'PUT') { await route.fallback(); return }
+      await held
+      await route.continue()
+    })
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    if (theme === 'paper') await page.getByRole('button', { name: 'Card Pending assignment', exact: true }).click()
+    else await page.getByText('Pending assignment', { exact: true }).click()
+    const editor = page.getByRole('dialog', { name: 'Edit Card', exact: true })
+    const assignments = editor.getByRole('region', { name: 'Card assignments' })
+    await assignments.getByRole('checkbox', { name: auth.user.username, exact: true }).check()
+    await assignments.getByRole('button', { name: 'Save assignments', exact: true }).click()
+    await expect(assignments.getByText('cannot be discarded', { exact: false })).toBeVisible()
+
+    // Header close, then Escape: both answer truthfully and neither closes.
+    await editor.getByRole('button', { name: 'Close card editor', exact: true }).click()
+    await expect(page.getByText('already sent to the server', { exact: false })).toBeVisible()
+    await expect(page.getByTestId('card-discard-confirm')).toHaveCount(0)
+    await page.getByTestId('card-assignment-save-pending-dismiss').click()
+    await page.keyboard.press('Escape')
+    await expect(page.getByText('already sent to the server', { exact: false })).toBeVisible()
+    await expect(editor).toBeVisible()
+    await page.getByTestId('card-assignment-save-pending-dismiss').click()
+
+    // Settling commits the change the user was never allowed to "discard",
+    // withdraws the notice and restores the close path.
+    release()
+    await expect.poll(async () => (await read()).assignments.length).toBe(1)
+    await expect(page.getByText('already sent to the server', { exact: false })).toHaveCount(0)
+    await expect(assignments.getByText(auth.user.username, { exact: false }).first()).toBeVisible()
+    await editor.getByRole('button', { name: 'Close card editor', exact: true }).click()
+    await expect(editor).not.toBeVisible()
+    await page.unroute('**/cards/*/assignments')
+  })
 }
