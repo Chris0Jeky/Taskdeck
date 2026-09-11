@@ -1,6 +1,31 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-10
+Last Updated: 2026-09-11
+
+## Product trust reconciliation (2026-09-11)
+
+Main `02abedfe9` includes true archive/restore (#2932), Task/Epic/Spike (#2949), hierarchy
+(#2965, closing #2087), active-card WIP (#2951), Inbox long-running triage (#2945), and Review/
+Apply recovery (#2942/#2948). The overhaul/reminder train below is delivered; its earlier
+imperative and pending-delivery paragraphs are historical execution notes.
+
+Assignments #2240 are parked in PR #2977 on HIGH #2981, pending-save/discard truth. Existing
+PRs #2955/#2959/#2961 remain unmerged at this snapshot; #2930 retains its delayed-pin announcement
+residual. Finish those delivery contracts before adding competing writers.
+
+The maintainer has selected explicit assignee import mapping and effort minutes with hours/minutes
+display. #2093 is Next behind the shared assignment paths; #2092 remains Pending with a contract
+to migrate the existing dependency graph. Both #2240 and #2093 are now v0.4, superseding the
+old v0.3 assignment exception and unanswered-fork/unit notes below. No estimate or typed-link
+implementation is claimed. The scalar estimate has no intrinsic assignment dependency; path
+ownership and per-participant totals explain the chosen order.
+
+See the [delivery, risk and architecture assessment](analysis/2026-09-11-product-trust-reconciliation.md)
+and [capability catalogue](product/FEATURE_CAPABILITIES.md). STATUS/readiness remain leased by
+#2947, TESTING_GUIDE by #2931, and UPGRADING by #2977; exact correction packets are recorded there.
+No new release, hosted, stage-4/5 or delegated-authority approval is inferred.
+
+## Earlier September 10 execution notes
 
 Complete the bounded #2915 Review-health follow-up to merged #2911: restore retained warnings on visibility changes, preserve newer warnings, and retire recovery on scope changes. Focused state and browser regressions pass; PR delivery records carry the full frontend and hosted gates. No release gate or product-authority change.
 

@@ -299,6 +299,23 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldNotSplitSurrogatePair_WhenExcerptBoundaryFallsInsidePair()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            new string('x', 199) + "😀tail");
+
+        SetupCapturePage(userId, new[] { item });
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto());
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().ContainSingle().Which.TextExcerpt.Should().Be(new string('x', 199));
+    }
+
+    [Fact]
     public async Task ListAsync_ShouldReturnProposalCreatedStatus_WhenCaptureHasLinkedProposalProvenance()
     {
         var userId = Guid.NewGuid();

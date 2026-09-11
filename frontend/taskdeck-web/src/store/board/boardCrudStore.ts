@@ -7,6 +7,7 @@ import { labelsApi } from '../../api/labelsApi'
 import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
+import { applyBoardCardCounts } from '../../utils/boardCardCounts'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import { initialCardFilters, type BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
@@ -448,13 +449,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           return false
         }
 
-        const cardCounts = cards.reduce((counts, card) => {
-          counts.set(card.columnId, (counts.get(card.columnId) ?? 0) + 1)
-          return counts
-        }, new Map<string, number>())
-        board.columns.forEach((column) => {
-          column.cardCount = cardCounts.get(column.id) ?? 0
-        })
+        applyBoardCardCounts(board, cards)
 
         state.currentBoard.value = board
         state.currentBoardCards.value = cards
