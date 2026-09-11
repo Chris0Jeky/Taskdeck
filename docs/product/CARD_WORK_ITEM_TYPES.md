@@ -3,7 +3,8 @@
 Cards have exactly one work item type: `Task`, `Epic`, or `Spike`. Existing cards and
 create requests without `workItemType` default to `Task`. These are explicit user
 choices; capture actions, decisions and questions do not automatically select a type.
-Hierarchy and parent links remain separate work under #2087.
+[Parent links](CARD_HIERARCHY.md) are also implemented. Type and containment remain independent:
+any admitted type may parent another, within the same-board three-link/four-level limit.
 
 The shared Paper and Legacy card editor displays the type and lets a board writer
 change it. Quick card creation still creates a Task; open the card to select Epic

@@ -1,11 +1,13 @@
 # Feature capabilities and expectations
 
-Last Updated: 2026-09-10
+Last Updated: 2026-09-11
 
 This is a user-facing contract inventory for the v0.4 QA programme, not a claim that v0.4 has
-shipped or that its sessions passed. Baseline: the overhaul integrated through PR #2895 on main
-`b344a5a74`; the overlapping-account reminder fix is in PR #2897 and remains a separate delivery
-receipt until merged. Reconcile this inventory against the exact candidate before a QA session.
+shipped or that its sessions passed. Baseline: main `02abedfe9`, including the merged overhaul
+and reminder recovery, card archive/restore, types and hierarchy. See the
+[September 11 reconciliation](../analysis/2026-09-11-product-trust-reconciliation.md) for delivery
+receipts and still-open PRs. Reconcile against the exact candidate before a QA session; no QA
+result was changed by this documentation refresh.
 
 Use the [qualification plan](../testing/V04_QUALIFICATION_PLAN.md) for expected-result matrices
 and the [overhaul guide](WORKSPACE_OVERHAUL.md) for detailed instructions. Delivery tests and their
@@ -46,6 +48,18 @@ limits live in the [validation ledger](WORKSPACE_OVERHAUL_VALIDATION.md).
 | Reminder settings | Default-off links to existing revalidated questions, optionally restricted to weekly hours in a named time zone. | Quiet-state suppression and a shared allowance apply. These are in-app reminders while the board is active, not OS notifications or closed-browser scheduling. See [attention policy](WORKSPACE_ATTENTION.md). | Implemented experiment; [QA-08](https://github.com/Chris0Jeky/Taskdeck/issues/2906). |
 | Experiences → comparison | Record scenario/outcome, optional ease and notes. Export/import observations across builds with identity and configuration attribution. | Observations are session-only until exported. Import is explicit. No telemetry, random assignment or statistical A/B claim. | Implemented descriptive comparison; [QA-03](https://github.com/Chris0Jeky/Taskdeck/issues/2901). |
 
+### Work model delivered after the overhaul
+
+| Surface | User-visible behavior | Boundaries / evidence |
+| --- | --- | --- |
+| Card archive/restore | Hide retained work from active surfaces; restore it to its original column subject to WIP. | Legacy archive proposals still mean Block. Active-card WIP and observation follow-ups are merged; cumulative multi-restore preview remains #2926. |
+| [Card types](CARD_WORK_ITEM_TYPES.md) | Select Task, Epic or Spike in Paper or Legacy; existing cards default to Task. | Explicit metadata, independent of triage classification, parent and block state. |
+| [Card parents](CARD_HIERARCHY.md) | Select one same-board parent, with three links/four levels maximum. Archive/delete confirms direct-child detach; restore does not reattach. | Complete graph includes archived descendants; version/fingerprint conflicts require a new preview. No cascade or cross-board hierarchy. |
+
+These paths are implemented; combined [QA-05](https://github.com/Chris0Jeky/Taskdeck/issues/2903)
+acceptance remains separate. Assignments in [PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977)
+are parked on pending-save/discard blocker [#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981).
+
 ## Numeric boundaries to recheck on the candidate
 
 These are current defaults/contracts, not performance targets. Configuration may narrow availability.
@@ -69,7 +83,7 @@ Record the effective value in the session before testing the boundary and one va
 | Area | Current expectation | Owning work / horizon |
 | --- | --- | --- |
 | Hosted open registration | Not established by a local build or the overhaul. Trusted hosting, threat model, identity, cost/abuse controls, backups and operational acceptance precede public registration. | [#2243](https://github.com/Chris0Jeky/Taskdeck/issues/2243), v0.4; [QA-10](https://github.com/Chris0Jeky/Taskdeck/issues/2908). Existing private-instance prerequisites retain their own milestones. |
-| Expanded work model | Typed items/hierarchy, richer links, participants/assignments/estimates and custom fields must be checked against their own delivered slices. Existing card dependencies/private plans do not imply these are all complete. | [#2087](https://github.com/Chris0Jeky/Taskdeck/issues/2087), [#2092](https://github.com/Chris0Jeky/Taskdeck/issues/2092), [#2093](https://github.com/Chris0Jeky/Taskdeck/issues/2093), [#2094](https://github.com/Chris0Jeky/Taskdeck/issues/2094), v0.4. |
+| Expanded work model residuals | Assignments are not shipped. Richer typed links and effort estimates/current-state totals remain future work; estimates will use minutes with hours/minutes display. Generic custom fields retain their later collaboration gate. | [#2240](https://github.com/Chris0Jeky/Taskdeck/issues/2240), [#2092](https://github.com/Chris0Jeky/Taskdeck/issues/2092), [#2093](https://github.com/Chris0Jeky/Taskdeck/issues/2093), [#2094](https://github.com/Chris0Jeky/Taskdeck/issues/2094). Type/hierarchy parent #2087 is delivered. |
 | Fabric foundations | Durable processing lifecycle, worker protocol/containment, representation migration and evidence anchors remain individually owned contracts. Native originals alone do not complete the general platform. | [#2254](https://github.com/Chris0Jeky/Taskdeck/issues/2254), children #2256–#2261/#2276, v0.4 foundation; [QA-11](https://github.com/Chris0Jeky/Taskdeck/issues/2909). |
 | General semantic candidates and boardless recall | The selected-card grounded-question producer is not global/vector recall. | [#2262](https://github.com/Chris0Jeky/Taskdeck/issues/2262), [#2263](https://github.com/Chris0Jeky/Taskdeck/issues/2263), v0.5. |
 | Packaged local speech / WhisperX / broad voice-note UX | Existing optional transcription does not supply one-click local speech or the general worker-based voice vertical. | [#2267](https://github.com/Chris0Jeky/Taskdeck/issues/2267), [#2268](https://github.com/Chris0Jeky/Taskdeck/issues/2268), [#2270](https://github.com/Chris0Jeky/Taskdeck/issues/2270), v0.5. |

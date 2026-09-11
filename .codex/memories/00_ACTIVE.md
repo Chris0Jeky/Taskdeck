@@ -1,6 +1,6 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-09-10
+Last updated: 2026-09-11
 
 This file is the active-gate pointer for every implementation agent on Taskdeck: Codex reaches it through `AGENTS.md` and `.codex/README.md`, Claude Code through the `CLAUDE.md` orient list (it is not auto-loaded for Claude). It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
@@ -42,7 +42,15 @@ The architecture for "speak, type, paste, or drop" is `docs/decisions/ADR-0065-c
 
 ## Unpushed work protection
 
-No saved head currently holds unshipped work. Record one here the moment a slice is parked without a PR, and say what it contains and how to resume it.
+Saved work without a PR must remain discoverable even after its worktree is removed. Refresh the
+issue and remote ref before resuming; this pointer does not claim current CI or delivery.
+
+- Parked by the maintainer's hard-work selection preference: #2940,
+  `origin/issue-2940/demo-archive-history@f8d8460dbac6c311847e454964dd279a5ed828a4`.
+  Contains a demo archive-history UI/test slice; source is pushed, worktree removed, broader checks
+  incomplete. Do not resume it as a convenience task. Read
+  [the issue receipt](https://github.com/Chris0Jeky/Taskdeck/issues/2940#issuecomment-5626011852)
+  before any deliberate resumption.
 
 - Retired, check before resuming: `origin/issue-2198/batch-approve-focus@9a2d723771b8fda0a04bb22e87056a5ee5b63289`. Not an ancestor of `main`. `#2198` closed 2026-09-04 on PR `#2534` (merge `d11bd4ada`, branch `issue-2198/batch-approve-focus-v2`). The alpha lane's 2026-09-03 release note says the original branch preserves a verified composable-only settle-outcome slice that never opened a PR; whether that slice is still wanted after `#2534` is unrecorded, so read `#2198` first and do not recreate a worktree from it blindly.
 

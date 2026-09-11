@@ -190,17 +190,41 @@ template origin have different validation and lifecycle rules.
 **Adopt a graph database.** Rejected. EF Core, SQLite, adjacency lists, and typed edge tables are
 sufficient for the expected scale and preserve the modular monolith.
 
+## Implementation and import clarification (2026-09-11)
+
+Stage 2 is delivered on the existing Card model: true archive/restore in
+[PR #2932](https://github.com/Chris0Jeky/Taskdeck/pull/2932), types in
+[PR #2949](https://github.com/Chris0Jeky/Taskdeck/pull/2949), and parents in
+[PR #2965](https://github.com/Chris0Jeky/Taskdeck/pull/2965). See the
+[type](../product/CARD_WORK_ITEM_TYPES.md) and [hierarchy](../product/CARD_HIERARCHY.md) contracts.
+This delivery does not admit stages 4-5 or implement optional cascade archive.
+
+The maintainer's [in-session #2240 ruling](https://github.com/Chris0Jeky/Taskdeck/issues/2240#issuecomment-5626095831)
+requires explicit mapping of imported assignees to
+eligible destination participants before Apply. Source identity/name does not grant access or
+create membership. The pending implementation uses the existing owner-or-access substrate;
+a newly imported board belongs to its importer, so its initial mapping choices are the importer
+or explicit Unassigned. There is no automatic name matching or new Participant table.
+[PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977) remains parked on
+[#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981); this is a decision record, not an
+assignment delivery claim.
+
+The [estimate-unit ruling](https://github.com/Chris0Jeky/Taskdeck/issues/2093#issuecomment-5627296488)
+is recorded in [ADR-0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md):
+effort minutes, displayed as hours/minutes. WorkLog, capacity and historical activity remain separate.
+
 ## Consequences
 
 - Existing boards and cards remain the shipped model until a later migration is implemented.
 - The target vocabulary can guide issue boundaries without claiming planned entities exist.
-- Schema growth is incremental and reversible, at the cost of temporary compatibility adapters.
+- Schema growth is incremental, at the cost of temporary compatibility adapters. A tested Down
+  path reverses schema, not lost metadata: dropping archive/type/parent fields loses those values.
 - Templates, recurrence, custom fields, work logs, and board-independent canonical items remain
   deferred until separately admitted.
 - Stages 4-5 stay gated behind an amendment to this ADR; `#2188` reviews the
   ladder and that gating.
 - The multi-board-identity and hierarchy-boundaries rulings hold as recorded until the architecture
   review seeded as `#2187` produces an amendment to this ADR; the review alone changes nothing.
-- Parent archive and delete behavior depends on a real card-archive operation, so `#2920` is a
-  prerequisite for the `#2087` slice that defines child behavior.
+- The archive prerequisite #2920 and hierarchy parent #2087 are delivered. Restore does not
+  recreate child pointers detached by archive/delete.
 
