@@ -171,6 +171,62 @@ public class CardRelationPersistenceTests(TestWebApplicationFactory factory) : I
         (await final.AuditLogs.AnyAsync(l => l.EntityId == boardId)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ExportPageIsPagedNoTracking_AndRequiresBothAccessibleSameBoardEndpoints()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var tag = Guid.NewGuid().ToString("N");
+        var account = new User($"relation-export-{tag}", $"relation-export-{tag}@example.com", "hash");
+        var sharedOwner = new User($"relation-shared-{tag}", $"relation-shared-{tag}@example.com", "hash");
+        var hiddenOwner = new User($"relation-hidden-{tag}", $"relation-hidden-{tag}@example.com", "hash");
+        var ownedBoard = new Board("Owned relation export", ownerId: account.Id);
+        var sharedBoard = new Board("Shared relation export", ownerId: sharedOwner.Id);
+        var hiddenBoard = new Board("Hidden relation export", ownerId: hiddenOwner.Id);
+        var ownedColumn = new Column(ownedBoard.Id, "Owned", 0);
+        var sharedColumn = new Column(sharedBoard.Id, "Shared", 0);
+        var hiddenColumn = new Column(hiddenBoard.Id, "Hidden", 0);
+        var ownedSource = new Card(ownedBoard.Id, ownedColumn.Id, "Owned source");
+        var ownedArchivedTarget = new Card(ownedBoard.Id, ownedColumn.Id, "Owned archived target");
+        ownedArchivedTarget.Archive();
+        var sharedSource = new Card(sharedBoard.Id, sharedColumn.Id, "Shared source");
+        var sharedTarget = new Card(sharedBoard.Id, sharedColumn.Id, "Shared target");
+        var hiddenSource = new Card(hiddenBoard.Id, hiddenColumn.Id, "Hidden source");
+        var hiddenTarget = new Card(hiddenBoard.Id, hiddenColumn.Id, "Hidden target");
+        var ownedGraph = new BoardDependencies(ownedBoard.Id);
+        ownedGraph.ReplaceRelations([new(ownedSource.Id, ownedArchivedTarget.Id, "blocks")]);
+        var sharedGraph = new BoardDependencies(sharedBoard.Id);
+        sharedGraph.ReplaceRelations([new(sharedSource.Id, sharedTarget.Id, "duplicates")]);
+        var hiddenGraph = new BoardDependencies(hiddenBoard.Id);
+        hiddenGraph.ReplaceRelations([new(hiddenSource.Id, hiddenTarget.Id, "spawned-from")]);
+
+        db.AddRange(
+            account, sharedOwner, hiddenOwner,
+            ownedBoard, sharedBoard, hiddenBoard,
+            ownedColumn, sharedColumn, hiddenColumn,
+            ownedSource, ownedArchivedTarget, sharedSource, sharedTarget, hiddenSource, hiddenTarget,
+            new BoardAccess(sharedBoard.Id, account.Id, UserRole.Viewer, sharedOwner.Id),
+            ownedGraph, sharedGraph, hiddenGraph,
+            // The database schema has independent endpoint foreign keys, so seed a malformed
+            // cross-board row to prove the export query itself excludes it.
+            new CardRelation(ownedBoard.Id, new(ownedSource.Id, hiddenTarget.Id, "duplicates")));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var repository = new BoardDependencyRepository(db);
+        var firstPage = await repository.GetExportPageByUserIdAsync(account.Id, 0, 1, default);
+        var secondPage = await repository.GetExportPageByUserIdAsync(account.Id, 1, 1, default);
+        var finalPage = await repository.GetExportPageByUserIdAsync(account.Id, 2, 1, default);
+
+        firstPage.Should().ContainSingle();
+        secondPage.Should().ContainSingle();
+        finalPage.Should().BeEmpty();
+        firstPage.Concat(secondPage).Should().BeEquivalentTo([
+            new UserDataExportCardRelationDto(ownedBoard.Id, ownedSource.Id, ownedArchivedTarget.Id, "blocks"),
+            new UserDataExportCardRelationDto(sharedBoard.Id, sharedSource.Id, sharedTarget.Id, "duplicates")]);
+        db.ChangeTracker.Entries().Should().BeEmpty("the export projection must not retain graphs or relation entities");
+    }
+
     private BoardRelationService Service(IServiceScope scope) => new(
         new BoardDependencyRepository(scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>()),
         scope.ServiceProvider.GetRequiredService<IUnitOfWork>(),Authorization());
