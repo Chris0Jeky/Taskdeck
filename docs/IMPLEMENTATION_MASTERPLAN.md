@@ -7,8 +7,9 @@ Last Updated: 2026-09-12
 The audit-attribution correction preserves the execution applier through proposal card deletion;
 its regression uses a different requester and retains the removed-edge receipt. A separate test-only
 commit proves the delivered v5 empty-relation export preserves nullable estimates and uses fresh
-IDs on import. Source checks and independent reviews pass; final combined backend and hosted
-qualification remain delivery gates. No new format, approval policy or direct-delete behavior is
+IDs on import. Source checks, independent reviews and the full combined backend run pass
+(9,842 passed, 34 existing skips); final hosted qualification remains a delivery gate.
+No new format, approval policy or direct-delete behavior is
 introduced. The two source commits are preserved, and existing human actions remain separate.
 
 ## Product recovery delivery (2026-09-12)
@@ -18,6 +19,17 @@ against main `160818440`. It preserves source PRs #3068, #3071, #3075, #3078 and
 #2935, #3000, #3024, #3056 and #3063. All eleven project items are Done; the first post-merge
 thread check is clear. STATUS records the complete local gate and the historical source limits.
 Archive reselection remains its separate #3060 candidate; permission PR #3072 stays parked.
+## Paper archive settlement delivery (2026-09-12, #3060)
+
+The selected-inspector follow-up to delivered #3059 now accepts a successful inactive child's
+committed receipt only when the board and card still match. It updates the replacement action's
+lifecycle/version before releasing pending ownership and preserves a newer returned-card draft.
+Both archive and restore stale-state regressions were reproduced before the fix; seven focused
+cases and independent review pass. #3082 merged as `2cdc45257` after required run `34722482168`
+passed at `29a3142a9` against delivered recovery `96f4b7cc2`. Full frontend qualification passes
+6,909 tests with three existing skips plus lint/typecheck/build. The MEDIUM form/assignment write
+baseline follow-up is tracked in #3083. #3023 and parked #3057 remain separate; existing human
+actions are unchanged.
 
 ## Product recovery integration (2026-09-12)
 
