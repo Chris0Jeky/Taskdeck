@@ -19,7 +19,9 @@ and estimate totals, not historical activity, time worked, availability or capac
 
 Totals are derived on request, with a snapshot timestamp. Board changes mark a displayed snapshot
 stale; use **Refresh estimates** to load current totals. A failed read exposes an explicit retry.
-Escape within the open panel closes it and returns focus to **Estimates**.
+Escape while focused on **Refresh estimates** closes the panel and returns focus to **Estimates**.
+These totals require a connected backend. The backend-less demo currently reports a read error;
+demo availability is tracked in [#3056](https://github.com/Chris0Jeky/Taskdeck/issues/3056).
 
 ## Writes and automation
 

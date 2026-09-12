@@ -19,6 +19,8 @@ four architecture inventory/declaration failures, corrected and verified by the 
 and rollup API suites; STATUS records the original full-run result and exact limits. The final hosted
 gate remains pending, with no estimate merge or release claim. Canonical evidence is in STATUS and
 the delivery PR. The existing human-action file remains unchanged.
+PR #3054 also integrates the reviewed #3053 planning-reference correction and #3055 permission
+payload recovery with merge commits. Backend-less demo totals remain a bounded follow-up (#3056).
 
 ## Product recovery integration (2026-09-12)
 
@@ -37,9 +39,8 @@ are in STATUS; final hosted qualification belongs to the integration PR.
 The assignment/import record correction (#3036, PR #3043) and inert private-hosting compatibility
 files (PR #2914) travel with this delivery. Hosting activation, provisioning and release acceptance
 remain separate. Keep #3033's A-to-B-to-A pending-write ownership residual, #3023's broader editor
-residuals, #3024's reliable delivery work and #3044's remaining planning-reference cleanup open.
-The #3049 same-valued permission-payload recovery is implemented in its own reviewed branch;
-focused and full frontend qualification pass, with final hosted CI still required before merge.
+residuals and #3024's reliable delivery work open. The #3044 planning-reference cleanup and #3049
+same-valued permission-payload recovery are reviewed and integrated into #3054 for final hosted CI.
 The existing human actions in OUTSTANDING_TASKS remain unchanged, including CI-control decisions
 for #2931/#2838, private-instance settings and real-device/screen-reader qualification.
 

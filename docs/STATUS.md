@@ -31,6 +31,12 @@ inventory omitted the new read tool. The final declaration/inventory correction 
 architecture tests (one existing skip) and four rollup API cases; the broad solution run was not
 repeated after this bounded correction. Core, editor receipt, portability and proposal/rollup
 interaction reviews are clean. Exact-head hosted qualification remains on the delivery PR.
+Hosted frontend lint exposed a static-container Escape handler; the handler now belongs to the
+panel's Refresh button, and lint, production build and all six panel tests pass. The panel remains
+a named region and Escape restores its opener's focus. Backend-less demo rollups are unavailable
+and tracked as the non-blocking #3056; normal server-backed rollups are qualified above.
+PR #3054 also preserves the reviewed commits from #3053 (planning/backup references) and #3055
+(same-valued permission recovery). Their source evidence is retained; final combined CI is required.
 [Contract and limits](product/CARD_ESTIMATES.md).
 
 Recovery integration #3050 merged on 2026-09-12 as `9c17a83bf`, preserving source PRs #2914,

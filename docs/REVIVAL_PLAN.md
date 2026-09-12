@@ -65,19 +65,20 @@ The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogf
 
 ADR-0060 and ADR-0062 are Accepted and ADR-0061 is Accepted as direction only, evidence pending (maintainer rulings of 2026-08-29, recorded in each ADR). The shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged until the work-model slices (`#2087`, `#2092`, `#2093` — moved to v0.4 on 2026-08-30, q-3 B; `#2240` is the v0.3 sub-slice) land under those rulings; ADR-0060 stages 4–5 remain gated on an ADR amendment, and the private shared instance stays gated on the pending CL-1 values and the Stage 1 prerequisites tracked on `#1772` (`#1777` stays parked).
 
-### Current work-model sequence (2026-09-11)
+### Current work-model sequence (2026-09-12)
 
 This note supersedes the historical assignment timing and unimplemented-parent wording above.
 The archive/type/hierarchy chain is merged and #2087 is closed. Multiple assignments and explicit
 assignee import mapping are delivered in [PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977),
 merged 2026-09-11 as `15ee8065a`; blocker [#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981)
 is closed. The assignment capability remains in v0.4 under the current qualification plan. #2093's
-estimate/current-state vertical remains v0.4 work and is not merged into main. The maintainer has
+estimate/current-state vertical is implemented and locally qualified in PR #3054, with final hosted
+CI pending; its release remains v0.4. The maintainer has
 chosen explicit import mapping and effort minutes with hours/minutes display; no repeat question is
 required.
 
-Finish existing Alpha delivery PRs, then qualify #2093's estimate/current-state totals and #2092's
-typed-link migration from their verified residuals. Serialize shared schema,
+The Alpha recovery integration #3050 is merged. Complete the final hosted qualification for #3054,
+then take #2092's typed-link migration from its verified residuals. Serialize shared schema,
 card editor, proposal and portability paths. The estimate scalar is technically independent of
 assignment; current sequencing protects occupied paths, while participant totals depend on the
 assignment substrate. Preserve the existing same-board graph, archived edges and revision metadata.
