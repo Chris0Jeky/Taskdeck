@@ -2,6 +2,14 @@
 
 Last Updated: 2026-09-12
 
+## Estimate delivery (2026-09-12)
+
+#3054 merged as `54e4c0a86` after required hosted run `34713059470` passed at reviewed head
+`28c4f49de`. The merge preserves source PRs #3053/#3055 and closes #2093/#3044/#3049/#3062;
+all seven project items are marked Done. The first post-merge review-thread check is clear.
+Requalify the archive and typed-relation children against the delivered base before merging them.
+Existing bounded follow-ups and human release, hosting and device decisions remain separate.
+
 ## Estimates and derived rollups (2026-09-12, #2093)
 
 The complete estimate vertical is integrated for qualification: nullable bounded effort minutes,
