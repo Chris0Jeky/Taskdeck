@@ -17,9 +17,21 @@ intentional changes require the caller's card version. Ordered proposals validat
 and preserve transaction rollback when a competing writer intervenes. Board import/export and
 both account exports retain estimates; malformed imports fail before writes. The additive migration
 leaves old cards unestimated, and its Down path drops estimate metadata without deleting cards.
-Focused domain, application, API, SQLite migration/rollback, MCP and frontend proofs pass; the
-editor receipt fix and portability review are clean. Full combined suites, browser journeys and
-hosted qualification are still in progress. [Contract and limits](product/CARD_ESTIMATES.md).
+Focused domain, application, API, SQLite migration/rollback and MCP proofs pass. Full combined
+frontend qualification passed 6,856 tests across 440 files with three existing skips, plus typecheck
+and build. Both real-API Chromium journeys passed for Legacy and Paper: null/zero/90-minute
+persistence, clear/resave, exact overlapping participant totals, edit/move/archive followed by
+refresh, Viewer access, 390px layout and Escape focus. One bounded screenshot remeasure settled
+the responsive transition; no runtime defect was found. Physical devices, other browsers and
+screen-reader output were not tested.
+
+The combined backend run passed 9,727 tests with 34 existing skips and exposed four architecture
+failures: the new controller declaration did not match the repository scanner, and the MCP tool
+inventory omitted the new read tool. The final declaration/inventory correction passed all 28
+architecture tests (one existing skip) and four rollup API cases; the broad solution run was not
+repeated after this bounded correction. Core, editor receipt, portability and proposal/rollup
+interaction reviews are clean. Exact-head hosted qualification remains on the delivery PR.
+[Contract and limits](product/CARD_ESTIMATES.md).
 
 Recovery integration #3050 merged on 2026-09-12 as `9c17a83bf`, preserving source PRs #2914,
 #3043, #3046, #3047, #3048 and #3051. Required hosted run `34702720469` passed at reviewed

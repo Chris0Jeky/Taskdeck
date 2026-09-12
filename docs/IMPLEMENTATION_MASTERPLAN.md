@@ -14,9 +14,11 @@ capacity forecasts. [Contract](product/CARD_ESTIMATES.md).
 
 Five independently owned implementation slices are combined without conflict-resolution edits.
 Focused tests pass, including a real SQLite competing-writer rollback and editor resave regression.
-Full combined suites, browser qualification and the final hosted gate remain in progress; this is
-an implementation record, with no merge or release claim. Canonical evidence is in STATUS and the
-delivery PR. The existing human-action file remains unchanged.
+The full frontend suite and two real-API browser journeys pass. The combined backend exposed
+four architecture inventory/declaration failures, corrected and verified by the affected architecture
+and rollup API suites; STATUS records the original full-run result and exact limits. The final hosted
+gate remains pending, with no estimate merge or release claim. Canonical evidence is in STATUS and
+the delivery PR. The existing human-action file remains unchanged.
 
 ## Product recovery integration (2026-09-12)
 
