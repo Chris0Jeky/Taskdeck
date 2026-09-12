@@ -989,11 +989,7 @@ public class ProposalOperationContractValidatorTests
         result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
         result.ErrorMessage.Should().Contain("original column is full");
 
-        // Order-sensitivity control: with the restore first, Apply restores into the still-free
-        // slot and the RESTORE contract is satisfied, so the projection must not reject it. Note
-        // what this does and does not say - Apply would then fail on the following create/move,
-        // because this validator has never WIP-checked create or move at preview and this change
-        // does not add that. The assertion is scoped to the restore contract only.
+        // With restore first, the following create/move is the operation that breaches WIP.
         var reordered = new[]
         {
             CreateOperation(0, "restore-lifecycle", archived.Id,
@@ -1002,8 +998,9 @@ public class ProposalOperationContractValidatorTests
                 ? CreateOperation(1, "create", null, new { boardId, columnId = column.Id, title = "Takes the slot" })
                 : CreateOperation(1, "move", mover.Id, new { cardId = mover.Id, columnId = column.Id })
         };
-        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, reordered))
-            .IsSuccess.Should().BeTrue();
+        var reorderedResult = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, reordered);
+        reorderedResult.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        reorderedResult.ErrorMessage.Should().Contain(fillByCreate ? "Cannot add card" : "Cannot move card");
     }
 
     [Fact]
@@ -1065,6 +1062,7 @@ public class ProposalOperationContractValidatorTests
             unitOfWork.Object, boardId, [impossibleMove, restore]);
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        result.ErrorMessage.Should().Contain("Cannot move card").And.Contain("Later");
 
         // Control: the same move into a column with room does free the slot.
         var roomy = new Column(boardId, "Roomy", 2, wipLimit: 5);
@@ -1120,6 +1118,106 @@ public class ProposalOperationContractValidatorTests
         var result = await ProposalOperationContractValidator.ValidateAsync(
             unitOfWork.Object, boardId, [createElsewhere, restore]);
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Capacity_CreateAndMoveRejectTheOperationThatExceedsOrderedOccupancy(bool fillByCreate)
+    {
+        var board = new Board("Ordered capacity");
+        var target = new Column(board.Id, "Limited", 0, wipLimit: 1);
+        var source = new Column(board.Id, "Source", 1);
+        var mover = new Card(board.Id, source.Id, "Moves in");
+        source.AddCard(mover);
+        var unitOfWork = CreateLifecycleMocks(board, [target, source], [mover]);
+        var first = CreateOperation(0, "create", null,
+            new { boardId = board.Id, columnId = target.Id, title = "First" });
+        var second = fillByCreate
+            ? CreateOperation(1, "create", null, new { boardId = board.Id, columnId = target.Id, title = "Second" })
+            : CreateOperation(1, "move", mover.Id, new { cardId = mover.Id, columnId = target.Id });
+
+        // Deliberately supply the list backwards: Apply uses Sequence, not input order.
+        var result = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, board.Id, [second, first]);
+
+        result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        result.ErrorMessage.Should().Contain(fillByCreate ? "Cannot add card" : "Cannot move card").And.Contain("Limited");
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, board.Id, [second]))
+            .IsSuccess.Should().BeTrue("one incoming card fits");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Capacity_ArchiveFreesSpaceBeforeCreateOrMove(bool fillByCreate)
+    {
+        var board = new Board("Archive frees capacity");
+        var target = new Column(board.Id, "Limited", 0, wipLimit: 1);
+        var source = new Column(board.Id, "Source", 1);
+        var occupant = new Card(board.Id, target.Id, "Archive me");
+        var mover = new Card(board.Id, source.Id, "Moves in");
+        target.AddCard(occupant);
+        source.AddCard(mover);
+        var unitOfWork = CreateLifecycleMocks(board, [target, source], [occupant, mover]);
+        var archive = CreateOperation(0, "archive-lifecycle", occupant.Id,
+            new { cardId = occupant.Id, expectedUpdatedAt = occupant.UpdatedAt, detachChildren = true });
+        var incoming = fillByCreate
+            ? CreateOperation(1, "create", null, new { boardId = board.Id, columnId = target.Id, title = "Replacement" })
+            : CreateOperation(1, "move", mover.Id, new { cardId = mover.Id, columnId = target.Id });
+
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, board.Id, [archive, incoming]))
+            .IsSuccess.Should().BeTrue();
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, board.Id, [incoming]))
+            .ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+    }
+
+    [Fact]
+    public async Task Capacity_SameColumnMoveAndUnlimitedColumnKeepTheirExistingContract()
+    {
+        var board = new Board("Unchanged controls");
+        var target = new Column(board.Id, "Limited", 0, wipLimit: 1);
+        var unlimited = new Column(board.Id, "Unlimited", 1);
+        var occupant = new Card(board.Id, target.Id, "Existing");
+        target.AddCard(occupant);
+        var unitOfWork = CreateLifecycleMocks(board, [target, unlimited], [occupant]);
+        var sameColumn = CreateOperation(0, "move", occupant.Id, new { cardId = occupant.Id, columnId = target.Id });
+        var create = CreateOperation(1, "create", null, new { boardId = board.Id, columnId = unlimited.Id, title = "New" });
+        var move = CreateOperation(2, "move", occupant.Id, new { cardId = occupant.Id, columnId = unlimited.Id });
+
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, board.Id, [sameColumn, create, move]))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task Capacity_DeleteFreesOnlyAnActiveSlot(bool archived, bool create)
+    {
+        var board = new Board("Delete capacity");
+        var target = new Column(board.Id, "Limited", 0, wipLimit: 1);
+        var source = new Column(board.Id, "Source", 1);
+        var deleted = new Card(board.Id, target.Id, "Delete me");
+        if (archived) deleted.Archive();
+        target.AddCard(deleted);
+        var occupant = new Card(board.Id, target.Id, "Active occupant");
+        if (archived) target.AddCard(occupant);
+        var mover = new Card(board.Id, source.Id, "Mover");
+        source.AddCard(mover);
+        var unitOfWork = CreateLifecycleMocks(board, [target, source], [deleted, mover, occupant]);
+        var delete = CreateOperation(0, "delete", deleted.Id,
+            new { cardId = deleted.Id, expectedUpdatedAt = deleted.UpdatedAt, detachChildren = true });
+        var incoming = create
+            ? CreateOperation(1, "create", null, new { boardId = board.Id, columnId = target.Id, title = "Replacement" })
+            : CreateOperation(1, "move", mover.Id, new { cardId = mover.Id, columnId = target.Id });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, board.Id, [delete, incoming]);
+
+        if (archived)
+            result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        else
+            result.IsSuccess.Should().BeTrue(result.ErrorMessage);
     }
 
     private static Mock<IUnitOfWork> CreateLifecycleMocks(Board board, Column[] columns, Card[] cards)
