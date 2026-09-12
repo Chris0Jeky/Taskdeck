@@ -2,6 +2,22 @@
 
 Last Updated: 2026-09-12
 
+Product recovery #3081 merged as `96f4b7cc2` after required run `34720964639` passed at
+`6bc8ea497` against main `160818440`. Final local qualification passed 9,839 backend tests
+with 34 existing skips and 6,907 frontend tests with three existing skips. Issues #2935, #3000,
+#3024, #3056 and #3063 are closed; the integration and its five preserved source PRs are merged
+and all eleven project items are Done with their verified priorities. The first post-merge review
+check is clear. Candidate wording below remains historical; parked #3072 is excluded.
+
+Two bounded relation follow-ups are now candidates: proposal card deletion carries the authenticated
+applier into its removed-relations audit (#3074), and a real SQLite API regression proves a board
+with no relations exports null, zero and positive estimates in a v5 envelope and preserves them
+through a fresh-ID import (#3065). The inspected pre-estimate reader at `9c17a83bf` rejects v5 before
+mapping; no old binary execution is claimed. The 29 registry, 12 typed-relation API and 14 export
+API source cases pass, including the causal null-actor failure before correction. Both independent
+reviews are clean. The delivery PR records final combined backend and hosted qualification.
+Existing human actions remain unchanged.
+
 Typed relations #3066 merged on 2026-09-12 as `160818440`, after required run
 `34718378428` passed at reviewed head `7c66104b3` against main `9a8c14c6b`.
 Issue #2092 is closed; its issue and PR project items are Done with Priority II,

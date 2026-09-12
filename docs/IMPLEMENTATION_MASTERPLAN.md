@@ -2,6 +2,23 @@
 
 Last Updated: 2026-09-12
 
+## Relation audit and portability follow-ups (2026-09-12, #3074 and #3065)
+
+The audit-attribution correction preserves the execution applier through proposal card deletion;
+its regression uses a different requester and retains the removed-edge receipt. A separate test-only
+commit proves the delivered v5 empty-relation export preserves nullable estimates and uses fresh
+IDs on import. Source checks and independent reviews pass; final combined backend and hosted
+qualification remain delivery gates. No new format, approval policy or direct-delete behavior is
+introduced. The two source commits are preserved, and existing human actions remain separate.
+
+## Product recovery delivery (2026-09-12)
+
+#3081 merged as `96f4b7cc2` after required run `34720964639` passed at reviewed `6bc8ea497`
+against main `160818440`. It preserves source PRs #3068, #3071, #3075, #3078 and #3080 and closes
+#2935, #3000, #3024, #3056 and #3063. All eleven project items are Done; the first post-merge
+thread check is clear. STATUS records the complete local gate and the historical source limits.
+Archive reselection remains its separate #3060 candidate; permission PR #3072 stays parked.
+
 ## Product recovery integration (2026-09-12)
 
 Typed relations #3066 delivered #2092 as `160818440` after its exact-head required gate;
