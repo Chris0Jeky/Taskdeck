@@ -50,6 +50,14 @@ The bounded compatibility review and targeted lint pass. This is simulated API-a
 proof, not a physical-device LAN acceptance. Buffered export limits and refresh control feedback
 remain separate follow-ups #3069 and #3070.
 
+Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
+#3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
+both operating-system API/frontend lanes and browser smoke. GitHub confirms #2093, #3044, #3049
+and #3062 closed. The first post-merge check found no unresolved review threads on these three
+PRs. The estimate qualification paragraphs below retain their local evidence and historical gates;
+this delivery record supersedes their pending-merge wording. The bounded follow-ups #3056, #3057,
+#3058, #3063 and #3065 and the existing human-action file remain open.
+
 Card estimates and current-state rollups (#2093) are implemented on the integration branch.
 Optional whole-minute estimates display as hours/minutes in shared card details and both Paper
 and Legacy quick-create. Blank means unknown; explicit zero remains known. A successful save
@@ -135,7 +143,7 @@ drafts. Initial stated-permission paths add no reads, and the legacy omitted-fie
 for an initially archived card is unchanged. Archive failure after Escape rescues unusable
 native focus without stealing deliberate focus movement or affecting another card; late failed
 writes after mounted card switches produce a generic persistent notice (#3033). The A-to-B-to-A
-pending-write busy-ownership residual stays open in #3033. Qualification: full frontend at
+pending-write busy-ownership residual is repaired in the reviewed #3033 follow-on below. Qualification: full frontend at
 `8ab19e7ef` passed 6,776 tests with three existing skips; final `8582b7ac3` passed typecheck,
 build, 175 focused tests and three native Chromium focus cases after the bounded write403
 bridge. Real backend permission integration and screen-reader output were not tested.
@@ -146,6 +154,19 @@ preserve the existing fail-closed and cancellation behavior. Focused specs passe
 frontend passed 6,794 with three existing skips across 438 files. Typecheck/build passed before the
 four-line fixture-only repair, which received a clean bounded follow-up review. Final hosted CI and
 live browser permission transitions remain separate qualification evidence.
+
+The #3033 follow-on retains pending archive/restore and preview ownership per board/card in the
+mounted editor, above its version-keyed action child. Returning to A cannot submit its still-pending
+request again, while B remains actionable; settling one request releases only its own card. Six
+deferred component cases and four real CardModal host cases reproduced the previous gaps. Final
+qualification passes 151 focused tests, lint, typecheck and build; the bounded independent fix review
+is clean. Before the host fix, full frontend qualification passed 6,862 tests with three existing skips
+across 440 files. That full run was not repeated for the bounded host fix. The estimate parent's
+keyboard-test correction merges without conflict edits. Final hosted CI remains required after the
+oldest base lands and this child is retargeted. No new browser or screen-reader run is claimed for
+the archive fix; the earlier native focus proof belongs to #3048. Ownership remains editor-instance
+scoped. Separate MEDIUM follow-up #3060 covers successful settlement reconciliation of a returned
+card's stale snapshot; server version checks reject a redundant stale request before mutation.
 
 Assignment revoke notifications (#2979, PR #3047) now publish each detached card's actual ID
 after the access/audit transaction commits, with no notification when assignments are unchanged.
