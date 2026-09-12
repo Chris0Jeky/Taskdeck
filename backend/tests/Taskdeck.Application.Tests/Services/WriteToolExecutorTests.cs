@@ -45,6 +45,120 @@ public class WriteToolExecutorTests
 
     #region ProposeCreateCardExecutor
 
+    [Theory]
+    [InlineData("null")]
+    [InlineData("0")]
+    [InlineData("90")]
+    [InlineData("1000000")]
+    public async Task ProposeCreateCard_Estimate_PreservesValueWithoutMutation(string rawEstimate)
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"title":"Estimated card","estimated_effort_minutes":{{rawEstimate}}}"""));
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("estimatedEffortMinutes").GetRawText().Should().Be(rawEstimate);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("0", false)]
+    [InlineData("90", false)]
+    [InlineData("null", true)]
+    public async Task ProposeUpdateCard_Estimate_PreservesCallerPinAndClear(string rawEstimate, bool clear)
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Estimate");
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","estimated_effort_minutes":{{rawEstimate}},"clear_estimated_effort":{{clear.ToString().ToLowerInvariant()}},"expected_updated_at":"{{card.UpdatedAt:O}}"}""");
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("expectedUpdatedAt").GetString().Should().Be(card.UpdatedAt.ToString("O"));
+        parameters.RootElement.GetProperty("clearEstimatedEffort").GetBoolean().Should().Be(clear);
+        if (!clear) parameters.RootElement.GetProperty("estimatedEffortMinutes").GetRawText().Should().Be(rawEstimate);
+        card.EstimatedEffortMinutes.Should().BeNull();
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("1.5")]
+    [InlineData("-1")]
+    [InlineData("1000001")]
+    [InlineData("\"90\"")]
+    public async Task EstimateTools_RejectMalformedValuesBeforeCreatingAProposal(string rawEstimate)
+    {
+        SetupColumns("Backlog");
+        var card = CreateCard("Estimate");
+        SetupBoardCards(card);
+        var create = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var update = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"title":"Estimated card","card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","estimated_effort_minutes":{{rawEstimate}},"expected_updated_at":"{{card.UpdatedAt:O}}"}""");
+        foreach (var executor in new IToolExecutor[] { create, update })
+        {
+            var result = await executor.ExecuteAsync(MakeContext(), args);
+            JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("estimatedEffortMinutes");
+        }
+        _proposalService.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("stale")]
+    [InlineData("conflict")]
+    public async Task ProposeUpdateCard_Estimate_RejectsMissingStaleAndConflictingRequests(string kind)
+    {
+        var card = CreateCard("Estimate");
+        SetupBoardCards(card);
+        var values = new Dictionary<string, object>
+        {
+            ["card_id"] = BoardContextBuilder.FormatShortId(card.Id),
+            ["estimated_effort_minutes"] = 0
+        };
+        if (kind != "missing") values["expected_updated_at"] = (kind == "stale" ? card.UpdatedAt.AddMinutes(-1) : card.UpdatedAt).ToString("O");
+        if (kind == "conflict") values["clear_estimated_effort"] = true;
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs(JsonSerializer.Serialize(values)));
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeTrue(result);
+        _proposalService.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_NullEstimate_KeepsCurrentWithoutRequiringPin()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Estimate");
+        card.SetEstimatedEffortMinutes(90);
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","title":"Rename","estimated_effort_minutes":null,"clear_estimated_effort":false}"""));
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.TryGetProperty("estimatedEffortMinutes", out _).Should().BeFalse();
+        parameters.RootElement.GetProperty("clearEstimatedEffort").GetBoolean().Should().BeFalse();
+        card.EstimatedEffortMinutes.Should().Be(90);
+    }
+
+    [Fact]
+    public void EstimateToolSchemas_DeclareBoundsClearAndCallerPin()
+    {
+        foreach (var schema in new[] { WriteToolSchemas.ProposeCreateCard(), WriteToolSchemas.ProposeUpdateCard() })
+        {
+            var estimate = schema.ParametersSchema.GetProperty("properties").GetProperty("estimated_effort_minutes");
+            estimate.GetProperty("minimum").GetInt32().Should().Be(0);
+            estimate.GetProperty("maximum").GetInt32().Should().Be(Card.MaxEstimatedEffortMinutes);
+        }
+        var properties = WriteToolSchemas.ProposeUpdateCard().ParametersSchema.GetProperty("properties");
+        properties.GetProperty("clear_estimated_effort").GetProperty("type").GetString().Should().Be("boolean");
+        properties.GetProperty("expected_updated_at").GetProperty("description").GetString().Should().Contain("get_card_details");
+    }
+
     [Fact]
     public async Task ProposeCreateCard_UsesTrustedContextProducerAndIgnoresForgedArguments()
     {

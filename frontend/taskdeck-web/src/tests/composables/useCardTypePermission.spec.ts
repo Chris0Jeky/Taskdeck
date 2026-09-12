@@ -12,7 +12,15 @@ vi.mock('../../store/sessionStore', () => ({ useSessionStore: () => session }))
 const demo = vi.hoisted(() => ({ enabled: false }))
 vi.mock('../../utils/demoMode', () => ({ get isDemoMode() { return demo.enabled } }))
 
-const mockBoardStore = reactive<{ currentBoard: Board | null }>({ currentBoard: null })
+const mockBoardStore = reactive<{
+  currentBoard: Board | null
+  currentBoardRequestGeneration: number
+  currentBoardPayloadGeneration: number
+}>({
+  currentBoard: null,
+  currentBoardRequestGeneration: 0,
+  currentBoardPayloadGeneration: 0,
+})
 
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
@@ -60,6 +68,8 @@ describe('useCardTypePermission', () => {
   beforeEach(() => {
     demo.enabled = false
     mockBoardStore.currentBoard = null
+    mockBoardStore.currentBoardRequestGeneration = 0
+    mockBoardStore.currentBoardPayloadGeneration = 0
     vi.mocked(boardsApi.getBoard).mockReset()
   })
 
@@ -144,8 +154,11 @@ describe('useCardTypePermission', () => {
     session.userId = 'user-1'
   })
 
-  it('accepts a newer explicit board permission update and cancels an older reconciliation', async () => {
+  it('accepts a fresh server board payload but not a local permission replacement after a denial', async () => {
     mockBoardStore.currentBoard = board({ canWrite: true })
+    // A background board refresh is already on the wire before the refusal.
+    // Its completion cannot overturn the recovery, even though it is server data.
+    mockBoardStore.currentBoardRequestGeneration = 1
     const { api, wrapper } = create()
     let finish!: (value: BoardDetail) => void
     vi.mocked(boardsApi.getBoard).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
@@ -155,7 +168,22 @@ describe('useCardTypePermission', () => {
     finish(detail({ canWrite: true }))
     await oldRead
     expect(api.canWrite.value).toBe(false)
-    mockBoardStore.currentBoard.canWrite = true
+
+    // A local replacement has the same visible boolean but no server payload
+    // generation, so it cannot overturn the denied-write recovery.
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    expect(api.canWrite.value).toBe(false)
+
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    mockBoardStore.currentBoardPayloadGeneration = 1
+    expect(api.canWrite.value).toBe(false)
+
+    // Realtime/fallback detail refreshes replace the payload and advance this
+    // marker after the board value commits. The same boolean is now fresh server
+    // evidence and must clear recovery without another permission request.
+    mockBoardStore.currentBoardRequestGeneration++
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    mockBoardStore.currentBoardPayloadGeneration = mockBoardStore.currentBoardRequestGeneration
     expect(api.canWrite.value).toBe(true)
     expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
     wrapper.unmount()

@@ -55,6 +55,48 @@ describe('CardModal permission reconciliation', () => {
   })
   afterEach(() => { document.body.innerHTML = '' })
 
+  it('keeps an estimate-only draft when the discard prompt is cancelled', async () => {
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels: [] }, attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('[data-testid="estimate-minutes"]').setValue('0')
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Discard card changes?')
+    document.querySelector<HTMLButtonElement>('[data-testid="card-discard-cancel"]')!.click()
+    await flushPromises()
+    expect((wrapper.get('[data-testid="estimate-minutes"]').element as HTMLInputElement).value).toBe('0')
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(store.updateCard).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each(['modal', 'inspector'] as const)('keeps a denied estimate draft and renders it read-only in %s', async presentation => {
+    vi.mocked(store.updateCard).mockRejectedValueOnce({ response: { status: 403 } })
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(board(false))
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels: [], presentation } })
+    await flushPromises()
+    await wrapper.get('[data-testid="estimate-hours"]').setValue('1')
+    await wrapper.get('[data-testid="estimate-minutes"]').setValue('15')
+    await button(wrapper, 'Save Changes').trigger('click')
+    await flushPromises()
+    expect(store.updateCard).toHaveBeenCalledWith(card.boardId, card.id, expect.objectContaining({ estimatedEffortMinutes: 75 }))
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="estimate-summary"]').text()).toBe('1h 15m')
+    expect(wrapper.find('[data-testid="estimate-hours"]').exists()).toBe(false)
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it.each([{ canWrite: false, isArchived: false }, { canWrite: true, isArchived: true }])('shows estimate without mutation controls for %s', async ({ canWrite, isArchived }) => {
+    store.currentBoard = board(canWrite)
+    const wrapper = mount(CardModal, { props: { card: { ...card, isArchived, estimatedEffortMinutes: 0 }, isOpen: true, labels: [] } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="estimate-summary"]').text()).toBe('0m')
+    expect(wrapper.find('[data-testid="estimate-hours"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some(candidate => candidate.text() === 'Clear estimate')).toBe(false)
+    wrapper.unmount()
+  })
+
   async function pendingSave(presentation: 'modal' | 'inspector' = 'modal') {
     const save = deferred<Card>()
     vi.mocked(cardsApi.replaceAssignments).mockReturnValue(save.promise)
