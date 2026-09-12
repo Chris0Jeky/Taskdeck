@@ -21,6 +21,13 @@ Focused domain, application, API, SQLite migration/rollback, MCP and frontend pr
 editor receipt fix and portability review are clean. Full combined suites, browser journeys and
 hosted qualification are still in progress. [Contract and limits](product/CARD_ESTIMATES.md).
 
+Recovery integration #3050 merged on 2026-09-12 as `9c17a83bf`, preserving source PRs #2914,
+#3043, #3046, #3047, #3048 and #3051. Required hosted run `34702720469` passed at reviewed
+head `05ed5bbad`, including Windows API integration and browser smoke. GitHub confirms the nine
+linked repair issues closed; #3033's partial residual remains open. The post-merge checkpoint
+found no unresolved source or integration review threads. The behavior records below retain
+their original local qualification heads and limitations.
+
 Board import rejects conflicting assignee labels (#2980, PR #3014): the shared import validator now
 requires one consistent display label per source assignee key, so a payload that repeats a key with a
 different - including case-only or whitespace-only different - label fails on preview and on both Apply

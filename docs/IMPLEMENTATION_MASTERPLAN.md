@@ -20,6 +20,11 @@ delivery PR. The existing human-action file remains unchanged.
 
 ## Product recovery integration (2026-09-12)
 
+Merged in #3050 as `9c17a83bf` after exact-head required hosted run `34702720469` passed.
+The six source PRs and nine intended repair issues are confirmed merged/closed; the open
+residuals below remain separate. Source commits and local evidence were preserved before
+finished worktrees were removed.
+
 Preserve the reviewed source commits for card-editor permission and archive focus recovery
 (#3021/#3037/#3042, PR #3048), assignment revoke notification identities (#2979, PR #3047),
 ordered proposal capacity and precise card effects (#3012/#3020/#3031), and asynchronous
