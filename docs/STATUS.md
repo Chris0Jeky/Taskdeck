@@ -22,10 +22,12 @@ on the parent. Webhook implementation and durability tests are unchanged. Exact-
 qualification remains required for the combined tree. No actual process-kill, external HTTP
 delivery or release acceptance is claimed.
 
-The typed-relation candidate now includes archive recovery merge `44d041ca7` (#3059), whose
-required hosted gate passed at `7135d53a9`; #3033 is closed. Integration resolved only the
-concurrent STATUS/MASTERPLAN records, preserving both. Backend files are unchanged. Requalify
-this candidate against the delivered base; #3064's remaining draft slice stays separate.
+The typed-relation candidate includes delivered archive recovery #3059 and draft settlement #3064
+through main `9a8c14c6b`. Their required hosted gates passed; #3033 is closed and #3023 retains
+its broader residuals. Integration resolved only concurrent STATUS/MASTERPLAN records, preserving
+both. Backend files are unchanged by this base merge. Requalify against the delivered base.
+All 61 focused archive/relation component and API-wrapper tests pass on the combined base;
+the delivered CardModal and assignment-save test blobs match main exactly.
 
 Chat relation proposals now resolve normal short card IDs within the active board while retaining
 all previously accepted full UUID formats. The registered `get_board_card_relations` chat reader
@@ -35,7 +37,8 @@ checks pass 91 Application cases and the actual API registry case. The narrow re
 compact-UUID regression, corrected with exact active-board lookup and add/remove coverage.
 No revision is restamped and typed writes remain proposals. New hosted qualification is required.
 Premature events from preceding proposal creates (#3073) and applier attribution on proposal-delete
-relation audits (#3074) remain separate bounded follow-ups, alongside #3069 and #3070.
+relation audits (#3074) remain separate bounded follow-ups, alongside #3069 and #3070. Canonical
+short-prefix validation (#3076) and relation-specific navigation guidance (#3077) are also tracked.
 
 Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
 thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
@@ -84,6 +87,18 @@ API wrapper passes all four focused tests with distinct valid IDs and unchanged 
 The bounded compatibility review and targeted lint pass. This is simulated API-availability
 proof, not a physical-device LAN acceptance. Buffered export limits and refresh control feedback
 remain separate follow-ups #3069 and #3070.
+
+Archive request ownership #3059 merged on 2026-09-12 as `44d041ca7` after required hosted run
+`34714826369` passed at reviewed head `7135d53a9`. #3033 is closed and its issue/PR project items
+are Done with Priority IV; the first post-merge check found no unresolved review threads. Pending
+archive/restore requests now retain ownership above the keyed action child when navigating away
+and back. The successful-settlement snapshot follow-up remains #3060.
+
+The delivered #3023 slice hides the kept-draft notice once a pending assignment save makes
+the draft clean and retains the lifecycle version freeze until reopening. Its failing-before
+regression and 108 related component tests pass, with lint, typecheck/build and bounded review
+clean. PR #3064 merged as `9a8c14c6b` after required run `34716287296` passed at `13dfde5ca`;
+the first post-merge review check is clear. Recovery copy and other #3023 residuals remain open.
 
 Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
 #3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
