@@ -2,6 +2,22 @@
 
 Last Updated: 2026-09-12
 
+## Estimates and derived rollups (2026-09-12, #2093)
+
+The complete estimate vertical is integrated for qualification: nullable bounded effort minutes,
+shared editor and Paper/Legacy quick-create, version-checked direct and reviewed automation writes,
+chat/MCP coverage, audit/provenance, portability, additive migration/rollback and current-state
+board/column/participant/unassigned totals. Existing User and board-access participation remain
+the identity boundary. Multiple assignees each receive the full card estimate; totals explain this
+overlap and never overwrite parent estimates. There are no persisted aggregates, work logs or
+capacity forecasts. [Contract](product/CARD_ESTIMATES.md).
+
+Five independently owned implementation slices are combined without conflict-resolution edits.
+Focused tests pass, including a real SQLite competing-writer rollback and editor resave regression.
+Full combined suites, browser qualification and the final hosted gate remain in progress; this is
+an implementation record, with no merge or release claim. Canonical evidence is in STATUS and the
+delivery PR. The existing human-action file remains unchanged.
+
 ## Product recovery integration (2026-09-12)
 
 Preserve the reviewed source commits for card-editor permission and archive focus recovery
@@ -30,13 +46,13 @@ Assignments #2240 and explicit importer-or-unassigned mapping are delivered in P
 (merge `15ee8065a`, 2026-09-11); HIGH #2981 is closed. This 2026-09-12 correction (#3036)
 reconciles the earlier parked snapshot against live merge state and current code. The separate
 permission-recovery and assignment-webhook repairs are in the integration above; #2093's
-effort estimate and roll-ups remain the next work-model vertical, without a delivery claim.
+effort estimate and rollups are implemented and undergoing the qualification recorded above.
 
 The maintainer has selected explicit assignee import mapping and effort minutes with hours/minutes
-display. #2093 is Next behind the shared assignment paths; #2092 remains Pending with a contract
+display. #2093 is Now with the shared assignment paths available; #2092 remains Pending with a contract
 to migrate the existing dependency graph. Both #2240 and #2093 are now v0.4, superseding the
-old v0.3 assignment exception and unanswered-fork/unit notes below. No estimate or typed-link
-implementation is claimed. The scalar estimate has no intrinsic assignment dependency; path
+old v0.3 assignment exception and unanswered-fork/unit notes below. Typed-link implementation
+remains separate. The scalar estimate has no intrinsic assignment dependency; path
 ownership and per-participant totals explain the chosen order.
 
 See the [delivery, risk and architecture assessment](analysis/2026-09-11-product-trust-reconciliation.md)

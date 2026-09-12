@@ -2,6 +2,25 @@
 
 Last Updated: 2026-09-12
 
+Card estimates and current-state rollups (#2093) are implemented on the integration branch.
+Optional whole-minute estimates display as hours/minutes in shared card details and both Paper
+and Legacy quick-create. Blank means unknown; explicit zero remains known. A successful save
+advances the editor's version and estimate baseline while preserving any newer draft. Existing
+board participants and multiple assignments supply board, column, participant and unassigned
+totals over active cards. Each card counts once in board totals and contributes its full estimate
+to every assignee, with a visible overlap explanation; parent and child estimates stay independent.
+Timestamped totals support explicit refresh after board changes. These are current assignments
+and estimates, not time worked or capacity.
+
+Direct writes, proposal preview/approval/apply and chat/MCP tools carry the nullable estimate;
+intentional changes require the caller's card version. Ordered proposals validate initial versions
+and preserve transaction rollback when a competing writer intervenes. Board import/export and
+both account exports retain estimates; malformed imports fail before writes. The additive migration
+leaves old cards unestimated, and its Down path drops estimate metadata without deleting cards.
+Focused domain, application, API, SQLite migration/rollback, MCP and frontend proofs pass; the
+editor receipt fix and portability review are clean. Full combined suites, browser journeys and
+hosted qualification are still in progress. [Contract and limits](product/CARD_ESTIMATES.md).
+
 Board import rejects conflicting assignee labels (#2980, PR #3014): the shared import validator now
 requires one consistent display label per source assignee key, so a payload that repeats a key with a
 different - including case-only or whitespace-only different - label fails on preview and on both Apply
