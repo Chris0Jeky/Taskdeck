@@ -74,6 +74,12 @@ const pendingArchiveRefresh = ref(false)
 const archiveStateAfterChange = ref<boolean | null>(null)
 const archiveCompletedWithDraft = ref(false)
 const cardIsArchived = computed(() => archiveStateAfterChange.value ?? props.card.isArchived === true)
+// The editor deliberately retains its form prop while a user has a draft. The
+// archive action still needs the latest lifecycle version after a keyed child
+// completed while this editor was showing another card, or its next Restore
+// would repeat the old expectedUpdatedAt token.
+const committedArchiveCard = ref<Card | null>(null)
+const archiveActionCard = computed(() => committedArchiveCard.value ?? props.card)
 // A draft may settle after the lifecycle request that made it unsaveable. The
 // notice follows that draft, but the lifecycle receipt still belongs to the
 // pre-change prop version for this mounted editor. Keep that control frozen
@@ -89,6 +95,18 @@ const archiveDraftNotice = computed(() => cardIsArchived.value
 function forgetArchiveCompletion() {
   archiveCompletedWithDraft.value = false
   archiveStateAfterChange.value = null
+  committedArchiveCard.value = null
+}
+
+function acceptInactiveArchiveCommit(committed: Card) {
+  // The old keyed action can only reconcile its own committed receipt. A
+  // different selection (including the same card on another board) remains
+  // entirely untouched, preserving its draft, permission and focus state.
+  if (committed.boardId !== props.card.boardId || committed.id !== props.card.id) return
+
+  committedArchiveCard.value = committed
+  archiveStateAfterChange.value = committed.isArchived === true
+  if (hasUnsavedChanges.value) archiveCompletedWithDraft.value = true
 }
 
 /*
@@ -505,8 +523,9 @@ useEscapeToClose(
           :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
           @saved="acceptAssignments" @permission-denied="refreshTypePermission" />
-        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges || archiveCompletedWithDraft"
+        <CardArchiveAction :key="archiveActionCard.updatedAt" :card="archiveActionCard" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges || archiveCompletedWithDraft"
           :pending-requests="pendingArchiveRequests"
+          :on-inactive-commit="acceptInactiveArchiveCommit"
           @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="refreshTypePermission" />
         <p v-if="showArchiveDraftNotice" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}

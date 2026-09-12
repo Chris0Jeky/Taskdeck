@@ -34,6 +34,12 @@ const props = withDefaults(defineProps<{
   card: Card; disabled?: boolean; archived?: boolean; canWrite?: boolean
   /** Stable editor-owned state for hosts that remount this control on a version change. */
   pendingRequests?: Set<string>
+  /**
+   * A version-keyed control can unmount while its submitted lifecycle request is
+   * still in flight. Its host remains responsible for a committed result when
+   * the same card is selected again before that request settles.
+   */
+  onInactiveCommit?: (card: Card) => void
 }>(), {
   archived: undefined,
   canWrite: undefined,
@@ -164,11 +170,19 @@ async function change() {
   const context = contextGeneration
   const confirmation = confirmationGeneration
   const archive = !archived.value
+  const boardId = props.card.boardId
+  const cardId = props.card.id
   const requestKey = cardKey.value
   pendingCards.add(requestKey)
   try {
-    await boardStore.setCardArchived(props.card.boardId, props.card.id, archive, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
-    if (context !== contextGeneration) return
+    const committed = await boardStore.setCardArchived(boardId, cardId, archive, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
+    if (context !== contextGeneration) {
+      // The replacement control must learn the committed state before this
+      // request releases its shared pending lock. Otherwise returning A after
+      // A -> B -> A would re-enable its old snapshot and repeat a stale write.
+      props.onInactiveCommit?.(committed)
+      return
+    }
     preview.value = null
     refreshed.value = false
     // Escape dismisses the confirmation, not the already-submitted operation.
