@@ -2,6 +2,18 @@
 
 Last Updated: 2026-09-12
 
+Archive request ownership #3059 merged on 2026-09-12 as `44d041ca7` after required hosted run
+`34714826369` passed at reviewed head `7135d53a9`. #3033 is closed and its issue/PR project items
+are Done with Priority IV; the first post-merge check found no unresolved review threads. Pending
+archive/restore requests now retain ownership above the keyed action child when navigating away
+and back. The successful-settlement snapshot follow-up remains #3060.
+
+The separate #3023 candidate hides the kept-draft notice once a pending assignment save makes
+the draft clean and retains the lifecycle version freeze until reopening. Its failing-before
+regression and 108 related component tests pass, with lint, typecheck/build and bounded review
+clean. The new main base has the same tree as its reviewed archive parent. Exact-head hosted
+qualification remains required; recovery copy and the other #3023 residuals remain open.
+
 Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
 #3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
 both operating-system API/frontend lanes and browser smoke. GitHub confirms #2093, #3044, #3049
