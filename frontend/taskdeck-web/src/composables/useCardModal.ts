@@ -7,6 +7,7 @@ import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
 import { getValidationReason, isValidationError } from './useErrorMapper'
+import { estimatedEffortInputs, parseEstimatedEffort } from '../utils/estimatedEffort'
 import {
   calendarDateKeyToMidnightUtc,
   formatCalendarDate,
@@ -20,12 +21,32 @@ export interface UseCardModalOptions {
   getLabels: () => Label[]
   onUpdated: () => void
   onClose: () => void
+  onPermissionDenied?: () => void
 }
 
 export function useCardModal(options: UseCardModalOptions) {
   const boardStore = useBoardStore()
   const sessionStore = useSessionStore()
   const toast = useToastStore()
+  // A write refusal belongs to the editor/account that submitted it. Closing and
+  // reopening the same card must retire it too, even when the card id is unchanged.
+  let permissionGeneration = 0
+  watch(
+    [() => options.getIsOpen(), () => options.getCard().boardId,
+      () => options.getCard().id, () => sessionStore.userId],
+    () => {
+      permissionGeneration++
+      isSaving.value = false
+      saveError.value = null
+    },
+    { flush: 'sync' },
+  )
+  function reportPermissionDenied(error: unknown, requestGeneration: number) {
+    if (requestGeneration !== permissionGeneration || !options.getIsOpen()) return
+    if ((error as { response?: { status?: number } })?.response?.status === 403) {
+      options.onPermissionDenied?.()
+    }
+  }
 
   // Form state
   const parentCardId = ref<string | null>(null)
@@ -38,10 +59,19 @@ export function useCardModal(options: UseCardModalOptions) {
   const title = ref('')
   const description = ref('')
   const dueDate = ref('')
+  const estimateHours = ref('')
+  const estimateMinutes = ref('')
+  const initialEstimateMinutes = ref<number | null>(null)
+  const parsedEstimate = computed(() => parseEstimatedEffort(estimateHours.value, estimateMinutes.value))
+  const estimateChanged = computed(() => Boolean(parsedEstimate.value.error) ||
+    parsedEstimate.value.value !== initialEstimateMinutes.value)
   const isBlocked = ref(false)
   const blockReason = ref('')
   const selectedLabelIds = ref<string[]>([])
   const expectedUpdatedAt = ref<string | null>(null)
+  let draftRevision = 0
+  watch([parentCardId, workItemType, title, description, dueDate, estimateHours, estimateMinutes,
+    isBlocked, blockReason, () => selectedLabelIds.value.join()], () => { draftRevision++ }, { flush: 'sync' })
 
   // Comment state
   const newCommentContent = ref('')
@@ -97,6 +127,7 @@ export function useCardModal(options: UseCardModalOptions) {
     if (title.value.trim().length === 0) return false
     if (isBlocked.value && blockReason.value.trim().length === 0) return false
     if (dueDate.value && !calendarDateKeyToMidnightUtc(dueDate.value)) return false
+    if (parsedEstimate.value.error) return false
     return true
   })
 
@@ -108,6 +139,7 @@ export function useCardModal(options: UseCardModalOptions) {
       title.value !== currentCard.title ||
       description.value !== (currentCard.description || '') ||
       dueDate.value !== (toCalendarDateKey(currentCard.dueDate) ?? '') ||
+      estimateChanged.value ||
       isBlocked.value !== currentCard.isBlocked ||
       blockReason.value !== (currentCard.blockReason || '') ||
       selectedLabelIds.value.length !== currentCard.labels.length ||
@@ -121,7 +153,8 @@ export function useCardModal(options: UseCardModalOptions) {
   // Watchers
   watch(() => options.getCard(), (newCard, previousCard) => {
     if (newCard) {
-      const switchedCards = Boolean(previousCard && previousCard.id !== newCard.id)
+      const switchedCards = Boolean(previousCard &&
+        (previousCard.id !== newCard.id || previousCard.boardId !== newCard.boardId))
       // Realtime and assignment saves replace the card object. Keep independently
       // edited card fields instead of overwriting the draft with that fresh object.
       if (!switchedCards && previousCard && options.getIsOpen() && (
@@ -129,6 +162,7 @@ export function useCardModal(options: UseCardModalOptions) {
         parentCardId.value !== (previousCard.parentCardId ?? null) ||
         workItemType.value !== (previousCard.workItemType ?? 'Task') ||
         dueDate.value !== (toCalendarDateKey(previousCard.dueDate) ?? '') ||
+        estimateChanged.value ||
         isBlocked.value !== previousCard.isBlocked || blockReason.value !== (previousCard.blockReason || '') ||
         [...selectedLabelIds.value].sort().join() !== previousCard.labels.map(l => l.id).sort().join()
       )) return
@@ -145,6 +179,10 @@ export function useCardModal(options: UseCardModalOptions) {
       title.value = newCard.title
       description.value = newCard.description || ''
       dueDate.value = toCalendarDateKey(newCard.dueDate) ?? ''
+      initialEstimateMinutes.value = newCard.estimatedEffortMinutes ?? null
+      const estimateInputs = estimatedEffortInputs(newCard.estimatedEffortMinutes)
+      estimateHours.value = estimateInputs.hours
+      estimateMinutes.value = estimateInputs.minutes
       isBlocked.value = newCard.isBlocked
       blockReason.value = newCard.blockReason || ''
       selectedLabelIds.value = newCard.labels.map(l => l.id)
@@ -256,6 +294,8 @@ export function useCardModal(options: UseCardModalOptions) {
   // Save
   async function handleSave() {
     if (!isFormValid.value || isSaving.value) return
+    const permissionRequest = permissionGeneration
+    const submittedDraftRevision = draftRevision
 
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
@@ -278,28 +318,45 @@ export function useCardModal(options: UseCardModalOptions) {
       update.dueDate = dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null
       update.clearDueDate = Boolean(targetCard.dueDate) && !dueDate.value
     }
+    // Compare with the loaded draft baseline, not a newer realtime card object:
+    // an unrelated title save must never send an unedited estimate back.
+    if (estimateChanged.value) {
+      if (parsedEstimate.value.value === null) update.clearEstimatedEffort = true
+      else update.estimatedEffortMinutes = parsedEstimate.value.value
+    }
+    const ownsSave = () => permissionRequest === permissionGeneration &&
+      isCurrentCardSession(targetCard.id, targetSessionVersion)
     isSaving.value = true
     saveError.value = null
     try {
-      await boardStore.updateCard(targetCard.boardId, targetCard.id, update)
+      const saved = await boardStore.updateCard(targetCard.boardId, targetCard.id, update)
 
-      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
+      if (!ownsSave()) return
+      // Snapshot hosts do not replace the selected card with the store receipt.
+      // Accept our committed version/estimate before keeping a newer draft, so
+      // its next save can use that version without resending an unchanged estimate.
+      if (options.getIsOpen() && saved?.id === targetCard.id && saved.boardId === targetCard.boardId) {
+        expectedUpdatedAt.value = saved.updatedAt
+        initialEstimateMinutes.value = saved.estimatedEffortMinutes ?? null
+      }
+      if (draftRevision !== submittedDraftRevision) return
       options.onUpdated()
       options.onClose()
     } catch (error) {
       logError('Failed to update card:', error)
-      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
+      reportPermissionDenied(error, permissionRequest)
+      if (!ownsSave() || draftRevision !== submittedDraftRevision) return
       const status = (error as { response?: { status?: number } })?.response?.status
       saveError.value = isValidationError(error)
         ? `${getValidationReason(error) ?? 'Please check the card fields.'} Your draft is kept.`
         : status === 409
         ? 'The card changed or is read-only. Your draft is kept. Refresh the board and reopen the card before saving again.'
         : status === 403
-          ? 'You no longer have permission to edit this card. Your draft is kept.'
+          ? 'This card save was refused. Your draft is kept.'
           : 'Could not confirm the save. Your draft is kept. Refresh the board before trying again.'
       toast.error(saveError.value)
     } finally {
-      if (isCurrentCardSession(targetCard.id, targetSessionVersion)) isSaving.value = false
+      if (ownsSave()) isSaving.value = false
     }
   }
 
@@ -349,6 +406,7 @@ export function useCardModal(options: UseCardModalOptions) {
 
   async function handleDeleteConfirm() {
     if (isDeleting.value || !detachPreview.value || deletePreviewError.value) return
+    const permissionRequest = permissionGeneration
     isDeleting.value = true
     try {
       await boardStore.deleteCard(card.value.boardId, card.value.id, detachPreview.value)
@@ -357,6 +415,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onClose()
     } catch (error) {
       logError('Failed to delete card:', error)
+      reportPermissionDenied(error, permissionRequest)
       deletePreviewError.value = 'Card or children changed, or deletion could not be confirmed. Close and refresh before confirming again.'
       toast.error(deletePreviewError.value)
     } finally {
@@ -379,6 +438,7 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleAddComment(parentCommentId?: string) {
+    const permissionRequest = permissionGeneration
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
     const content = parentCommentId
@@ -405,6 +465,7 @@ export function useCardModal(options: UseCardModalOptions) {
       }
     } catch (error) {
       logError('Failed to add comment:', error)
+      reportPermissionDenied(error, permissionRequest)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to add comment. Please try again.')
     }
@@ -425,6 +486,7 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleSaveEditComment(commentId: string) {
+    const permissionRequest = permissionGeneration
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
     const content = editingCommentContent.value.trim()
@@ -443,6 +505,7 @@ export function useCardModal(options: UseCardModalOptions) {
       }
     } catch (error) {
       logError('Failed to update comment:', error)
+      reportPermissionDenied(error, permissionRequest)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to update comment. Please try again.')
     }
@@ -475,6 +538,7 @@ export function useCardModal(options: UseCardModalOptions) {
     if (!comment || isDeletingComment.value) {
       return
     }
+    const permissionRequest = permissionGeneration
 
     isDeletingComment.value = true
     try {
@@ -483,6 +547,7 @@ export function useCardModal(options: UseCardModalOptions) {
       commentPendingDeletion.value = null
     } catch (error) {
       logError('Failed to delete comment:', error)
+      reportPermissionDenied(error, permissionRequest)
       toast.error('Failed to delete comment. Please try again.')
     } finally {
       isDeletingComment.value = false
@@ -500,6 +565,7 @@ export function useCardModal(options: UseCardModalOptions) {
 
   // Cleanup
   onBeforeUnmount(() => {
+    permissionGeneration++
     if (boardStore.editingCardId === card.value.id) {
       boardStore.setEditingCard(null)
     }
@@ -538,6 +604,8 @@ export function useCardModal(options: UseCardModalOptions) {
     title,
     description,
     dueDate,
+    estimateHours,
+    estimateMinutes,
     isBlocked,
     blockReason,
     selectedLabelIds,

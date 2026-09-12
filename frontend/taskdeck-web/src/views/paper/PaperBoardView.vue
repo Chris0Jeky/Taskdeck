@@ -608,13 +608,16 @@ function cancelComposer() {
   composerError.value = null
 }
 
-async function createCardInColumn(column: Column, title: string) {
+async function createCardInColumn(column: Column, title: string, estimatedEffortMinutes?: number) {
   if (composerBusy.value) return
 
   composerBusy.value = true
   composerError.value = null
   try {
-    await boardStore.createCard(boardId.value, { columnId: column.id, title })
+    await boardStore.createCard(boardId.value, {
+      columnId: column.id, title,
+      ...(estimatedEffortMinutes === undefined ? {} : { estimatedEffortMinutes }),
+    })
     // Parity with the Legacy inline form: a successful add closes the composer.
     composerColumnId.value = null
   } catch (error) {

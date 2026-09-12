@@ -223,7 +223,9 @@ describe('CardAssignmentField', () => {
 
     it('explains the revoked permission and locks the write controls, keeping the draft', async () => {
       const wrapper = await downgradedDuringSave()
-      expect(wrapper.text()).toContain('Your edit permission was revoked')
+      expect(wrapper.text()).toContain('This assignment save was refused')
+      expect(wrapper.text()).not.toContain('stay readable')
+      expect(wrapper.emitted('permission-denied')).toEqual([[]])
       expect(wrapper.text()).not.toContain('Could not confirm assignment save')
       expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
       expect(button(wrapper, 'Save assignments').attributes('disabled')).toBeDefined()
@@ -237,7 +239,7 @@ describe('CardAssignmentField', () => {
       vi.mocked(cardsApi.getCard).mockResolvedValue({ ...card, updatedAt: 'v3' })
       await button(wrapper, 'Refresh current assignments').trigger('click'); await flushPromises()
       expect(vi.mocked(cardsApi.getParticipants)).toHaveBeenCalledTimes(2)
-      expect(wrapper.text()).toContain('Your edit permission was revoked')
+      expect(wrapper.text()).toContain('This assignment save was refused')
       expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
       expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
       /*
@@ -269,7 +271,7 @@ describe('CardAssignmentField', () => {
       expect(cardsApi.replaceAssignments).toHaveBeenCalledTimes(1)
       // Cancelling the draft is not regaining permission.
       expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
-      expect(wrapper.text()).toContain('Your edit permission was revoked')
+      expect(wrapper.text()).toContain('This assignment save was refused')
       expect(button(wrapper, 'Save assignments').attributes('disabled')).toBeDefined()
     })
 
@@ -311,7 +313,7 @@ describe('CardAssignmentField', () => {
       const wrapper = await downgradedDuringSave()
       await wrapper.setProps({ readOnly: true }); await flushPromises()
       await wrapper.setProps({ readOnly: false }); await flushPromises()
-      expect(wrapper.text()).not.toContain('Your edit permission was revoked')
+      expect(wrapper.text()).not.toContain('This assignment save was refused')
       expect(wrapper.find('fieldset').attributes('disabled')).toBeUndefined()
       vi.mocked(cardsApi.replaceAssignments).mockResolvedValue({ ...card, updatedAt: 'v2' })
       await button(wrapper, 'Save assignments').trigger('click'); await flushPromises()
@@ -327,7 +329,8 @@ describe('CardAssignmentField', () => {
       await button(wrapper, 'Save assignments').trigger('click')
       await wrapper.setProps({ card: { ...card, id: 'next' } }); await flushPromises()
       fail({ response: { status: 403 } }); await flushPromises()
-      expect(wrapper.text()).not.toContain('Your edit permission was revoked')
+      expect(wrapper.text()).not.toContain('This assignment save was refused')
+      expect(wrapper.emitted('permission-denied')).toBeUndefined()
       expect(wrapper.find('fieldset').attributes('disabled')).toBeUndefined()
     })
 
@@ -338,6 +341,7 @@ describe('CardAssignmentField', () => {
       vi.mocked(cardsApi.replaceAssignments).mockRejectedValue({ response: { status: 400 } })
       await button(wrapper, 'Save assignments').trigger('click'); await flushPromises()
       expect(wrapper.text()).toContain('no longer eligible')
+      expect(wrapper.emitted('permission-denied')).toBeUndefined()
       expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
       vi.mocked(cardsApi.getCard).mockResolvedValue({ ...card, updatedAt: 'v3' })
       await button(wrapper, 'Refresh current assignments').trigger('click'); await flushPromises()
