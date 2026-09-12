@@ -2,6 +2,20 @@
 
 Last Updated: 2026-09-12
 
+## Typed relations candidate (2026-09-12, #2092)
+
+Five independently owned slices now integrate the accepted same-board relation contract: canonical
+storage and migration, proposal semantics, API/MCP/chat producers, board/account portability and
+the shared thinking-deck UI. Existing dependency clients use an adapter over the same revisioned
+store. Typed mutations retain explicit review and caller-observed revisions. There is no new status,
+assignment, hierarchy or delegated-authority behavior. [Contract](product/CARD_RELATIONS.md).
+
+Scoped source checks and storage review pass; combined suites, actual browser journeys and the
+remaining application/authorization review are in progress. A controlled proposal rollback probe
+exposed an earlier card-update event publishing before rollback; its bounded deferred-publication
+fix is being qualified before delivery. This section supersedes the historical Pending note below.
+The candidate remains unmerged, and existing human-action and release decisions are unchanged.
+
 ## Estimates and derived rollups (2026-09-12, #2093)
 
 The complete estimate vertical is integrated for qualification: nullable bounded effort minutes,

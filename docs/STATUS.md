@@ -2,6 +2,24 @@
 
 Last Updated: 2026-09-12
 
+Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
+thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
+context with labelled navigation. Typed additions and removals create review proposals; the graph
+changes only at Apply. Relations do not grant access or change status, hierarchy, assignments or
+estimates. Existing direct dependency editing remains compatible through the same canonical store.
+One board revision protects the graph, including empty graphs and archived endpoints. Archive
+retains links; hard deletion removes incident links atomically with its actor receipt. Board JSON
+v5 and authorized buffered/streaming account exports carry the metadata. Upgrade and developer
+rollback behavior, including loss of non-dependency metadata on Down, are documented in
+[the relation contract](product/CARD_RELATIONS.md) and [UPGRADING](../UPGRADING.md).
+
+Focused source proof passes Domain 8, legacy dependency API 14, SQLite persistence/migration 9,
+proposal Application 316, portability Application 84/API 36, and frontend 32 tests. These are scoped
+source runs, not a combined total or final integration gate. The storage/migration/concurrency
+review is clean. Whole-vertical backend/frontend checks, proposal producer authorization review,
+realtime rollback correction and actual browser journeys remain in progress. No relation merge,
+release or device/screen-reader acceptance is claimed.
+
 Card estimates and current-state rollups (#2093) are implemented on the integration branch.
 Optional whole-minute estimates display as hours/minutes in shared card details and both Paper
 and Legacy quick-create. Blank means unknown; explicit zero remains known. A successful save
@@ -35,6 +53,12 @@ Hosted frontend lint exposed a static-container Escape handler; the handler now 
 panel's Refresh button, and lint, production build and all six panel tests pass. The panel remains
 a named region and Escape restores its opener's focus. Backend-less demo rollups are unavailable
 and tracked as the non-blocking #3056; normal server-backed rollups are qualified above.
+Required hosted run `34707276360` passed the backend, Windows API and frontend checks but failed
+two Paper E2E tests during their fixed 40-Tab setup. Local Chromium reproduced both failures and
+recorded the traversal stopping before the first card after the Estimates control was added.
+The tests now enter the card with Tab from its preceding control; their focus-ring and J/Enter
+assertions are unchanged. Both corrected real-API tests pass (17.9 seconds). A new hosted gate
+is required; the failure is not classified as flaky.
 PR #3054 also preserves the reviewed commits from #3053 (planning/backup references) and #3055
 (same-valued permission recovery). Their source evidence is retained; final combined CI is required.
 [Contract and limits](product/CARD_ESTIMATES.md).
