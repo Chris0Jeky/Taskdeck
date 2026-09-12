@@ -356,7 +356,7 @@ describe('CardModal assignment save in flight (#2981)', () => {
     deferred.resolve(savedCard)
     await flushPromises()
     expect(savePendingDismissButton()).toBeNull()
-    expect(store.currentBoardCards).toEqual([savedCard])
+    expect((store as unknown as Record<string, unknown>).currentBoardCards).toEqual([savedCard])
 
     // And the editor closes on the next request instead of trapping the user.
     await wrapper.get('[aria-label="Close card editor"]').trigger('click')
