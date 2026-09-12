@@ -6,6 +6,8 @@ The typed-relation candidate includes delivered archive recovery #3059 and draft
 through main `9a8c14c6b`. Their required hosted gates passed; #3033 is closed and #3023 retains
 its broader residuals. Integration resolved only concurrent STATUS/MASTERPLAN records, preserving
 both. Backend files are unchanged by this base merge. Requalify against the delivered base.
+All 61 focused archive/relation component and API-wrapper tests pass on the combined base;
+the delivered CardModal and assignment-save test blobs match main exactly.
 
 Chat relation proposals now resolve normal short card IDs within the active board while retaining
 all previously accepted full UUID formats. The registered `get_board_card_relations` chat reader

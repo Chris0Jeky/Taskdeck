@@ -7,6 +7,7 @@ Last Updated: 2026-09-12
 The candidate includes delivered archive recovery #3059 and draft correction #3064 through
 main `9a8c14c6b`. Only the concurrent canonical records needed merge resolution; both records
 are preserved and backend files are unchanged. Qualify the updated main base.
+The combined base passes 61 focused archive/relation tests; the delivered editor blobs match main.
 
 Five independently owned slices now integrate the accepted same-board relation contract: canonical
 storage and migration, proposal semantics, API/MCP/chat producers, board/account portability and
