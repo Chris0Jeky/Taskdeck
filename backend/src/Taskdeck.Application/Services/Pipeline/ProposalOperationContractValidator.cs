@@ -774,7 +774,8 @@ public static class ProposalOperationContractValidator
 
         public async Task<Result> ValidateEstimateVersionAsync(JsonElement parameters, CancellationToken ct)
         {
-            var cardId = parameters.GetProperty("cardId").GetGuid();
+            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
+                return Result.Failure(ErrorCodes.ValidationError, error);
             // A card created earlier in this proposal has no persisted pre-proposal version.
             if (_plannedCardIds.Contains(cardId)) return Result.Success();
             if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
