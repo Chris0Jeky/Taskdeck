@@ -496,6 +496,7 @@ public class RoadmapInvariantTests
             "create_card",
             "create_column",
             "dismiss_proposal",
+            "get_board_estimate_rollups",
             "get_board_summary",
             "get_proposal_status",
             "list_board_participants",

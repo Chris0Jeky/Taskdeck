@@ -4,6 +4,8 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface ICardRepository : IRepository<Card>
 {
+    /// <summary>Fresh active board cards and assignments for derived estimates; no persisted totals.</summary>
+    Task<IReadOnlyList<Card>> GetForEstimateRollupsAsync(Guid boardId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Card>> GetHierarchyByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);
     Task StageDependencyProjectionInvalidationAsync(Guid boardId, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetArchivedByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);

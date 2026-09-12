@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { useCardModal, type UseCardModalOptions } from '../../composables/useCardModal'
 import { cardsApi } from '../../api/cardsApi'
-import type { Card, CardDetachPreview, Label } from '../../types/board'
+import type { Card, CardDetachPreview, Label, UpdateCardDto } from '../../types/board'
 import type { CardComment } from '../../types/comments'
 import { installTimeZone } from '../utils/timeZone'
 
@@ -215,6 +215,227 @@ describe('useCardModal', () => {
     mockBoardStore.updateCardComment.mockResolvedValue(undefined)
     mockBoardStore.deleteCardComment.mockResolvedValue(undefined)
     mockSessionStore.userId = 'user-1'
+  })
+
+  describe('estimated effort drafts', () => {
+    it.each([
+      { name: 'positive', initial: null, saved: 75 },
+      { name: 'zero', initial: 90, saved: 0 },
+      { name: 'clear', initial: 0, saved: null },
+    ])('accepts the $name receipt and resaves a newer title from a snapshot host', async ({ initial, saved }) => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: initial, updatedAt: 'loaded-v1' })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<Card>()
+      mockBoardStore.updateCard.mockReturnValueOnce(pending.promise)
+      // ColumnLane holds a selected-card snapshot: the store receipt never replaces
+      // ctx.cardRef, so the editor must learn its new baseline from its own save.
+      ctx.result.estimateHours.value = saved === null ? '' : String(Math.floor(saved / 60))
+      ctx.result.estimateMinutes.value = saved === null ? '' : String(saved % 60)
+      const firstSave = ctx.result.handleSave()
+      ctx.result.title.value = 'Newer title draft'
+      pending.resolve(makeCard({ estimatedEffortMinutes: saved, updatedAt: 'saved-v2' }))
+      await firstSave
+      expect(ctx.cardRef.value.updatedAt).toBe('loaded-v1')
+      expect(ctx.result.title.value).toBe('Newer title draft')
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      mockBoardStore.updateCard.mockImplementationOnce((_boardId: string, _cardId: string, update: UpdateCardDto) =>
+        update.expectedUpdatedAt === 'saved-v2'
+          ? Promise.resolve(makeCard({ title: 'Newer title draft', estimatedEffortMinutes: saved, updatedAt: 'saved-v3' }))
+          : Promise.reject({ response: { status: 409 } }),
+      )
+      await ctx.result.handleSave()
+      const retry = mockBoardStore.updateCard.mock.calls[1]![2]
+      expect(retry).toMatchObject({ title: 'Newer title draft', expectedUpdatedAt: 'saved-v2' })
+      expect(retry).not.toHaveProperty('estimatedEffortMinutes')
+      expect(retry).not.toHaveProperty('clearEstimatedEffort')
+      expect(ctx.result.saveError.value).toBeNull()
+      expect(ctx.onUpdated).toHaveBeenCalledTimes(1)
+      expect(ctx.onClose).toHaveBeenCalledTimes(1)
+      ctx.wrapper.unmount()
+    })
+
+    it.each([
+      { initial: null, saved: 0, next: { clearEstimatedEffort: true } },
+      { initial: 0, saved: null, next: { estimatedEffortMinutes: 0 } },
+    ])('uses the receipt baseline when a newer estimate draft reverses $saved', async ({ initial, saved, next }) => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: initial, updatedAt: 'loaded-v1' })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<Card>()
+      mockBoardStore.updateCard.mockReturnValueOnce(pending.promise)
+      ctx.result.estimateHours.value = saved === null ? '' : '0'
+      ctx.result.estimateMinutes.value = saved === null ? '' : '0'
+      const firstSave = ctx.result.handleSave()
+      ctx.result.estimateHours.value = initial === null ? '' : '0'
+      ctx.result.estimateMinutes.value = initial === null ? '' : '0'
+      pending.resolve(makeCard({ estimatedEffortMinutes: saved, updatedAt: 'saved-v2' }))
+      await firstSave
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      await ctx.result.handleSave()
+      expect(mockBoardStore.updateCard.mock.calls[1]![2]).toMatchObject({ ...next, expectedUpdatedAt: 'saved-v2' })
+      ctx.wrapper.unmount()
+    })
+
+    it.each(['card', 'board', 'account', 'reopen'] as const)('does not advance the current baseline from an old %s receipt', async context => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: 90, updatedAt: 'loaded-v1' })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<Card>()
+      mockBoardStore.updateCard.mockReturnValueOnce(pending.promise)
+      ctx.result.estimateHours.value = '0'
+      ctx.result.estimateMinutes.value = '15'
+      const firstSave = ctx.result.handleSave()
+      if (context === 'card') ctx.cardRef.value = makeCard({ id: 'card-2', estimatedEffortMinutes: 120, updatedAt: 'current-v1' })
+      if (context === 'board') ctx.cardRef.value = makeCard({ boardId: 'board-2', estimatedEffortMinutes: 120, updatedAt: 'current-v1' })
+      if (context === 'account') mockSessionStore.userId = 'user-2'
+      if (context === 'reopen') {
+        ctx.isOpenRef.value = false
+        await nextTick()
+        ctx.isOpenRef.value = true
+      }
+      await nextTick()
+      ctx.result.estimateHours.value = context === 'card' || context === 'board' ? '2' : '1'
+      ctx.result.estimateMinutes.value = context === 'card' || context === 'board' ? '0' : '30'
+      ctx.result.title.value = 'Current editor draft'
+      pending.resolve(makeCard({ estimatedEffortMinutes: 15, updatedAt: 'old-receipt-v2' }))
+      await firstSave
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      await ctx.result.handleSave()
+      const currentSave = mockBoardStore.updateCard.mock.calls[1]![2]
+      expect(currentSave.expectedUpdatedAt).toBe(ctx.cardRef.value.updatedAt)
+      expect(currentSave).not.toHaveProperty('estimatedEffortMinutes')
+      expect(currentSave).not.toHaveProperty('clearEstimatedEffort')
+      ctx.wrapper.unmount()
+    })
+
+    it.each([undefined, null, 0, 90, 1_000_000])('hydrates %s without making an unrelated save an estimate write', async value => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: value })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      expect([ctx.result.estimateHours.value, ctx.result.estimateMinutes.value]).toEqual(
+        value == null ? ['', ''] : [String(Math.floor(value / 60)), String(value % 60)],
+      )
+      expect(ctx.result.hasUnsavedChanges.value).toBe(false)
+      ctx.result.title.value = 'Only title changed'
+      await ctx.result.handleSave()
+      const update = mockBoardStore.updateCard.mock.calls[0]![2]
+      expect(update).not.toHaveProperty('estimatedEffortMinutes')
+      expect(update).not.toHaveProperty('clearEstimatedEffort')
+      ctx.wrapper.unmount()
+    })
+
+    it.each([['', '0', 0], ['1', '30', 90], ['16666', '40', 1_000_000]])('saves entered %sh %sm with the loaded version', async (hours, minutes, value) => {
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      ctx.result.estimateHours.value = String(hours)
+      ctx.result.estimateMinutes.value = String(minutes)
+      expect(ctx.result.hasUnsavedChanges.value).toBe(true)
+      await ctx.result.handleSave()
+      expect(mockBoardStore.updateCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({
+        estimatedEffortMinutes: value, expectedUpdatedAt: ctx.cardRef.value.updatedAt,
+      }))
+      expect(mockBoardStore.updateCard.mock.calls[0]![2]).not.toHaveProperty('clearEstimatedEffort')
+      ctx.wrapper.unmount()
+    })
+
+    it.each([['-1', '0'], ['1.5', ''], ['1e2', ''], ['0', '60'], ['16666', '41'], ['no', ''], ['99999999999999999999', '0']])('refuses invalid draft %sh %sm without dropping it', async (hours, minutes) => {
+      const ctx = mountComposable()
+      ctx.result.estimateHours.value = hours
+      ctx.result.estimateMinutes.value = minutes
+      expect(ctx.result.isFormValid.value).toBe(false)
+      expect(ctx.result.hasUnsavedChanges.value).toBe(true)
+      await ctx.result.handleSave()
+      expect(mockBoardStore.updateCard).not.toHaveBeenCalled()
+      expect(ctx.result.estimateHours.value).toBe(hours)
+      ctx.wrapper.unmount()
+    })
+
+    it.each([0, 90])('explicitly clears a loaded %s estimate', async value => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: value })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      ctx.result.estimateHours.value = ''
+      ctx.result.estimateMinutes.value = ''
+      await ctx.result.handleSave()
+      expect(mockBoardStore.updateCard.mock.calls[0]![2]).toMatchObject({ clearEstimatedEffort: true })
+      expect(mockBoardStore.updateCard.mock.calls[0]![2]).not.toHaveProperty('estimatedEffortMinutes')
+      ctx.wrapper.unmount()
+    })
+
+    it('keeps an estimate-only draft across assignment and realtime card replacement', async () => {
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      ctx.result.estimateMinutes.value = '25'
+      ctx.result.acceptAssignmentVersion('own-assignment', ctx.cardRef.value.updatedAt)
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: 80, updatedAt: 'remote-newer' })
+      await nextTick()
+      expect(ctx.result.estimateMinutes.value).toBe('25')
+      await ctx.result.handleSave()
+      expect(mockBoardStore.updateCard.mock.calls[0]![2]).toMatchObject({ estimatedEffortMinutes: 25, expectedUpdatedAt: 'own-assignment' })
+      ctx.wrapper.unmount()
+    })
+
+    it('omits an untouched estimate even when a remote estimate changes behind another draft', async () => {
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      ctx.result.title.value = 'My title'
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: 80, updatedAt: 'remote-newer' })
+      await nextTick()
+      await ctx.result.handleSave()
+      expect(mockBoardStore.updateCard.mock.calls[0]![2]).not.toHaveProperty('estimatedEffortMinutes')
+      expect(mockBoardStore.updateCard.mock.calls[0]![2]).not.toHaveProperty('clearEstimatedEffort')
+      ctx.wrapper.unmount()
+    })
+
+    it.each(['card', 'board', 'account', 'reopen', 'draft'] as const)('does not close or replace the current editor on a stale save after %s changes', async context => {
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<void>()
+      mockBoardStore.updateCard.mockReturnValueOnce(pending.promise)
+      ctx.result.estimateMinutes.value = '15'
+      const save = ctx.result.handleSave()
+      if (context === 'card') ctx.cardRef.value = makeCard({ id: 'card-2', estimatedEffortMinutes: 120 })
+      if (context === 'board') ctx.cardRef.value = makeCard({ boardId: 'board-2', estimatedEffortMinutes: 120 })
+      if (context === 'account') mockSessionStore.userId = 'user-2'
+      if (context === 'reopen') {
+        ctx.isOpenRef.value = false
+        await nextTick()
+        ctx.isOpenRef.value = true
+      }
+      await nextTick()
+      ctx.result.estimateMinutes.value = '35'
+      pending.resolve()
+      await save
+      expect(ctx.result.estimateMinutes.value).toBe('35')
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      expect(ctx.onUpdated).not.toHaveBeenCalled()
+      ctx.wrapper.unmount()
+    })
+
+    it.each([403, 409, 500])('preserves estimate drafts after save failure %s', async status => {
+      const denied = vi.fn()
+      const ctx = mountComposable({ onPermissionDenied: denied })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      ctx.result.estimateMinutes.value = '0'
+      mockBoardStore.updateCard.mockRejectedValueOnce({ response: { status } })
+      await ctx.result.handleSave()
+      expect(ctx.result.estimateMinutes.value).toBe('0')
+      expect(ctx.result.saveError.value).toContain('Your draft is kept')
+      expect(denied).toHaveBeenCalledTimes(status === 403 ? 1 : 0)
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      ctx.wrapper.unmount()
+    })
   })
 
   describe('write permission refusal bridge', () => {

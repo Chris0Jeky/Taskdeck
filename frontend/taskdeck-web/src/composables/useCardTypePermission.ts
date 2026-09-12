@@ -54,6 +54,8 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   const session = useSessionStore()
   const permissionRecovery = ref(false)
   const accessUnavailable = ref(false)
+  /** The latest board-read request at the start of a denied-write recovery. */
+  let recoveryRequestGeneration: number | null = null
 
   /** The permission this composable's own server read confirmed, scoped to its board. */
   const confirmed = ref<{ boardId: string; canWrite: boolean } | null>(null)
@@ -85,6 +87,25 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     if (typeof board.canWrite !== 'boolean') return null
     return board.canWrite
   })
+
+  /*
+   * Board detail reads retain both their request and committed-payload
+   * generations. That makes a later `canWrite: true` evidence when a denied
+   * write is being reconciled, while an optimistic/local object replacement or
+   * a response already in flight at the denial is not.
+   * Older test harnesses and alternate stores that do not carry the marker stay
+   * on the existing explicit-read recovery path.
+   */
+  const boardPayloadGeneration = computed<number | null>(() =>
+    typeof boardStore.currentBoardPayloadGeneration === 'number'
+      ? boardStore.currentBoardPayloadGeneration
+      : null,
+  )
+  const boardRequestGeneration = computed<number | null>(() =>
+    typeof boardStore.currentBoardRequestGeneration === 'number'
+      ? boardStore.currentBoardRequestGeneration
+      : null,
+  )
 
   const confirmedPermission = computed<boolean | null>(() =>
     confirmed.value && confirmed.value.boardId === options.getBoardId() ? confirmed.value.canWrite : null,
@@ -197,6 +218,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     // Invalidate both the loaded payload and our own earlier answer synchronously.
     // A refusal also supersedes any read started before it, even for the same board.
     permissionRecovery.value = true
+    recoveryRequestGeneration = boardRequestGeneration.value
     confirmed.value = null
     await read(options.getBoardId())
   }
@@ -209,15 +231,27 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       failedBoardId.value = null
       // An account change cannot inherit the previous caller's cached board permission.
       permissionRecovery.value = actor !== previous[3]
+      recoveryRequestGeneration = null
       accessUnavailable.value = false
     },
     { flush: 'sync' },
   )
 
-  watch(statedPermission, (value, previous) => {
-    if (!permissionRecovery.value || value === null || value === previous) return
-    // A later board-store permission update is server evidence too. Retire any older
-    // reconciliation read rather than letting its delayed answer reverse that update.
+  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
+    if (!permissionRecovery.value || value === null) return
+
+    // A direct false transition is safe to consume immediately: it can only
+    // further restrict the editor. A later true needs the store's committed
+    // server-payload marker, because a local patch must never re-authorize a
+    // write the server just refused.
+    const permissionWasRevoked = value === false && value !== previousValue
+    const hasFreshServerPayload = payloadGeneration !== null &&
+      payloadGeneration !== previousPayloadGeneration &&
+      (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
+    if (!permissionWasRevoked && !hasFreshServerPayload) return
+
+    // Retire any older reconciliation read rather than letting its delayed
+    // answer reverse the newer server payload or restriction.
     cancelRead()
     confirmed.value = { boardId: options.getBoardId(), canWrite: value }
     failedBoardId.value = null

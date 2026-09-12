@@ -2,6 +2,50 @@
 
 Last Updated: 2026-09-12
 
+Card estimates and current-state rollups (#2093) are implemented on the integration branch.
+Optional whole-minute estimates display as hours/minutes in shared card details and both Paper
+and Legacy quick-create. Blank means unknown; explicit zero remains known. A successful save
+advances the editor's version and estimate baseline while preserving any newer draft. Existing
+board participants and multiple assignments supply board, column, participant and unassigned
+totals over active cards. Each card counts once in board totals and contributes its full estimate
+to every assignee, with a visible overlap explanation; parent and child estimates stay independent.
+Timestamped totals support explicit refresh after board changes. These are current assignments
+and estimates, not time worked or capacity.
+
+Direct writes, proposal preview/approval/apply and chat/MCP tools carry the nullable estimate;
+intentional changes require the caller's card version. Ordered proposals validate initial versions
+and preserve transaction rollback when a competing writer intervenes. Board import/export and
+both account exports retain estimates; malformed imports fail before writes. The additive migration
+leaves old cards unestimated, and its Down path drops estimate metadata without deleting cards.
+Focused domain, application, API, SQLite migration/rollback and MCP proofs pass. Full combined
+frontend qualification passed 6,856 tests across 440 files with three existing skips, plus typecheck
+and build. Both real-API Chromium journeys passed for Legacy and Paper: null/zero/90-minute
+persistence, clear/resave, exact overlapping participant totals, edit/move/archive followed by
+refresh, Viewer access, 390px layout and Escape focus. One bounded screenshot remeasure settled
+the responsive transition; no runtime defect was found. Physical devices, other browsers and
+screen-reader output were not tested.
+
+The combined backend run passed 9,727 tests with 34 existing skips and exposed four architecture
+failures: the new controller declaration did not match the repository scanner, and the MCP tool
+inventory omitted the new read tool. The final declaration/inventory correction passed all 28
+architecture tests (one existing skip) and four rollup API cases; the broad solution run was not
+repeated after this bounded correction. Core, editor receipt, portability and proposal/rollup
+interaction reviews are clean. Exact-head hosted qualification remains on the delivery PR.
+Hosted frontend lint exposed a static-container Escape handler; the handler now belongs to the
+panel's Refresh button, and lint, production build and all six panel tests pass. The panel remains
+a named region and Escape restores its opener's focus. Backend-less demo rollups are unavailable
+and tracked as the non-blocking #3056; normal server-backed rollups are qualified above.
+PR #3054 also preserves the reviewed commits from #3053 (planning/backup references) and #3055
+(same-valued permission recovery). Their source evidence is retained; final combined CI is required.
+[Contract and limits](product/CARD_ESTIMATES.md).
+
+Recovery integration #3050 merged on 2026-09-12 as `9c17a83bf`, preserving source PRs #2914,
+#3043, #3046, #3047, #3048 and #3051. Required hosted run `34702720469` passed at reviewed
+head `05ed5bbad`, including Windows API integration and browser smoke. GitHub confirms the nine
+linked repair issues closed; #3033's partial residual remains open. The post-merge checkpoint
+found no unresolved source or integration review threads. The behavior records below retain
+their original local qualification heads and limitations.
+
 Board import rejects conflicting assignee labels (#2980, PR #3014): the shared import validator now
 requires one consistent display label per source assignee key, so a payload that repeats a key with a
 different - including case-only or whitespace-only different - label fails on preview and on both Apply
@@ -29,9 +73,13 @@ pending-write busy-ownership residual stays open in #3033. Qualification: full f
 `8ab19e7ef` passed 6,776 tests with three existing skips; final `8582b7ac3` passed typecheck,
 build, 175 focused tests and three native Chromium focus cases after the bounded write403
 bridge. Real backend permission integration and screen-reader output were not tested.
-Fresh background board payloads that repeat the same permission boolean can still leave a denied
-editor locked until explicit permission refresh or reopen; that non-blocking recovery residual is
-tracked in #3049.
+The same-valued permission recovery follow-up (#3049) is implemented for qualification. A committed
+board-detail read that began after denial can restore editing even when `canWrite` remains true;
+local object replacement and pre-denial in-flight reads grant nothing. Request/payload generations
+preserve the existing fail-closed and cancellation behavior. Focused specs passed 100 tests; the full
+frontend passed 6,794 with three existing skips across 438 files. Typecheck/build passed before the
+four-line fixture-only repair, which received a clean bounded follow-up review. Final hosted CI and
+live browser permission transitions remain separate qualification evidence.
 
 Assignment revoke notifications (#2979, PR #3047) now publish each detached card's actual ID
 after the access/audit transaction commits, with no notification when assignments are unchanged.
