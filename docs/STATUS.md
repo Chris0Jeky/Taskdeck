@@ -13,6 +13,13 @@ production build pass at `47c290b56`; bounded independent review is clean. This 
 unnecessary recovery friction while preserving server-authoritative writes and the user's draft.
 Hosted qualification remains required; physical-device and screen-reader acceptance are untested.
 
+The bounded permission-review correction treats a definitive recovery denial as newer evidence:
+403/404, explicit read-only permission and archived-board responses advance the boundary, while
+transient failures retain it. Four deferred cases fail before the correction and pass afterward;
+all 24 modal recovery and 30 composable tests pass, as do lint and the production build.
+Independent verification is clean at `d343a0b7c`. Older payloads keep controls locked and preserve
+the draft; a genuinely later authoritative payload can recover access. Requalify the pushed head.
+
 Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
 #3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
 both operating-system API/frontend lanes and browser smoke. GitHub confirms #2093, #3044, #3049
