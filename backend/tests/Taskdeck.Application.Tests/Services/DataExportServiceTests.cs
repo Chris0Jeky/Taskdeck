@@ -1119,9 +1119,9 @@ public class DataExportServiceStreamingTests
         _transcriptRepoMock.Setup(repository => repository.GetEstimatedSerializedLengthByUserAsync(_userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(0L);
         var boardId = Guid.NewGuid();
-        var first = new Card(Guid.NewGuid(), boardId, "First");
-        var archivedSecond = new Card(Guid.NewGuid(), boardId, "Archived second");
-        var excludedThird = new Card(Guid.NewGuid(), boardId, "Excluded third");
+        var first = new Card(boardId, Guid.NewGuid(), "First");
+        var archivedSecond = new Card(boardId, Guid.NewGuid(), "Archived second");
+        var excludedThird = new Card(boardId, Guid.NewGuid(), "Excluded third");
         archivedSecond.Archive();
         var graph = new BoardDependencies(boardId);
         graph.ReplaceRelations([

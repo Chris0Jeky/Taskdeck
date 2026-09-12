@@ -435,7 +435,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 if (envelope is not { Format: "taskdeck-board", Version: 2 or 3 or 4 or 5, Payload: not null }) return null;
                 if (envelope.Version < 4 && (envelope.Payload.Cards ?? []).Any(c => c.Assignments is { Count: > 0 })) return null;
                 if (envelope.Version < 5 && document.RootElement.TryGetProperty("payload", out var legacyPayload) &&
-                    legacyPayload.TryGetProperty("relations", out _)) return null;
+                    legacyPayload.TryGetProperty("relations", out var legacyRelations) &&
+                    legacyRelations.ValueKind != JsonValueKind.Null) return null;
                 if (envelope.Version == 5 &&
                     (!document.RootElement.TryGetProperty("payload", out var payload) ||
                      !payload.TryGetProperty("relations", out var relations) ||
