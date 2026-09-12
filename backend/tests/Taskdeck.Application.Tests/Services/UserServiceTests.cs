@@ -16,6 +16,7 @@ public class UserServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IUserRepository> _userRepoMock;
     private readonly UserService _service;
+    private readonly CardAssignmentService _assignments;
 
     public UserServiceTests()
     {
@@ -24,7 +25,12 @@ public class UserServiceTests
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
 
-        _service = new UserService(_unitOfWorkMock.Object);
+        var assignmentStore = new Mock<ICardAssignmentStore>();
+        assignmentStore.Setup(store => store.ReadAssignedCardsAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), default))
+            .ReturnsAsync(Array.Empty<Card>());
+        _assignments = new CardAssignmentService(_unitOfWorkMock.Object, assignmentStore.Object,
+            Mock.Of<IAuthorizationService>());
+        _service = new UserService(_unitOfWorkMock.Object, _assignments);
     }
 
     #region CreateUserAsync Tests
@@ -252,7 +258,7 @@ public class UserServiceTests
             .ReturnsAsync(user);
 
         // Act
-        var result = await _service.UpdateUserAsync(user.Id, dto);
+        var result = await _service.UpdateUserAsync(userId: user.Id, dto);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -321,7 +327,7 @@ public class UserServiceTests
     {
         // Arrange
         var cacheMock = new Mock<IActiveUserCache>();
-        var serviceWithCache = new UserService(_unitOfWorkMock.Object, cacheMock.Object);
+        var serviceWithCache = new UserService(_unitOfWorkMock.Object, _assignments, cacheMock.Object);
         var user = new User("testuser", "test@example.com", "hashedpassword");
 
         _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default))
@@ -382,7 +388,7 @@ public class UserServiceTests
     {
         // Arrange
         var cacheMock = new Mock<IActiveUserCache>();
-        var serviceWithCache = new UserService(_unitOfWorkMock.Object, cacheMock.Object);
+        var serviceWithCache = new UserService(_unitOfWorkMock.Object, _assignments, cacheMock.Object);
         var user = new User("testuser", "test@example.com", "hashedpassword");
         user.Deactivate();
 
