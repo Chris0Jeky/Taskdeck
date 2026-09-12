@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
+import CardEstimateField from '../../../components/board/CardEstimateField.vue'
+import { parseEstimatedEffort } from '../../../utils/estimatedEffort'
 
 /**
  * PaperCardComposer — the inline "add a card" form inside a Paper column.
@@ -33,13 +35,16 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  (event: 'submit', title: string): void
+  (event: 'submit', title: string, estimatedEffortMinutes?: number): void
   (event: 'cancel'): void
 }>()
 
 const { t } = useI18n()
 
 const title = ref('')
+const estimateHours = ref('')
+const estimateMinutes = ref('')
+const estimate = computed(() => parseEstimatedEffort(estimateHours.value, estimateMinutes.value))
 const input = ref<HTMLTextAreaElement | null>(null)
 
 onMounted(() => {
@@ -49,8 +54,9 @@ onMounted(() => {
 function submit() {
   const trimmed = title.value.trim()
   // A whitespace-only title is a no-op, never a request the server has to reject.
-  if (!trimmed || props.busy) return
-  emit('submit', trimmed)
+  if (!trimmed || props.busy || estimate.value.error) return
+  if (estimate.value.value === null) emit('submit', trimmed)
+  else emit('submit', trimmed, estimate.value.value)
 }
 
 function cancel() {
@@ -76,12 +82,17 @@ function cancel() {
       @keydown.esc.stop.prevent="cancel"
     ></textarea>
 
+    <details class="text-sm">
+      <summary class="cursor-pointer">Add estimate (optional)</summary>
+      <CardEstimateField v-model:hours="estimateHours" v-model:minutes="estimateMinutes" :read-only="busy" />
+    </details>
+
     <div class="paper-card-composer__actions">
       <PaperHLBtn
         type="submit"
         variant="primary"
         :label="t('boardDetail.card.submit')"
-        :disabled="busy || title.trim().length === 0"
+        :disabled="busy || title.trim().length === 0 || !!estimate.error"
         data-testid="paper-card-composer-submit"
       />
       <PaperHLBtn
