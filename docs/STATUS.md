@@ -35,6 +35,12 @@ Hosted frontend lint exposed a static-container Escape handler; the handler now 
 panel's Refresh button, and lint, production build and all six panel tests pass. The panel remains
 a named region and Escape restores its opener's focus. Backend-less demo rollups are unavailable
 and tracked as the non-blocking #3056; normal server-backed rollups are qualified above.
+Required hosted run `34707276360` passed the backend, Windows API and frontend checks but failed
+two Paper E2E tests during their fixed 40-Tab setup. Local Chromium reproduced both failures and
+recorded the traversal stopping before the first card after the Estimates control was added.
+The tests now enter the card with Tab from its preceding control; their focus-ring and J/Enter
+assertions are unchanged. Both corrected real-API tests pass (17.9 seconds). A new hosted gate
+is required; the failure is not classified as flaky.
 PR #3054 also preserves the reviewed commits from #3053 (planning/backup references) and #3055
 (same-valued permission recovery). Their source evidence is retained; final combined CI is required.
 [Contract and limits](product/CARD_ESTIMATES.md).
