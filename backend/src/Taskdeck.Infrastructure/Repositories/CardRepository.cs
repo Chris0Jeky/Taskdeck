@@ -40,6 +40,36 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
     }
 
+    public async Task StageRelationEndpointGuardAsync(Guid cardId, CancellationToken cancellationToken = default)
+    {
+        var card = await _dbSet.FindAsync([cardId], cancellationToken);
+        if (card is not null && _context.Entry(card).State != EntityState.Added)
+            _context.Entry(card).Property(c => c.UpdatedAt).IsModified = true;
+    }
+
+    public async Task StageRelationRemovalAsync(Card card, Guid? actorUserId, CancellationToken cancellationToken = default)
+    {
+        var graph = await _context.Set<BoardDependencies>().Include(g => g.Relations)
+            .SingleOrDefaultAsync(g => g.BoardId == card.BoardId, cancellationToken);
+        if (graph is null)
+        {
+            graph = new BoardDependencies(card.BoardId);
+            _context.Add(graph);
+        }
+        else
+        {
+            // Compare the graph revision without advancing it: a racing relation insertion
+            // must fail the deletion rather than disappear from its removal receipt.
+            _context.Entry(graph).Property(g => g.Revision).IsModified = true;
+        }
+        var removed = graph.Relations.Where(e => e.SourceCardId == card.Id || e.TargetCardId == card.Id).ToArray();
+        if (removed.Length == 0) return;
+        _context.RemoveRange(removed);
+        foreach (var edge in removed) graph.Relations.Remove(edge);
+        _context.AuditLogs.Add(new AuditLog("board", card.BoardId, Domain.Enums.AuditAction.Updated, actorUserId,
+            $"Removed relations for deleted card {card.Id}: {JsonSerializer.Serialize(removed.Select(e => e.ToEdge()))}"));
+    }
+
     public async Task<IReadOnlyList<Card>> GetForEstimateRollupsAsync(Guid boardId, CancellationToken cancellationToken = default)
         => await _dbSet.AsNoTracking().IgnoreAutoIncludes()
             .Where(card => card.BoardId == boardId && !card.IsArchived)
