@@ -24,7 +24,7 @@ describe('cardRelationsApi', () => {
 
     const [url, request] = vi.mocked(http.post).mock.calls[0] as [string, Record<string, unknown>]
     expect(url).toBe('/automation/proposals')
-    expect(request).toMatchObject({ sourceType: 'Manual', riskLevel: 'Low', boardId: 'board' })
+    expect(request).toMatchObject({ sourceType: 2, riskLevel: 0, boardId: 'board' })
     const operations = request.operations as Array<Record<string, unknown>>
     expect(operations).toHaveLength(1)
     const operation = operations[0]

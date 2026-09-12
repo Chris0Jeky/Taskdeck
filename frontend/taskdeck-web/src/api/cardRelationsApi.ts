@@ -36,9 +36,9 @@ async function createProposal(
   input: CreateRelationProposalInput,
 ): Promise<Proposal> {
   const { data } = await http.post<Proposal>(proposalRoute, {
-    sourceType: 'Manual',
+    sourceType: 2, // ProposalSourceType.Manual in the numeric HTTP contract.
     summary: relationSummary(actionType, input.relationType),
-    riskLevel: 'Low',
+    riskLevel: 0, // RiskLevel.Low in the numeric HTTP contract.
     correlationId: crypto.randomUUID(),
     boardId: input.boardId,
     operations: [makeOperation(actionType, input)],
