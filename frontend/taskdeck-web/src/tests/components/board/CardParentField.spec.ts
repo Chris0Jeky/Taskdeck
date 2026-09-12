@@ -16,8 +16,13 @@ const makeCard = (id: string, title = `Card ${id}`) =>
 
 const forbidden = () => ({ response: { status: 403 } })
 
-const mountField = (card: Card = makeCard('self')) =>
-  mount(CardParentField, { props: { card, modelValue: null } })
+/*
+ * `canWrite` is the host's resolved, server-authoritative answer (#3028). This field no
+ * longer derives one from the loaded board payload, so the default here is the writer case
+ * and a test that wants the read-only case says so explicitly.
+ */
+const mountField = (card: Card = makeCard('self'), canWrite = true) =>
+  mount(CardParentField, { props: { card, canWrite, modelValue: null } })
 
 /** A promise whose settlement this test controls, so request ordering is explicit. */
 function deferred<T>() {
@@ -41,6 +46,22 @@ describe('CardParentField', () => {
     expect(wrapper.get('select').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Optional, on this board.')
+  })
+
+  /*
+   * #3028. This field reads no board payload at all any more: the host's one
+   * server-authoritative answer is the whole gate, which is what stops it reading an
+   * omitted optional `canWrite` as "no". The payload the store holds is left at the
+   * writer fixture here on purpose — what this case proves is that the prop alone
+   * decides. The omitted-payload journey itself is covered end to end in
+   * `CardModal.spec.ts` ("enables all four once the server answers").
+   */
+  it('offers the selector on the host answer alone', async () => {
+    const wrapper = mountField(); await flushPromises()
+    expect(wrapper.get('select').attributes('disabled')).toBeUndefined()
+
+    const readOnly = mountField(makeCard('self'), false); await flushPromises()
+    expect(readOnly.get('select').attributes('disabled')).toBeDefined()
   })
 
   it('names revoked board access instead of offering a retry that cannot succeed', async () => {

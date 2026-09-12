@@ -2,6 +2,20 @@
 
 Last Updated: 2026-09-12
 
+Card editor write gates (#3028): the open card editor resolves the caller's board write
+permission once, server-side, when the loaded board payload omits the optional `canWrite`
+field, and the work-item type selector, parent selector, archive/restore control and
+assignment field all gate on that single answer instead of reading the omitted field as
+"no". A writer holding a payload cached before the field existed no longer watches one
+control enable while three stay disabled. Viewer, archived-board and archived-card
+behaviour is unchanged - restoring an archived card still needs only board write
+permission - the assignment field's own 403 lock (#2982) and its release rules are
+untouched, and a failed read still offers the explicit permission refresh. Verified
+locally: 85 focused tests (`CardModal`, `CardParentField`, `useCardTypePermission`), 322
+neighbouring card/board/Paper tests, typecheck and production build. Not verified: browser
+or screen-reader behaviour, and the residual that an archived card on such a payload still
+spends no read, so its Restore stays disabled as before.
+
 Card archive/restore (#2920): explicit, version-checked lifecycle actions preserve card identity,
 placement, labels, block state and history. Active surfaces exclude archived cards; Paper and
 Legacy offer an authorized archived list and restore to the original column, subject to its WIP
