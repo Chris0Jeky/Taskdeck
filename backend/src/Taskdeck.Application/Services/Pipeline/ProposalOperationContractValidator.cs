@@ -34,7 +34,8 @@ public static class ProposalOperationContractValidator
         IUnitOfWork unitOfWork,
         Guid? proposalBoardId,
         IEnumerable<ProposalOperationDto> operations,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IBoardDependencyRepository? dependencies = null)
     {
         var materializedOperations = operations.ToList();
         var relationOperations = materializedOperations.Where(IsRelationOperation).ToList();
@@ -107,7 +108,12 @@ public static class ProposalOperationContractValidator
 
             if (IsRelationOperation(operation))
             {
-                var relationResult = await ValidateRelationOperationAsync(validationContext, parameters, cancellationToken);
+                var relationResult = await ValidateRelationOperationAsync(
+                    validationContext,
+                    operation.ActionType,
+                    parameters,
+                    dependencies,
+                    cancellationToken);
                 if (!relationResult.IsSuccess)
                     return relationResult;
             }
@@ -166,15 +172,28 @@ public static class ProposalOperationContractValidator
 
     private static async Task<Result> ValidateRelationOperationAsync(
         BoardValidationContext validationContext,
+        string actionType,
         JsonElement parameters,
+        IBoardDependencyRepository? dependencies,
         CancellationToken cancellationToken)
     {
         if (!OperationParameterParser.TryGetRelationOperationParameters(parameters, out var relationParameters, out var error))
             return Result.Failure(ErrorCodes.ValidationError, error);
         if (!validationContext.BoardId.HasValue || relationParameters.BoardId != validationContext.BoardId.Value)
             return ScopeFailure("Operation boardId is outside the proposal board scope");
+        if (dependencies is null)
+        {
+            return Result.Failure(
+                ErrorCodes.UnexpectedError,
+                "Typed relation validation is unavailable.");
+        }
 
-        return await validationContext.ValidateRelationEndpointsAsync(relationParameters.Relation, cancellationToken);
+        return await validationContext.ValidateRelationEndpointsAsync(
+            relationParameters.Relation,
+            relationParameters.ExpectedRevision,
+            actionType.Equals("remove-relation", StringComparison.OrdinalIgnoreCase),
+            dependencies,
+            cancellationToken);
     }
 
     private static async Task<Result> ValidateEntityScopeAsync(
@@ -1063,12 +1082,23 @@ public static class ProposalOperationContractValidator
 
         public async Task<Result> ValidateRelationEndpointsAsync(
             CardRelationEdge relation,
+            long expectedRevision,
+            bool remove,
+            IBoardDependencyRepository dependencies,
             CancellationToken cancellationToken)
         {
             if (!BoardId.HasValue)
                 return ScopeFailure("Operation card is outside the proposal board scope");
 
-            var endpoints = new List<CardRelationEndpoint>();
+            var graph = await dependencies.GetAsync(BoardId.Value, cancellationToken) ?? new BoardDependencies(BoardId.Value);
+            if (graph.Revision != expectedRevision)
+                return Result.Failure(ErrorCodes.Conflict, "Relations changed. Reload before trying again.");
+
+            var cards = (await unitOfWork.Cards.GetHierarchyByBoardIdAsync(BoardId.Value, cancellationToken))
+                .ToDictionary(card => card.Id);
+            var endpoints = cards.Values
+                .Select(card => new CardRelationEndpoint(card.Id, card.BoardId, card.IsArchived))
+                .ToList();
             foreach (var cardId in new[] { relation.SourceCardId, relation.TargetCardId }.Distinct())
             {
                 if (_plannedCardIds.Contains(cardId))
@@ -1086,14 +1116,17 @@ public static class ProposalOperationContractValidator
                     return ScopeFailure("Operation card is outside the proposal board scope");
                 if (card.IsArchived)
                     return Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing relations.");
-                endpoints.Add(new CardRelationEndpoint(card.Id, card.BoardId, card.IsArchived));
+                if (!cards.ContainsKey(card.Id))
+                    endpoints.Add(new CardRelationEndpoint(card.Id, card.BoardId, card.IsArchived));
             }
 
             try
             {
-                // Keep the preview/approve gate on the same pure normalization, endpoint and
-                // per-kind cycle rules that the staged writer applies.
-                CardRelationRules.Validate(BoardId.Value, [relation], endpoints, requireActive: true);
+                // Match BoardRelationService.PrepareAsync: validate the requested revision,
+                // then apply the requested add/remove to the complete current graph using all
+                // board endpoints. Existing archived, non-target edges remain valid while the
+                // requested endpoints must be active.
+                CardRelationRules.Apply(BoardId.Value, graph.ReadRelations(), relation, remove, endpoints);
                 return Result.Success();
             }
             catch (DomainException exception)

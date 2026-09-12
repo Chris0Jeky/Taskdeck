@@ -160,11 +160,16 @@ public class ProposalOperationContractValidatorTests
         var unit = new Mock<IUnitOfWork>();
         var cards = new Mock<ICardRepository>();
         var columns = new Mock<IColumnRepository>();
+        var dependencies = new Mock<IBoardDependencyRepository>();
         unit.Setup(instance => instance.Cards).Returns(cards.Object);
         unit.Setup(instance => instance.Columns).Returns(columns.Object);
+        dependencies.Setup(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((BoardDependencies?)null);
         cards.Setup(repository => repository.GetByIdAsync(createdId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Card?)null);
         cards.Setup(repository => repository.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        cards.Setup(repository => repository.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { existing });
         columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
 
         var create = CreateOperation(0, "create", createdId,
@@ -176,7 +181,11 @@ public class ProposalOperationContractValidatorTests
         OperationParameterParser.TryGetRelationOperationParameters(parsed, out var normalized, out var error).Should().BeTrue(error);
         normalized.Relation.Should().Be(new CardRelationEdge(existing.Id, createdId, "blocks"));
 
-        var result = await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [relation, create]);
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unit.Object,
+            boardId,
+            [relation, create],
+            dependencies: dependencies.Object);
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
     }
 
@@ -191,7 +200,12 @@ public class ProposalOperationContractValidatorTests
         var otherBoardCard = new Card(Guid.NewGuid(), Guid.NewGuid(), "Other board");
         var unit = new Mock<IUnitOfWork>();
         var cards = new Mock<ICardRepository>();
+        var dependencies = new Mock<IBoardDependencyRepository>();
         unit.Setup(instance => instance.Cards).Returns(cards.Object);
+        dependencies.Setup(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((BoardDependencies?)null);
+        cards.Setup(repository => repository.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { source, archived, otherBoardCard });
         cards.Setup(repository => repository.GetByIdAsync(source.Id, It.IsAny<CancellationToken>())).ReturnsAsync(source);
         cards.Setup(repository => repository.GetByIdAsync(archived.Id, It.IsAny<CancellationToken>())).ReturnsAsync(archived);
         cards.Setup(repository => repository.GetByIdAsync(otherBoardCard.Id, It.IsAny<CancellationToken>())).ReturnsAsync(otherBoardCard);
@@ -203,12 +217,12 @@ public class ProposalOperationContractValidatorTests
 
         var archivedRelation = CreateOperation(0, "add-relation", source.Id,
             new { boardId, cardId = source.Id, relatedCardId = archived.Id, relationType = "blocks", expectedRevision = 0L });
-        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [archivedRelation]))
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [archivedRelation], dependencies: dependencies.Object))
             .ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
 
         var crossBoardRelation = CreateOperation(0, "add-relation", source.Id,
             new { boardId, cardId = source.Id, relatedCardId = otherBoardCard.Id, relationType = "blocks", expectedRevision = 0L });
-        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [crossBoardRelation]))
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [crossBoardRelation], dependencies: dependencies.Object))
             .ErrorCode.Should().Be(ErrorCodes.Forbidden);
 
         var lifecycle = CreateOperation(1, "archive-lifecycle", source.Id,
