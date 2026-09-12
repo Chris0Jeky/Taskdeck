@@ -30,7 +30,11 @@ const CHANGE_FAILURE = 'The card state could not be confirmed. Refresh before tr
  * prop and keep the payload-derived answer; the `undefined` default is what keeps "omitted"
  * distinguishable from "false", exactly as for `archived` above.
  */
-const props = withDefaults(defineProps<{ card: Card; disabled?: boolean; archived?: boolean; canWrite?: boolean }>(), {
+const props = withDefaults(defineProps<{
+  card: Card; disabled?: boolean; archived?: boolean; canWrite?: boolean
+  /** Stable editor-owned state for hosts that remount this control on a version change. */
+  pendingRequests?: Set<string>
+}>(), {
   archived: undefined,
   canWrite: undefined,
 })
@@ -40,9 +44,10 @@ const toast = useToastStore()
 const preview = ref<CardDetachPreview | null>(null)
 // Switching cards resets presentation, not submitted requests. Each card stays
 // busy until its own request settles, while unrelated cards remain actionable.
-const pendingCards = ref(new Set<string>())
+// Capture this owner for the component lifetime, including its late finally work.
+const pendingCards = props.pendingRequests ?? ref(new Set<string>()).value
 const cardKey = computed(() => JSON.stringify([props.card.boardId, props.card.id]))
-const busy = computed(() => pendingCards.value.has(cardKey.value))
+const busy = computed(() => pendingCards.has(cardKey.value))
 const error = ref<string | null>(null)
 // True once an in-dialog refresh has replaced a failed child list. It keeps the
 // recovery control mounted across the error -> refreshed transition so keyboard
@@ -100,7 +105,7 @@ async function requestChange() {
   const context = contextGeneration
   const confirmation = confirmationGeneration
   const requestKey = cardKey.value
-  pendingCards.value.add(requestKey)
+  pendingCards.add(requestKey)
   refreshed.value = false
   try {
     const fresh = await cardsApi.previewDetach(props.card.boardId, props.card.id)
@@ -111,7 +116,7 @@ async function requestChange() {
     error.value = getErrorDisplay(e, PREVIEW_FAILURE).message
     void focusRecovery(context, confirmation)
   } finally {
-    pendingCards.value.delete(requestKey)
+    pendingCards.delete(requestKey)
   }
 }
 
@@ -126,7 +131,7 @@ async function refreshChildren() {
   const context = contextGeneration
   const confirmation = confirmationGeneration
   const requestKey = cardKey.value
-  pendingCards.value.add(requestKey)
+  pendingCards.add(requestKey)
   try {
     const fresh = await cardsApi.previewDetach(props.card.boardId, props.card.id)
     if (context !== contextGeneration || confirmation !== confirmationGeneration) return
@@ -138,7 +143,7 @@ async function refreshChildren() {
     error.value = getErrorDisplay(e, PREVIEW_FAILURE).message
     void focusRecovery(context, confirmation)
   } finally {
-    pendingCards.value.delete(requestKey)
+    pendingCards.delete(requestKey)
   }
 }
 
@@ -160,7 +165,7 @@ async function change() {
   const confirmation = confirmationGeneration
   const archive = !archived.value
   const requestKey = cardKey.value
-  pendingCards.value.add(requestKey)
+  pendingCards.add(requestKey)
   try {
     await boardStore.setCardArchived(props.card.boardId, props.card.id, archive, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
     if (context !== contextGeneration) return
@@ -182,7 +187,7 @@ async function change() {
     // After dismissal, rescue lost focus without stealing it from another control.
     void focusRecovery(context, confirmation)
   } finally {
-    pendingCards.value.delete(requestKey)
+    pendingCards.delete(requestKey)
   }
 }
 </script>
