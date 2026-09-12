@@ -34,7 +34,11 @@ public class CardEstimateApiTests(TestWebApplicationFactory factory) : IClassFix
         current.EstimatedEffortMinutes.Should().Be(0);
         var cleared = await client.PatchAsJsonAsync(path, new { clearEstimatedEffort = true, expectedUpdatedAt = current.UpdatedAt });
         cleared.EnsureSuccessStatusCode();
-        (await cleared.Content.ReadFromJsonAsync<CardDto>())!.EstimatedEffortMinutes.Should().BeNull();
+        var unknown = (await cleared.Content.ReadFromJsonAsync<CardDto>())!;
+        unknown.EstimatedEffortMinutes.Should().BeNull();
+        var repeatedClear = await client.PatchAsJsonAsync(path, new { clearEstimatedEffort = true, expectedUpdatedAt = unknown.UpdatedAt });
+        repeatedClear.EnsureSuccessStatusCode();
+        (await repeatedClear.Content.ReadFromJsonAsync<CardDto>())!.UpdatedAt.Should().Be(unknown.UpdatedAt);
         var created = await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
             new { columnId = column.Id, title = "Known estimate", estimatedEffortMinutes = 90 });
         created.EnsureSuccessStatusCode();
