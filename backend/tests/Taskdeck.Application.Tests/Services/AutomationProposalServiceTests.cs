@@ -2613,8 +2613,18 @@ public class AutomationProposalServiceTests
         cards.Setup(repository => repository.GetArchivedByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
         _unitOfWorkMock.Setup(unit => unit.Cards).Returns(cards.Object);
         _columnRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { column });
+        cards.Setup(repository => repository.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { source, prerequisite });
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        dependencies.Setup(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BoardDependencies(boardId));
+        var service = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            _provenanceRepoMock.Object,
+            new AutomationPolicyEngine(_unitOfWorkMock.Object, dependencies.Object));
 
-        var result = await _service.GetProposalDiffAsync(proposalId);
+        var result = await service.GetProposalDiffAsync(proposalId);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         result.Value.Should().Contain("Add blocks relation");
