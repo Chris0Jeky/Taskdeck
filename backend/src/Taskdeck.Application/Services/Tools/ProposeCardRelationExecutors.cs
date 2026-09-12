@@ -74,7 +74,7 @@ public abstract class ProposeCardRelationExecutor : IToolExecutor
             relatedCardId,
             relationType,
             expectedRevision
-        }, ToolJsonOptions.Default);
+        });
         var summary = _remove ? "Remove card relation" : "Add card relation";
         var proposal = new CreateProposalDto(
             ProposalSourceType.Chat,
