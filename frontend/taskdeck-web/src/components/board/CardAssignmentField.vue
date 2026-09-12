@@ -37,7 +37,23 @@ const needsRefresh = ref(false)
  * card/board-gone fact, not a permission signal.
  */
 const saveFailure = ref<'permission' | 'conflict' | 'ineligible' | 'unknown' | null>(null)
-let generation = 0
+/*
+ * One counter per request KIND, not one for the field (#3017). A read and a
+ * write settle independently here: the only way to start a read while a write
+ * is unanswered is the `readOnly` watcher below, and a background board refetch
+ * fires it whenever it re-reports write permission mid-PUT. Under a single
+ * shared counter that read superseded the save, so the PUT's own `finally`
+ * no-opped and `saving` — with it `locked`, and the `saving-change` the host
+ * reads to refuse every close affordance (#2977/#2981) — stayed latched true
+ * until the field was remounted by navigation. A read cannot invalidate a write
+ * it does not contend with: a non-refreshing `load()` only replaces the
+ * participant list, and the refreshing one is unreachable while `saving` holds.
+ * Each counter still rejects its own stale bodies — a superseded save, and a
+ * read left behind by a newer read — and the card-identity watcher and unmount
+ * bump both, because those invalidate everything in flight.
+ */
+let loadGeneration = 0
+let saveGeneration = 0
 const permissionLost = computed(() => saveFailure.value === 'permission')
 const error = computed(() => {
   // The sticky permission message must not swallow a read that failed AFTER it,
@@ -94,7 +110,7 @@ function reset(card: Card) {
   version.value = card.updatedAt
 }
 async function load(refresh = false) {
-  const request = ++generation
+  const request = ++loadGeneration
   const card = props.card
   loading.value = true
   loadFailed.value = false
@@ -105,7 +121,7 @@ async function load(refresh = false) {
       cardsApi.getParticipants(card.boardId),
       refresh ? cardsApi.getCard(card.boardId, card.id) : Promise.resolve(card),
     ])
-    if (request !== generation) return
+    if (request !== loadGeneration) return
     participants.value = people
     if (refresh) {
       displayedAssignments.value = current.assignments ?? []
@@ -117,14 +133,15 @@ async function load(refresh = false) {
     }
     needsRefresh.value = false
   } catch {
-    if (request === generation) {
+    if (request === loadGeneration) {
       loadFailed.value = true
       needsRefresh.value = true
     }
-  } finally { if (request === generation) loading.value = false }
+  } finally { if (request === loadGeneration) loading.value = false }
 }
 watch(() => `${props.card.boardId}:${props.card.id}:${session.userId}`, () => {
-  generation++
+  loadGeneration++
+  saveGeneration++
   saving.value = false
   participants.value = []
   needsRefresh.value = false
@@ -151,18 +168,18 @@ watch(() => props.card.updatedAt, () => {
 function cancel() { selected.value = [...baseline.value] }
 async function save() {
   if (locked.value || !dirty.value) return
-  const request = ++generation
+  const request = ++saveGeneration
   const card = props.card
   saving.value = true
   saveFailure.value = null
   const previousVersion = version.value
   try {
     const saved = await cardsApi.replaceAssignments(card.boardId, card.id, [...selected.value], version.value)
-    if (request !== generation) return
+    if (request !== saveGeneration) return
     reset(saved)
     emit('saved', saved, previousVersion)
   } catch (failure) {
-    if (request !== generation) return
+    if (request !== saveGeneration) return
     const status = (failure as { response?: { status?: number } }).response?.status
     saveFailure.value = status === 403 ? 'permission'
       : status === 409 ? 'conflict'
@@ -175,10 +192,10 @@ async function save() {
      * offered for the current assignees even when it cannot lead back to a save.
      */
     needsRefresh.value = !permissionLost.value
-  } finally { if (request === generation) saving.value = false }
+  } finally { if (request === saveGeneration) saving.value = false }
 }
 const unavailable = computed(() => props.readOnly ? [] : selected.value.filter(id => !participants.value.some(p => p.userId === id)))
-onBeforeUnmount(() => { generation++ })
+onBeforeUnmount(() => { loadGeneration++; saveGeneration++ })
 </script>
 
 <template>
