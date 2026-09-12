@@ -87,7 +87,7 @@ for (const theme of ['legacy', 'paper'] as const) {
     await cardOpener(page, theme, shared).click()
     await expect(editor.getByTestId('estimate-hours')).toHaveValue('1')
     await expect(editor.getByTestId('estimate-minutes')).toHaveValue('30')
-    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-editor-desktop.png`) })
+    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-editor-desktop.png`), animations: 'disabled' })
     await editor.getByRole('button', { name: 'Clear estimate', exact: true }).click()
     const clearedResponse = page.waitForResponse(response => response.url() === `${cardsUrl}/${shared.id}` && response.request().method() === 'PATCH')
     await editor.getByRole('button', { name: 'Save Changes', exact: true }).click()
@@ -163,7 +163,7 @@ for (const theme of ['legacy', 'paper'] as const) {
         rollup,
       }, null, 2),
     })
-    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-totals-desktop.png`), fullPage: true })
+    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-totals-desktop.png`), fullPage: true, animations: 'disabled' })
 
     async function refreshStaleTotals() {
       await expect(estimates.getByText('Board state changed. Refresh estimates to see the latest totals.', { exact: true })).toBeVisible()
@@ -209,7 +209,14 @@ for (const theme of ['legacy', 'paper'] as const) {
     await page.setViewportSize({ width: 390, height: 844 })
     await expect(total).toBeVisible()
     expect(await estimates.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
-    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-totals-phone.png`), fullPage: true })
+    await estimates.getByRole('button', { name: 'Refresh estimates', exact: true }).click({ trial: true })
+    // Finish the shell's finite desktop-to-phone transition before recording the
+    // layout. An intermediate sidebar animation is not evidence of the final UI.
+    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-totals-phone.png`), fullPage: true, animations: 'disabled' })
+    expect(await estimates.evaluate(element => {
+      const bounds = element.getBoundingClientRect()
+      return bounds.left >= 0 && bounds.right <= window.innerWidth + 1
+    })).toBe(true)
     const estimatesTrigger = estimates.getByRole('button', { name: 'Estimates', exact: true })
     await estimates.getByRole('button', { name: 'Refresh estimates', exact: true }).focus()
     await page.keyboard.press('Escape')
@@ -223,7 +230,7 @@ for (const theme of ['legacy', 'paper'] as const) {
     await expect(editor.getByTestId('estimate-hours')).toBeVisible()
     await expect(editor.getByTestId('estimate-minutes')).toBeVisible()
     await editor.getByTestId('estimate-minutes').focus()
-    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-editor-phone.png`) })
+    await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-editor-phone.png`), animations: 'disabled' })
     await page.keyboard.press('Escape')
     await expect(editor).not.toBeVisible()
     const focusedCard = theme === 'paper' ? opener : page.locator(`[data-card-id="${shared.id}"]`)
@@ -243,7 +250,7 @@ for (const theme of ['legacy', 'paper'] as const) {
       await expect(viewerEditor.getByTestId('estimate-minutes')).toHaveCount(0)
       await expect(viewerEditor.getByRole('button', { name: 'Clear estimate', exact: true })).toHaveCount(0)
       await expect(viewerEditor.getByRole('button', { name: 'Archive card', exact: true })).toBeDisabled()
-      await viewerPage.screenshot({ path: testInfo.outputPath(`${theme}-viewer-estimate-phone.png`) })
+      await viewerPage.screenshot({ path: testInfo.outputPath(`${theme}-viewer-estimate-phone.png`), animations: 'disabled' })
     } finally {
       await viewerContext.close()
     }
