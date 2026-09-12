@@ -7,13 +7,23 @@ required hosted gate passed at `7135d53a9`; #3033 is closed. Integration resolve
 concurrent STATUS/MASTERPLAN records, preserving both. Backend files are unchanged. Requalify
 this candidate against the delivered base; #3064's remaining draft slice stays separate.
 
+Chat relation proposals now resolve normal short card IDs within the active board while retaining
+all previously accepted full UUID formats. The registered `get_board_card_relations` chat reader
+returns the authorized graph and exact revision, so chat can supply the observed revision without
+guessing. UUID-only and omitted-registration controls reproduce both defects; restored-source
+checks pass 91 Application cases and the actual API registry case. The narrow review found a
+compact-UUID regression, corrected with exact active-board lookup and add/remove coverage.
+No revision is restamped and typed writes remain proposals. New hosted qualification is required.
+Premature events from preceding proposal creates (#3073) and applier attribution on proposal-delete
+relation audits (#3074) remain separate bounded follow-ups, alongside #3069 and #3070.
+
 Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
 thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
 context with labelled navigation. Typed additions and removals create review proposals; the graph
 changes only at Apply. Relations do not grant access or change status, hierarchy, assignments or
 estimates. Existing direct dependency editing remains compatible through the same canonical store.
 One board revision protects the graph, including empty graphs and archived endpoints. Archive
-retains links; hard deletion removes incident links atomically with its actor receipt. Board JSON
+retains links; hard deletion removes incident links atomically with an audit receipt. Board JSON
 v5 and authorized buffered/streaming account exports carry the metadata. Upgrade and developer
 rollback behavior, including loss of non-dependency metadata on Down, are documented in
 [the relation contract](product/CARD_RELATIONS.md) and [UPGRADING](../UPGRADING.md).
@@ -32,7 +42,7 @@ separately passes 50 store tests and both estimate browser journeys (53.4 second
 After integrating the final estimate no-op version guard, all 36 combined API tests pass across
 relation reads/proposals/persistence and estimate proposals (17 seconds). The repository merge
 retains both relation guards and the independent persisted-card-version guard.
-The controlled executor concurrency failure proves rollback and zero early events; it does not
+The controlled executor concurrency failure proves rollback and zero early buffered events; it does not
 simulate an external SQLite writer after the final transaction read. Separate storage tests cover
 actual competing contexts. Generic web draft-admission parity remains #3061; the older-reader
 estimate export boundary remains #3065. Exact-head hosted qualification is still required. No
