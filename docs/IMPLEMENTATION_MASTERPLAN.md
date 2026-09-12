@@ -2,6 +2,19 @@
 
 Last Updated: 2026-09-12
 
+## Permission retry boundary (2026-09-12, #3057)
+
+Keep manual permission retries tied to the denied write they reconcile, while each newly denied
+write establishes a fresh boundary. Post-denial authoritative board evidence can recover editing
+after a retry failure without admitting stale or local-only evidence. The source full frontend
+suite passes, and the delivered archive base passes 290 combined editor/archive tests plus build.
+Independent review is clean; STATUS records source heads, counts and limits. Final hosted
+qualification remains on the delivery PR. Existing OUTSTANDING_TASKS human actions are unchanged.
+
+Definitive recovery denials now supersede already-running board reads, while transient retry
+failures preserve the useful original boundary. The four ordering regressions fail before the fix;
+54 focused tests, lint and production build pass afterward, with clean bounded verification.
+
 ## Estimate delivery (2026-09-12)
 
 #3054 merged as `54e4c0a86` after required hosted run `34713059470` passed at reviewed head

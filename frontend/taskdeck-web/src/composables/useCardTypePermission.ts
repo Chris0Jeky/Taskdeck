@@ -182,7 +182,11 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
         confirmed.value = null
         failedBoardId.value = boardId
       } else {
-        confirmed.value = { boardId, canWrite: board.canWrite !== false && board.isArchived !== true }
+        const canWrite = board.canWrite !== false && board.isArchived !== true
+        confirmed.value = { boardId, canWrite }
+        if (permissionRecovery.value && !canWrite) {
+          recoveryRequestGeneration = boardRequestGeneration.value
+        }
       }
       accessUnavailable.value = false
     } catch (cause) {
@@ -193,6 +197,9 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       failedBoardId.value = boardId
       const status = (cause as { response?: { status?: number } })?.response?.status
       accessUnavailable.value = status === 403 || status === 404
+      if (permissionRecovery.value && accessUnavailable.value) {
+        recoveryRequestGeneration = boardRequestGeneration.value
+      }
     } finally {
       if (current === generation) {
         inFlightBoardId = null
@@ -212,15 +219,27 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   }
   onScopeDispose(cancelRead)
 
-  /** Explicit recovery from an unknown permission state. */
-  async function refreshPermission() {
+  async function beginPermissionRecovery(newDenial: boolean) {
     if (!options.getIsOpen() || !permissionDecides.value) return
-    // Invalidate both the loaded payload and our own earlier answer synchronously.
-    // A refusal also supersedes any read started before it, even for the same board.
+    // A manual retry remains tied to the refusal it is reconciling. Keep that
+    // boundary so a board-store read begun after the refusal remains fresh
+    // evidence when the retry fails. A newly refused write advances it.
     permissionRecovery.value = true
-    recoveryRequestGeneration = boardRequestGeneration.value
+    if (newDenial || recoveryRequestGeneration === null) {
+      recoveryRequestGeneration = boardRequestGeneration.value
+    }
     confirmed.value = null
     await read(options.getBoardId())
+  }
+
+  /** Explicit recovery from an unknown permission state. */
+  async function refreshPermission() {
+    await beginPermissionRecovery(false)
+  }
+
+  /** A newly refused write invalidates evidence that predated that refusal. */
+  async function recoverFromPermissionDenied() {
+    await beginPermissionRecovery(true)
   }
 
   watch(
@@ -274,5 +293,5 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   )
 
   return { canWrite, canEditType, permissionChecking, permissionUnknown, permissionRecovery,
-    accessUnavailable, readsBlocked, refreshPermission }
+    accessUnavailable, readsBlocked, refreshPermission, recoverFromPermissionDenied }
 }

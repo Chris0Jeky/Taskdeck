@@ -2,6 +2,24 @@
 
 Last Updated: 2026-09-12
 
+Permission recovery retries (#3057) preserve the original write-denial boundary, so a valid
+board read started after that denial can still restore access when a later manual retry fails.
+A new denied write advances the boundary; stale, local-only, omitted and failed permission
+evidence still cannot enable editing. The deferred regression fails before the correction and
+all 20 focused cases pass afterward. Source `9b28904fc` passed the full frontend suite
+(6,860 tests, three existing skips), lint, typecheck and build. After integrating delivered
+archive ownership from main `44d041ca7`, all 290 combined editor/archive tests and the
+production build pass at `47c290b56`; bounded independent review is clean. This reduces
+unnecessary recovery friction while preserving server-authoritative writes and the user's draft.
+Hosted qualification remains required; physical-device and screen-reader acceptance are untested.
+
+The bounded permission-review correction treats a definitive recovery denial as newer evidence:
+403/404, explicit read-only permission and archived-board responses advance the boundary, while
+transient failures retain it. Four deferred cases fail before the correction and pass afterward;
+all 24 modal recovery and 30 composable tests pass, as do lint and the production build.
+Independent verification is clean at `d343a0b7c`. Older payloads keep controls locked and preserve
+the draft; a genuinely later authoritative payload can recover access. Requalify the pushed head.
+
 Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
 #3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
 both operating-system API/frontend lanes and browser smoke. GitHub confirms #2093, #3044, #3049
