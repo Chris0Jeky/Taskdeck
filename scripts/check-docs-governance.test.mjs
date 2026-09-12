@@ -127,7 +127,7 @@ test('fails closed on malformed YAML BEFORE the paths: block', () => {
   assert.ok(errors.some((error) => /cannot parse/.test(error)), errors.join(' | '))
 })
 
-test('fails closed on a duplicate paths: key, which a loader would resolve to one of the two', () => {
+test('fails closed on a duplicate paths: key rather than choosing one value', () => {
   const ruleText = '---\npaths:\n  - "ci/**"\n  - "scripts/ci/**"\n  - ".github/workflows/**"\n  - "global.json"\npaths:\n  - "docs/**"\n---\n\nBody.\n'
   const errors = collectControlPathMirrorErrors(policyFixture, ruleText)
 
@@ -230,3 +230,119 @@ test('the repository files themselves satisfy the mirror', () => {
   assert.ok(paths.length >= controlPaths.length, 'the rule front matter must be a superset of controlPaths')
   assert.deepEqual(collectControlPathMirrorErrors(policyText, ruleText), [])
 })
+
+function withExtraFrontMatter(...lines) {
+  return ruleFixture(mirroredPaths, '').replace(/---\n$/, `${lines.join('\n')}\n---\n`)
+}
+
+for (const scalar of [
+  "the CI region's rules",
+  'fix [#2928',
+  'fix {the mirror',
+  'a closing ] or } is text',
+  'an internal " quote is text',
+  'https://example.invalid/rules#section',
+  'rule # an ignored comment containing [ and "',
+  String.raw`"a \"quoted\" rule"`,
+  "'the CI region''s rules'",
+  '"CI rule" # comment containing [',
+]) {
+  test(`accepts the supported scalar without misreading its punctuation: ${scalar}`, () => {
+    assert.deepEqual(collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter(`description: ${scalar}`)), [])
+  })
+}
+
+for (const lines of [
+  ['description:no separator'],
+  ['description: - nested sequence'],
+  ['description: nested: mapping'],
+  ['description: "closed" trailing garbage'],
+  ["description: 'closed' trailing garbage"],
+  ['description: "bad\\q escape"'],
+  ['description: &anchor value'],
+  ['description: *unknown'],
+  ['description: !tag value'],
+  ['description: |'],
+  ['description: >'],
+  ['description: [balanced, but, unsupported]'],
+  ['description: {balanced: unsupported}'],
+  ['extra:', '  - "unterminated'],
+  ['extra:', '  - nested: mapping'],
+  ['extra:', '  - - nested'],
+  ['extra:', '  - first', '    - deeper'],
+  ['extra:', '    - first', '  - shallower'],
+  ['extra:', '\t- tab-indented'],
+  ['extra:', '  \t- mixed-indentation'],
+]) {
+  test(`fails closed on unsupported frontmatter structure: ${JSON.stringify(lines)}`, () => {
+    const errors = collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter(...lines))
+    assert.ok(errors.some((error) => /cannot parse/.test(error)), errors.join(' | '))
+  })
+}
+
+test('rejects tabs and nested indentation in the paths block itself', () => {
+  const original = ruleFixture(mirroredPaths)
+  for (const changed of [
+    original.replace('  - "ci/**"', '\t- "ci/**"'),
+    original.replace('  - "scripts/ci/**"', '    - "scripts/ci/**"'),
+  ]) {
+    assert.ok(collectControlPathMirrorErrors(policyFixture, changed).length > 0)
+  }
+})
+
+test('allows a different flat sequence indentation for each top-level key', () => {
+  const rule = withExtraFrontMatter('extra:', '    - first', '    - second')
+  assert.deepEqual(collectControlPathMirrorErrors(policyFixture, rule), [])
+})
+
+test('rejects an alias-like unquoted glob even when it exactly mirrors policy', () => {
+  const policy = JSON.stringify({ controlPaths: ['**/.npmrc'] })
+  assert.ok(collectControlPathMirrorErrors(policy, '---\npaths:\n  - **/.npmrc\n---\n').length > 0)
+  assert.deepEqual(collectControlPathMirrorErrors(policy, ruleFixture(['**/.npmrc'])), [])
+})
+
+for (const path of [' ci/**', 'ci/** ', '\tci/**', 'ci/**\n']) {
+  test(`rejects policy whitespace rather than normalizing away the mismatch: ${JSON.stringify(path)}`, () => {
+    const result = parsePolicyControlPaths(JSON.stringify({ controlPaths: [path] }))
+    assert.equal(result.controlPaths.length, 0)
+    assert.ok(result.errors.some((error) => /whitespace/.test(error)), result.errors.join(' | '))
+  })
+}
+
+test('decodes supported quoting in path values instead of comparing escape source text', () => {
+  const paths = ["src/team's/**", 'src/team"s/**', 'src/back\\slash/**']
+  const policy = JSON.stringify({ controlPaths: paths })
+  const rule = `---\npaths:\n${paths.map((path) => `  - ${JSON.stringify(path)}`).join('\n')}\n---\n`
+  assert.deepEqual(collectControlPathMirrorErrors(policy, rule), [])
+  assert.deepEqual(parseRuleFrontMatterPaths("---\npaths:\n  - 'src/team''s/**'\n---\n").paths, [paths[0]])
+})
+
+test('treats internal punctuation in a plain path as text and separated hashes as comments', () => {
+  const paths = ["src/team's/**", 'src/fix[#2928/**', 'src/name#fragment/**']
+  const policy = JSON.stringify({ controlPaths: paths })
+  const rule = `---\npaths:\n${paths.map((path) => `  - ${path} # explanation`).join('\n')}\n---\n`
+  assert.deepEqual(collectControlPathMirrorErrors(policy, rule), [])
+})
+
+for (const scalar of ['""', "''"]) {
+  test(`accepts an explicitly quoted empty metadata scalar in a list: ${scalar}`, () => {
+    for (const lines of [
+      [`extra: ${scalar}`],
+      ['extra:', `  - ${scalar}`],
+      ['extra:', `  - ${scalar} # intentional empty string`],
+    ]) {
+      assert.deepEqual(collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter(...lines)), [])
+    }
+  })
+
+  test(`still rejects an explicitly quoted empty path: ${scalar}`, () => {
+    const rule = ruleFixture(mirroredPaths).replace('  - "ci/**"', `  - ${scalar}`)
+    assert.ok(collectControlPathMirrorErrors(policyFixture, rule).length > 0)
+  })
+}
+
+for (const entry of ['  -', '  - # missing scalar']) {
+  test(`rejects an absent list scalar rather than treating it as a quoted empty string: ${entry}`, () => {
+    assert.ok(collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter('extra:', entry)).length > 0)
+  })
+}

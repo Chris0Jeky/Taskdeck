@@ -64,109 +64,103 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
     }
   }
 
-  return { controlPaths: controlPaths.map((entry) => entry.trim()), errors: [] }
-}
-
-function parseFrontMatterScalar(rawValue) {
-  const doubleQuoted = rawValue.match(/^"([^"]*)"$/)
-  if (doubleQuoted) {
-    return { value: doubleQuoted[1] }
+  if (controlPaths.some((entry) => entry !== entry.trim())) {
+    return {
+      controlPaths: [],
+      errors: [`${policyPath} controlPaths must not contain leading or trailing whitespace`],
+    }
   }
 
-  const singleQuoted = rawValue.match(/^'([^']*)'$/)
-  if (singleQuoted) {
-    return { value: singleQuoted[1] }
-  }
-
-  if (/["'#]/.test(rawValue)) {
-    return { value: null }
-  }
-
-  return { value: rawValue }
+  return { controlPaths, errors: [] }
 }
 
 /**
- * Report why a `key: value` scalar is not something this check can read, or null when it is fine.
+ * Read the supported single-line scalar subset, not arbitrary YAML.
  *
- * Only the shapes that make a YAML loader reject the document are named: an unbalanced quote and an
- * unterminated flow sequence or mapping.
+ * Quoted strings support JSON double-quote escapes or YAML doubled single quotes. Plain scalars
+ * keep internal quotes/brackets literally; only leading indicators select YAML structure. Tags,
+ * aliases, anchors, block/flow collections and multiline scalars are deliberately unsupported.
  */
-function describeUnreadableScalar(rawValue) {
-  let quote = null
-  let depth = 0
+function parseFrontMatterScalar(rawValue) {
+  const text = rawValue.trim()
+  if (text === '') {
+    return { value: null, error: 'empty unquoted scalar' }
+  }
 
-  for (let index = 0; index < rawValue.length; index += 1) {
-    const char = rawValue[index]
-
-    if (quote !== null) {
-      if (char === quote) {
-        quote = null
-      }
-      continue
+  if (text.startsWith('"')) {
+    const quoted = text.match(/^("(?:[^"\\]|\\.)*")(?:[ \t]+#.*)?$/)
+    if (!quoted) {
+      return { value: null, error: 'unbalanced quote or trailing content' }
     }
-
-    if (char === '"' || char === "'") {
-      quote = char
-      continue
-    }
-
-    if (char === '#' && (index === 0 || /\s/.test(rawValue[index - 1]))) {
-      break
-    }
-
-    if (char === '[' || char === '{') {
-      depth += 1
-      continue
-    }
-
-    if (char === ']' || char === '}') {
-      depth -= 1
-      if (depth < 0) {
-        return 'unbalanced bracket'
-      }
+    try {
+      return { value: JSON.parse(quoted[1]), error: null }
+    } catch {
+      return { value: null, error: 'unsupported double-quoted escape or control character' }
     }
   }
 
-  if (quote !== null) {
-    return 'unbalanced quote'
+  if (text.startsWith("'")) {
+    const quoted = text.match(/^'((?:[^']|'')*)'(?:[ \t]+#.*)?$/)
+    return quoted
+      ? { value: quoted[1].replaceAll("''", "'"), error: null }
+      : { value: null, error: 'unbalanced quote or trailing content' }
   }
 
-  if (depth !== 0) {
-    return 'unterminated flow sequence or mapping'
+  const value = text.replace(/[ \t]+#.*$/, '')
+  if (/^[\[{]/.test(value)) {
+    const closer = value[0] === '[' ? ']' : '}'
+    return {
+      value: null,
+      error: value.endsWith(closer)
+        ? 'unsupported flow sequence or mapping'
+        : 'unterminated flow sequence or mapping',
+    }
+  }
+  if (/^[!&*|>@`%}\],#]/.test(value) || /^[-?:](?:[ \t]|$)/.test(value)) {
+    return { value: null, error: 'unsupported leading scalar indicator' }
+  }
+  if (/:(?:[ \t]|$)/.test(value)) {
+    return { value: null, error: 'unsupported nested mapping' }
   }
 
-  return null
+  return { value, error: null }
 }
 
 /**
- * Validate the WHOLE front matter block, not just the `paths:` key.
+ * Validate the WHOLE front matter block, not just `paths:`. An invalid or unsupported line anywhere
+ * must fail closed rather than letting the mirror check certify a rule its loader might reject.
  *
- * The rule file is dropped as a unit: malformed YAML anywhere between the `---` delimiters — after
- * the `paths:` block, or a second `paths:` key that a loader would silently resolve to one of the
- * two — takes the rule from loading on every declared path to loading on none. A check that stopped
- * reading at the end of the `paths:` block would call that document green, which is the false safety
- * property this function exists to remove.
- *
- * Accepted: `key:` and `key: scalar` lines at column 0, indented `- item` entries belonging to the
- * immediately preceding block key, comments, and blank lines. Everything else is a hard error naming
- * the line.
+ * Accepted: top-level keys with a separated single-line scalar, or one flat indented scalar list;
+ * comments and blank lines. Each list chooses its own indentation, but every sibling must match it.
+ * This dependency-free check intentionally does not implement the complete YAML grammar.
  */
 function validateFrontMatterStructure(lines, rulePath) {
   const structureErrors = []
   const seenKeys = new Set()
   let blockKey = null
-  // One malformed key line orphans every entry under it; report that once instead of once per entry,
-  // so the line that actually broke the document stays readable in the output.
+  let blockIndent = null
   let reportedOrphanEntry = false
 
   for (const line of lines) {
-    if (line.trim() === '' || /^\s*#/.test(line)) {
+    if (line.trim() === '') {
+      continue
+    }
+    if (/^[ \t]*\t/.test(line)) {
+      structureErrors.push(`${rulePath} front matter has tab indentation, which this check cannot parse: ${line.trim()}`)
+      continue
+    }
+    if (/^ *#/.test(line)) {
       continue
     }
 
-    if (/^\s/.test(line)) {
-      if (/^\s+-(\s|$)/.test(line)) {
-        if (blockKey === null && !reportedOrphanEntry) {
+    if (/^ /.test(line)) {
+      const entry = line.match(/^( +)-(?:[ \t]+(.*))?$/)
+      if (!entry) {
+        structureErrors.push(`${rulePath} front matter has a line this check cannot parse: ${line.trim()}`)
+        continue
+      }
+      if (blockKey === null) {
+        if (!reportedOrphanEntry) {
           reportedOrphanEntry = true
           structureErrors.push(
             `${rulePath} front matter has a list entry with no preceding key, which this check cannot parse: ${line.trim()} (further orphaned entries not listed)`,
@@ -174,8 +168,16 @@ function validateFrontMatterStructure(lines, rulePath) {
         }
         continue
       }
-
-      structureErrors.push(`${rulePath} front matter has a line this check cannot parse: ${line.trim()}`)
+      blockIndent ??= entry[1].length
+      if (entry[1].length !== blockIndent) {
+        structureErrors.push(`${rulePath} front matter has nested or inconsistent list indentation, which this check cannot parse: ${line.trim()}`)
+        continue
+      }
+      // Empty quoted metadata strings are valid; only the paths consumer requires nonempty values.
+      const { error } = parseFrontMatterScalar(entry[2] ?? '')
+      if (error !== null) {
+        structureErrors.push(`${rulePath} front matter has a list entry this check cannot parse (${error}): ${line.trim()}`)
+      }
       continue
     }
 
@@ -186,20 +188,24 @@ function validateFrontMatterStructure(lines, rulePath) {
       continue
     }
 
-    const keyMatch = line.match(/^([A-Za-z0-9_][A-Za-z0-9_.-]*)\s*:(.*)$/)
+    // A colon without separation starts plain scalar text, not a YAML mapping value.
+    const keyMatch = line.match(/^([A-Za-z0-9_][A-Za-z0-9_.-]*) *:(?:[ \t]+(.*))?$/)
     if (!keyMatch) {
       structureErrors.push(`${rulePath} front matter has a line this check cannot parse: ${line.trim()}`)
       blockKey = null
+      blockIndent = null
       continue
     }
 
-    const [, key, rawValue] = keyMatch
+    const [, key, rawValue = ''] = keyMatch
     if (seenKeys.has(key)) {
       structureErrors.push(
-        `${rulePath} front matter declares the key "${key}" twice; a YAML loader keeps only one of them`,
+        `${rulePath} front matter declares the key "${key}" twice; duplicate mapping keys are not supported`,
       )
     }
     seenKeys.add(key)
+    blockIndent = null
+    reportedOrphanEntry = false
 
     const value = rawValue.trim()
     if (value === '' || value.startsWith('#')) {
@@ -207,13 +213,14 @@ function validateFrontMatterStructure(lines, rulePath) {
       continue
     }
 
-    const unreadable = describeUnreadableScalar(value)
-    if (unreadable !== null) {
+    const { error } = parseFrontMatterScalar(value)
+    if (key === 'paths' && error === 'unsupported flow sequence or mapping') {
+      structureErrors.push(`${rulePath} front matter paths: must be a block sequence of "- glob" entries`)
+    } else if (error !== null) {
       structureErrors.push(
-        `${rulePath} front matter has an ${unreadable} on key "${key}", which this check cannot parse: ${line.trim()}`,
+        `${rulePath} front matter has an ${error} on key "${key}", which this check cannot parse: ${line.trim()}`,
       )
     }
-
     blockKey = null
   }
 
@@ -274,7 +281,7 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
     }
 
     const { value } = parseFrontMatterScalar(itemMatch[1])
-    if (value === null || value === '') {
+    if (value === null || value === '' || value !== value.trim() || /[\x00-\x1f\x7f]/.test(value)) {
       errors.push(`${rulePath} front matter paths: has an entry this check cannot parse: ${line.trim()}`)
       continue
     }
