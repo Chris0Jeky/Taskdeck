@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-13
 
 Buffered account relation exports (#3069) now use the existing authorized, no-tracking projection
 in 500-row pages and admit at most 10,000 relation rows. Both endpoints must be in the cards
@@ -18,15 +18,19 @@ with 34 existing skips and 6,907 frontend tests with three existing skips. Issue
 and all eleven project items are Done with their verified priorities. The first post-merge review
 check is clear. Candidate wording below remains historical; parked #3072 is excluded.
 
-Two bounded relation follow-ups are now candidates: proposal card deletion carries the authenticated
-applier into its removed-relations audit (#3074), and a real SQLite API regression proves a board
-with no relations exports null, zero and positive estimates in a v5 envelope and preserves them
-through a fresh-ID import (#3065). The inspected pre-estimate reader at `9c17a83bf` rejects v5 before
-mapping; no old binary execution is claimed. The 29 registry, 12 typed-relation API and 14 export
-API source cases pass, including the causal null-actor failure before correction. Both independent
-reviews are clean. Final combined backend qualification passes 9,842 tests with 34 existing skips;
-the delivery PR records required hosted qualification against its final head and base.
-Existing human actions remain unchanged.
+Two bounded follow-ups remain in #3085: proposal card deletion carries the authenticated applier
+into its removed-relations audit (#3074), and estimate-bearing board exports use the existing v5
+envelope even when no relation graph row exists (#3065). Review identified that the original
+import-based fixture manufactured an empty graph and missed the ordinary card-API path. The
+replacement creates the board and null/zero/positive estimates through the normal APIs; it fails
+without the version correction and passes with current-reader fresh-ID roundtrip preservation.
+All 48 focused board-JSON service cases and 22 export API cases pass after correction, including
+zero-only and unknown-only legacy coverage. The inspected pre-estimate reader at `9c17a83bf`
+rejects v5 before mapping; no historical binary execution is claimed. The audit source separately
+passes 29 registry and 12 typed-relation API cases with a causal missing-actor control.
+The earlier complete backend run passed 9,842 tests with 34 existing skips before this version
+correction. A new full backend run is pending; the PR records the focused correction review and
+required hosted gate against its final head and base. Existing human actions remain unchanged.
 Paper archive/restore settlement (#3060) now reconciles the committed lifecycle and card version
 when the user switches A-to-B-to-A before the request completes. The current matching inspector
 receives that result before the shared pending lock is released, while retaining newer local draft

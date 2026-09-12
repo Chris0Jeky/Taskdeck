@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-13
 
 ## Buffered relation export admission candidate (2026-09-12, #3069)
 
@@ -14,12 +14,15 @@ complete combined backend and exact-head/base hosted qualification before delive
 ## Relation audit and portability follow-ups (2026-09-12, #3074 and #3065)
 
 The audit-attribution correction preserves the execution applier through proposal card deletion;
-its regression uses a different requester and retains the removed-edge receipt. A separate test-only
-commit proves the delivered v5 empty-relation export preserves nullable estimates and uses fresh
-IDs on import. Source checks, independent reviews and the full combined backend run pass
-(9,842 passed, 34 existing skips); final hosted qualification remains a delivery gate.
-No new format, approval policy or direct-delete behavior is
-introduced. The two source commits are preserved, and existing human actions remain separate.
+its regression uses a different requester and retains the removed-edge receipt. The portability
+correction selects the existing v5 envelope for every non-null estimate, including zero, even on a
+graph-free board. Review exposed the original import fixture's empty-graph assumption. The normal
+card-API replacement fails before the correction, then passes within 22 export API and 48 service
+cases; unknown-only boards retain their previous legacy representation. Preserve the original
+commits and this bounded correction. The earlier 9,842-pass/34-skip full backend result predates
+the correction; a new full run and final hosted qualification remain pending at this checkpoint.
+No new format number, approval policy or direct-delete behavior is introduced. Existing human
+actions remain separate.
 
 ## Product recovery delivery (2026-09-12)
 

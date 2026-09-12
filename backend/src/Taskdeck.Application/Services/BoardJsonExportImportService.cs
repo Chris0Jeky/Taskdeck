@@ -558,8 +558,9 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             Relations: exportDto.Relations);
     }
 
-    public static object ToPortablePayload(ExportBoardDto dto) => dto.Relations is not null
-        ? new BoardExportEnvelope("taskdeck-board", 5, dto)
+    public static object ToPortablePayload(ExportBoardDto dto) => dto.Relations is not null ||
+        dto.Cards.Any(card => card.EstimatedEffortMinutes.HasValue)
+        ? new BoardExportEnvelope("taskdeck-board", 5, dto with { Relations = dto.Relations ?? [] })
         : dto.Cards.Any(card => card.Assignments is { Count: > 0 })
         ? new BoardExportEnvelope("taskdeck-board", 4, dto)
         : dto.Cards.Any(card => card.ParentCardId.HasValue)

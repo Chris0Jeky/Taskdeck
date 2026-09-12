@@ -61,29 +61,32 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task EstimatedEffort_EmptyRelationsExportUsesV5AndRoundTripsNullableValuesWithFreshIds()
+    public async Task EstimatedEffort_GraphFreeCardApiExportUsesV5AndRoundTripsNullableValuesWithFreshIds()
     {
         await EnsureAuthenticatedAsync();
-        var cards = new[]
+        var boardResponse = await _client.PostAsJsonAsync("/api/boards",
+            new CreateBoardDto($"Estimate-card-api-{Guid.NewGuid():N}", null));
+        boardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var board = (await boardResponse.Content.ReadFromJsonAsync<BoardDto>())!;
+        var columnResponse = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Work", null, null));
+        columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var column = (await columnResponse.Content.ReadFromJsonAsync<ColumnDto>())!;
+        var estimates = new int?[] { null, 0, 135 };
+        foreach (var (title, estimate) in new[]
         {
-            new ImportCardDto("Unknown estimate", null, "Work", 0, null, [], SourceId: Guid.NewGuid(), EstimatedEffortMinutes: null),
-            new ImportCardDto("Zero estimate", null, "Work", 1, null, [], SourceId: Guid.NewGuid(), EstimatedEffortMinutes: 0),
-            new ImportCardDto("Positive estimate", null, "Work", 2, null, [], SourceId: Guid.NewGuid(), EstimatedEffortMinutes: 135)
-        };
-        var payload = new ImportBoardDto("V5 empty relations estimate portability", null,
-            [new ImportColumnDto("Work", 0, null)], cards, [], Relations: []);
-        var firstResponse = await _client.PostAsJsonAsync("/api/import/boards", payload);
-        firstResponse.EnsureSuccessStatusCode();
-        var firstBoardId = (await firstResponse.Content.ReadFromJsonAsync<ImportResultDto>())!.BoardId!.Value;
-        var firstCards = (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{firstBoardId}/cards"))!;
-
-        foreach (var card in cards)
+            ("Unknown estimate", estimates[0]),
+            ("Zero estimate", estimates[1]),
+            ("Positive estimate", estimates[2])
+        })
         {
-            card.SourceId.Should().HaveValue();
-            firstCards.Single(stored => stored.Title == card.Title).Id.Should().NotBe(card.SourceId.Value);
+            var cardResponse = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+                new CreateCardDto(board.Id, column.Id, title, null, null, null, EstimatedEffortMinutes: estimate));
+            cardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         }
+        var firstCards = (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!;
 
-        var json = await _client.GetStringAsync($"/api/export/boards/{firstBoardId}/json");
+        var json = await _client.GetStringAsync($"/api/export/boards/{board.Id}/json");
         using var document = JsonDocument.Parse(json);
         document.RootElement.GetProperty("format").GetString().Should().Be("taskdeck-board");
         document.RootElement.GetProperty("version").GetInt32().Should().Be(5);
@@ -95,11 +98,16 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
         var secondBoardId = (await secondResponse.Content.ReadFromJsonAsync<ImportResultDto>())!.BoardId!.Value;
         var secondCards = (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{secondBoardId}/cards"))!;
 
-        foreach (var card in cards)
+        foreach (var (title, estimate) in new[]
         {
-            var first = firstCards.Single(stored => stored.Title == card.Title);
-            var second = secondCards.Single(stored => stored.Title == card.Title);
-            second.EstimatedEffortMinutes.Should().Be(card.EstimatedEffortMinutes);
+            ("Unknown estimate", estimates[0]),
+            ("Zero estimate", estimates[1]),
+            ("Positive estimate", estimates[2])
+        })
+        {
+            var first = firstCards.Single(stored => stored.Title == title);
+            var second = secondCards.Single(stored => stored.Title == title);
+            second.EstimatedEffortMinutes.Should().Be(estimate);
             second.Id.Should().NotBe(first.Id);
         }
     }
