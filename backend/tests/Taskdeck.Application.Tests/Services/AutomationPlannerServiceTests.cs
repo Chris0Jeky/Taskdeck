@@ -40,6 +40,37 @@ public class AutomationPlannerServiceTests
     #region ParseInstruction Tests
 
     [Fact]
+    public async Task ParseInstruction_FullColumn_ReturnsWipFailureWithoutCreatingProposal()
+    {
+        var user = new User("planner", "planner@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "Now", 0, wipLimit: 1);
+        column.AddCard(new Card(board.Id, column.Id, "Existing occupant"));
+        var users = new Mock<IUserRepository>();
+        var boards = new Mock<IBoardRepository>();
+        var access = new Mock<IBoardAccessRepository>();
+        _unitOfWorkMock.Setup(u => u.Users).Returns(users.Object);
+        _unitOfWorkMock.Setup(u => u.Boards).Returns(boards.Object);
+        _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(access.Object);
+        users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        boards.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        access.Setup(r => r.HasAccessAsync(board.Id, user.Id, Taskdeck.Domain.Enums.UserRole.Editor, default))
+            .ReturnsAsync(true);
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(board.Id, default)).ReturnsAsync(new[] { column });
+        _columnRepoMock.Setup(r => r.GetByIdAsync(column.Id, default)).ReturnsAsync(column);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default)).ReturnsAsync(column);
+        var service = new AutomationPlannerService(_proposalServiceMock.Object,
+            new AutomationPolicyEngine(_unitOfWorkMock.Object), _unitOfWorkMock.Object);
+
+        var result = await service.ParseInstructionAsync("create card 'Overflow' in column 'Now'", user.Id, board.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        result.ErrorMessage.Should().Contain("Cannot add card");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ParseInstruction_DispatchedProducerMetadata_StampsTrustedProposalFields()
     {
         var userId = Guid.NewGuid();

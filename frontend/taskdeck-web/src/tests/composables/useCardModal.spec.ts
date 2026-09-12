@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
-import { ref, nextTick, defineComponent } from 'vue'
+import { ref, nextTick, defineComponent, reactive } from 'vue'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { useCardModal, type UseCardModalOptions } from '../../composables/useCardModal'
@@ -25,9 +25,9 @@ const mockBoardStore = {
   setEditingCard: vi.fn(),
 }
 
-const mockSessionStore = {
+const mockSessionStore = reactive({
   userId: 'user-1',
-}
+})
 
 vi.mock('../../api/cardsApi', () => ({ cardsApi: {
   getCards: vi.fn().mockResolvedValue([]),
@@ -215,6 +215,73 @@ describe('useCardModal', () => {
     mockBoardStore.updateCardComment.mockResolvedValue(undefined)
     mockBoardStore.deleteCardComment.mockResolvedValue(undefined)
     mockSessionStore.userId = 'user-1'
+  })
+
+  describe('write permission refusal bridge', () => {
+    type Operation = 'updateCard' | 'deleteCard' | 'createCardComment' | 'updateCardComment' | 'deleteCardComment'
+    function startWrite(state: ReturnType<typeof mountComposable>, operation: Operation) {
+      const api = state.result
+      switch (operation) {
+        case 'updateCard': return api.handleSave()
+        case 'deleteCard':
+          api.detachPreview.value = makePreview('current')
+          return api.handleDeleteConfirm()
+        case 'createCardComment':
+          api.newCommentContent.value = 'Kept comment'
+          return api.handleAddComment()
+        case 'updateCardComment':
+          api.editingCommentId.value = 'comment-1'
+          api.editingCommentContent.value = 'Kept edit'
+          return api.handleSaveEditComment('comment-1')
+        case 'deleteCardComment':
+          api.handleDeleteComment(makeComment())
+          return api.handleCommentDeleteConfirm()
+      }
+    }
+
+    for (const operation of ['updateCard', 'deleteCard', 'createCardComment', 'updateCardComment', 'deleteCardComment'] as const) {
+      it.each([403, 409])(`${operation}: reports only a confirmed403, preserving the draft (status=%s)`, async status => {
+        const onPermissionDenied = vi.fn()
+        const state = mountComposable({ onPermissionDenied })
+        state.isOpenRef.value = true
+        await nextTick()
+        state.result.title.value = 'Kept title'
+        mockBoardStore[operation].mockRejectedValueOnce({ response: { status } })
+        await startWrite(state, operation)
+        expect(onPermissionDenied).toHaveBeenCalledTimes(status === 403 ? 1 : 0)
+        expect(state.result.title.value).toBe('Kept title')
+        expect(state.onClose).not.toHaveBeenCalled()
+        if (operation === 'createCardComment') expect(state.result.newCommentContent.value).toBe('Kept comment')
+        if (operation === 'updateCardComment') expect(state.result.editingCommentContent.value).toBe('Kept edit')
+        state.wrapper.unmount()
+      })
+    }
+
+    it.each([
+      ['updateCard', 'card'], ['deleteCard', 'board'], ['createCardComment', 'account'],
+      ['updateCardComment', 'reopen'], ['deleteCardComment', 'unmount'],
+    ] as const)('ignores a late %s403 after %s context replacement', async (operation, replacement) => {
+      const onPermissionDenied = vi.fn()
+      const state = mountComposable({ onPermissionDenied })
+      state.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<void>()
+      mockBoardStore[operation].mockReturnValueOnce(pending.promise)
+      const write = startWrite(state, operation)
+      if (replacement === 'card') state.cardRef.value = makeCard({ id: 'next-card' })
+      if (replacement === 'board') state.cardRef.value = makeCard({ boardId: 'next-board' })
+      if (replacement === 'account') mockSessionStore.userId = 'next-user'
+      if (replacement === 'reopen') {
+        state.isOpenRef.value = false
+        state.isOpenRef.value = true
+      }
+      if (replacement === 'unmount') state.wrapper.unmount()
+      await nextTick()
+      pending.reject({ response: { status: 403 } })
+      await write
+      expect(onPermissionDenied).not.toHaveBeenCalled()
+      if (replacement !== 'unmount') state.wrapper.unmount()
+    })
   })
 
   // -------------------------------------------------------------------------

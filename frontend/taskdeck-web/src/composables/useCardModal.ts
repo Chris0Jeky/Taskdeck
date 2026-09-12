@@ -20,12 +20,28 @@ export interface UseCardModalOptions {
   getLabels: () => Label[]
   onUpdated: () => void
   onClose: () => void
+  onPermissionDenied?: () => void
 }
 
 export function useCardModal(options: UseCardModalOptions) {
   const boardStore = useBoardStore()
   const sessionStore = useSessionStore()
   const toast = useToastStore()
+  // A write refusal belongs to the editor/account that submitted it. Closing and
+  // reopening the same card must retire it too, even when the card id is unchanged.
+  let permissionGeneration = 0
+  watch(
+    [() => options.getIsOpen(), () => options.getCard().boardId,
+      () => options.getCard().id, () => sessionStore.userId],
+    () => { permissionGeneration++ },
+    { flush: 'sync' },
+  )
+  function reportPermissionDenied(error: unknown, requestGeneration: number) {
+    if (requestGeneration !== permissionGeneration || !options.getIsOpen()) return
+    if ((error as { response?: { status?: number } })?.response?.status === 403) {
+      options.onPermissionDenied?.()
+    }
+  }
 
   // Form state
   const parentCardId = ref<string | null>(null)
@@ -256,6 +272,7 @@ export function useCardModal(options: UseCardModalOptions) {
   // Save
   async function handleSave() {
     if (!isFormValid.value || isSaving.value) return
+    const permissionRequest = permissionGeneration
 
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
@@ -288,6 +305,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onClose()
     } catch (error) {
       logError('Failed to update card:', error)
+      reportPermissionDenied(error, permissionRequest)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       const status = (error as { response?: { status?: number } })?.response?.status
       saveError.value = isValidationError(error)
@@ -295,7 +313,7 @@ export function useCardModal(options: UseCardModalOptions) {
         : status === 409
         ? 'The card changed or is read-only. Your draft is kept. Refresh the board and reopen the card before saving again.'
         : status === 403
-          ? 'You no longer have permission to edit this card. Your draft is kept.'
+          ? 'This card save was refused. Your draft is kept.'
           : 'Could not confirm the save. Your draft is kept. Refresh the board before trying again.'
       toast.error(saveError.value)
     } finally {
@@ -349,6 +367,7 @@ export function useCardModal(options: UseCardModalOptions) {
 
   async function handleDeleteConfirm() {
     if (isDeleting.value || !detachPreview.value || deletePreviewError.value) return
+    const permissionRequest = permissionGeneration
     isDeleting.value = true
     try {
       await boardStore.deleteCard(card.value.boardId, card.value.id, detachPreview.value)
@@ -357,6 +376,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onClose()
     } catch (error) {
       logError('Failed to delete card:', error)
+      reportPermissionDenied(error, permissionRequest)
       deletePreviewError.value = 'Card or children changed, or deletion could not be confirmed. Close and refresh before confirming again.'
       toast.error(deletePreviewError.value)
     } finally {
@@ -379,6 +399,7 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleAddComment(parentCommentId?: string) {
+    const permissionRequest = permissionGeneration
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
     const content = parentCommentId
@@ -405,6 +426,7 @@ export function useCardModal(options: UseCardModalOptions) {
       }
     } catch (error) {
       logError('Failed to add comment:', error)
+      reportPermissionDenied(error, permissionRequest)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to add comment. Please try again.')
     }
@@ -425,6 +447,7 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleSaveEditComment(commentId: string) {
+    const permissionRequest = permissionGeneration
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
     const content = editingCommentContent.value.trim()
@@ -443,6 +466,7 @@ export function useCardModal(options: UseCardModalOptions) {
       }
     } catch (error) {
       logError('Failed to update comment:', error)
+      reportPermissionDenied(error, permissionRequest)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to update comment. Please try again.')
     }
@@ -475,6 +499,7 @@ export function useCardModal(options: UseCardModalOptions) {
     if (!comment || isDeletingComment.value) {
       return
     }
+    const permissionRequest = permissionGeneration
 
     isDeletingComment.value = true
     try {
@@ -483,6 +508,7 @@ export function useCardModal(options: UseCardModalOptions) {
       commentPendingDeletion.value = null
     } catch (error) {
       logError('Failed to delete comment:', error)
+      reportPermissionDenied(error, permissionRequest)
       toast.error('Failed to delete comment. Please try again.')
     } finally {
       isDeletingComment.value = false
@@ -500,6 +526,7 @@ export function useCardModal(options: UseCardModalOptions) {
 
   // Cleanup
   onBeforeUnmount(() => {
+    permissionGeneration++
     if (boardStore.editingCardId === card.value.id) {
       boardStore.setEditingCard(null)
     }
