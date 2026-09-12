@@ -2,8 +2,9 @@
 
 Last Updated: 2026-09-12
 
-Status: implementation candidate; local .NET execution unavailable. No merged,
-API, database, browser, provider or hosted-test qualification is claimed.
+Status: locally qualified candidate. The Windows qualification below supersedes the
+initial author's missing-SDK limitation. Exact-head hosted qualification remains required;
+no merged, browser, provider or new SQL/HTTP scenario proof is claimed.
 
 ## Contract
 
@@ -61,16 +62,28 @@ note are new files; active typed-relation/estimate/archive-editor paths are not
 modified. The local worktree is the uploaded snapshot, not a complete checkout of
 that remote commit.
 
-Attempted local command:
+The initial author environment attempted:
 
 ```sh
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter 'FullyQualifiedName~ExternalImport' -m:1
 ```
 
-It could not start: `dotnet: command not found`. The 13 new cases have therefore
-**not been compiled or executed locally**, and no red/green .NET result is claimed.
-Run that command on the exact PR head, then the repository's required backend/API
-gates and independent review before merge. Keep the PR draft until qualification.
-Documentation governance, GitHub-operations governance, local documentation links
-and whitespace validation pass. No frontend, physical-device, screen-reader,
-release/hosting or existing human decision gate is marked complete by this repair.
+It could not start: `dotnet: command not found`. No initial red/green result is claimed.
+
+Windows qualification of source `56d7a8ef4` on delivered main `44d041ca7` is complete at
+`dbe21a3e2`: all 50 focused ExternalImport cases pass, including all 13 new regressions.
+One independent source review found no causal HIGH blocker. The complete backend command
+passes 9,747 tests across six projects with 34 existing skips and no failures:
+
+```sh
+dotnet test backend/Taskdeck.sln -c Release -m:1 --disable-build-servers -p:UseSharedCompilation=false --logger trx --results-directory C:/td0912-evidence/archived-import-full-backend-trx
+```
+
+The full backend tree is byte-identical to the submitted source. The subsequent integration
+of delivered archive-draft main `9a8c14c6b` at `7f82a8806` changes frontend/docs only; Git
+verifies the final backend tree is identical to the fully tested tree. Native focused/full
+logs, six TRX files and parsed counts remain under `C:/td0912-evidence`; the focused
+directory is `archived-import-qualification`. Documentation links, GitHub-operations
+governance and whitespace validation pass. Ready-for-review does not waive the new
+hosted gate. No physical-device, screen-reader, release/hosting or human decision is
+marked complete, and the new scenario coverage remains at the application boundary.
