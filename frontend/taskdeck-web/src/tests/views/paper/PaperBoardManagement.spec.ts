@@ -153,6 +153,33 @@ afterEach(() => {
 })
 
 describe('PaperBoardView — direct add-card', () => {
+  it.each([['1', '30', 90], ['', '0', 0]])('creates with optional estimate %sh %sm', async (hours, minutes, expected) => {
+    const wrapper = mountView()
+    const column = wrapper.findAll('[data-column-id]')[1]!
+    await column.get('[data-testid="paper-column-add-card"]').trigger('click')
+    await column.get('[data-action="add-card-input"]').setValue('Estimated card')
+    await column.get('[data-testid="estimate-hours"]').setValue(hours)
+    await column.get('[data-testid="estimate-minutes"]').setValue(minutes)
+    await column.get('[data-testid="paper-card-composer"]').trigger('submit')
+    await flushPromises()
+    expect(mockBoardStore.createCard).toHaveBeenCalledWith('board-1', {
+      columnId: 'col-today', title: 'Estimated card', estimatedEffortMinutes: expected,
+    })
+  })
+
+  it('blocks an invalid optional estimate, preserving the title for correction', async () => {
+    const wrapper = mountView()
+    const column = wrapper.findAll('[data-column-id]')[1]!
+    await column.get('[data-testid="paper-column-add-card"]').trigger('click')
+    await column.get('[data-action="add-card-input"]').setValue('Keep this title')
+    await column.get('[data-testid="estimate-minutes"]').setValue('-1')
+    expect(column.get('[data-testid="paper-card-composer-submit"]').attributes('disabled')).toBeDefined()
+    await column.get('[data-action="add-card-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(mockBoardStore.createCard).not.toHaveBeenCalled()
+    expect((column.get('[data-action="add-card-input"]').element as HTMLTextAreaElement).value).toBe('Keep this title')
+  })
+
   it('offers a primary "+ card" per column and keeps "+ capture" as the secondary lane', () => {
     const wrapper = mountView()
 
