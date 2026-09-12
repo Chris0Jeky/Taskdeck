@@ -65,6 +65,42 @@ public class OperationHandlerRegistryTests
     }
 
     [Fact]
+    public async Task RelationOperation_UsesAuthenticatedActorAndStagesTheNormalizedEdgeWithoutSaving()
+    {
+        var actorId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var sourceId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        var relations = new Mock<IBoardRelationService>();
+        relations.Setup(service => service.StageMutationAsync(
+                actorId,
+                boardId,
+                new CardRelationEdge(targetId, sourceId, "blocks"),
+                4,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new BoardRelationsDto(boardId, 5, [], true)));
+        var registry = new OperationHandlerRegistry(
+            _unitOfWorkMock.Object,
+            _cardServiceMock.Object,
+            _boardServiceMock.Object,
+            _columnServiceMock.Object,
+            relations: relations.Object);
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "add-relation", "card", sourceId.ToString(),
+            JsonSerializer.Serialize(new { boardId, cardId = sourceId, relatedCardId = targetId, relationType = "depends-on", expectedRevision = 4L }),
+            "typed-relation", null);
+
+        var missingActor = await registry.ExecuteOperationAsync(operation, default);
+        missingActor.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+
+        var result = await registry.ExecuteOperationAsync(operation, default, actorId);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        relations.VerifyAll();
+        _unitOfWorkMock.Verify(unit => unit.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ExecuteOperationAsync_ShouldReturnFailure_ForUnsupportedCardAction()
     {
         var operation = new ProposalOperationDto(
@@ -265,7 +301,7 @@ public class OperationHandlerRegistryTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
+        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', 'workItemType', 'estimatedEffortMinutes', or 'clearEstimatedEffort'");
     }
 
     [Fact]

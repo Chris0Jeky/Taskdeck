@@ -79,7 +79,9 @@ public sealed class McpStdioTransportTests
             tools.Select(tool => tool.Name).Should().Contain("search_cards");
             tools.Select(tool => tool.Name).Should().Contain(["archive_card", "archive_card_lifecycle", "restore_archived_card"]);
             tools.Select(tool => tool.Name).Should().Contain(["list_board_participants", "replace_card_assignments"]);
-            tools.Should().HaveCount(15, StderrContext(stderr));
+            tools.Select(tool => tool.Name).Should().Contain("get_board_estimate_rollups");
+            tools.Select(tool => tool.Name).Should().Contain(["get_board_card_relations", "add_card_relation", "remove_card_relation"]);
+            tools.Should().HaveCount(19, StderrContext(stderr));
 
             var searchResult = await client.CallToolAsync(
                 "search_cards",

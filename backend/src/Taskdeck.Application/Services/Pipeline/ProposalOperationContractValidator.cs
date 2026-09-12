@@ -2,6 +2,7 @@ using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services.Pipeline;
@@ -33,9 +34,19 @@ public static class ProposalOperationContractValidator
         IUnitOfWork unitOfWork,
         Guid? proposalBoardId,
         IEnumerable<ProposalOperationDto> operations,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IBoardDependencyRepository? dependencies = null)
     {
         var materializedOperations = operations.ToList();
+        var relationOperations = materializedOperations.Where(IsRelationOperation).ToList();
+        if (relationOperations.Count > 1)
+            return Result.Failure(ErrorCodes.ValidationError, "A proposal may contain only one typed relation operation.");
+        if (relationOperations.Count == 1 && materializedOperations.Any(IsRelationLifecycleMutation))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                "A typed relation operation cannot be combined with card archive, restore, or delete operations.");
+        }
         var hierarchyResult = await ProposalHierarchyValidator.ValidateAsync(unitOfWork, proposalBoardId, materializedOperations, cancellationToken);
         if (!hierarchyResult.IsSuccess) return Result.Failure(hierarchyResult.ErrorCode, hierarchyResult.ErrorMessage);
         var validationContext = new BoardValidationContext(unitOfWork, proposalBoardId);
@@ -66,6 +77,11 @@ public static class ProposalOperationContractValidator
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
 
+            if ((parameters.TryGetProperty("estimatedEffortMinutes", out _) || parameters.TryGetProperty("clearEstimatedEffort", out _)) &&
+                (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+                 operation.ActionType.ToLowerInvariant() is not ("create" or "update")))
+                return Result.Failure(ErrorCodes.ValidationError, "Effort estimate parameters are supported only by card create and update operations");
+
             var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
             if (labelAction == CardLabelOperationAction.InvalidAlias)
             {
@@ -89,6 +105,18 @@ public static class ProposalOperationContractValidator
                 cancellationToken);
             if (!scopeResult.IsSuccess)
                 return scopeResult;
+
+            if (IsRelationOperation(operation))
+            {
+                var relationResult = await ValidateRelationOperationAsync(
+                    validationContext,
+                    operation.ActionType,
+                    parameters,
+                    dependencies,
+                    cancellationToken);
+                if (!relationResult.IsSuccess)
+                    return relationResult;
+            }
 
             var fieldResult = await ValidateOperationFieldsAsync(
                 validationContext,
@@ -126,6 +154,46 @@ public static class ProposalOperationContractValidator
         }
 
         return Result.Success();
+    }
+
+    private static bool IsRelationOperation(ProposalOperationDto operation) =>
+        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+        operation.ActionType.Equals("add-relation", StringComparison.OrdinalIgnoreCase) ||
+        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+        operation.ActionType.Equals("remove-relation", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRelationLifecycleMutation(ProposalOperationDto operation) =>
+        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+        operation.ActionType.Equals("archive-lifecycle", StringComparison.OrdinalIgnoreCase) ||
+        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+        operation.ActionType.Equals("restore-lifecycle", StringComparison.OrdinalIgnoreCase) ||
+        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+        operation.ActionType.Equals("delete", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<Result> ValidateRelationOperationAsync(
+        BoardValidationContext validationContext,
+        string actionType,
+        JsonElement parameters,
+        IBoardDependencyRepository? dependencies,
+        CancellationToken cancellationToken)
+    {
+        if (!OperationParameterParser.TryGetRelationOperationParameters(parameters, out var relationParameters, out var error))
+            return Result.Failure(ErrorCodes.ValidationError, error);
+        if (!validationContext.BoardId.HasValue || relationParameters.BoardId != validationContext.BoardId.Value)
+            return ScopeFailure("Operation boardId is outside the proposal board scope");
+        if (dependencies is null)
+        {
+            return Result.Failure(
+                ErrorCodes.UnexpectedError,
+                "Typed relation validation is unavailable.");
+        }
+
+        return await validationContext.ValidateRelationEndpointsAsync(
+            relationParameters.Relation,
+            relationParameters.ExpectedRevision,
+            actionType.Equals("remove-relation", StringComparison.OrdinalIgnoreCase),
+            dependencies,
+            cancellationToken);
     }
 
     private static async Task<Result> ValidateEntityScopeAsync(
@@ -344,6 +412,20 @@ public static class ProposalOperationContractValidator
             if (dueDate.HasValue && clearDueDate)
                 return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
 
+            if (!OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimatedEffortMinutes, out var estimateError))
+                return Result.Failure(ErrorCodes.ValidationError, estimateError);
+            if (!OperationParameterParser.TryGetOptionalBoolean(parameters, "clearEstimatedEffort", out var clearEstimateProvided, out var clearEstimatedEffort, out var clearEstimateError))
+                return Result.Failure(ErrorCodes.ValidationError, clearEstimateError);
+            if (normalizedAction == "create" && clearEstimateProvided)
+                return Result.Failure(ErrorCodes.ValidationError, "Parameter 'clearEstimatedEffort' is supported only by card update operations");
+            if (estimatedEffortMinutes.HasValue && clearEstimatedEffort)
+                return Result.Failure(ErrorCodes.ValidationError, "Parameters 'estimatedEffortMinutes' and 'clearEstimatedEffort' cannot both be specified");
+            if (normalizedAction == "update" && (estimatedEffortMinutes.HasValue || clearEstimatedEffort))
+            {
+                var estimateVersion = await validationContext.ValidateEstimateVersionAsync(parameters, cancellationToken);
+                if (!estimateVersion.IsSuccess) return estimateVersion;
+            }
+
             if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase))
             {
                 if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
@@ -363,11 +445,11 @@ public static class ProposalOperationContractValidator
                 var labelsProvided = parameters.TryGetProperty("labels", out _);
                 var labelIdsProvided = parameters.TryGetProperty("labelIds", out _);
                 if (title == null && description == null && !dueDateProvided && !clearDueDate &&
-                    !labelsProvided && !labelIdsProvided && workItemType is null && !parameters.TryGetProperty("parentCardId", out _) && !parameters.TryGetProperty("clearParent", out _))
+                    !labelsProvided && !labelIdsProvided && workItemType is null && !estimatedEffortMinutes.HasValue && !clearEstimatedEffort && !parameters.TryGetProperty("parentCardId", out _) && !parameters.TryGetProperty("clearParent", out _))
                 {
                     return Result.Failure(
                         ErrorCodes.ValidationError,
-                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
+                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', 'workItemType', 'estimatedEffortMinutes', or 'clearEstimatedEffort'");
                 }
             }
         }
@@ -415,6 +497,13 @@ public static class ProposalOperationContractValidator
             catch (DomainException ex) { return Result.Failure(ex.ErrorCode, ex.Message); }
             return OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var assignmentError)
                 ? Result.Success() : Result.Failure(ErrorCodes.ValidationError, assignmentError);
+        }
+
+        if (normalizedAction is "add-relation" or "remove-relation")
+        {
+            return OperationParameterParser.TryGetRelationOperationParameters(parameters, out _, out var relationError)
+                ? Result.Success()
+                : Result.Failure(ErrorCodes.ValidationError, relationError);
         }
 
         if (normalizedAction is "move" or "archive" or "archive-lifecycle" or "restore-lifecycle" or "delete")
@@ -753,6 +842,23 @@ public static class ProposalOperationContractValidator
 
         public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
 
+        public async Task<Result> ValidateEstimateVersionAsync(JsonElement parameters, CancellationToken ct)
+        {
+            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
+                return Result.Failure(ErrorCodes.ValidationError, error);
+            // A card created earlier in this proposal has no persisted pre-proposal version.
+            if (_plannedCardIds.Contains(cardId)) return Result.Success();
+            if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+                timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+                return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+            var card = await ReadCardAsync(cardId, ct);
+            if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+            // Every operation is checked before any apply-time mutation. Repeated estimate
+            // changes pin this same initial state, not hypothetical future timestamps.
+            return card.UpdatedAt == expected ? Result.Success()
+                : Result.Failure(ErrorCodes.Conflict, "Card changed since this proposal was prepared. Refresh and create a new proposal.");
+        }
+
         public async Task<Result> ValidateIncomingCardCapacityAsync(
             ProposalOperationDto operation,
             JsonElement parameters,
@@ -972,6 +1078,61 @@ public static class ProposalOperationContractValidator
             return cardBoardId == BoardId
                 ? Result.Success()
                 : ScopeFailure("Operation card is outside the proposal board scope");
+        }
+
+        public async Task<Result> ValidateRelationEndpointsAsync(
+            CardRelationEdge relation,
+            long expectedRevision,
+            bool remove,
+            IBoardDependencyRepository dependencies,
+            CancellationToken cancellationToken)
+        {
+            if (!BoardId.HasValue)
+                return ScopeFailure("Operation card is outside the proposal board scope");
+
+            var graph = await dependencies.GetAsync(BoardId.Value, cancellationToken) ?? new BoardDependencies(BoardId.Value);
+            if (graph.Revision != expectedRevision)
+                return Result.Failure(ErrorCodes.Conflict, "Relations changed. Reload before trying again.");
+
+            var cards = (await unitOfWork.Cards.GetHierarchyByBoardIdAsync(BoardId.Value, cancellationToken))
+                .ToDictionary(card => card.Id);
+            var endpoints = cards.Values
+                .Select(card => new CardRelationEndpoint(card.Id, card.BoardId, card.IsArchived))
+                .ToList();
+            foreach (var cardId in new[] { relation.SourceCardId, relation.TargetCardId }.Distinct())
+            {
+                if (_plannedCardIds.Contains(cardId))
+                {
+                    // A preceding create has a preallocated TargetId and will be active when this
+                    // later relation operation stages inside the same executor transaction.
+                    endpoints.Add(new CardRelationEndpoint(cardId, BoardId.Value, IsArchived: false));
+                    continue;
+                }
+
+                var card = await ReadCardAsync(cardId, cancellationToken);
+                if (card is null)
+                    return Result.Failure(ErrorCodes.NotFound, "Card not found.");
+                if (card.BoardId != BoardId.Value)
+                    return ScopeFailure("Operation card is outside the proposal board scope");
+                if (card.IsArchived)
+                    return Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing relations.");
+                if (!cards.ContainsKey(card.Id))
+                    endpoints.Add(new CardRelationEndpoint(card.Id, card.BoardId, card.IsArchived));
+            }
+
+            try
+            {
+                // Match BoardRelationService.PrepareAsync: validate the requested revision,
+                // then apply the requested add/remove to the complete current graph using all
+                // board endpoints. Existing archived, non-target edges remain valid while the
+                // requested endpoints must be active.
+                CardRelationRules.Apply(BoardId.Value, graph.ReadRelations(), relation, remove, endpoints);
+                return Result.Success();
+            }
+            catch (DomainException exception)
+            {
+                return Result.Failure(exception.ErrorCode, exception.Message);
+            }
         }
 
         public async Task<Result> ValidateColumnBoardAsync(Guid columnId, CancellationToken cancellationToken)
