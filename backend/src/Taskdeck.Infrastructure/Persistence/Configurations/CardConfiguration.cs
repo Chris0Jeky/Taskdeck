@@ -28,6 +28,9 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
         builder.Property(c => c.DueDate)
             .IsRequired(false);
 
+        builder.Property(c => c.EstimatedEffortMinutes)
+            .IsRequired(false);
+
         builder.Property(c => c.IsBlocked)
             .IsRequired();
 
