@@ -221,7 +221,8 @@ function uniqueSorted(values) {
 /**
  * Build the deterministic plan.
  * @param {object} input see README: eventName, repository, pullRequestNumber, ref, isDraft, baseSha,
- *   headSha, mergeSha, mergeTreeSha, mergeBaseSha, mergeBaseTipSha, actorLogin, actorType, authorAssociation, isFork, labels,
+ *   headSha, mergeSha, mergeTreeSha, mergeRefQualification, mergeBaseSha, mergeBaseTipSha,
+ *   actorLogin, actorType, authorAssociation, isFork, labels,
  *   changedFiles, changedFilesAvailable, executionMode
  * @param {object} policy parsed policy document
  * @param {string} digest policyDigest() of the policy file bytes
@@ -240,6 +241,7 @@ export function buildPlan(input, policy, digest) {
   const listedRows = Number.isInteger(input.changedFileRows) ? input.changedFileRows : (input.changedFiles ?? []).length;
   if (Number.isInteger(input.changedFilesExpected) && input.changedFilesExpected >= 0 && input.changedFilesExpected !== listedRows) escalationReasons.push('changed-files-truncated');
   if (!isNonEmptyString(input.baseSha) || !isNonEmptyString(input.headSha)) escalationReasons.push('base-or-head-sha-missing');
+  if (input.mergeRefQualification === 'stale-base-unqualified') escalationReasons.push('merge-ref-unqualified');
   if (unmapped.length > 0) escalationReasons.push('unmapped-path');
   if (controlPathsChanged.length > 0) escalationReasons.push('control-path-change');
 
@@ -321,6 +323,7 @@ export function buildPlan(input, policy, digest) {
     },
     baseSha: input.baseSha ?? null,
     headSha: input.headSha ?? null,
+    mergeRefQualification: input.mergeRefQualification ?? null,
     mergeSha: input.mergeSha ?? null,
     mergeTreeSha: input.mergeTreeSha ?? null,
     mergeBaseSha: input.mergeBaseSha ?? null,
@@ -363,8 +366,9 @@ export function errorPlan(input, policy, digest, error) {
     event: { name: input.eventName ?? null, action: input.eventAction ?? null, repository: input.repository ?? null, pullRequest: Number.isInteger(input.pullRequestNumber) ? input.pullRequestNumber : null, ref: input.ref ?? null, isDraft: input.isDraft === true },
     baseSha: input.baseSha ?? null,
     headSha: input.headSha ?? null,
-    mergeSha: input.mergeSha ?? null,
-    mergeTreeSha: input.mergeTreeSha ?? null,
+    mergeRefQualification: null,
+    mergeSha: null,
+    mergeTreeSha: null,
     mergeBaseSha: null,
     mergeBaseTipSha: null,
     actor: { login: input.actorLogin ?? null, type: input.actorType ?? null, association: input.authorAssociation ?? null, isFork: input.isFork === true, sender: input.senderLogin ?? null, headActors: Array.isArray(input.headActors) ? uniqueSorted(input.headActors.map(String).filter(Boolean)) : [] },
@@ -404,21 +408,52 @@ export function validatePlan(plan, policy = null) {
   if (!/^sha256:[0-9a-f]{64}$/.test(String(plan.policyDigest ?? ''))) errors.push('policyDigest must be sha256:<hex>');
   if (!['shadow', 'enforce'].includes(plan.mode)) errors.push('mode must be shadow or enforce');
   if (!plan.event || !Object.hasOwn(plan.event, 'action') || (plan.event.action !== null && typeof plan.event.action !== 'string')) errors.push('event.action must be a string or null');
+  const hasMergeRefQualification = Object.hasOwn(plan, 'mergeRefQualification');
+  const mergeRefQualification = hasMergeRefQualification ? plan.mergeRefQualification : undefined;
+  const successfulPullRequestPlan = Number.isInteger(plan.event && plan.event.pullRequest) && !plan.plannerError;
+  if (hasMergeRefQualification
+    && ![null, 'qualified', 'stale-base-unqualified'].includes(mergeRefQualification)) {
+    errors.push('mergeRefQualification must be qualified, stale-base-unqualified, or null');
+  }
+  if (successfulPullRequestPlan && hasMergeRefQualification) {
+    if (mergeRefQualification === 'qualified') {
+      if (!isFullSha(plan.mergeSha)) errors.push('a qualified merge ref needs a full 40-character mergeSha');
+      if (!isFullSha(plan.mergeTreeSha)) errors.push('a qualified merge ref needs a full 40-character mergeTreeSha');
+    } else if (mergeRefQualification === 'stale-base-unqualified') {
+      if ([plan.mergeSha, plan.mergeTreeSha, plan.mergeBaseSha, plan.mergeBaseTipSha]
+        .some((value) => value !== null)) {
+        errors.push('a stale-base-unqualified plan must record null merge qualification identities');
+      }
+      if (!Array.isArray(plan.escalationReasons) || !plan.escalationReasons.includes('merge-ref-unqualified')) {
+        errors.push('a stale-base-unqualified plan must escalate with merge-ref-unqualified');
+      }
+    } else if (mergeRefQualification === null) {
+      errors.push('a successful pull-request plan must record mergeRefQualification');
+    }
+  } else if (!successfulPullRequestPlan && hasMergeRefQualification && mergeRefQualification !== null) {
+    errors.push('non-PR and error plans must record null mergeRefQualification');
+  }
+
   const hasMergeBaseSha = Object.hasOwn(plan, 'mergeBaseSha');
   const hasMergeBaseTipSha = Object.hasOwn(plan, 'mergeBaseTipSha');
+  if (successfulPullRequestPlan && mergeRefQualification === 'qualified'
+    && (!hasMergeBaseSha || !hasMergeBaseTipSha)) {
+    errors.push('a qualified merge ref needs observed first-parent and live-tip metadata');
+  }
   if (hasMergeBaseSha !== hasMergeBaseTipSha) {
     errors.push('mergeBaseSha and mergeBaseTipSha must both be present or both be absent');
   } else if (hasMergeBaseSha) {
-    const successfulPullRequestPlan = Number.isInteger(plan.event && plan.event.pullRequest) && !plan.plannerError;
     if (successfulPullRequestPlan) {
-      if (!isFullSha(plan.mergeBaseSha)) errors.push('mergeBaseSha must be a full 40-character Git SHA');
-      if (!(plan.mergeBaseTipSha === null || isFullSha(plan.mergeBaseTipSha))) errors.push('mergeBaseTipSha must be null or a full 40-character Git SHA');
-      if (isFullSha(plan.mergeBaseSha)) {
-        if (plan.mergeBaseTipSha === null && plan.mergeBaseSha !== plan.baseSha) {
-          errors.push('mergeBaseSha must equal plan.baseSha when mergeBaseTipSha is null');
-        } else if (isFullSha(plan.mergeBaseTipSha)) {
-          if (plan.mergeBaseSha !== plan.mergeBaseTipSha) errors.push('mergeBaseSha must equal mergeBaseTipSha for an accepted moved base');
-          if (plan.mergeBaseTipSha === plan.baseSha) errors.push('mergeBaseTipSha must be null when the merge ref used plan.baseSha');
+      if (mergeRefQualification !== 'stale-base-unqualified') {
+        if (!isFullSha(plan.mergeBaseSha)) errors.push('mergeBaseSha must be a full 40-character Git SHA');
+        if (!(plan.mergeBaseTipSha === null || isFullSha(plan.mergeBaseTipSha))) errors.push('mergeBaseTipSha must be null or a full 40-character Git SHA');
+        if (isFullSha(plan.mergeBaseSha)) {
+          if (plan.mergeBaseTipSha === null && plan.mergeBaseSha !== plan.baseSha) {
+            errors.push('mergeBaseSha must equal plan.baseSha when mergeBaseTipSha is null');
+          } else if (isFullSha(plan.mergeBaseTipSha)) {
+            if (plan.mergeBaseSha !== plan.mergeBaseTipSha) errors.push('mergeBaseSha must equal mergeBaseTipSha for an accepted moved base');
+            if (plan.mergeBaseTipSha === plan.baseSha) errors.push('mergeBaseTipSha must be null when the merge ref used plan.baseSha');
+          }
         }
       }
     } else if (plan.mergeBaseSha !== null || plan.mergeBaseTipSha !== null) {
@@ -497,11 +532,20 @@ export function evaluateGate(plan, context) {
     }
     if (context.expectedHeadSha && plan.headSha !== context.expectedHeadSha) failures.push({ code: 'head-sha-mismatch', detail: `plan ${plan.headSha} vs event ${context.expectedHeadSha}` });
     if (context.expectedBaseSha && plan.baseSha !== context.expectedBaseSha) failures.push({ code: 'base-sha-mismatch', detail: `plan ${plan.baseSha} vs event ${context.expectedBaseSha}` });
+    const hasMergeRefQualification = Object.hasOwn(plan, 'mergeRefQualification');
     const hasMergeBaseSha = Object.hasOwn(plan, 'mergeBaseSha');
     const hasMergeBaseTipSha = Object.hasOwn(plan, 'mergeBaseTipSha');
-    if (!hasMergeBaseSha && !hasMergeBaseTipSha) {
+    if (plan.mergeRefQualification === 'stale-base-unqualified') {
+      failures.push({
+        code: 'merge-ref-unqualified',
+        detail: 'the retained merge ref used an older first parent from named base history and carries no qualified merge identity',
+      });
+      notes.push('stale merge-ref evidence is excluded from recall and remains blocking in enforce mode');
+    } else if (!hasMergeRefQualification && !hasMergeBaseSha && !hasMergeBaseTipSha) {
       notes.push('legacy plan has no observed merge-base receipt; plan.baseSha remains the compatibility fallback without the new first-parent proof');
-    } else if (hasMergeBaseSha && hasMergeBaseTipSha && Number.isInteger(plan.event && plan.event.pullRequest) && !plan.plannerError) {
+    } else if ((!hasMergeRefQualification || plan.mergeRefQualification === 'qualified')
+      && hasMergeBaseSha && hasMergeBaseTipSha
+      && Number.isInteger(plan.event && plan.event.pullRequest) && !plan.plannerError) {
       const observedMatchesControl = plan.mergeBaseSha === plan.baseSha && plan.mergeBaseTipSha === null;
       const observedMatchesLiveTip = isFullSha(plan.mergeBaseTipSha)
         && plan.mergeBaseSha === plan.mergeBaseTipSha
