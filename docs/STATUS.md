@@ -2,6 +2,14 @@
 
 Last Updated: 2026-09-12
 
+The product recovery candidate combines typed relations, transactional proposal webhook
+staging, archived-import conflict planning, deactivation assignment cleanup and two estimate
+recovery fixes. All source commits are preserved, all 94 changed code/test blobs match their
+reviewed owners, and the bounded integration review is clean. Final combined verification and
+hosted qualification remain pending. [Current qualification and limits](analysis/2026-09-12-product-recovery-qualification.md)
+supersede the separate candidate gate wording below; the source evidence remains historical.
+Permission PR #3072 stays parked and excluded. All 41 human actions remain unchanged.
+
 Proposal webhook durability (#3024) is implemented on a candidate branch. Events already buffered
 by the proposal executor now prepare filtered `Pending` delivery rows in its existing transaction,
 before the Applied-status save. Delivery rows, subscription trigger timestamps and proposal effects
