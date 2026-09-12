@@ -5,11 +5,12 @@ import { useSessionStore } from '../../store/sessionStore'
 import type { BoardParticipant, Card, CardAssignment } from '../../types/board'
 import CardAssignees from './CardAssignees.vue'
 
-const props = defineProps<{ card: Card; readOnly: boolean; disabled?: boolean }>()
+const props = defineProps<{ card: Card; readOnly: boolean; readsBlocked?: boolean; disabled?: boolean }>()
 const emit = defineEmits<{
   saved: [card: Card, previousVersion?: string]
   'dirty-change': [dirty: boolean]
   'saving-change': [saving: boolean]
+  'permission-denied': []
 }>()
 const session = useSessionStore()
 const participants = ref<BoardParticipant[]>([])
@@ -23,18 +24,12 @@ const saving = ref(false)
 const loadFailed = ref(false)
 const needsRefresh = ref(false)
 /*
- * How the newest settled save failed (#2982). `permission` is a 403: edit
- * permission was revoked between opening this card and the PUT, so describing it
- * as an uncertain save and offering a retry sends the user round a loop the
- * server will keep refusing. It is the one sticky class. A Viewer still reads
- * participants and the card successfully, so a completed refresh is NOT evidence
- * of write permission and must not unlock the selector or Save; a board
- * `canWrite` cached from before the downgrade is not evidence either. Only the
- * parent's server-derived `readOnly` input turning writable again — which the
- * background board refetch delivers — or reopening the card clears it. Every
- * other class stays a per-attempt outcome the user can act on. Narrower than
- * `isAccessDeniedError` (403 OR 404) on purpose: a 404 here is a
- * card/board-gone fact, not a permission signal.
+ * A write403 is a confirmed refusal, not evidence that board reads still work.
+ * It remains sticky until the parent reports fresh server-derived write permission.
+ * Emitting permission-denied invalidates the shared editor permission, including when
+ * readOnly already changed back to false while this PUT was pending (#3021/#3042).
+ * Participant/card reads never release the lock. Other failures remain per-attempt
+ * outcomes; a write404 is a card/board-gone outcome rather than this permission signal.
  */
 const saveFailure = ref<'permission' | 'conflict' | 'ineligible' | 'unknown' | null>(null)
 /*
@@ -61,8 +56,8 @@ const permissionLost = computed(() => saveFailure.value === 'permission')
 const error = computed(() => {
   // The sticky permission message must not swallow a read that failed AFTER it,
   // nor keep promising readable assignees once the refresh stopped confirming them.
-  if (permissionLost.value && loadFailed.value) return 'Your edit permission was revoked, so this assignment save was refused, and the latest refresh also failed — the assignees shown may be out of date. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft is kept and you can still clear or cancel it; refresh again to confirm the current assignees.'
-  if (permissionLost.value) return 'Your edit permission was revoked, so this assignment save was refused. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft and the current assignees stay readable, and Clear and Cancel still work.'
+  if (permissionLost.value && loadFailed.value) return 'This assignment save was refused, and the latest refresh also failed; the assignees shown may be out of date. Editing stays locked until board write permission is confirmed again. Your draft is kept, and Clear and Cancel still work.'
+  if (permissionLost.value) return 'This assignment save was refused. Editing stays locked until board write permission is confirmed again. Your draft is kept, and Clear and Cancel still work.'
   if (loadFailed.value) return 'Could not load current participants. Your draft is kept.'
   if (saveFailure.value === 'conflict') return 'The card changed. Refresh current assignments, review your kept draft, then save again.'
   if (saveFailure.value === 'ineligible') return 'A selected person is no longer eligible. Refresh participants and correct your kept draft.'
@@ -113,6 +108,7 @@ function reset(card: Card) {
   version.value = card.updatedAt
 }
 async function load(refresh = false) {
+  if (props.readsBlocked) return
   const request = ++loadGeneration
   const card = props.card
   loading.value = true
@@ -173,6 +169,13 @@ watch(() => props.readOnly, readOnly => {
     void load()
   }
 })
+// Stop an older participant/card read from displaying a result after board access was
+// invalidated. This never invalidates a PUT or discards its outcome or the local draft.
+watch(() => props.readsBlocked, blocked => {
+  if (!blocked) return
+  loadGeneration++
+  loading.value = false
+}, { flush: 'sync' })
 watch(() => props.card.updatedAt, () => {
   if (!dirty.value && !saving.value) reset(props.card)
 })
@@ -199,10 +202,11 @@ async function save() {
     /*
      * A refusal is not a stale-state claim, and `needsRefresh` also disables the
      * draft-side controls — so the permission class carries its own lock instead.
-     * Read access survives a downgrade, so the refresh affordance below stays
-     * offered for the current assignees even when it cannot lead back to a save.
+     * A later board read decides whether the assignment refresh can run; the
+     * write refusal itself makes no promise about surviving read access.
      */
     needsRefresh.value = !permissionLost.value
+    if (permissionLost.value) emit('permission-denied')
   } finally { if (request === saveGeneration) saving.value = false }
 }
 const unavailable = computed(() => props.readOnly ? [] : selected.value.filter(id => !participants.value.some(p => p.userId === id)))
@@ -212,12 +216,12 @@ onBeforeUnmount(() => { loadGeneration++; saveGeneration++ })
 <template>
   <section aria-label="Card assignments" class="space-y-2">
     <h3 class="text-sm font-semibold">Assignees</h3>
-    <CardAssignees :assignments="displayedAssignments" />
+    <CardAssignees v-if="!readsBlocked" :assignments="displayedAssignments" />
     <p v-if="readOnly || archived" class="text-sm">Assignments are read-only.</p>
     <p v-if="loading" role="status">Loading participants…</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="saving" role="status">Saving assignments… this change was sent and cannot be discarded.</p>
-    <button v-if="needsRefresh || permissionLost" type="button" :disabled="loading || saving" @click="load(true)">Refresh current assignments</button>
+    <button v-if="needsRefresh || permissionLost" type="button" :disabled="readsBlocked || loading || saving" @click="load(true)">Refresh current assignments</button>
     <fieldset :disabled="locked" class="space-y-1">
       <legend class="sr-only">Choose board participants</legend>
       <label v-for="person in participants" :key="person.userId" class="flex gap-2">

@@ -215,6 +215,32 @@ public class WriteToolExecutorTests
         parameters.RootElement.GetProperty("labels")[0].GetString().Should().Be("urgent");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeCreateCard_ChecksActiveCapacityBeforeCreatingProposal(bool archivedOccupant)
+    {
+        var column = new Column(_boardId, "Limited", 0, wipLimit: 1);
+        var occupant = new Card(_boardId, column.Id, "Occupant");
+        if (archivedOccupant) occupant.Archive();
+        column.AddCard(occupant);
+        _columnRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { column });
+        _columnRepo.Setup(r => r.GetByIdAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        _columnRepo.Setup(r => r.GetByIdWithCardsAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        SetupProposalCreation(Guid.NewGuid());
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs("""{"title":"New card"}"""));
+
+        using var json = JsonDocument.Parse(result);
+        if (archivedOccupant)
+            json.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        else
+            json.RootElement.GetProperty("error").GetString().Should().Contain("Cannot add card").And.Contain("Limited");
+        _proposalService.Verify(service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            archivedOccupant ? Times.Once() : Times.Never());
+    }
+
     #endregion
 
     #region ProposeMoveCardExecutor
