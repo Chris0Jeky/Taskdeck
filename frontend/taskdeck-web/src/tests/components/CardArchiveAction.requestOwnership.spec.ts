@@ -232,6 +232,69 @@ describe('CardArchiveAction request ownership (GH-2996)', () => {
     expect(view.emitted('changed')).toBeUndefined()
   })
 
+  it.each([
+    { archived: false, dismiss: false },
+    { archived: false, dismiss: true },
+    { archived: true, dismiss: false },
+  ])('a current-card write 403 emits permission-denied (archived=$archived, dismiss=$dismiss)', async ({ archived, dismiss }) => {
+    const held = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(held.promise)
+    if (archived) {
+      wrapper = mount(CardArchiveAction, { props: { card: { ...card, isArchived: true } }, attachTo: document.body })
+      await wrapper.get('button').trigger('click')
+    } else {
+      await openConfirmation()
+      buttonIn(modal(), 'Confirm archive').click()
+      await flushPromises()
+      if (dismiss) await escape()
+    }
+    held.reject(Object.assign(new Error('Write access denied'), { response: { status: 403 } }))
+    await flushPromises()
+
+    expect(wrapper!.emitted('permission-denied')).toEqual([[]])
+    expect(wrapper!.emitted('changed')).toBeUndefined()
+    expect(mocks.setCardArchived).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['card', 'board', 'unmount'] as const)('a 403 after a %s context change cannot invalidate current permissions', async contextChange => {
+    const held = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(held.promise)
+    const view = await openConfirmation()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    if (contextChange === 'unmount') {
+      view.unmount()
+      wrapper = null
+    } else {
+      await view.setProps({ card: contextChange === 'card'
+        ? { ...card, id: 'c2' }
+        : { ...card, boardId: 'other-board' } })
+    }
+    held.reject(Object.assign(new Error('Old permission denial'), { response: { status: 403 } }))
+    await flushPromises()
+
+    expect(view.emitted('permission-denied')).toBeUndefined()
+    expect(view.emitted('changed')).toBeUndefined()
+    if (contextChange !== 'unmount') expect(view.find('[role="alert"]').exists()).toBe(false)
+  })
+
+  it.each([404, 409, 500])('a write %s does not emit permission-denied', async status => {
+    mocks.setCardArchived.mockRejectedValueOnce({ response: { status } })
+    const view = await openConfirmation()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    expect(view.emitted('permission-denied')).toBeUndefined()
+  })
+
+  it('a preview 403 does not claim a confirmed write permission denial', async () => {
+    mocks.previewDetach.mockRejectedValueOnce({ response: { status: 403 } })
+    wrapper = mount(CardArchiveAction, { props: { card }, attachTo: document.body })
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('permission-denied')).toBeUndefined()
+    expect(mocks.setCardArchived).not.toHaveBeenCalled()
+  })
+
   it('unmount discards a late write receipt instead of notifying an obsolete parent', async () => {
     const held = deferred<void>()
     mocks.setCardArchived.mockReturnValueOnce(held.promise)

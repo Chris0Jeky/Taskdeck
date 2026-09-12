@@ -34,7 +34,7 @@ const props = withDefaults(defineProps<{ card: Card; disabled?: boolean; archive
   archived: undefined,
   canWrite: undefined,
 })
-const emit = defineEmits<{ changed: []; refresh: [] }>()
+const emit = defineEmits<{ changed: []; refresh: []; 'permission-denied': [] }>()
 const boardStore = useBoardStore()
 const toast = useToastStore()
 const preview = ref<CardDetachPreview | null>(null)
@@ -170,6 +170,7 @@ async function change() {
       if (!unmounted) toast.error(`The ${archive ? 'archive' : 'restore'} requested for a previously viewed card could not be confirmed. Reopen that card and refresh its state before trying again.`)
       return
     }
+    if ((e as { response?: { status?: number } } | null)?.response?.status === 403) emit('permission-denied')
     error.value = getErrorDisplay(e, CHANGE_FAILURE).message
     refreshed.value = false
     // After dismissal, rescue lost focus without stealing it from another control.
