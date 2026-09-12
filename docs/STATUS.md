@@ -43,6 +43,12 @@ archived endpoints, unauthorized/cross-board exclusion and an empty EF tracker. 
 review is clean. Account exports retain their existing non-snapshot semantics. Both corrections
 require a new hosted gate; the earlier global teardown timeout is not yet declared resolved.
 The estimate parent has merged as `54e4c0a86`; this candidate includes that delivered base.
+Relation proposal IDs now reuse the existing UUID fallback on the documented plain-HTTP LAN
+path. Removing `crypto.randomUUID` reproduces the original pre-request failure; the corrected
+API wrapper passes all four focused tests with distinct valid IDs and unchanged proposal fields.
+The bounded compatibility review and targeted lint pass. This is simulated API-availability
+proof, not a physical-device LAN acceptance. Buffered export limits and refresh control feedback
+remain separate follow-ups #3069 and #3070.
 
 Card estimates and current-state rollups (#2093) are implemented on the integration branch.
 Optional whole-minute estimates display as hours/minutes in shared card details and both Paper

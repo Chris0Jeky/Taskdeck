@@ -22,6 +22,9 @@ The bounded hosted follow-up corrects the dependency journey's expected v5 expor
 authorized, no-tracking export pages (20 focused tests pass; independent review clean). The
 delivered estimate merge `54e4c0a86` is integrated. Qualify this final head against main before
 closing #2092; keep the existing non-snapshot export and physical-device limitations explicit.
+The final LAN compatibility correction reuses the existing UUID fallback for proposal IDs and
+passes a missing-`randomUUID` regression, all four API-wrapper tests, lint and bounded review.
+Keep buffered export admission (#3069) and refresh control state (#3070) as separate follow-ups.
 
 ## Estimates and derived rollups (2026-09-12, #2093)
 
