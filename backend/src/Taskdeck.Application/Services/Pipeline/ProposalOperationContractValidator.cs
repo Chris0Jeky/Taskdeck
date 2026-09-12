@@ -66,6 +66,11 @@ public static class ProposalOperationContractValidator
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
 
+            if ((parameters.TryGetProperty("estimatedEffortMinutes", out _) || parameters.TryGetProperty("clearEstimatedEffort", out _)) &&
+                (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+                 operation.ActionType.ToLowerInvariant() is not ("create" or "update")))
+                return Result.Failure(ErrorCodes.ValidationError, "Effort estimate parameters are supported only by card create and update operations");
+
             var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
             if (labelAction == CardLabelOperationAction.InvalidAlias)
             {
@@ -344,6 +349,20 @@ public static class ProposalOperationContractValidator
             if (dueDate.HasValue && clearDueDate)
                 return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
 
+            if (!OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimatedEffortMinutes, out var estimateError))
+                return Result.Failure(ErrorCodes.ValidationError, estimateError);
+            if (!OperationParameterParser.TryGetOptionalBoolean(parameters, "clearEstimatedEffort", out var clearEstimateProvided, out var clearEstimatedEffort, out var clearEstimateError))
+                return Result.Failure(ErrorCodes.ValidationError, clearEstimateError);
+            if (normalizedAction == "create" && clearEstimateProvided)
+                return Result.Failure(ErrorCodes.ValidationError, "Parameter 'clearEstimatedEffort' is supported only by card update operations");
+            if (estimatedEffortMinutes.HasValue && clearEstimatedEffort)
+                return Result.Failure(ErrorCodes.ValidationError, "Parameters 'estimatedEffortMinutes' and 'clearEstimatedEffort' cannot both be specified");
+            if (normalizedAction == "update" && (estimatedEffortMinutes.HasValue || clearEstimatedEffort))
+            {
+                var estimateVersion = await validationContext.ValidateEstimateVersionAsync(parameters, cancellationToken);
+                if (!estimateVersion.IsSuccess) return estimateVersion;
+            }
+
             if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase))
             {
                 if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
@@ -363,11 +382,11 @@ public static class ProposalOperationContractValidator
                 var labelsProvided = parameters.TryGetProperty("labels", out _);
                 var labelIdsProvided = parameters.TryGetProperty("labelIds", out _);
                 if (title == null && description == null && !dueDateProvided && !clearDueDate &&
-                    !labelsProvided && !labelIdsProvided && workItemType is null && !parameters.TryGetProperty("parentCardId", out _) && !parameters.TryGetProperty("clearParent", out _))
+                    !labelsProvided && !labelIdsProvided && workItemType is null && !estimatedEffortMinutes.HasValue && !clearEstimatedEffort && !parameters.TryGetProperty("parentCardId", out _) && !parameters.TryGetProperty("clearParent", out _))
                 {
                     return Result.Failure(
                         ErrorCodes.ValidationError,
-                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
+                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', 'workItemType', 'estimatedEffortMinutes', or 'clearEstimatedEffort'");
                 }
             }
         }
@@ -752,6 +771,22 @@ public static class ProposalOperationContractValidator
         }
 
         public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
+
+        public async Task<Result> ValidateEstimateVersionAsync(JsonElement parameters, CancellationToken ct)
+        {
+            var cardId = parameters.GetProperty("cardId").GetGuid();
+            // A card created earlier in this proposal has no persisted pre-proposal version.
+            if (_plannedCardIds.Contains(cardId)) return Result.Success();
+            if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+                timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+                return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+            var card = await ReadCardAsync(cardId, ct);
+            if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+            // Every operation is checked before any apply-time mutation. Repeated estimate
+            // changes pin this same initial state, not hypothetical future timestamps.
+            return card.UpdatedAt == expected ? Result.Success()
+                : Result.Failure(ErrorCodes.Conflict, "Card changed since this proposal was prepared. Refresh and create a new proposal.");
+        }
 
         public async Task<Result> ValidateIncomingCardCapacityAsync(
             ProposalOperationDto operation,

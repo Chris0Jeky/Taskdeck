@@ -1524,7 +1524,8 @@ public class AutomationProposalService : IAutomationProposalService
         if (!originalValidation.IsSuccess)
             return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
 
-        if (useStoredOriginal && !originalOperations.Any(op => OperationParameterParser.TryDeserializeParameters(op.Parameters, out var p, out _) && ProposalHierarchyValidator.AffectsHierarchy(op.ActionType, op.TargetType, p)) && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
+        if (useStoredOriginal && !originalOperations.Any(op => OperationParameterParser.TryDeserializeParameters(op.Parameters, out var p, out _) &&
+                (ProposalHierarchyValidator.AffectsHierarchy(op.ActionType, op.TargetType, p) || p.TryGetProperty("estimatedEffortMinutes", out _) || p.TryGetProperty("clearEstimatedEffort", out _))) && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
         var orderedViews = originalOperations
@@ -1636,7 +1637,7 @@ public class AutomationProposalService : IAutomationProposalService
                 foreach (var card in cards)
                 {
                     cardTitles[card.Id] = card.Title;
-                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason, card.IsArchived, card.WorkItemType.ToString());
+                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason, card.IsArchived, card.WorkItemType.ToString(), card.EstimatedEffortMinutes);
                 }
 
                 var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
@@ -1665,6 +1666,7 @@ public class AutomationProposalService : IAutomationProposalService
             descriptions.Add(description);
             ApplyPreviewCreatedCardState(operation, cardTitles, cardStates);
             ApplyPreviewCardArchiveState(operation, cardStates);
+            ApplyPreviewCardEstimateState(operation, cardStates);
         }
 
         return Result.Success(string.Join(Environment.NewLine, descriptions));
@@ -1971,7 +1973,7 @@ public class AutomationProposalService : IAutomationProposalService
         string? TargetId,
         string Parameters);
 
-    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason, bool IsArchived = false, string WorkItemType = "Task");
+    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason, bool IsArchived = false, string WorkItemType = "Task", int? EstimatedEffortMinutes = null);
 
     private static void ApplyPreviewCreatedCardState(
         DiffOperationView operation,
@@ -1992,6 +1994,21 @@ public class AutomationProposalService : IAutomationProposalService
         cardStates[plannedCardId] = new CardDiffState(false, null, WorkItemType: ExtractStringParameter(operation.Parameters, "workItemType") ?? "Task");
     }
 
+    private static void ApplyPreviewCardEstimateState(DiffOperationView operation, IDictionary<Guid, CardDiffState> cardStates)
+    {
+        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+            operation.ActionType.ToLowerInvariant() is not ("create" or "update") ||
+            !OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out _) ||
+            !OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var minutes, out _))
+            return;
+
+        var cardId = ExtractGuidParameter(operation.Parameters, "cardId")
+            ?? (Guid.TryParse(operation.TargetId, out var targetId) ? targetId : (Guid?)null);
+        var clear = OperationParameterParser.GetOptionalBoolean(parameters, "clearEstimatedEffort") == true;
+        if (cardId.HasValue && cardStates.TryGetValue(cardId.Value, out var state) && (minutes.HasValue || clear))
+            cardStates[cardId.Value] = state with { EstimatedEffortMinutes = clear ? null : minutes };
+    }
+
     private static void ApplyPreviewCardArchiveState(
         DiffOperationView operation,
         IDictionary<Guid, CardDiffState> cardStates)
@@ -2004,8 +2021,8 @@ public class AutomationProposalService : IAutomationProposalService
 
         var cardId = ExtractGuidParameter(operation.Parameters, "cardId")
             ?? (Guid.TryParse(operation.TargetId, out var parsedTargetId) ? parsedTargetId : (Guid?)null);
-        if (cardId.HasValue)
-            cardStates[cardId.Value] = new CardDiffState(true, OperationHandlerRegistry.ArchiveCardBlockReason);
+        if (cardId.HasValue && cardStates.TryGetValue(cardId.Value, out var state))
+            cardStates[cardId.Value] = state with { IsBlocked = true, BlockReason = OperationHandlerRegistry.ArchiveCardBlockReason };
     }
 
     /// <summary>
@@ -2162,11 +2179,34 @@ public class AutomationProposalService : IAutomationProposalService
             description += $"; Work item type: {before} -> {workItemType}";
         }
         var cardEffects = DescribeCardParameterEffects(operation.Parameters, labelNames);
+        if (isCardTarget && appliesWorkItemType &&
+            OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var estimateParameters, out _) &&
+            OperationParameterParser.TryGetEstimatedEffortMinutes(estimateParameters, out var estimate, out _))
+        {
+            var clear = OperationParameterParser.GetOptionalBoolean(estimateParameters, "clearEstimatedEffort") == true;
+            var create = operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase);
+            if (estimate.HasValue || clear || (create && estimateParameters.TryGetProperty("estimatedEffortMinutes", out _)))
+            {
+                var estimateCardId = ExtractGuidParameter(operation.Parameters, "cardId");
+                var before = create ? "(new card)"
+                    : estimateCardId.HasValue && cardStates.TryGetValue(estimateCardId.Value, out var estimateState)
+                        ? FormatEffortEstimate(estimateState.EstimatedEffortMinutes) : "(current estimate unavailable)";
+                description += $"; Effort estimate: {before} -> {FormatEffortEstimate(clear ? null : estimate)}";
+            }
+        }
         if (isCardTarget && cardEffects.Count > 0)
             description += $"; {string.Join("; ", cardEffects)}";
 
         return description;
     }
+
+    private static string FormatEffortEstimate(int? minutes) => minutes switch
+    {
+        null => "unknown",
+        < 60 => $"{minutes}m",
+        _ when minutes % 60 == 0 => $"{minutes / 60}h",
+        _ => $"{minutes / 60}h {minutes % 60}m"
+    };
 
     private static IReadOnlyList<string> DescribeCardParameterEffects(
         string parameters,
