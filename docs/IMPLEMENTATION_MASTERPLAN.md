@@ -37,8 +37,9 @@ are in STATUS; final hosted qualification belongs to the integration PR.
 The assignment/import record correction (#3036, PR #3043) and inert private-hosting compatibility
 files (PR #2914) travel with this delivery. Hosting activation, provisioning and release acceptance
 remain separate. Keep #3033's A-to-B-to-A pending-write ownership residual, #3023's broader editor
-residuals, #3024's reliable delivery work, #3049's same-valued permission-payload recovery and
-#3044's remaining planning-reference cleanup open.
+residuals, #3024's reliable delivery work and #3044's remaining planning-reference cleanup open.
+The #3049 same-valued permission-payload recovery is implemented in its own reviewed branch;
+focused and full frontend qualification pass, with final hosted CI still required before merge.
 The existing human actions in OUTSTANDING_TASKS remain unchanged, including CI-control decisions
 for #2931/#2838, private-instance settings and real-device/screen-reader qualification.
 
