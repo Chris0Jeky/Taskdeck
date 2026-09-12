@@ -72,7 +72,17 @@ const allowed = computed(() => props.canWrite ?? (boardStore.currentBoard?.id ==
 // `disabled` when `focus()` lands on it.
 async function focusRecovery(context = contextGeneration, confirmation = confirmationGeneration) {
   await nextTick()
-  if (context !== contextGeneration || confirmation !== confirmationGeneration) return
+  if (context !== contextGeneration) return
+  if (confirmation !== confirmationGeneration) {
+    // Dismissal can leave focus on body because the pending write disabled the
+    // opener. Rescue that dead end, but never reclaim a usable new focus target.
+    const active = document.activeElement
+    const hasUsableFocus = active instanceof HTMLElement
+      && active !== document.body && active !== document.documentElement
+      && active.isConnected && !active.matches(':disabled, [aria-disabled="true"]')
+      && !active.closest('[inert]')
+    if (confirming.value || hasUsableFocus) return
+  }
   const target = confirming.value ? dialogRecoveryButton.value : pageRecoveryButton.value
   target?.focus()
 }
@@ -152,7 +162,7 @@ async function change() {
     if (context !== contextGeneration) return
     error.value = getErrorDisplay(e, CHANGE_FAILURE).message
     refreshed.value = false
-    // Report failure on the page after dismissal, without stealing focus back.
+    // After dismissal, rescue lost focus without stealing it from another control.
     void focusRecovery(context, confirmation)
   } finally {
     if (context === contextGeneration) busy.value = false

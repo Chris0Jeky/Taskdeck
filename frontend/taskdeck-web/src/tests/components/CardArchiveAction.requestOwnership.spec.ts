@@ -34,6 +34,7 @@ const buttonIn = (root: ParentNode | null, text: string) =>
 let wrapper: VueWrapper | null = null
 async function openConfirmation() {
   wrapper = mount(CardArchiveAction, { props: { card }, attachTo: document.body })
+  wrapper.get('button').element.focus()
   await wrapper.get('button').trigger('click')
   await flushPromises()
   expect(modal()).not.toBeNull()
@@ -115,6 +116,28 @@ describe('CardArchiveAction request ownership (GH-2996)', () => {
       expect(view.emitted('changed')).toBeUndefined()
       expect(view.get('[role="alert"]').text()).toContain('Could not confirm archive')
     }
+  })
+
+  it.each(['body', 'disabled', 'removed'] as const)('a dismissed write failure rescues %s focus', async lostFocus => {
+    const held = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(held.promise)
+    const view = await openConfirmation()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    await escape()
+    if (lostFocus === 'body') (document.activeElement as HTMLElement)?.blur()
+    else {
+      const previous = focusElsewhere()
+      if (lostFocus === 'disabled') previous.disabled = true
+      else previous.remove()
+    }
+    held.reject(new Error('Could not confirm archive'))
+    await flushPromises()
+
+    expect(modal()).toBeNull()
+    expect(document.activeElement).toBe(buttonIn(view.element, 'Refresh card state'))
+    expect(mocks.setCardArchived).toHaveBeenCalledTimes(1)
+    expect(view.emitted('changed')).toBeUndefined()
   })
 
   it.each(['success', 'failure'] as const)('a card switch discards old preview %s without clearing a newer busy state', async outcome => {
