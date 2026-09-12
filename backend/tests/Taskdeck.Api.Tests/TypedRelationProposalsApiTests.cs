@@ -267,6 +267,47 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
             .Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task CardDeleteProposal_UsesApplierForRemovedRelationAuditAndPreservesRemovedEdgePayload()
+    {
+        using var requesterClient = factory.CreateClient();
+        var (requester, boardId, columnId) = await SetupAsync(requesterClient, "relation-delete-requester");
+        var source = await CreateCardAsync(requesterClient, boardId, columnId, "Relation source");
+        var target = await CreateCardAsync(requesterClient, boardId, columnId, "Relation target");
+        using var applierClient = factory.CreateClient();
+        var applier = await ApiTestHarness.AuthenticateAsync(applierClient, "relation-delete-applier");
+        applier.UserId.Should().NotBe(requester.UserId);
+        (await requesterClient.PostAsJsonAsync($"/api/boards/{boardId}/access",
+            new GrantAccessDto(boardId, applier.UserId, UserRole.Editor))).EnsureSuccessStatusCode();
+
+        using (var seed = factory.Services.CreateScope())
+        {
+            var db = seed.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var graph = new BoardDependencies(boardId);
+            graph.ReplaceRelations([new CardRelationEdge(source.Id, target.Id, "blocks")]);
+            db.Add(graph);
+            await db.SaveChangesAsync();
+        }
+
+        var proposal = await CreateProposalAsync(requesterClient, requester.UserId, boardId,
+            [CardOp(0, "delete", source.Id, new { cardId = source.Id, expectedUpdatedAt = source.UpdatedAt })]);
+        (await applierClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null)).EnsureSuccessStatusCode();
+        (await ExecuteAsync(applierClient, proposal.Id)).EnsureSuccessStatusCode();
+
+        (await GetRelationsAsync(requesterClient, boardId)).Relations.Should().BeEmpty();
+        using var verify = factory.Services.CreateScope();
+        var verificationDb = verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await verificationDb.Cards.AnyAsync(card => card.Id == source.Id)).Should().BeFalse();
+        var relationRemovalAudit = (await verificationDb.AuditLogs
+                .Where(log => log.EntityId == boardId)
+                .ToListAsync())
+            .Single(log => log.Changes?.StartsWith($"Removed relations for deleted card {source.Id}:") == true);
+        relationRemovalAudit.UserId.Should().Be(applier.UserId);
+        relationRemovalAudit.Changes.Should().Contain(source.Id.ToString())
+            .And.Contain(target.Id.ToString())
+            .And.Contain("blocks");
+    }
+
     [Theory]
     [InlineData("archive-lifecycle")]
     [InlineData("delete")]

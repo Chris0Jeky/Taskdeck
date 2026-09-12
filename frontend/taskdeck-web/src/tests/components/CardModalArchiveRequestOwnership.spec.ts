@@ -39,6 +39,7 @@ function confirmButton() {
 }
 
 describe('CardModal archive request ownership across keyed children', () => {
+  const committedUpdatedAt = '2026-09-10T03:00:00Z'
   let store: ReturnType<typeof useBoardStore>
   let wrapper: VueWrapper | null = null
   beforeEach(() => {
@@ -117,11 +118,21 @@ describe('CardModal archive request ownership across keyed children', () => {
 
     const focusTarget = view.get('[aria-label="Close card editor"]').element as HTMLElement
     focusTarget.focus()
-    if (outcome === 'success') original.resolve({ ...originalCard, isArchived: archive })
+    if (outcome === 'success') original.resolve({ ...originalCard, isArchived: archive, updatedAt: committedUpdatedAt })
     else original.reject({ response: { status: 403 } })
     await flushPromises()
-    expect(returnedAction.get('button').attributes('disabled')).toBeUndefined()
-    expect(returnedAction.find('[role="alert"]').exists()).toBe(false)
+    const settledAction = view.getComponent(CardArchiveAction)
+    expect(settledAction.get('button').attributes('disabled')).toBeUndefined()
+    expect(settledAction.find('[role="alert"]').exists()).toBe(false)
+    if (outcome === 'success') {
+      // The selected A editor receives the committed lifecycle result before
+      // the shared pending lock releases, including the replacement ETag.
+      expect(settledAction.get('button').text()).toBe(archive ? 'Restore card' : 'Archive card')
+      expect(settledAction.props('card').updatedAt).toBe(committedUpdatedAt)
+    } else {
+      expect(settledAction.get('button').text()).toBe(archive ? 'Archive card' : 'Restore card')
+      expect(settledAction.props('card').updatedAt).toBe(originalCard.updatedAt)
+    }
     expect(returnedAction.emitted('changed')).toBeUndefined()
     expect(returnedAction.emitted('permission-denied')).toBeUndefined()
     expect(view.emitted('updated')).toBeUndefined()
@@ -136,6 +147,41 @@ describe('CardModal archive request ownership across keyed children', () => {
     await flushPromises()
     expect(view.getComponent(CardArchiveAction).get('button').attributes('disabled')).toBeUndefined()
     expect(store.setCardArchived).toHaveBeenCalledTimes(2)
+    expect(view.emitted('updated')).toBeUndefined()
+    expect(view.emitted('close')).toBeUndefined()
+  })
+
+  it.each([true, false])('keeps a newer selected-card draft when a late lifecycle receipt settles (archive=%s)', async (archive) => {
+    const original = deferred<Card>()
+    vi.mocked(store.setCardArchived).mockReturnValueOnce(original.promise)
+    const originalCard = { ...card, isArchived: !archive }
+    const view = mount(CardModal, {
+      props: { card: originalCard, isOpen: true, labels: [], presentation: 'inspector' }, attachTo: document.body,
+    })
+    wrapper = view
+    await flushPromises()
+    const firstAction = view.getComponent(CardArchiveAction)
+    await firstAction.get('button').trigger('click')
+    await flushPromises()
+    if (archive) confirmButton()!.click()
+    await flushPromises()
+
+    // This is a new local draft on the returned A selection, not a mutation of
+    // the old action's form state while it was in flight.
+    await view.setProps({ card: otherCard })
+    await view.setProps({ card: originalCard })
+    await view.get('#card-title').setValue('A newer draft')
+    expect((view.get('#card-title').element as HTMLInputElement).value).toBe('A newer draft')
+
+    original.resolve({ ...originalCard, isArchived: archive, updatedAt: committedUpdatedAt })
+    await flushPromises()
+
+    const settledAction = view.getComponent(CardArchiveAction)
+    expect((view.get('#card-title').element as HTMLInputElement).value).toBe('A newer draft')
+    expect(view.get('[data-testid="card-archive-kept-draft"]').text()).toContain('unsaved changes are still here')
+    expect(settledAction.get('button').attributes('disabled')).toBeDefined()
+    expect(settledAction.get('button').text()).toBe(archive ? 'Restore card' : 'Archive card')
+    expect(settledAction.props('card').updatedAt).toBe(committedUpdatedAt)
     expect(view.emitted('updated')).toBeUndefined()
     expect(view.emitted('close')).toBeUndefined()
   })
