@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CardAssignmentField from '../../components/board/CardAssignmentField.vue'
 import { cardsApi } from '../../api/cardsApi'
-import type { Card } from '../../types/board'
+import type { BoardParticipant, Card } from '../../types/board'
 
 vi.mock('../../api/cardsApi', () => ({ cardsApi: {
   getParticipants: vi.fn(), replaceAssignments: vi.fn(), getCard: vi.fn(),
@@ -113,6 +113,96 @@ describe('CardAssignmentField', () => {
 
     await wrapper.setProps({ card: { ...card, id: 'next' } }); await flushPromises()
     expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+  })
+
+  /*
+   * #3017. `load()` and `save()` used to share one generation counter, so a
+   * background board refetch that flips `readOnly` back to writable mid-save
+   * ran `load()`, bumped the counter, and made the PUT's own `finally` a no-op.
+   * `saving` — and with it `locked` and the `saving-change` the host reads to
+   * refuse every close affordance (#2977/#2981) — then stayed true for the life
+   * of the mount. Each request now settles on its own counter, so a concurrent
+   * read can never strand a write.
+   */
+  describe('a read that starts while the save is in flight (#3017)', () => {
+    async function saveInterruptedByReload(settle: (finish: (value: Card) => void, fail: (reason: unknown) => void) => void) {
+      let finish!: (value: Card) => void
+      let fail!: (reason: unknown) => void
+      vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+      const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+      await flushPromises()
+      await wrapper.findAll('input')[1]!.setValue(true)
+      await button(wrapper, 'Save assignments').trigger('click')
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([true])
+
+      // The board refetch lands mid-PUT and reports write permission again,
+      // which is the one input that re-runs load() while a save is unanswered.
+      await wrapper.setProps({ readOnly: true }); await flushPromises()
+      await wrapper.setProps({ readOnly: false }); await flushPromises()
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([true])
+      expect(cardsApi.getParticipants).toHaveBeenCalledTimes(2)
+
+      settle(finish, fail)
+      await flushPromises()
+      return wrapper
+    }
+
+    it('settles the save and releases the host close affordances', async () => {
+      const wrapper = await saveInterruptedByReload(finish => finish({ ...card, updatedAt: 'v2', assignments: [
+        { userId: 'viewer', displayName: 'Viewer', assignedAt: 'now', assignedByUserId: 'me' },
+      ] }))
+
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+      expect(wrapper.text()).not.toContain('cannot be discarded')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeUndefined()
+      // The receipt is applied, so the host is not left permanently dirty either.
+      expect(wrapper.emitted('saved')?.at(-1)?.[0]).toMatchObject({ updatedAt: 'v2' })
+      expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([false])
+    })
+
+    it('settles a failed save and still reports the refusal', async () => {
+      const wrapper = await saveInterruptedByReload((_finish, fail) => fail({ response: { status: 409 } }))
+
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+      expect(wrapper.text()).not.toContain('cannot be discarded')
+      expect(wrapper.text()).toContain('The card changed')
+      // The draft survives the refusal, and the ordinary recovery is offered.
+      expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
+      expect(button(wrapper, 'Refresh current assignments').attributes('disabled')).toBeUndefined()
+    })
+
+    /*
+     * The same overlap in the other order: the PUT answers while the reload is
+     * still open. `needsRefresh` is the one piece of state both write, so the
+     * trailing read must not clear the refusal's recovery out from under the
+     * message that names it.
+     */
+    it('does not let the trailing read withdraw the refusal the save just reported', async () => {
+      let failSave!: (reason: unknown) => void
+      vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise((_resolve, reject) => { failSave = reject }))
+      const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+      await flushPromises()
+      await wrapper.findAll('input')[1]!.setValue(true)
+      await button(wrapper, 'Save assignments').trigger('click')
+
+      // Hold the reload's participant read open past the PUT's answer.
+      let finishRead!: (people: BoardParticipant[]) => void
+      vi.mocked(cardsApi.getParticipants).mockReturnValueOnce(new Promise(resolve => { finishRead = resolve }))
+      await wrapper.setProps({ readOnly: true }); await flushPromises()
+      await wrapper.setProps({ readOnly: false }); await flushPromises()
+
+      failSave({ response: { status: 409 } }); await flushPromises()
+      expect(wrapper.text()).toContain('The card changed')
+
+      finishRead([{ userId: 'me', displayName: 'Owner' }, { userId: 'viewer', displayName: 'Viewer' }])
+      await flushPromises()
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+      expect(wrapper.text()).toContain('The card changed')
+      // The recovery the message names is still on screen, and the stale
+      // version cannot be resubmitted until it is used.
+      expect(button(wrapper, 'Refresh current assignments')).toBeDefined()
+      expect(button(wrapper, 'Save assignments').attributes('disabled')).toBeDefined()
+    })
   })
 
   /*

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, reactive } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import CardModal from '../../components/board/CardModal.vue'
 import { cardsApi } from '../../api/cardsApi'
@@ -312,6 +312,60 @@ describe('CardModal assignment save in flight (#2981)', () => {
     await flushPromises()
     expect(wrapper.emitted('close')).toHaveLength(1)
     expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  /*
+   * #3017. The same refusal must also be RELEASED. A background board refetch
+   * that re-reports write permission mid-PUT makes the assignment field reload
+   * its participants; that read used to cancel the save's own settlement, so
+   * the editor kept reporting a save in flight and refused every close
+   * affordance until it was remounted by navigation.
+   */
+  it('releases the close affordances when a board refetch interrupted the save', async () => {
+    const store = reactive({ ...mockStore, currentBoard: { id: 'board-1', canWrite: true, isArchived: false } })
+    vi.mocked(useBoardStore).mockReturnValue(store as never)
+    const deferred = createDeferred<Card>()
+    vi.mocked(cardsApi.replaceAssignments).mockReturnValue(deferred.promise)
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'modal' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const assignments = wrapper.get('[aria-label="Card assignments"]')
+    await assignments.findAll('input[type="checkbox"]')[0]!.setValue(true)
+    await fieldButton(wrapper, 'Save assignments')!.trigger('click')
+    await nextTick()
+    expect(cardsApi.replaceAssignments).toHaveBeenCalledWith('board-1', 'card-1', ['user-2'], 'v1')
+
+    // The board refetch reports read-only and then writable again, all while
+    // the PUT is unanswered.
+    store.currentBoard.canWrite = false
+    await flushPromises()
+    store.currentBoard.canWrite = true
+    await flushPromises()
+    // The flip must really have reached the field and started a second read;
+    // without this the test would pass even if the stub stopped propagating.
+    expect(cardsApi.getParticipants).toHaveBeenCalledTimes(2)
+
+    // Still refused: the mutation really is still in flight.
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await nextTick()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(savePendingDismissButton()).not.toBeNull()
+
+    deferred.resolve(savedCard)
+    await flushPromises()
+    expect(savePendingDismissButton()).toBeNull()
+    expect((store as unknown as Record<string, unknown>).currentBoardCards).toEqual([savedCard])
+
+    // And the editor closes on the next request instead of trapping the user.
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await nextTick()
+    expect(discardConfirmButton()).toBeNull()
+    expect(wrapper.emitted('close')).toHaveLength(1)
 
     wrapper.unmount()
   })
