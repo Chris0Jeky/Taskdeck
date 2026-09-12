@@ -10,9 +10,6 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class SideEffectAnalyzerLifecycleDisclosureTests
 {
-    private const string ExistingCopy = "Creates, moves, or archives cards";
-    private const string RestoreCopy = "Creates, moves, archives, or restores cards";
-
     [Theory]
     [InlineData("restore-lifecycle", "card")]
     [InlineData("RESTORE-LIFECYCLE", "card")]
@@ -21,7 +18,7 @@ public class SideEffectAnalyzerLifecycleDisclosureTests
     {
         var result = await Analyze((action, target));
         var cards = result.Rows.Single(row => row.Key == "Cards");
-        cards.Value.Should().Be($"{RestoreCopy} on the board");
+        cards.Value.Should().Be("Restores cards on the board");
         cards.Tone.Should().Be("active");
     }
 
@@ -37,28 +34,28 @@ public class SideEffectAnalyzerLifecycleDisclosureTests
         if (addColumn) operations.Add(("create", "column"));
         var result = await Analyze(operations.ToArray());
         result.Rows.Single(row => row.Key == "Cards").Value.Should().Be(addColumn
-            ? $"{RestoreCopy} and adds columns on the board"
-            : $"{RestoreCopy} on the board");
+            ? "Archives and restores cards and adds columns on the board"
+            : "Archives and restores cards on the board");
     }
 
     [Theory]
-    [InlineData("create")]
-    [InlineData("move")]
-    [InlineData("archive")]
-    [InlineData("archive-lifecycle")]
-    public async Task WithoutRestore_PreservesExistingCardAndColumnWording(string action)
+    [InlineData("create", "Creates")]
+    [InlineData("move", "Moves")]
+    [InlineData("archive", "Blocks")]
+    [InlineData("archive-lifecycle", "Archives")]
+    public async Task WithoutRestore_DisclosesOnlyTheActualCardAndColumnEffects(string action, string verb)
     {
         var cardsOnly = await Analyze((action, "card"));
         var withColumn = await Analyze((action, "card"), ("create", "column"));
-        cardsOnly.Rows.Single(row => row.Key == "Cards").Value.Should().Be($"{ExistingCopy} on the board");
-        withColumn.Rows.Single(row => row.Key == "Cards").Value.Should().Be($"{ExistingCopy} and adds columns on the board");
+        cardsOnly.Rows.Single(row => row.Key == "Cards").Value.Should().Be($"{verb} cards on the board");
+        withColumn.Rows.Single(row => row.Key == "Cards").Value.Should().Be($"{verb} cards and adds columns on the board");
     }
 
     [Fact]
     public async Task NonCardRestore_DoesNotClaimCardsWillBeRestored()
     {
         var result = await Analyze(("create", "card"), ("restore-lifecycle", "artefact"));
-        result.Rows.Single(row => row.Key == "Cards").Value.Should().Be($"{ExistingCopy} on the board");
+        result.Rows.Single(row => row.Key == "Cards").Value.Should().Be("Creates cards on the board");
     }
 
     [Fact]
@@ -90,7 +87,7 @@ public class SideEffectAnalyzerLifecycleDisclosureTests
         effective.IsSuccess.Should().BeTrue();
         persisted.Value.Should().BeEquivalentTo(effective.Value);
         persisted.Value.Rows.Should().HaveCount(7);
-        persisted.Value.Rows.Single(row => row.Key == "Cards").Value.Should().Contain("restores");
+        persisted.Value.Rows.Single(row => row.Key == "Cards").Value.Should().Be("Restores cards on the board");
         repository.Verify(r => r.GetByIdAsync(proposal.Id, default), Times.Once);
     }
 

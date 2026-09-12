@@ -386,6 +386,40 @@ public class McpToolsTests : IDisposable
         movedCard!.ColumnId.Should().Be(col2.Value.Id);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CreateAndMoveTools_KeepReviewFirstCreation_AndRejectFullCapacityAtApproval(bool create)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, sourceColumnId) = await SetupBoardAsync(scope);
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+        var target = await scope.ServiceProvider.GetRequiredService<ColumnService>()
+            .CreateColumnAsync(new CreateColumnDto(boardId, "Limited", null, 1));
+        target.IsSuccess.Should().BeTrue(target.ErrorMessage);
+        var occupant = await cardService.CreateCardAsync(new CreateCardDto(boardId, target.Value.Id, "Occupant", null, null, null));
+        var mover = await cardService.CreateCardAsync(new CreateCardDto(boardId, sourceColumnId, "Mover", null, null, null));
+        occupant.IsSuccess.Should().BeTrue(occupant.ErrorMessage);
+        mover.IsSuccess.Should().BeTrue(mover.ErrorMessage);
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var tools = new WriteTools(proposalService, new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(), unitOfWork);
+
+        var json = create
+            ? await tools.CreateCard(boardId.ToString(), "Proposed new card", target.Value.Id.ToString())
+            : await tools.MoveCard(boardId.ToString(), mover.Value.Id.ToString(), target.Value.Id.ToString());
+
+        using var result = JsonDocument.Parse(json);
+        var proposalId = result.RootElement.GetProperty("proposalId").GetGuid();
+        result.RootElement.GetProperty("status").GetString().Should().Be("Pending");
+        var approved = await proposalService.ApproveProposalAsync(proposalId, user.Id);
+        approved.ErrorCode.Should().Be("WipLimitExceeded");
+        approved.ErrorMessage.Should().Contain(create ? "Cannot add card" : "Cannot move card").And.Contain("Limited");
+        (await unitOfWork.Columns.GetByIdWithCardsAsync(target.Value.Id))!.Cards.Should().ContainSingle();
+        (await unitOfWork.Cards.GetByIdAsync(mover.Value.Id))!.ColumnId.Should().Be(sourceColumnId);
+    }
+
     [Fact]
     public async Task ProposalBatch_CanReferenceCardCreatedEarlierBySequence()
     {
