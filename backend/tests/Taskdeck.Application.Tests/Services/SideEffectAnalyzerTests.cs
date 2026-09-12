@@ -531,6 +531,20 @@ public class SideEffectAnalyzerTests
         cards.Tone.Should().Be(SideEffectTone.Active);
     }
 
+    [Theory]
+    [InlineData("add-relation", "Adds typed links on the board")]
+    [InlineData("remove-relation", "Removes typed links on the board")]
+    public void BuildSideEffectRows_TypedRelationActionsHaveAnExplicitDisclosure(string action, string expected)
+    {
+        var proposal = CreateProposal(RiskLevel.Low, null, (action, "card"));
+
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(proposal.Operations, false);
+
+        var cards = rows.Single(row => row.Key == "Cards");
+        cards.Value.Should().Be(expected);
+        cards.Tone.Should().Be(SideEffectTone.Active);
+    }
+
     [Fact]
     public void BuildSideEffectRows_DeleteCardWithOtherTargets_DescribesOnlyCardDeletionAndColumnCreation()
     {
