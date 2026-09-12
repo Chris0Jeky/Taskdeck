@@ -24,6 +24,9 @@ build. The final numeric proposal-enum correction passes 22 focused tests and bo
 Chromium journeys (27.6 seconds): reviewed add/remove, direction, stale approval rejection, legacy
 dependency preservation, read-only states and 390px layout. The inherited card-create correction
 separately passes 50 store tests and both estimate browser journeys (53.4 seconds).
+After integrating the final estimate no-op version guard, all 36 combined API tests pass across
+relation reads/proposals/persistence and estimate proposals (17 seconds). The repository merge
+retains both relation guards and the independent persisted-card-version guard.
 The controlled executor concurrency failure proves rollback and zero early events; it does not
 simulate an external SQLite writer after the final transaction read. Separate storage tests cover
 actual competing contexts. Generic web draft-admission parity remains #3061; the older-reader
