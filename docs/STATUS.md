@@ -13,12 +13,22 @@ v5 and authorized buffered/streaming account exports carry the metadata. Upgrade
 rollback behavior, including loss of non-dependency metadata on Down, are documented in
 [the relation contract](product/CARD_RELATIONS.md) and [UPGRADING](../UPGRADING.md).
 
-Focused source proof passes Domain 8, legacy dependency API 14, SQLite persistence/migration 9,
-proposal Application 316, portability Application 84/API 36, and frontend 32 tests. These are scoped
-source runs, not a combined total or final integration gate. The storage/migration/concurrency
-review is clean. Whole-vertical backend/frontend checks, proposal producer authorization review,
-realtime rollback correction and actual browser journeys remain in progress. No relation merge,
-release or device/screen-reader acceptance is claimed.
+Focused source proof covers domain rules, legacy dependency compatibility, SQLite migration and
+concurrency, proposal producers, portability and the shared UI. Independent storage and application
+reviews are clean after the bounded graph-preview and deferred-event corrections. The full backend
+run passed 9,779 tests with 34 existing skips and four fixture failures: three old export-shape
+assertions and one preview fixture missing its graph repository. The fixture-only correction passes
+all 180 tests in the three affected classes; the broad run was not repeated after that correction.
+Full frontend qualification passed 6,866 tests with three existing skips, plus lint, typecheck and
+build. The final numeric proposal-enum correction passes 22 focused tests and both real API/SQLite/
+Chromium journeys (27.6 seconds): reviewed add/remove, direction, stale approval rejection, legacy
+dependency preservation, read-only states and 390px layout. The inherited card-create correction
+separately passes 50 store tests and both estimate browser journeys (53.4 seconds).
+The controlled executor concurrency failure proves rollback and zero early events; it does not
+simulate an external SQLite writer after the final transaction read. Separate storage tests cover
+actual competing contexts. Generic web draft-admission parity remains #3061; the older-reader
+estimate export boundary remains #3065. Exact-head hosted qualification is still required. No
+relation merge, release or device/screen-reader acceptance is claimed.
 
 Card estimates and current-state rollups (#2093) are implemented on the integration branch.
 Optional whole-minute estimates display as hours/minutes in shared card details and both Paper

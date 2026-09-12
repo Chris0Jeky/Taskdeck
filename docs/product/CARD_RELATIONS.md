@@ -2,7 +2,8 @@
 
 Implementation contract for [#2092](https://github.com/Chris0Jeky/Taskdeck/issues/2092), under
 [ADR-0060](../decisions/ADR-0060-canonical-work-model-and-compatibility-path.md). This candidate
-is being implemented and has not completed integration or hosted qualification.
+is implemented; local integration evidence is recorded in [STATUS](../STATUS.md). Required hosted
+qualification and merge remain pending.
 
 ## Meaning and scope
 

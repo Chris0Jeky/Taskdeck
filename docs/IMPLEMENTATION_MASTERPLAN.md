@@ -10,11 +10,12 @@ the shared thinking-deck UI. Existing dependency clients use an adapter over the
 store. Typed mutations retain explicit review and caller-observed revisions. There is no new status,
 assignment, hierarchy or delegated-authority behavior. [Contract](product/CARD_RELATIONS.md).
 
-Scoped source checks and storage review pass; combined suites, actual browser journeys and the
-remaining application/authorization review are in progress. A controlled proposal rollback probe
-exposed an earlier card-update event publishing before rollback; its bounded deferred-publication
-fix is being qualified before delivery. This section supersedes the historical Pending note below.
-The candidate remains unmerged, and existing human-action and release decisions are unchanged.
+The integrated frontend suite and both real API browser journeys pass. The full backend run found
+four fixture mismatches; their test-only correction passes all 180 tests in the affected classes.
+STATUS preserves the full-run counts and the limits of each follow-up check. Storage and application
+reviews are clean, including the bounded graph-preview and deferred-publication fixes. Exact-head
+hosted qualification remains required. This section supersedes the historical Pending note below;
+the candidate remains unmerged and existing human-action and release decisions are unchanged.
 
 ## Estimates and derived rollups (2026-09-12, #2093)
 
