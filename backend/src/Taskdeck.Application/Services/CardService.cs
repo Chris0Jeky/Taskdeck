@@ -239,10 +239,12 @@ public partial class CardService
         Guid id,
         UpdateCardDto dto,
         Guid? actorUserId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IBoardRealtimeNotifier? notificationSink = null)
     {
         try
         {
+            var notifier = notificationSink ?? _realtimeNotifier;
             var changesEstimate = dto.EstimatedEffortMinutes.HasValue || dto.ClearEstimatedEffort;
             if (dto.EstimatedEffortMinutes.HasValue && dto.ClearEstimatedEffort)
                 return Result.Failure<CardDto>(ErrorCodes.ValidationError, "EstimatedEffortMinutes and ClearEstimatedEffort cannot both be set.");
@@ -370,7 +372,7 @@ public partial class CardService
             if (changesParent || estimateChanged)
                 await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Updated, actorUserId, changeSummary), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _realtimeNotifier.NotifyBoardMutationAsync(
+            await notifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "updated", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
             if (!changesParent && !estimateChanged) await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId, changeSummary);
@@ -630,6 +632,7 @@ public partial class CardService
             var confirmed = ValidateDetachConfirmation(card, children, confirmation);
             if (!confirmed.IsSuccess) return confirmed;
             await StageDetachChildrenAsync(card, children, actorUserId, cancellationToken);
+            await _unitOfWork.Cards.StageRelationRemovalAsync(card, actorUserId, cancellationToken);
             await _unitOfWork.Cards.DeleteAsync(card, cancellationToken);
             board?.RecordHierarchyMutation();
             await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Deleted, actorUserId, $"title={card.Title}"), cancellationToken);

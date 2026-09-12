@@ -783,10 +783,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<Guid>("BoardId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("EdgesJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<long>("Revision")
                         .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
@@ -1111,6 +1107,37 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasIndex("LabelId");
 
                     b.ToTable("CardLabels", (string)null);
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.CardRelation", b =>
+                {
+                    b.Property<Guid>("BoardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SourceCardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TargetCardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RelationType")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("BoardId", "SourceCardId", "TargetCardId", "RelationType");
+
+                    b.HasIndex("SourceCardId");
+
+                    b.HasIndex("TargetCardId");
+
+                    b.ToTable("CardRelations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CardRelations_Endpoints", "SourceCardId <> TargetCardId");
+
+                            t.HasCheckConstraint("CK_CardRelations_Kind", "RelationType IN ('relates-to', 'blocks', 'duplicates', 'spawned-from')");
+
+                            t.HasCheckConstraint("CK_CardRelations_SymmetricOrder", "RelationType <> 'relates-to' OR SourceCardId < TargetCardId");
+                        });
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ChatMessage", b =>
@@ -3493,6 +3520,27 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Label");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.CardRelation", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.BoardDependencies", null)
+                        .WithMany("Relations")
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Card", null)
+                        .WithMany()
+                        .HasForeignKey("SourceCardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Card", null)
+                        .WithMany()
+                        .HasForeignKey("TargetCardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.ChatMessage", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.ChatSession", "Session")
@@ -3971,6 +4019,11 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Columns");
 
                     b.Navigation("Labels");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.BoardDependencies", b =>
+                {
+                    b.Navigation("Relations");
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Capture", b =>

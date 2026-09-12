@@ -29,6 +29,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<CardService>();
         services.AddScoped<CardAssignmentService>();
         services.AddScoped<IBoardEstimateRollupService, BoardEstimateRollupService>();
+        services.AddScoped<IBoardRelationService, BoardRelationService>();
         services.AddScoped<CardCommentService>();
         services.AddScoped<ThinkingDeckService>();
         services.AddScoped<BoardDependencyService>();
@@ -151,6 +152,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, GetCardDetailsExecutor>();
         services.AddScoped<IToolExecutor, SearchCardsExecutor>();
         services.AddScoped<IToolExecutor, GetBoardLabelsExecutor>();
+        services.AddScoped<IToolExecutor, GetBoardCardRelationsExecutor>();
 
         // Tool-calling infrastructure (write tools — always produce proposals, GP-06)
         services.AddScoped<IToolExecutor, ProposeCreateCardExecutor>();
@@ -159,6 +161,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, ProposeUpdateCardExecutor>();
         services.AddScoped<IToolExecutor, ProposeBulkMoveExecutor>();
         services.AddScoped<IToolExecutor, ProposeCreateColumnExecutor>();
+        services.AddScoped<IToolExecutor, ProposeAddCardRelationExecutor>();
+        services.AddScoped<IToolExecutor, ProposeRemoveCardRelationExecutor>();
 
         services.AddScoped<IDailySealService, DailySealService>();
 

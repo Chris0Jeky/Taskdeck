@@ -4,6 +4,8 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface ICardRepository : IRepository<Card>
 {
+    Task StageRelationEndpointGuardAsync(Guid cardId, CancellationToken cancellationToken = default);
+    Task StageRelationRemovalAsync(Card card, Guid? actorUserId, CancellationToken cancellationToken = default);
     /// <summary>
     /// Atomically verifies the persisted card version without changing it.
     /// Returns false when the card is missing or its version is stale.

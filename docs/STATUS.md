@@ -2,17 +2,83 @@
 
 Last Updated: 2026-09-12
 
+The typed-relation candidate includes delivered archive recovery #3059 and draft settlement #3064
+through main `9a8c14c6b`. Their required hosted gates passed; #3033 is closed and #3023 retains
+its broader residuals. Integration resolved only concurrent STATUS/MASTERPLAN records, preserving
+both. Backend files are unchanged by this base merge. Requalify against the delivered base.
+All 61 focused archive/relation component and API-wrapper tests pass on the combined base;
+the delivered CardModal and assignment-save test blobs match main exactly.
+
+Chat relation proposals now resolve normal short card IDs within the active board while retaining
+all previously accepted full UUID formats. The registered `get_board_card_relations` chat reader
+returns the authorized graph and exact revision, so chat can supply the observed revision without
+guessing. UUID-only and omitted-registration controls reproduce both defects; restored-source
+checks pass 91 Application cases and the actual API registry case. The narrow review found a
+compact-UUID regression, corrected with exact active-board lookup and add/remove coverage.
+No revision is restamped and typed writes remain proposals. New hosted qualification is required.
+Premature events from preceding proposal creates (#3073) and applier attribution on proposal-delete
+relation audits (#3074) remain separate bounded follow-ups, alongside #3069 and #3070. Canonical
+short-prefix validation (#3076) and relation-specific navigation guidance (#3077) are also tracked.
+
+Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
+thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
+context with labelled navigation. Typed additions and removals create review proposals; the graph
+changes only at Apply. Relations do not grant access or change status, hierarchy, assignments or
+estimates. Existing direct dependency editing remains compatible through the same canonical store.
+One board revision protects the graph, including empty graphs and archived endpoints. Archive
+retains links; hard deletion removes incident links atomically with an audit receipt. Board JSON
+v5 and authorized buffered/streaming account exports carry the metadata. Upgrade and developer
+rollback behavior, including loss of non-dependency metadata on Down, are documented in
+[the relation contract](product/CARD_RELATIONS.md) and [UPGRADING](../UPGRADING.md).
+
+Focused source proof covers domain rules, legacy dependency compatibility, SQLite migration and
+concurrency, proposal producers, portability and the shared UI. Independent storage and application
+reviews are clean after the bounded graph-preview and deferred-event corrections. The full backend
+run passed 9,779 tests with 34 existing skips and four fixture failures: three old export-shape
+assertions and one preview fixture missing its graph repository. The fixture-only correction passes
+all 180 tests in the three affected classes; the broad run was not repeated after that correction.
+Full frontend qualification passed 6,866 tests with three existing skips, plus lint, typecheck and
+build. The final numeric proposal-enum correction passes 22 focused tests and both real API/SQLite/
+Chromium journeys (27.6 seconds): reviewed add/remove, direction, stale approval rejection, legacy
+dependency preservation, read-only states and 390px layout. The inherited card-create correction
+separately passes 50 store tests and both estimate browser journeys (53.4 seconds).
+After integrating the final estimate no-op version guard, all 36 combined API tests pass across
+relation reads/proposals/persistence and estimate proposals (17 seconds). The repository merge
+retains both relation guards and the independent persisted-card-version guard.
+The controlled executor concurrency failure proves rollback and zero early buffered events; it does not
+simulate an external SQLite writer after the final transaction read. Separate storage tests cover
+actual competing contexts. Generic web draft-admission parity remains #3061; the older-reader
+estimate export boundary remains #3065. Exact-head hosted qualification is still required. No
+relation merge, release or device/screen-reader acceptance is claimed.
+
+The first hosted relation gate exposed an outdated dependency browser assertion expecting export
+version 2. The v5 assertion now passes the full focused dependency/import journey in Chromium
+(49.0 seconds); import, navigation, mobile bounds and accessibility assertions remain intact.
+A confirmed streaming-export memory regression is also corrected: account relations use bounded,
+no-tracking projection pages, with both endpoints constrained to the same authorized board. All
+11 streaming Application tests and nine real SQLite persistence tests pass, including paging,
+archived endpoints, unauthorized/cross-board exclusion and an empty EF tracker. Independent fix
+review is clean. Account exports retain their existing non-snapshot semantics. Both corrections
+require a new hosted gate; the earlier global teardown timeout is not yet declared resolved.
+The estimate parent has merged as `54e4c0a86`; this candidate includes that delivered base.
+Relation proposal IDs now reuse the existing UUID fallback on the documented plain-HTTP LAN
+path. Removing `crypto.randomUUID` reproduces the original pre-request failure; the corrected
+API wrapper passes all four focused tests with distinct valid IDs and unchanged proposal fields.
+The bounded compatibility review and targeted lint pass. This is simulated API-availability
+proof, not a physical-device LAN acceptance. Buffered export limits and refresh control feedback
+remain separate follow-ups #3069 and #3070.
+
 Archive request ownership #3059 merged on 2026-09-12 as `44d041ca7` after required hosted run
 `34714826369` passed at reviewed head `7135d53a9`. #3033 is closed and its issue/PR project items
 are Done with Priority IV; the first post-merge check found no unresolved review threads. Pending
 archive/restore requests now retain ownership above the keyed action child when navigating away
 and back. The successful-settlement snapshot follow-up remains #3060.
 
-The separate #3023 candidate hides the kept-draft notice once a pending assignment save makes
+The delivered #3023 slice hides the kept-draft notice once a pending assignment save makes
 the draft clean and retains the lifecycle version freeze until reopening. Its failing-before
 regression and 108 related component tests pass, with lint, typecheck/build and bounded review
-clean. The new main base has the same tree as its reviewed archive parent. Exact-head hosted
-qualification remains required; recovery copy and the other #3023 residuals remain open.
+clean. PR #3064 merged as `9a8c14c6b` after required run `34716287296` passed at `13dfde5ca`;
+the first post-merge review check is clear. Recovery copy and other #3023 residuals remain open.
 
 Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
 #3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including

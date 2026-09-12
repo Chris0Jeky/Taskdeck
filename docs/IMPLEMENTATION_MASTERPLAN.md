@@ -2,11 +2,47 @@
 
 Last Updated: 2026-09-12
 
+## Typed relations candidate (2026-09-12, #2092)
+
+The candidate includes delivered archive recovery #3059 and draft correction #3064 through
+main `9a8c14c6b`. Only the concurrent canonical records needed merge resolution; both records
+are preserved and backend files are unchanged. Qualify the updated main base.
+The combined base passes 61 focused archive/relation tests; the delivered editor blobs match main.
+
+Five independently owned slices now integrate the accepted same-board relation contract: canonical
+storage and migration, proposal semantics, API/MCP/chat producers, board/account portability and
+the shared thinking-deck UI. Existing dependency clients use an adapter over the same revisioned
+store. Typed mutations retain explicit review and caller-observed revisions. There is no new status,
+assignment, hierarchy or delegated-authority behavior. [Contract](product/CARD_RELATIONS.md).
+
+The integrated frontend suite and both real API browser journeys pass. The full backend run found
+four fixture mismatches; their test-only correction passes all 180 tests in the affected classes.
+STATUS preserves the full-run counts and the limits of each follow-up check. Storage and application
+reviews are clean, including the bounded graph-preview and deferred-publication fixes. Exact-head
+hosted qualification remains required. This section supersedes the historical Pending note below;
+the candidate remains unmerged and existing human-action and release decisions are unchanged.
+
+The bounded hosted follow-up corrects the dependency journey's expected v5 export envelope
+(one real browser journey passes) and replaces account-wide tracked relation retention with
+authorized, no-tracking export pages (20 focused tests pass; independent review clean). The
+delivered estimate merge `54e4c0a86` is integrated. Qualify this final head against main before
+closing #2092; keep the existing non-snapshot export and physical-device limitations explicit.
+The final LAN compatibility correction reuses the existing UUID fallback for proposal IDs and
+passes a missing-`randomUUID` regression, all four API-wrapper tests, lint and bounded review.
+Keep buffered export admission (#3069) and refresh control state (#3070) as separate follow-ups.
+
+The chat-contract correction resolves active-board short IDs and preserves full UUID formats,
+and registers the authorized graph/revision reader already named by the proposal schema. Causal
+negative controls reproduce both missing contracts; 91 Application cases and one API registry case
+pass after correction. STATUS records the bounded review and compatibility fix. Keep premature
+proposal-create events (#3073) and proposal-delete audit attribution (#3074) outside this correction.
+Requalify the final head before merge; approval and Apply remain explicit.
+
 ## Archive recovery delivery and remaining draft slice (2026-09-12)
 
 #3059 merged as `44d041ca7` after required hosted run `34714826369` passed at `7135d53a9`,
-closing #3033. Its post-merge review check is clear. #3064 is retargeted to main and carries the
-reviewed two-file #3023 draft-settlement correction; qualify its final head before merging it.
+closing #3033. Its post-merge review check is clear. #3064 then merged as `9a8c14c6b` after
+required run `34716287296` passed at `13dfde5ca`; its first post-merge review check is also clear.
 #3023 remains a partial repair with recovery-copy and other residuals open, and #3060 separately
 owns selected-snapshot settlement. Existing human-action and release decisions remain unchanged.
 

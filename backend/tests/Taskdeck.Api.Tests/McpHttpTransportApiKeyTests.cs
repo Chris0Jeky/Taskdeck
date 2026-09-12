@@ -366,11 +366,11 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Theory]
-    [InlineData("read", "get_board_estimate_rollups,get_board_summary,get_proposal_status,list_board_participants,list_proposals,search_cards", true)]
-    [InlineData("propose", "archive_card,archive_card_lifecycle,create_card,create_column,move_card,replace_card_assignments,restore_archived_card,update_card", false)]
+    [InlineData("read", "get_board_card_relations,get_board_estimate_rollups,get_board_summary,get_proposal_status,list_board_participants,list_proposals,search_cards", true)]
+    [InlineData("propose", "add_card_relation,archive_card,archive_card_lifecycle,create_card,create_column,move_card,remove_card_relation,replace_card_assignments,restore_archived_card,update_card", false)]
     [InlineData("manage", "create_capture,dismiss_proposal", false)]
-    [InlineData("read,manage", "create_capture,dismiss_proposal,get_board_estimate_rollups,get_board_summary,get_proposal_status,list_board_participants,list_proposals,search_cards", true)]
-    [InlineData("read,propose,manage", "archive_card,archive_card_lifecycle,create_capture,create_card,create_column,dismiss_proposal,get_board_estimate_rollups,get_board_summary,get_proposal_status,list_board_participants,list_proposals,move_card,replace_card_assignments,restore_archived_card,search_cards,update_card", true)]
+    [InlineData("read,manage", "create_capture,dismiss_proposal,get_board_card_relations,get_board_estimate_rollups,get_board_summary,get_proposal_status,list_board_participants,list_proposals,search_cards", true)]
+    [InlineData("read,propose,manage", "add_card_relation,archive_card,archive_card_lifecycle,create_capture,create_card,create_column,dismiss_proposal,get_board_card_relations,get_board_estimate_rollups,get_board_summary,get_proposal_status,list_board_participants,list_proposals,move_card,remove_card_relation,replace_card_assignments,restore_archived_card,search_cards,update_card", true)]
     public async Task McpEndpoint_Discovery_ReturnsOnlyIndependentlyGrantedCapabilities(
         string scopeCsv,
         string expectedToolCsv,

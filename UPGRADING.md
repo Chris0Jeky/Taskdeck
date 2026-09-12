@@ -14,6 +14,17 @@ changes.
 
 ## Unreleased workspace overhaul
 
+Typed card relations migrate the existing dependency JSON into canonical `CardRelations` rows
+through `20260912172859_AddCanonicalCardRelations`. Existing card IDs, archived endpoints and
+graph revisions are preserved; dangling or foreign-board legacy references are omitted. The
+existing dependency API remains compatible, while new relation writes use reviewed proposals.
+Board JSON with relations uses a version-5 envelope; older importers reject it. Current importers
+still accept legacy and version-2 through version-4 files and remap endpoints to fresh card IDs.
+Developer rollback reconstructs the latest dependency graph, including changes after upgrade,
+but loses relates-to, duplicates and spawned-from metadata. Reapplying the migration cannot
+recover that metadata. Back up the stopped database first; schema rollback tests do not establish
+support for running older application binaries. [Relation contract](docs/product/CARD_RELATIONS.md).
+
 Card estimates add nullable `Cards.EstimatedEffortMinutes` through
 `20260912155107_AddCardEstimatedEffort`. **BREAKING: none.** Existing cards remain unestimated;
 zero is an explicit known estimate. Normal startup applies this additive migration. Current board

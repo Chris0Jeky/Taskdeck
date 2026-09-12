@@ -490,18 +490,21 @@ public class RoadmapInvariantTests
 
         var expectedMcpToolNames = new[]
         {
+            "add_card_relation",
             "archive_card",
             "archive_card_lifecycle",
             "create_capture",
             "create_card",
             "create_column",
             "dismiss_proposal",
+            "get_board_card_relations",
             "get_board_estimate_rollups",
             "get_board_summary",
             "get_proposal_status",
             "list_board_participants",
             "list_proposals",
             "move_card",
+            "remove_card_relation",
             "replace_card_assignments",
             "restore_archived_card",
             "search_cards",

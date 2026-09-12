@@ -2590,6 +2590,51 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldRenderTheCanonicalRelationKindDirectionAndBothEndpoints()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Now", 0);
+        var source = new Card(boardId, column.Id, "Waiting card");
+        var prerequisite = new Card(boardId, column.Id, "Prerequisite card");
+        var proposal = new AutomationProposal(ProposalSourceType.Queue, Guid.NewGuid(), "Link cards",
+            RiskLevel.Low, Guid.NewGuid().ToString(), boardId);
+        proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 0, "add-relation", "card",
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                boardId, cardId = source.Id, relatedCardId = prerequisite.Id,
+                relationType = "depends-on", expectedRevision = 0L
+            }), Guid.NewGuid().ToString(), source.Id.ToString()));
+        _proposalRepoMock.Setup(repository => repository.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(repository => repository.GetByIdAsync(source.Id, It.IsAny<CancellationToken>())).ReturnsAsync(source);
+        cards.Setup(repository => repository.GetByIdAsync(prerequisite.Id, It.IsAny<CancellationToken>())).ReturnsAsync(prerequisite);
+        cards.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { source, prerequisite });
+        cards.Setup(repository => repository.GetArchivedByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(unit => unit.Cards).Returns(cards.Object);
+        _columnRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { column });
+        cards.Setup(repository => repository.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { source, prerequisite });
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        dependencies.Setup(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BoardDependencies(boardId));
+        var service = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            _provenanceRepoMock.Object,
+            new AutomationPolicyEngine(_unitOfWorkMock.Object, dependencies.Object));
+
+        var result = await service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Contain("Add blocks relation");
+        result.Value.Should().Contain("Prerequisite card");
+        result.Value.Should().Contain("Waiting card");
+        result.Value.IndexOf(prerequisite.Id.ToString(), StringComparison.Ordinal)
+            .Should().BeLessThan(result.Value.IndexOf(source.Id.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldReturnReadableDescriptions_ForMoveCardOperations()
     {
         // Arrange

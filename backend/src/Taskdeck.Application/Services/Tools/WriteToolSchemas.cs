@@ -16,7 +16,9 @@ public static class WriteToolSchemas
         ProposeArchiveCard(),
         ProposeUpdateCard(),
         ProposeBulkMove(),
-        ProposeCreateColumn()
+        ProposeCreateColumn(),
+        ProposeAddCardRelation(),
+        ProposeRemoveCardRelation()
     };
 
     public static IReadOnlyList<TaskdeckToolSchema> GetAll() => CachedAll;
@@ -208,6 +210,47 @@ public static class WriteToolSchemas
             }
             """),
         Required: new[] { "name" }
+    );
+
+    public static TaskdeckToolSchema ProposeAddCardRelation() => CardRelationSchema(
+        "propose_add_card_relation",
+        "Create a proposal to add one typed relation between two active cards on this board. The proposal must be reviewed before it takes effect.");
+
+    public static TaskdeckToolSchema ProposeRemoveCardRelation() => CardRelationSchema(
+        "propose_remove_card_relation",
+        "Create a proposal to remove one typed relation between two active cards on this board. The proposal must be reviewed before it takes effect.");
+
+    private static TaskdeckToolSchema CardRelationSchema(string name, string description) => new(
+        Name: name,
+        Description: description,
+        ParametersSchema: ParseSchema("""
+            {
+                "type": "object",
+                "properties": {
+                    "card_id": {
+                        "type": "string",
+                        "description": "Source card full UUID or an unambiguous short ID from the current board"
+                    },
+                    "related_card_id": {
+                        "type": "string",
+                        "description": "Related card full UUID or an unambiguous short ID from the current board"
+                    },
+                    "relation_type": {
+                        "type": "string",
+                        "enum": ["relates-to", "blocks", "depends-on", "duplicates", "spawned-from"],
+                        "description": "Relation kind. depends-on is canonicalized to blocks with reversed endpoints."
+                    },
+                    "expected_revision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The exact relations revision returned by get_board_card_relations; refresh when stale."
+                    }
+                },
+                "required": ["card_id", "related_card_id", "relation_type", "expected_revision"],
+                "additionalProperties": false
+            }
+            """),
+        Required: new[] { "card_id", "related_card_id", "relation_type", "expected_revision" }
     );
 
     private static JsonElement ParseSchema(string json)
