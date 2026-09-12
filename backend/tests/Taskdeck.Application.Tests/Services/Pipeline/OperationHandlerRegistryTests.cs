@@ -516,4 +516,108 @@ public class OperationHandlerRegistryTests
 
         result.IsSuccess.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldAppendMovedCard_WhenTargetColumnHasSparsePositions()
+    {
+        // #3025 regression: a column whose card positions are non-contiguous (0 and 2 after the
+        // middle card was deleted, or a sparse import) used to make this handler compute the
+        // append index as max(Position) + 1 = 3, and CardService.MoveCardAsync then called
+        // Insert(3, ...) on a two-item list, which threw and rolled the whole proposal back.
+        // The append index is the occupant count, which is sparsity-independent.
+        var board = TestDataBuilder.CreateBoard();
+        var sourceColumn = TestDataBuilder.CreateColumn(board.Id, "Inbox", 0);
+        var first = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "First", position: 0);
+        var third = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Third", position: 2);
+        var targetColumn = TestDataBuilder.CreateColumnWithCards(board.Id, "Doing", new[] { first, third }, 1);
+        var mover = TestDataBuilder.CreateCard(board.Id, sourceColumn.Id, "Mover", position: 0);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(targetColumn.Id, default))
+            .ReturnsAsync(new List<Card> { first, third });
+
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "move", "card", mover.Id.ToString(),
+            $$"""{"cardId":"{{mover.Id}}","columnId":"{{targetColumn.Id}}"}""", "move-sparse", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mover.ColumnId.Should().Be(targetColumn.Id);
+        // The move appends and the target column's positions are normalised in the same pass.
+        first.Position.Should().Be(0);
+        third.Position.Should().Be(1);
+        mover.Position.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldAppendMovedCard_WhenTargetColumnHoldsAnArchivedCard()
+    {
+        // #3025, second trigger. Archived cards keep their stored position (that is how restore
+        // returns a card to its original placement) but ICardRepository.GetByColumnIdAsync - the
+        // list CardService.MoveCardAsync reorders - excludes them. A column holding one active
+        // card at 0 and an archived card at 1 therefore has max(Position) + 1 = 2 against a
+        // one-card list. The append index counts active occupants only.
+        var board = TestDataBuilder.CreateBoard();
+        var active = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Active", position: 0);
+        var shelved = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Archived", position: 1);
+        shelved.Archive();
+        var targetColumn = TestDataBuilder.CreateColumnWithCards(board.Id, "Doing", new[] { active, shelved }, 1);
+        var mover = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Mover", position: 0);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(targetColumn.Id, default))
+            .ReturnsAsync(new List<Card> { active });
+
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "move", "card", mover.Id.ToString(),
+            $$"""{"cardId":"{{mover.Id}}","columnId":"{{targetColumn.Id}}"}""", "move-archived", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mover.ColumnId.Should().Be(targetColumn.Id);
+        active.Position.Should().Be(0);
+        mover.Position.Should().Be(1);
+        // The archived card is not in the reordered list, so its stored placement is untouched.
+        shelved.Position.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldSendCardToTheBottom_WhenMoveTargetsItsOwnColumn()
+    {
+        // #3025 review, LOW-3. A proposal move whose columnId is the card's current column is the
+        // one path where the append index still overshoots by design: the mover is counted in
+        // Column.Cards but excluded from the list CardService reorders, so the index is
+        // orderedCards.Count + 1 and the service's clamp is load-bearing rather than insurance.
+        // Before this change the overshoot threw and rolled the proposal back; the meaning of
+        // "move to the column it is already in" is now "send it to the bottom", which is what the
+        // preview projection has always assumed (its move branch returns early for a same-column
+        // move, treating it as executable).
+        var board = TestDataBuilder.CreateBoard();
+        var mover = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Mover", position: 0);
+        var other = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Other", position: 1);
+        var column = TestDataBuilder.CreateColumnWithCards(board.Id, "Doing", new[] { mover, other }, 0);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default)).ReturnsAsync(column);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(column.Id, default))
+            .ReturnsAsync(new List<Card> { mover, other });
+
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "move", "card", mover.Id.ToString(),
+            $$"""{"cardId":"{{mover.Id}}","columnId":"{{column.Id}}"}""", "move-same-column", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mover.ColumnId.Should().Be(column.Id);
+        other.Position.Should().Be(0);
+        mover.Position.Should().Be(1);
+    }
 }

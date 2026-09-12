@@ -16,7 +16,11 @@ on archive/delete (including archived children), and no reattachment on restore.
 earlier card create and move operations produce, so a restore behind an operation that takes the
 last slot is refused at approve instead of failing mid-apply and rolling back (#2926). Batch
 archive/restore in one proposal stays refused outright by the one-hierarchy-operation rule, so that
-is a WIP question that does not arise. Preview still does not WIP-check create or move themselves
+is a WIP question that does not arise. A proposal move into a column whose stored card positions
+are non-contiguous - a deleted middle card, or a sparse import - now applies instead of failing at
+execute and rolling the proposal back: the append position is the column's occupant count, and the
+card move clamps an overshooting insert to the end of the column, so what preview approves is what
+Apply performs (#3025). Preview still does not WIP-check create or move themselves
 (#3020), and the Review conflict/capacity projection still omits lifecycle effects (#3012).
 
 Restore disclosure in Review side effects (#3008, PR #3018): the Cards side-effect row now reads

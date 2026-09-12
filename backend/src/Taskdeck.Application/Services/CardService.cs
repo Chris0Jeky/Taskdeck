@@ -456,7 +456,13 @@ public partial class CardService
                 .OrderBy(c => c.Position)
                 .ToList();
 
-            orderedCards.Insert(dto.TargetPosition, card);
+            // Insert at the requested index, clamped to the end when the request overshoots -
+            // the same idiom as ColumnService.ReorderColumnAsync. A request can legitimately
+            // overshoot whenever the column's stored positions are non-contiguous (#3025: a
+            // deleted middle card leaves 0 and 2, and an append index derived from max(Position)
+            // is then 3 on a two-card list). Negative positions are still refused, by
+            // Card.SetPosition above, before this line is reached.
+            orderedCards.Insert(Math.Min(dto.TargetPosition, orderedCards.Count), card);
 
             for (int i = 0; i < orderedCards.Count; i++)
             {
@@ -468,7 +474,12 @@ public partial class CardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "moved", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Moved, actorUserId, $"target_column={dto.TargetColumnId}; position={dto.TargetPosition}");
+            // The effective index, not the requested one. They were always equal before the
+            // clamp above existed; a clamped request would otherwise write a position the board
+            // never held into a trail operators read (#3025 review, LOW-1). The
+            // `target_column=...; position=...` shape is unchanged - BoardMetricsService and
+            // ForecastingService parse the column out of it.
+            await SafeLogAsync("card", card.Id, AuditAction.Moved, actorUserId, $"target_column={dto.TargetColumnId}; position={card.Position}");
 
             var movedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(movedCard!));
