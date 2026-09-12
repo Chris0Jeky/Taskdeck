@@ -6,6 +6,10 @@ import { TdDateField } from '../../ui'
 defineProps<{
   card: Card
   canEditType: boolean
+  /** A server read of the caller's board write permission is in flight (#2952). */
+  typePermissionChecking?: boolean
+  /** The caller's board write permission could not be established; offer recovery (#2952). */
+  typePermissionUnknown?: boolean
   formattedDueDate: string
   isOverdue: boolean
 }>()
@@ -20,6 +24,7 @@ const blockReason = defineModel<string>('blockReason', { required: true })
 
 defineEmits<{
   (e: 'clear-due-date'): void
+  (e: 'refresh-type-permission'): void
 }>()
 </script>
 
@@ -49,6 +54,34 @@ defineEmits<{
       <option value="Epic">{{ t('cardModal.workItemType.epic') }}</option>
       <option value="Spike">{{ t('cardModal.workItemType.spike') }}</option>
     </select>
+    <!--
+      An unknown write permission is a state the user can act on, so it says so and offers
+      the read again, instead of leaving a disabled control with no explanation. The message
+      changes around a retry control that STAYS mounted: unmounting the button a keyboard
+      user just activated would drop focus out of the editor's tab cycle.
+    -->
+    <div
+      v-if="typePermissionChecking || typePermissionUnknown"
+      class="mt-1 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant"
+    >
+      <span role="status">
+        <span v-if="typePermissionChecking" data-testid="card-type-permission-checking">
+          {{ t('cardModal.workItemType.permissionChecking') }}
+        </span>
+        <span v-else data-testid="card-type-permission-unknown">
+          {{ t('cardModal.workItemType.permissionUnknown') }}
+        </span>
+      </span>
+      <button
+        type="button"
+        data-testid="card-type-permission-refresh"
+        :disabled="typePermissionChecking"
+        class="rounded-md border border-outline-variant/40 px-2 py-1 text-xs text-on-surface hover:bg-surface-container-high disabled:opacity-70"
+        @click="$emit('refresh-type-permission')"
+      >
+        {{ t('cardModal.workItemType.permissionRefresh') }}
+      </button>
+    </div>
   </div>
 
   <!-- Description -->

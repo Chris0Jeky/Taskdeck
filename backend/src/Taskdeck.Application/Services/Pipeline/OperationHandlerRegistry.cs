@@ -34,7 +34,14 @@ public class OperationHandlerRegistry
         _assignments = assignments;
     }
 
-    public async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken, Guid? actorUserId = null)
+    /// <summary>
+    /// <paramref name="deferredNotifications"/> is the caller's per-execution notification buffer
+    /// (#2934), passed per call rather than held on this registry so that two executions sharing
+    /// one scoped instance can never append to the same list. Null means "notify immediately",
+    /// which is what every caller outside a proposal transaction wants.
+    /// </summary>
+    public async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken,
+        Guid? actorUserId = null, DeferredBoardRealtimeNotifier? deferredNotifications = null)
     {
         var actionType = operation.ActionType.ToLowerInvariant();
         var targetType = operation.TargetType.ToLowerInvariant();
@@ -57,7 +64,7 @@ public class OperationHandlerRegistry
             }
             if (targetType == "card")
             {
-                return await ExecuteCardOperationAsync(actionType, operation, cancellationToken);
+                return await ExecuteCardOperationAsync(actionType, operation, cancellationToken, deferredNotifications);
             }
             else if (targetType == "board")
             {
@@ -92,7 +99,8 @@ public class OperationHandlerRegistry
         }
     }
 
-    private async Task<Result> ExecuteCardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
+    private async Task<Result> ExecuteCardOperationAsync(string actionType, ProposalOperationDto operation,
+        CancellationToken cancellationToken, DeferredBoardRealtimeNotifier? deferredNotifications = null)
     {
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
@@ -122,7 +130,8 @@ public class OperationHandlerRegistry
 
             case "archive-lifecycle":
             case "restore-lifecycle":
-                return await SetCardArchivedAsync(parameters, actionType == "archive-lifecycle", cancellationToken);
+                return await SetCardArchivedAsync(parameters, actionType == "archive-lifecycle", cancellationToken,
+                    deferredNotifications);
 
             default:
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported card action: {actionType}");
@@ -139,7 +148,8 @@ public class OperationHandlerRegistry
             confirmation: new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")));
     }
 
-    private async Task<Result> SetCardArchivedAsync(JsonElement parameters, bool archive, CancellationToken cancellationToken)
+    private async Task<Result> SetCardArchivedAsync(JsonElement parameters, bool archive,
+        CancellationToken cancellationToken, DeferredBoardRealtimeNotifier? deferredNotifications)
     {
         if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
             return Result.Failure(ErrorCodes.ValidationError, error);
@@ -150,9 +160,13 @@ public class OperationHandlerRegistry
         if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
         // The Archived/Unarchived receipt for this operation is written by ExecutionAuditRecorder
         // (which alone knows the proposal), so the service must not stage a second one.
+        // The lifecycle realtime event goes to the executor's deferred buffer (#2934) instead of
+        // straight out: this write is still inside the outer transaction, which a later operation
+        // can still roll back.
         var result = await _cardService.SetArchivedAsync(card.BoardId, cardId, archive,
             new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")),
-            recordLifecycleAudit: false, cancellationToken: cancellationToken);
+            recordLifecycleAudit: false, notificationSink: deferredNotifications,
+            cancellationToken: cancellationToken);
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 

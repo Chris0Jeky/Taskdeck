@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import TodayView from '../../views/TodayView.vue'
 import type { TodaySummary, WorkspaceOnboarding } from '../../types/workspace'
+import { installTimeZone } from '../utils/timeZone'
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -68,8 +69,15 @@ async function waitForUi() {
 }
 
 describe('TodayView', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', ...)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where it silently leaves the host zone in place
+  // (#2943).
+  let restoreZone: (() => void) | null = null
+
   afterEach(() => {
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
   })
 
   beforeEach(() => {
@@ -168,7 +176,7 @@ describe('TodayView', () => {
   })
 
   it('renders the due calendar key unchanged west of UTC', async () => {
-    vi.stubEnv('TZ', 'America/Los_Angeles')
+    restoreZone = installTimeZone('America/Los_Angeles')
     mockWorkspaceStore.todaySummary = {
       ...mockWorkspaceStore.todaySummary!,
       overdueCards: [{

@@ -2147,8 +2147,14 @@ public class AutomationProposalService : IAutomationProposalService
                 description += $" in column {columnDisplay}";
         }
 
+        // Render the type transition ONLY for the two actions whose handlers actually apply
+        // 'workItemType'. A move (or any other generic card action) ignores the parameter at
+        // Apply, so describing a type change there would overstate the approved change (#2950).
+        // The contract validator now rejects that shape outright; this guard keeps any payload
+        // that reaches rendering without that gate (a stored DiffPreview, for instance) honest.
         var workItemType = ExtractStringParameter(operation.Parameters, "workItemType");
-        if (isCardTarget && workItemType is not null)
+        var appliesWorkItemType = operation.ActionType.ToLowerInvariant() is "create" or "update";
+        if (isCardTarget && appliesWorkItemType && workItemType is not null)
         {
             var typeCardId = ExtractGuidParameter(operation.Parameters, "cardId");
             var before = typeCardId.HasValue && cardStates.TryGetValue(typeCardId.Value, out var typeState)
