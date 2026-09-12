@@ -150,7 +150,7 @@ public class OperationHandlerRegistry
                 return await CreateCardAsync(parameters, operation.TargetId, cancellationToken);
 
             case "update":
-                return await UpdateCardAsync(parameters, cancellationToken);
+                return await UpdateCardAsync(parameters, cancellationToken, deferredNotifications);
 
             case "move":
                 return await MoveCardAsync(parameters, cancellationToken);
@@ -265,7 +265,8 @@ public class OperationHandlerRegistry
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 
-    private async Task<Result> UpdateCardAsync(JsonElement parameters, CancellationToken cancellationToken)
+    private async Task<Result> UpdateCardAsync(JsonElement parameters, CancellationToken cancellationToken,
+        DeferredBoardRealtimeNotifier? deferredNotifications)
     {
         if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
@@ -355,7 +356,8 @@ public class OperationHandlerRegistry
             labelIds,
             ExpectedUpdatedAt: expectedUpdatedAt, ClearDueDate: shouldClearDueDate, WorkItemType: workItemType, ParentCardId: parentId, ClearParent: clearParent,
             EstimatedEffortMinutes: estimatedEffortMinutes, ClearEstimatedEffort: clearEstimatedEffort);
-        var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
+        var result = await _cardService.UpdateCardAsync(cardId, dto, actorUserId: null,
+            cancellationToken: cancellationToken, notificationSink: deferredNotifications);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }

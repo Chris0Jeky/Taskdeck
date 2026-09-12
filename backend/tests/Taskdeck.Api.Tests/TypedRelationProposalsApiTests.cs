@@ -1,9 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Data.Common;
 using FluentAssertions;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
@@ -13,6 +16,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -31,7 +35,7 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
         using var applierClient = factory.CreateClient();
         var applier = await ApiTestHarness.AuthenticateAsync(applierClient, "relation-applier");
         (await requesterClient.PostAsJsonAsync($"/api/boards/{boardId}/access",
-            new GrantAccessDto(boardId, applier.UserId, UserRole.Writer))).EnsureSuccessStatusCode();
+            new GrantAccessDto(boardId, applier.UserId, UserRole.Editor))).EnsureSuccessStatusCode();
         var observed = await GetRelationsAsync(requesterClient, boardId);
         var proposal = await CreateProposalAsync(requesterClient, requester.UserId, boardId,
             [RelationOp(0, "add-relation", boardId, source.Id, target.Id, "depends-on", observed.Revision)]);
@@ -70,17 +74,27 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{sourceId}"))!.Title.Should().Be("Planned source");
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{targetId}"))!.Title.Should().Be("Planned target");
         (await GetRelationsAsync(client, boardId)).Relations.Should()
-            .Equal(new CardRelationEdge(sourceId, targetId, "relates-to"));
+            .Equal(CardRelationRules.Normalize(new CardRelationEdge(sourceId, targetId, "relates-to")));
     }
 
     [Fact]
-    public async Task StaleRelationAtApply_RollsBackEarlierEditWithoutAuditOrRealtime()
+    public async Task CompetingRelationAfterInitialValidation_RollsBackEarlierSavedEditWithoutAuditOrRealtime()
     {
         var realtime = new Mock<IBoardRealtimeNotifier>();
+        var relationRace = new RelationRaceInterceptor();
+        var firstSave = new FirstOperationSaveObserver();
         realtime.Setup(notifier => notifier.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         using var raceFactory = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
+            services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
+            services.AddDbContext<TaskdeckDbContext>((provider, options) =>
+            {
+                var configuration = provider.GetRequiredService<IConfiguration>();
+                options.UseTaskdeckSqlite(configuration.GetConnectionString("DefaultConnection")!,
+                    configuration.GetSection("Database").Get<DatabaseSettings>() ?? new DatabaseSettings())
+                    .AddInterceptors(relationRace, firstSave);
+            });
             services.RemoveAll<IBoardRealtimeNotifier>();
             services.AddSingleton(realtime.Object);
         }));
@@ -97,14 +111,22 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
             RelationOp(1, "add-relation", boardId, source.Id, target.Id, "blocks", observed.Revision)
         ]);
         (await client.PostAsync($"/api/automation/proposals/{staleProposal.Id}/approve", null)).EnsureSuccessStatusCode();
-        var winningProposal = await CreateProposalAsync(client, user.UserId, boardId,
-            [RelationOp(0, "add-relation", boardId, source.Id, competingTarget.Id, "blocks", observed.Revision)]);
-        (await client.PostAsync($"/api/automation/proposals/{winningProposal.Id}/approve", null)).EnsureSuccessStatusCode();
-        (await ExecuteAsync(client, winningProposal.Id)).EnsureSuccessStatusCode();
+        relationRace.TargetCardId = unrelated.Id;
+        relationRace.BeforeTransaction = async () =>
+        {
+            using var competingScope = raceFactory.Services.CreateScope();
+            var repository = competingScope.ServiceProvider.GetRequiredService<IBoardDependencyRepository>();
+            var graph = await repository.GetAsync(boardId, CancellationToken.None) ?? new BoardDependencies(boardId);
+            var expectedRevision = graph.Revision;
+            graph.ReplaceRelations([new CardRelationEdge(source.Id, competingTarget.Id, "blocks")]);
+            (await repository.SaveAsync(graph, expectedRevision, CancellationToken.None)).Should().BeTrue();
+        };
         realtime.Invocations.Clear();
 
         var failed = await ExecuteAsync(client, staleProposal.Id);
         failed.StatusCode.Should().Be(HttpStatusCode.Conflict, await failed.Content.ReadAsStringAsync());
+        relationRace.Fired.Should().BeTrue("the competing relation must land after proposal validation and before its handlers");
+        firstSave.SawFirstOperationSave.Should().BeTrue("the earlier card update must be saved inside the outer transaction before the relation conflict");
         realtime.Verify(notifier => notifier.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), It.IsAny<CancellationToken>()), Times.Never);
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{unrelated.Id}"))!.Title.Should().Be(unrelated.Title);
         (await GetRelationsAsync(client, boardId)).Relations.Should()
@@ -130,14 +152,17 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
             ? new { cardId = source.Id, expectedUpdatedAt = source.UpdatedAt }
             : new { cardId = source.Id };
         var conflict = CardOp(1, conflictingAction, source.Id, conflictParameters);
-        var before = await CountProposalsAsync(factory);
-
         var response = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
             ProposalSourceType.Manual, user.UserId, "Invalid mixed relation", RiskLevel.Medium,
             Guid.NewGuid().ToString(), boardId, Operations: [relation, conflict]));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
-        (await CountProposalsAsync(factory)).Should().Be(before);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+        var proposal = await response.Content.ReadFromJsonAsync<ProposalDto>();
+        proposal.Should().NotBeNull();
+        var rejected = await client.PostAsync($"/api/automation/proposals/{proposal!.Id}/approve", null);
+        rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest, await rejected.Content.ReadAsStringAsync());
+        (await GetRelationsAsync(client, boardId)).Relations.Should().BeEmpty();
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{source.Id}"))!.IsArchived.Should().BeFalse();
     }
 
     private static async Task<(TestUserContext User, Guid BoardId, Guid ColumnId)> SetupAsync(HttpClient client, string userName)
@@ -194,5 +219,44 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
     {
         using var scope = factory.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>().AutomationProposals.CountAsync();
+    }
+
+    private sealed class RelationRaceInterceptor : DbTransactionInterceptor
+    {
+        public Func<Task>? BeforeTransaction;
+        public Guid TargetCardId { get; set; }
+        public bool Fired { get; private set; }
+
+        public override async ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+            DbConnection connection,
+            TransactionStartingEventData eventData,
+            InterceptionResult<DbTransaction> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context?.ChangeTracker.Entries<Card>().Any(entry => entry.Entity.Id == TargetCardId) != true)
+                return result;
+            var callback = Interlocked.Exchange(ref BeforeTransaction, null);
+            if (callback is not null)
+            {
+                await callback();
+                Fired = true;
+            }
+            return result;
+        }
+    }
+
+    private sealed class FirstOperationSaveObserver : SaveChangesInterceptor
+    {
+        public bool SawFirstOperationSave { get; private set; }
+
+        public override ValueTask<int> SavedChangesAsync(
+            SaveChangesCompletedEventData eventData,
+            int result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context?.ChangeTracker.Entries<Card>().Any(entry => entry.Entity.Title == "Must roll back") == true)
+                SawFirstOperationSave = true;
+            return ValueTask.FromResult(result);
+        }
     }
 }
