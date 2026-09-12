@@ -46,4 +46,53 @@ describe('cardRelationsApi', () => {
     expect(request.operations[0].actionType).toBe('remove-relation')
     expect(JSON.parse(request.operations[0].parameters as string).expectedRevision).toBe(9)
   })
+
+  it('uses UUID-compatible IDs when randomUUID is unavailable on a LAN origin', async () => {
+    const originalCrypto = globalThis.crypto
+    vi.stubGlobal('crypto', {
+      getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+    })
+    vi.mocked(http.post)
+      .mockResolvedValueOnce({ data: { id: 'proposal-add' } })
+      .mockResolvedValueOnce({ data: { id: 'proposal-remove' } })
+
+    try {
+      const input = {
+        boardId: 'board', cardId: 'source', relatedCardId: 'target',
+        relationType: 'depends-on' as const, expectedRevision: 12,
+      }
+
+      await cardRelationsApi.addProposal(input)
+      await cardRelationsApi.removeProposal(input)
+
+      const requests = vi.mocked(http.post).mock.calls.map(([, request]) => request as {
+        sourceType: number
+        riskLevel: number
+        operations: Array<Record<string, unknown>>
+      })
+      expect(requests).toHaveLength(2)
+      expect(requests.map(request => request.sourceType)).toEqual([2, 2])
+      expect(requests.map(request => request.riskLevel)).toEqual([0, 0])
+      for (const request of requests) expect(request.operations).toHaveLength(1)
+
+      const correlations = vi.mocked(http.post).mock.calls.map(([, request]) =>
+        (request as { correlationId: string }).correlationId)
+      const allIds = [...correlations, ...requests.map(request => request.operations[0]!.idempotencyKey as string)]
+      expect(allIds).toHaveLength(4)
+      expect(new Set(allIds).size).toBe(4)
+      for (const id of allIds) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+
+      expect(requests.map(request => request.operations[0]!.actionType)).toEqual([
+        'add-relation', 'remove-relation',
+      ])
+      for (const request of requests) {
+        expect(JSON.parse(request.operations[0]!.parameters as string)).toMatchObject({
+          boardId: 'board', cardId: 'source', relatedCardId: 'target',
+          relationType: 'depends-on', expectedRevision: 12,
+        })
+      }
+    } finally {
+      vi.stubGlobal('crypto', originalCrypto)
+    }
+  })
 })
