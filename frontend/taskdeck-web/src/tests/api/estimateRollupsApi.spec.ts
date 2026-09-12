@@ -31,7 +31,16 @@ describe('estimateRollupsApi bounded reads', () => {
   it.each(['ECONNABORTED', 'ERR_CANCELED'])('preserves %s failures for the request owner', async (code) => {
     const failure = { code }
     vi.mocked(http.get).mockRejectedValue(failure)
-    await expect(estimateRollupsApi.get('board')).rejects.toBe(failure)
+    let rejected = false
+    let received: unknown
+    try {
+      await estimateRollupsApi.get('board')
+    } catch (error) {
+      rejected = true
+      received = error
+    }
+    expect(rejected).toBe(true)
+    expect(received).toBe(failure)
     expect(http.get).toHaveBeenCalledTimes(1)
   })
 })

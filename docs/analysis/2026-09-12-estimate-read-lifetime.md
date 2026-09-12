@@ -81,6 +81,23 @@ Therefore no local executable frontend verdict is claimed. TypeScript syntax-onl
 parsing is not typechecking or behavioral testing. Governance and relative-link
 checks run locally; hosted runtime/test results belong in the PR receipt.
 
+### First hosted run and bounded test correction
+
+On head `7890eaeed3681dfd54556fc2fd6791f087f8b986`, hosted run
+`34717874146` passed frontend lint, typecheck and build on both Linux and Windows.
+The Linux frontend suite reported **6,884 passed, three skipped, two failed**.
+Both failures were the new API rejection assertions: the asynchronous rejection
+matcher raised `Method Promise.prototype.then called on incompatible receiver`.
+The other new lifecycle cases completed successfully in that run.
+
+The correction changes only those assertions to explicitly capture rejection and
+assert both rejection occurrence and exact error-object identity. It preserves
+the original plain-object failure stimulus and the one-request assertion; it does
+not loosen the behavior contract or change runtime code. The test-runner internals
+behind that matcher error have not been independently reproduced locally. A fresh
+hosted run must qualify the corrected head; the earlier partial results are not a
+full-suite pass and do not qualify this correction.
+
 Required exact-head commands from `frontend/taskdeck-web`:
 
 ```sh
