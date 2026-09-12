@@ -27,6 +27,8 @@ public class CardEstimateServiceTests
         var boards = new Mock<IBoardRepository>();
         boards.Setup(r => r.GetByIdAsync(_board.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_board);
         _cards.Setup(r => r.GetByIdWithLabelsAsync(_card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_card);
+        _cards.Setup(r => r.TryGuardVersionAsync(_card.Id, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         _work.SetupGet(w => w.Boards).Returns(boards.Object);
         _work.SetupGet(w => w.Cards).Returns(_cards.Object);
         _work.SetupGet(w => w.AuditLogs).Returns(_audit.Object);
@@ -107,6 +109,25 @@ public class CardEstimateServiceTests
         var result = await _service.UpdateCardAsync(_card.Id, Patch(minutes, clear));
         result.IsSuccess.Should().BeTrue();
         result.Value.UpdatedAt.Should().Be(version);
+        _cards.Verify(r => r.TryGuardVersionAsync(_card.Id, version, It.IsAny<CancellationToken>()), Times.Once);
+        _work.Verify(w => w.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _audit.Verify(a => a.AddAsync(It.IsAny<AuditLog>(), It.IsAny<CancellationToken>()), Times.Never);
+        _notifier.Verify(n => n.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RepeatedEstimate_ReturnsConflictWhenAtomicVersionGuardLosesRace()
+    {
+        _card.SetEstimatedEffortMinutes(90);
+        var version = _card.UpdatedAt;
+        _cards.Setup(r => r.TryGuardVersionAsync(_card.Id, version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.UpdateCardAsync(_card.Id, Patch(90));
+
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        _card.EstimatedEffortMinutes.Should().Be(90);
+        _card.UpdatedAt.Should().Be(version);
         _work.Verify(w => w.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
         _audit.Verify(a => a.AddAsync(It.IsAny<AuditLog>(), It.IsAny<CancellationToken>()), Times.Never);
         _notifier.Verify(n => n.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), It.IsAny<CancellationToken>()), Times.Never);
