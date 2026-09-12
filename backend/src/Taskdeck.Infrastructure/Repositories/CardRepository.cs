@@ -70,6 +70,20 @@ public class CardRepository : Repository<Card>, ICardRepository
             $"Removed relations for deleted card {card.Id}: {JsonSerializer.Serialize(removed.Select(e => e.ToEdge()))}"));
     }
 
+    public async Task<bool> TryGuardVersionAsync(
+        Guid id,
+        DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var affectedRows = await _dbSet
+            .Where(card => card.Id == id && card.UpdatedAt == expectedUpdatedAt)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(card => card.UpdatedAt, card => card.UpdatedAt),
+                cancellationToken);
+
+        return affectedRows == 1;
+    }
+
     public async Task<IReadOnlyList<Card>> GetForEstimateRollupsAsync(Guid boardId, CancellationToken cancellationToken = default)
         => await _dbSet.AsNoTracking().IgnoreAutoIncludes()
             .Where(card => card.BoardId == boardId && !card.IsArchived)
