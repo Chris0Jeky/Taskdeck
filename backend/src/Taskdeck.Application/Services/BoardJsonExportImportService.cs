@@ -176,18 +176,22 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             var labels = dto.Labels ?? Enumerable.Empty<ImportLabelDto>();
             var columns = dto.Columns ?? Enumerable.Empty<ImportColumnDto>();
             var cards = (dto.Cards ?? Enumerable.Empty<ImportCardDto>()).ToList();
-            var sourceKeys = new HashSet<string>(StringComparer.Ordinal);
+            var sourceNames = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var source in cards.SelectMany(c => c.SourceAssignees ?? []))
             {
                 if (source is null || string.IsNullOrWhiteSpace(source.SourceKey) || source.SourceKey.Length > 200 ||
                     string.IsNullOrWhiteSpace(source.DisplayName) || source.DisplayName.Length > 200)
                     throw new DomainException(ErrorCodes.ValidationError, "Every source assignee needs a bounded key and display name.");
-                sourceKeys.Add(source.SourceKey);
+                // Preview groups by source key: never hide a conflicting label behind its first occurrence.
+                if (!sourceNames.TryAdd(source.SourceKey, source.DisplayName) &&
+                    !string.Equals(sourceNames[source.SourceKey], source.DisplayName, StringComparison.Ordinal))
+                    throw new DomainException(ErrorCodes.ValidationError,
+                        "Each source assignee key must have one consistent display name across the import.");
             }
-            if (dto.AssigneeMappings is not null && dto.AssigneeMappings.Any(m => !sourceKeys.Contains(m.Key) ||
+            if (dto.AssigneeMappings is not null && dto.AssigneeMappings.Any(m => !sourceNames.ContainsKey(m.Key) ||
                     m.Value.HasValue && m.Value != userId))
                 throw new DomainException(ErrorCodes.ValidationError, "Mappings may target only Me or explicit unassigned, and must reference a source assignee.");
-            if (!preview && sourceKeys.Any(key => dto.AssigneeMappings is null || !dto.AssigneeMappings.ContainsKey(key)))
+            if (!preview && sourceNames.Keys.Any(key => dto.AssigneeMappings is null || !dto.AssigneeMappings.ContainsKey(key)))
                 throw new DomainException(ErrorCodes.ValidationError, "Explicitly map every source assignee before importing.");
             var cardIds = new Dictionary<Guid, Guid>();
             foreach (var source in cards.Where(card => card.SourceId.HasValue))

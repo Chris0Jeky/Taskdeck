@@ -2,6 +2,21 @@
 
 Last Updated: 2026-09-12
 
+Board import rejects conflicting assignee labels (#2980, PR #3014): the shared import validator now
+requires one consistent display label per source assignee key, so a payload that repeats a key with a
+different - including case-only or whitespace-only different - label fails on preview and on both Apply
+routes before any board, column, card, label or audit row is built, and an explicit "Me" or
+"Unassigned" mapping does not waive it. No trimming, case folding or name-to-identity matching is
+introduced, and the existing bounded-field, missing-mapping, unknown-key and importer-only target rules
+are unchanged. Evidence: 18 new Application tests (eight proven red against the pre-fix validator,
+each rejection asserting no repository Add, no SaveChanges, no commit and one rollback) plus 103
+passing export/import cases. These are mocked-repository application-boundary assertions, not a real
+SQLite proof. Scope: a bounded repair to the board-import
+validator that already guards `POST /api/import/boards/preview`, `POST /api/import/boards` and
+`POST /api/import/boards/json` on main. The separate #2240 multiple-assignments slice is untouched and
+its status is unchanged; the delivery paragraph below still says "explicit import mapping" is not
+delivered, which #3036 tracks for reconciliation against those routes.
+
 Card editor write gates (#3028): the open card editor resolves the caller's board write
 permission once, server-side, when the loaded board payload omits the optional `canWrite`
 field, and the work-item type selector, parent selector, archive/restore control and
