@@ -87,15 +87,18 @@ frontend passed 6,794 with three existing skips across 438 files. Typecheck/buil
 four-line fixture-only repair, which received a clean bounded follow-up review. Final hosted CI and
 live browser permission transitions remain separate qualification evidence.
 
-The #3033 follow-on retains pending archive/restore and preview ownership per board/card while a
-mounted action is reused across A-to-B-to-A navigation. Returning to A cannot submit its still-pending
+The #3033 follow-on retains pending archive/restore and preview ownership per board/card in the
+mounted editor, above its version-keyed action child. Returning to A cannot submit its still-pending
 request again, while B remains actionable; settling one request releases only its own card. Six
-deferred cases failed before the fix and all 52 focused archive/permission tests pass. On the reviewed
-estimate/permission integration base, the full frontend passed 6,862 tests with three existing skips
-across 440 files, plus production build. Source lint/typecheck/build and independent review passed.
-Final hosted CI remains required. No new browser or screen-reader run is claimed; the earlier native
-focus proof belongs to #3048. Request ownership remains local to the mounted component; server
-version checks still govern independent components and tabs.
+deferred component cases and four real CardModal host cases reproduced the previous gaps. Final
+qualification passes 151 focused tests, lint, typecheck and build; the bounded independent fix review
+is clean. Before the host fix, full frontend qualification passed 6,862 tests with three existing skips
+across 440 files. That full run was not repeated for the bounded host fix. The estimate parent's
+keyboard-test correction merges without conflict edits. Final hosted CI remains required after the
+oldest base lands and this child is retargeted. No new browser or screen-reader run is claimed for
+the archive fix; the earlier native focus proof belongs to #3048. Ownership remains editor-instance
+scoped. Separate MEDIUM follow-up #3060 covers successful settlement reconciliation of a returned
+card's stale snapshot; server version checks reject a redundant stale request before mutation.
 
 Assignment revoke notifications (#2979, PR #3047) now publish each detached card's actual ID
 after the access/audit transaction commits, with no notification when assignments are unchanged.

@@ -38,9 +38,11 @@ are in STATUS; final hosted qualification belongs to the integration PR.
 
 The assignment/import record correction (#3036, PR #3043) and inert private-hosting compatibility
 files (PR #2914) travel with this delivery. Hosting activation, provisioning and release acceptance
-remain separate. The reviewed #3033 A-to-B-to-A pending-write ownership follow-on now passes its
-focused and full frontend qualification on #3054's base; merge the oldest base first and requalify
-the retargeted child. Keep #3023's broader editor residuals and #3024's reliable delivery work open.
+remain separate. The #3033 A-to-B-to-A pending-write follow-on now keeps ownership above the
+keyed child in the real editor. Its bounded host fix passes 151 focused tests, lint/typecheck/build
+and independent review; the earlier full frontend run preceded that fix. Merge #3054 first and
+requalify the retargeted child. Keep MEDIUM settled-state refresh #3060, broader editor #3023 and
+reliable delivery #3024 open.
 The #3044 planning-reference cleanup and #3049
 same-valued permission-payload recovery are reviewed and integrated into #3054 for final hosted CI.
 The existing human actions in OUTSTANDING_TASKS remain unchanged, including CI-control decisions
