@@ -12,8 +12,9 @@ roll back the proposal. This reduces silent integration gaps while retaining rev
 
 The implementation, 49 focused Application/Composite API tests, five real SQLite visibility/rollback/
 lost-flush tests and one independent review are complete. Two lifecycle controls fail when durable
-preparation is omitted and pass with the reviewed bytes restored. Complete the full backend and
-exact-head hosted gates before closing #3024. Broader notification
+preparation is omitted and pass with the reviewed bytes restored. The complete backend gate now
+passes 9,802 tests with 34 existing skips and no failures. Complete exact-head hosted qualification
+before closing #3024. Broader notification
 producer changes, live HTTP and release qualification remain outside this slice.
 
 ## Typed relations candidate (2026-09-12, #2092)

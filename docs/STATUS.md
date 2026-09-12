@@ -15,8 +15,10 @@ Focused Application tests pass 39 cases and Composite API tests pass 10. Five re
 tests pass for first-notification queue visibility, rollback, lost post-commit callback recovery and
 already-applied deduplication. Omitting durable preparation makes both lifecycle controls fail;
 restoring the reviewed executor bytes makes all five pass. Independent source review is clean.
-The full backend and final hosted gates remain pending. No actual process-kill,
-external HTTP delivery or release acceptance is claimed.
+The complete backend gate passes 9,802 tests across all six projects with 34 existing skips and
+zero failures at `0a65b536b`. The later inherited LAN correction changes only frontend and docs;
+the final backend tree is identical to that tested head. Exact-head hosted qualification remains
+required. No actual process-kill, external HTTP delivery or release acceptance is claimed.
 
 Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
 thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
