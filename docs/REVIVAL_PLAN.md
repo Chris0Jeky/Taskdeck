@@ -68,14 +68,16 @@ ADR-0060 and ADR-0062 are Accepted and ADR-0061 is Accepted as direction only, e
 ### Current work-model sequence (2026-09-11)
 
 This note supersedes the historical assignment timing and unimplemented-parent wording above.
-The archive/type/hierarchy chain is merged and #2087 is closed. Both #2240 and #2093 are currently
-v0.4. Assignment [PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977) is parked on HIGH
-[#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981), not delivered or awaiting a product
-decision. The maintainer has chosen explicit import mapping and effort minutes with hours/minutes
-display; no repeat question is required.
+The archive/type/hierarchy chain is merged and #2087 is closed. Multiple assignments and explicit
+assignee import mapping are delivered in [PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977),
+merged 2026-09-11 as `15ee8065a`; blocker [#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981)
+is closed. The assignment capability remains in v0.4 under the current qualification plan. #2093's
+estimate/current-state vertical remains v0.4 work and is not merged into main. The maintainer has
+chosen explicit import mapping and effort minutes with hours/minutes display; no repeat question is
+required.
 
-Finish that bounded repair and existing Alpha delivery PRs, then take #2093's estimate/current-state
-totals and #2092's typed-link migration from their verified residuals. Serialize shared schema,
+Finish existing Alpha delivery PRs, then qualify #2093's estimate/current-state totals and #2092's
+typed-link migration from their verified residuals. Serialize shared schema,
 card editor, proposal and portability paths. The estimate scalar is technically independent of
 assignment; current sequencing protects occupied paths, while participant totals depend on the
 assignment substrate. Preserve the existing same-board graph, archived edges and revision metadata.
