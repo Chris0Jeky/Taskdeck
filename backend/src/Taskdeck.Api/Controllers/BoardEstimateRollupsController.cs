@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Controllers;
@@ -8,7 +9,8 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Route("api/boards/{boardId:guid}/estimate-rollups")]
 [Authorize]
-public sealed class BoardEstimateRollupsController(IBoardEstimateRollupService service) : AuthenticatedControllerBase
+public sealed class BoardEstimateRollupsController(IBoardEstimateRollupService service, IUserContext userContext)
+    : AuthenticatedControllerBase(userContext)
 {
     [HttpGet]
     public async Task<IActionResult> Get(Guid boardId, CancellationToken cancellationToken)
