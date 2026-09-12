@@ -2,11 +2,21 @@
 
 Last Updated: 2026-09-12
 
+Typed relations #3066 merged on 2026-09-12 as `160818440`, after required run
+`34718378428` passed at reviewed head `7c66104b3` against main `9a8c14c6b`.
+Issue #2092 is closed; its issue and PR project items are Done with Priority II,
+and the first post-merge thread check is clear. The webhook child #3071 now targets
+main; its source branch remains available. The relation candidate records below
+retain historical evidence and are superseded by this delivery record.
+
 The product recovery candidate combines typed relations, transactional proposal webhook
 staging, archived-import conflict planning, deactivation assignment cleanup and two estimate
 recovery fixes. All source commits are preserved, all 94 changed code/test blobs match their
-reviewed owners, and the bounded integration review is clean. Final combined verification and
-hosted qualification remain pending. [Current qualification and limits](analysis/2026-09-12-product-recovery-qualification.md)
+reviewed owners, and the bounded integration review is clean. Combined frontend qualification
+passes lint, typecheck/build and 6,907 tests with three existing skips. Deactivation's source
+backend passes 9,746 tests with 34 existing skips; the demo omission is confirmed in Chromium.
+The integration PR carries final combined backend and hosted gate results.
+[Current qualification and limits](analysis/2026-09-12-product-recovery-qualification.md)
 supersede the separate candidate gate wording below; the source evidence remains historical.
 Permission PR #3072 stays parked and excluded. All 41 human actions remain unchanged.
 

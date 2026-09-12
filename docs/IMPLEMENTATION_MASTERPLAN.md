@@ -4,10 +4,13 @@ Last Updated: 2026-09-12
 
 ## Product recovery integration (2026-09-12)
 
-Preserve the reviewed commits for #2092, #3024, #2935, #3000, #3063 and #3056 in one
-candidate against delivered main `9a8c14c6b`. Runtime merges are automatic; both concurrent
+Typed relations #3066 delivered #2092 as `160818440` after its exact-head required gate;
+its issue and PR project items are Done with Priority II and post-merge review is clear.
+Preserve that source and the reviewed commits for #3024, #2935, #3000, #3063 and #3056 in
+one candidate against the delivered base. Runtime merges are automatic; both concurrent
 canonical progress records are retained. The source-blob comparison and bounded integration
-review are clean. Complete the combined local and exact-head hosted gates before delivery.
+review are clean. Combined frontend qualification passes 6,907 tests with three existing
+skips, lint and typecheck/build. Complete the combined backend and hosted gates before delivery.
 [Qualification record](analysis/2026-09-12-product-recovery-qualification.md) distinguishes source
 results from final integrated proof. Keep permission PR #3072 parked and existing human
 actions and release decisions unchanged.
