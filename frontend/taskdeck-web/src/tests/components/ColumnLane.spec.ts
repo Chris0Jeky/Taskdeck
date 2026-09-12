@@ -62,6 +62,47 @@ describe('ColumnLane — WIP limit enforcement', () => {
     vi.mocked(useBoardStore).mockReturnValue(mockBoardStore as any)
   })
 
+  describe('optional creation estimate', () => {
+    async function openCreate() {
+      const wrapper = mount(ColumnLane, {
+        props: { ...defaultProps, column: makeColumn(), cards: [] },
+        global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+      })
+      await wrapper.get('[data-action="toggle-add-card"]').trigger('click')
+      await wrapper.get('[data-action="add-card-input"]').setValue('Quick thought')
+      return wrapper
+    }
+
+    it.each([['', '', undefined], ['', '0', 0], ['1', '30', 90]])('creates with %sh %sm only when entered', async (hours, minutes, value) => {
+      const wrapper = await openCreate()
+      await wrapper.get('[data-testid="estimate-hours"]').setValue(String(hours))
+      await wrapper.get('[data-testid="estimate-minutes"]').setValue(String(minutes))
+      await wrapper.get('form').trigger('submit')
+      const request = mockBoardStore.createCard.mock.calls[0][1]
+      if (value === undefined) expect(request).not.toHaveProperty('estimatedEffortMinutes')
+      else expect(request.estimatedEffortMinutes).toBe(value)
+      expect(wrapper.find('[data-action="add-card-form"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('blocks invalid estimates, keeps a cancelled draft, and retains it after a failed create', async () => {
+      const wrapper = await openCreate()
+      await wrapper.get('[data-testid="estimate-minutes"]').setValue('60')
+      expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+      await wrapper.get('form').trigger('submit')
+      expect(mockBoardStore.createCard).not.toHaveBeenCalled()
+      await wrapper.get('[data-testid="estimate-minutes"]').setValue('35')
+      await wrapper.get('[data-action="cancel-add-card"]').trigger('click')
+      await wrapper.get('[data-action="toggle-add-card"]').trigger('click')
+      expect((wrapper.get('[data-testid="estimate-minutes"]').element as HTMLInputElement).value).toBe('35')
+      mockBoardStore.createCard.mockRejectedValueOnce({ response: { status: 403 } })
+      await wrapper.get('form').trigger('submit')
+      expect((wrapper.get('[data-testid="estimate-minutes"]').element as HTMLInputElement).value).toBe('35')
+      expect(wrapper.find('[data-action="add-card-form"]').exists()).toBe(true)
+      wrapper.unmount()
+    })
+  })
+
   describe('Add Card button state', () => {
     it('is enabled when column has no WIP limit', () => {
       const column = makeColumn({ wipLimit: null })
