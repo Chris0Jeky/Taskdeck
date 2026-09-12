@@ -48,6 +48,24 @@ describe('CardParentField', () => {
     expect(wrapper.text()).toContain('Optional, on this board.')
   })
 
+  it('retires a pending read after denied access and reloads only when reads are allowed again', async () => {
+    const stale = deferred<Card[]>()
+    vi.mocked(cardsApi.getCards).mockReturnValueOnce(stale.promise)
+    const wrapper = mountField()
+    await wrapper.setProps({ readsBlocked: true, canWrite: false })
+    stale.resolve([makeCard('stale', 'Stale choice')])
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Stale choice')
+    expect(wrapper.get('select').attributes('disabled')).toBeDefined()
+    expect(cardsApi.getCards).toHaveBeenCalledTimes(1)
+    await wrapper.setProps({ readsBlocked: false, canWrite: true })
+    await flushPromises()
+    expect(cardsApi.getCards).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Other card')
+    expect(wrapper.get('select').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   /*
    * #3028. This field reads no board payload at all any more: the host's one
    * server-authoritative answer is the whole gate, which is what stops it reading an
