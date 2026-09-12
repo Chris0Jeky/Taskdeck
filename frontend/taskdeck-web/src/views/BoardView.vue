@@ -26,6 +26,7 @@ import type { Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
+import { isDemoMode } from '../utils/demoMode'
 import { getErrorMessage } from '../utils/errorMessage'
 import { logError } from '../utils/errorReporting'
 
@@ -176,6 +177,7 @@ const sortedColumns = computed(() => {
   if (!routedBoard.value) return []
   return [...routedBoard.value.columns].sort((a, b) => a.position - b.position)
 })
+const estimatesAvailable = computed(() => !isDemoMode && !sessionStore.isDemo)
 const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(routedBoard.value?.name))
 const paperCollapsedColumnIds = ref<Set<string>>(new Set())
 const paperCardsByColumn = computed<Map<string, Card[]>>(() => {
@@ -537,7 +539,7 @@ useKeyboardShortcuts([
 </script>
 
 <template>
-  <BoardEstimateRollups v-if="routedBoard" :board-id="routedBoard.id" />
+  <BoardEstimateRollups v-if="routedBoard && estimatesAvailable" :board-id="routedBoard.id" />
   <BoardCardArchive v-if="routedBoard" :board-id="routedBoard.id" />
   <BoardProposalPreview
     v-if="previewProposalId && routedBoard"
