@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services.Pipeline;
 
@@ -164,6 +165,43 @@ public static class OperationParameterParser
         return true;
     }
 
+    public static bool TryGetRelationOperationParameters(
+        JsonElement parameters,
+        out CardRelationOperationParameters relation,
+        out string error)
+    {
+        relation = default;
+        error = string.Empty;
+
+        if (!TryGetRequiredGuid(parameters, "boardId", out var boardId, out error) ||
+            !TryGetRequiredGuid(parameters, "cardId", out var cardId, out error) ||
+            !TryGetRequiredGuid(parameters, "relatedCardId", out var relatedCardId, out error) ||
+            !TryGetRequiredString(parameters, "relationType", out var relationType, out error))
+            return false;
+
+        if (!parameters.TryGetProperty("expectedRevision", out var revisionProperty) ||
+            revisionProperty.ValueKind != JsonValueKind.Number ||
+            !revisionProperty.TryGetInt64(out var expectedRevision) || expectedRevision < 0)
+        {
+            error = "Parameter 'expectedRevision' must be a non-negative integer";
+            return false;
+        }
+
+        try
+        {
+            relation = new CardRelationOperationParameters(
+                boardId,
+                CardRelationRules.Normalize(new CardRelationEdge(cardId, relatedCardId, relationType)),
+                expectedRevision);
+            return true;
+        }
+        catch (DomainException exception)
+        {
+            error = exception.Message;
+            return false;
+        }
+    }
+
     public static bool TryGetGuidFromParameters(JsonElement parameters, string parameterName, out Guid value)
     {
         value = Guid.Empty;
@@ -320,3 +358,8 @@ public static class OperationParameterParser
         return true;
     }
 }
+
+public readonly record struct CardRelationOperationParameters(
+    Guid BoardId,
+    CardRelationEdge Relation,
+    long ExpectedRevision);

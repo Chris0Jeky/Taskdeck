@@ -27,6 +27,12 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         ("restore-lifecycle", "restores")
     };
 
+    private static readonly (string Action, string Verb)[] RelationMutationVerbs =
+    {
+        ("add-relation", "adds typed links"),
+        ("remove-relation", "removes typed links")
+    };
+
     private readonly IUnitOfWork _unitOfWork;
 
     public SideEffectAnalyzer(IUnitOfWork unitOfWork)
@@ -105,8 +111,13 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
             .Select(entry => entry.Verb)
             .Distinct()
             .ToList();
-        var hasCardMutation = cardVerbs.Count > 0;
-        var cardMutationSummary = DescribeCardMutations(cardVerbs);
+        var relationVerbs = RelationMutationVerbs
+            .Where(entry => cardActions.Contains(entry.Action))
+            .Select(entry => entry.Verb)
+            .Distinct()
+            .ToList();
+        var hasCardMutation = cardVerbs.Count > 0 || relationVerbs.Count > 0;
+        var cardMutationSummary = DescribeCardMutations(cardVerbs.Concat(relationVerbs).ToList());
         var hasColumnMutation = operations.Any(op =>
             string.Equals(op.TargetType, "column", StringComparison.OrdinalIgnoreCase));
         var hasBoardMutation = hasCardMutation || hasColumnMutation;
@@ -151,15 +162,24 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         if (verbs.Count == 0)
             return string.Empty;
 
-        var actions = verbs.Count switch
-        {
-            1 => verbs[0],
-            2 => string.Join(" and ", verbs),
-            _ => $"{string.Join(", ", verbs.Take(verbs.Count - 1))}, and {verbs[^1]}"
-        };
-
-        return $"{char.ToUpperInvariant(actions[0])}{actions[1..]} cards";
+        var cardVerbs = verbs.Where(verb => !verb.EndsWith("typed links", StringComparison.Ordinal)).ToList();
+        var relationVerbs = verbs.Where(verb => verb.EndsWith("typed links", StringComparison.Ordinal)).ToList();
+        var descriptions = new List<string>();
+        if (cardVerbs.Count > 0)
+            descriptions.Add($"{SentenceCase(JoinVerbs(cardVerbs))} cards");
+        if (relationVerbs.Count > 0)
+            descriptions.Add($"{SentenceCase(JoinVerbs(relationVerbs))}");
+        return string.Join(" and ", descriptions);
     }
+
+    private static string JoinVerbs(IReadOnlyList<string> verbs) => verbs.Count switch
+    {
+        1 => verbs[0],
+        2 => string.Join(" and ", verbs),
+        _ => $"{string.Join(", ", verbs.Take(verbs.Count - 1))}, and {verbs[^1]}"
+    };
+
+    private static string SentenceCase(string value) => $"{char.ToUpperInvariant(value[0])}{value[1..]}";
 
     internal static Reversibility ComputeApplyRiskPosture(
         IReadOnlyList<AutomationProposalOperation> operations,

@@ -25,6 +25,19 @@ public class McpApplicationServiceRegistrationTests
     }
 
     [Fact]
+    public void AddMcpApplicationServices_CanConstructBoardRelationService()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new Mock<IUnitOfWork>().Object);
+        services.AddScoped(_ => new Mock<IBoardDependencyRepository>().Object);
+        services.AddMcpApplicationServices();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<IBoardRelationService>().Should().BeOfType<BoardRelationService>();
+    }
+
+    [Fact]
     public void AddMcpApplicationServices_CanConstructProposalRevisionService()
     {
         // #1281: ProposalRevisionService gained an IAutomationPolicyEngine dependency. The minimal
@@ -61,6 +74,7 @@ public class McpApplicationServiceRegistrationTests
         services.AddScoped(_ => new Mock<IUnitOfWork>().Object);
         services.AddScoped(_ => new Mock<ICaptureStore>().Object);
         services.AddScoped(_ => new Mock<ICardAssignmentStore>().Object);
+        services.AddScoped(_ => new Mock<IBoardDependencyRepository>().Object);
         services.AddMcpApplicationServices();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });

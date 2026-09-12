@@ -2042,6 +2042,24 @@ public class AutomationProposalService : IAutomationProposalService
         var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
         var isLabelOperation = isCardTarget &&
             labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove;
+
+        if (isCardTarget && operation.ActionType.ToLowerInvariant() is "add-relation" or "remove-relation")
+        {
+            if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var relationJson, out _) ||
+                !OperationParameterParser.TryGetRelationOperationParameters(relationJson, out var relationParameters, out _))
+            {
+                return $"{operation.Sequence}. {operation.ActionType} card relation (invalid relation parameters)";
+            }
+
+            var relation = relationParameters.Relation;
+            var source = DescribeRelationCard(relation.SourceCardId, cardTitles);
+            var target = DescribeRelationCard(relation.TargetCardId, cardTitles);
+            var action = operation.ActionType.Equals("add-relation", StringComparison.OrdinalIgnoreCase) ? "Add" : "Remove";
+            // The parser carries CardRelationRules.Normalize, so this line names the stored kind
+            // and direction. In particular, "depends-on A B" reads as "B blocks A" here.
+            return $"{operation.Sequence}. {action} {relation.RelationType} relation: card {source} -> card {target}";
+        }
+
         var namedTarget = isLabelOperation ? null : ExtractNamedTarget(operation.Parameters);
 
         // Try to resolve card title from lookup when not embedded in parameters
@@ -2199,6 +2217,9 @@ public class AutomationProposalService : IAutomationProposalService
 
         return description;
     }
+
+    private static string DescribeRelationCard(Guid cardId, IReadOnlyDictionary<Guid, string> cardTitles) =>
+        cardTitles.TryGetValue(cardId, out var title) ? $"\"{title}\" ({cardId})" : cardId.ToString();
 
     private static string FormatEffortEstimate(int? minutes) => minutes switch
     {

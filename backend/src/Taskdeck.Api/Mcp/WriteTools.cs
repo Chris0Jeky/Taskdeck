@@ -23,6 +23,7 @@ public class WriteTools
     private readonly ICaptureService _captureService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
+    private readonly IBoardRelationService? _relations;
 
     public WriteTools(
         IAutomationProposalService proposalService,
@@ -43,14 +44,36 @@ public class WriteTools
         IUserContextProvider userContext,
         ICaptureService captureService,
         IUnitOfWork unitOfWork,
-        IAuthorizationService authorizationService)
+        IAuthorizationService authorizationService,
+        IBoardRelationService? relations = null)
     {
         _proposalService = proposalService;
         _userContext = userContext;
         _captureService = captureService;
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
+        _relations = relations;
     }
+
+    [McpServerTool(Name = "add_card_relation"), Description(
+        "Creates a proposal to add one typed relation between two active cards on the same board. Nothing changes until review, approval and Apply. The supplied expected revision is preserved exactly.")]
+    public Task<string> AddCardRelation(
+        string board_id,
+        string card_id,
+        string related_card_id,
+        string relation_type,
+        long expected_revision)
+        => ProposeCardRelation(board_id, card_id, related_card_id, relation_type, expected_revision, remove: false);
+
+    [McpServerTool(Name = "remove_card_relation"), Description(
+        "Creates a proposal to remove one typed relation between two active cards on the same board. Nothing changes until review, approval and Apply. The supplied expected revision is preserved exactly.")]
+    public Task<string> RemoveCardRelation(
+        string board_id,
+        string card_id,
+        string related_card_id,
+        string relation_type,
+        long expected_revision)
+        => ProposeCardRelation(board_id, card_id, related_card_id, relation_type, expected_revision, remove: true);
 
     /// <summary>
     /// Rejects label IDs that are not labels on the target board before a proposal is
@@ -467,6 +490,59 @@ public class WriteTools
             ProposalSourceType.Manual, actor, valid.Value, RiskLevel.Medium, Guid.NewGuid().ToString(), boardId,
             Operations: [new(0, ProposalAssignmentContract.Action, "card", parameters, Guid.NewGuid().ToString(), cardId.ToString())]));
         return result.IsSuccess ? ProposalCreated(result.Value.Id, "Review, approve and Apply explicitly in Taskdeck.") : Error(result);
+    }
+
+    private async Task<string> ProposeCardRelation(
+        string boardId,
+        string cardId,
+        string relatedCardId,
+        string relationType,
+        long expectedRevision,
+        bool remove)
+    {
+        if (_relations is null)
+            return Error("Card relations are unavailable in this host.");
+
+        var actor = await _userContext.GetCurrentUserIdAsync();
+        if (!Guid.TryParse(boardId, out var boardGuid) ||
+            !Guid.TryParse(cardId, out var cardGuid) ||
+            !Guid.TryParse(relatedCardId, out var relatedCardGuid) ||
+            string.IsNullOrWhiteSpace(relationType))
+        {
+            return Error("Provide board_id, card_id, related_card_id and relation_type as valid values.");
+        }
+
+        var edge = new CardRelationEdge(cardGuid, relatedCardGuid, relationType);
+        // This is the same server-side validation the proposal handler uses. It verifies
+        // the trusted actor, both active endpoints, board membership and the caller-pinned
+        // revision before creating a proposal; no caller-provided authority is consulted.
+        var validation = await _relations.ValidateMutationAsync(
+            actor, boardGuid, edge, expectedRevision, remove, CancellationToken.None);
+        if (!validation.IsSuccess)
+            return Error(validation);
+
+        var parameters = JsonSerializer.Serialize(new
+        {
+            boardId = boardGuid,
+            cardId = cardGuid,
+            relatedCardId = relatedCardGuid,
+            relationType,
+            expectedRevision
+        }, BoardResources.SerializerOptions);
+        var action = remove ? "remove-relation" : "add-relation";
+        var proposal = new CreateProposalDto(
+            ProposalSourceType.Manual,
+            actor,
+            remove ? "Remove card relation" : "Add card relation",
+            RiskLevel.Medium,
+            Guid.NewGuid().ToString(),
+            boardGuid,
+            Operations: [new(0, action, "card", parameters, Guid.NewGuid().ToString(), cardGuid.ToString())]);
+
+        var result = await _proposalService.CreateProposalAsync(proposal);
+        return result.IsSuccess
+            ? ProposalCreated(result.Value.Id, "Proposal created. Review, approve and Apply explicitly in Taskdeck.")
+            : Error(result);
     }
 
     private async Task<string> ProposeCardLifecycle(string boardId, string cardId, string timestamp, bool archive, string? fingerprint = null)
