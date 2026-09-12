@@ -58,6 +58,15 @@ pass after correction. STATUS records the bounded review and compatibility fix. 
 proposal-create events (#3073) and proposal-delete audit attribution (#3074) outside this correction.
 Requalify the final head before merge; approval and Apply remain explicit.
 
+## Archived external-import conflict qualification (2026-09-12, #2935)
+
+Report changed archived dedupe matches as structured conflicts before Apply, preserving skips,
+duplicate ambiguity and all-or-nothing planning. The submitted 13 regression cases are now
+compiled and pass within all 50 focused import tests. Independent review is clean and the full
+backend passes 9,747 tests with 34 existing skips. STATUS and the dedicated analysis note record
+the exact tested source/base and application-only scenario limits. Complete the hosted gate on
+#3068 before delivery; existing human-action and release decisions remain unchanged.
+
 ## Archive recovery delivery and remaining draft slice (2026-09-12)
 
 #3059 merged as `44d041ca7` after required hosted run `34714826369` passed at `7135d53a9`,

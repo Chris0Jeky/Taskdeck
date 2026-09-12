@@ -88,6 +88,15 @@ The bounded compatibility review and targeted lint pass. This is simulated API-a
 proof, not a physical-device LAN acceptance. Buffered export limits and refresh control feedback
 remain separate follow-ups #3069 and #3070.
 
+Changed archived external-import matches (#2935) now produce a structured planning conflict
+before Apply starts a transaction. Unchanged archived rows still skip, duplicate-key ambiguity
+still wins, and active rows retain their existing behavior. This avoids an Apply-time surprise
+without silently restoring or replacing archived work. All 50 focused import cases pass,
+including 13 new application regressions. Independent review is clean; the full backend passes
+9,747 tests with 34 existing skips at `dbe21a3e2`. The delivered archive base `9a8c14c6b` changes
+frontend/docs only, and final backend files match that tested tree. Required hosted qualification
+remains on #3068. New SQL/HTTP, competing-writer, browser and human acceptance are not claimed.
+
 Archive request ownership #3059 merged on 2026-09-12 as `44d041ca7` after required hosted run
 `34714826369` passed at reviewed head `7135d53a9`. #3033 is closed and its issue/PR project items
 are Done with Priority IV; the first post-merge check found no unresolved review threads. Pending
