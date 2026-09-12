@@ -2,6 +2,14 @@
 
 Last Updated: 2026-09-12
 
+Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
+#3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
+both operating-system API/frontend lanes and browser smoke. GitHub confirms #2093, #3044, #3049
+and #3062 closed. The first post-merge check found no unresolved review threads on these three
+PRs. The estimate qualification paragraphs below retain their local evidence and historical gates;
+this delivery record supersedes their pending-merge wording. The bounded follow-ups #3056, #3057,
+#3058, #3063 and #3065 and the existing human-action file remain open.
+
 Card estimates and current-state rollups (#2093) are implemented on the integration branch.
 Optional whole-minute estimates display as hours/minutes in shared card details and both Paper
 and Legacy quick-create. Blank means unknown; explicit zero remains known. A successful save
