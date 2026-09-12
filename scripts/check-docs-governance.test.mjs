@@ -323,3 +323,26 @@ test('treats internal punctuation in a plain path as text and separated hashes a
   const rule = `---\npaths:\n${paths.map((path) => `  - ${path} # explanation`).join('\n')}\n---\n`
   assert.deepEqual(collectControlPathMirrorErrors(policy, rule), [])
 })
+
+for (const scalar of ['""', "''"]) {
+  test(`accepts an explicitly quoted empty metadata scalar in a list: ${scalar}`, () => {
+    for (const lines of [
+      [`extra: ${scalar}`],
+      ['extra:', `  - ${scalar}`],
+      ['extra:', `  - ${scalar} # intentional empty string`],
+    ]) {
+      assert.deepEqual(collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter(...lines)), [])
+    }
+  })
+
+  test(`still rejects an explicitly quoted empty path: ${scalar}`, () => {
+    const rule = ruleFixture(mirroredPaths).replace('  - "ci/**"', `  - ${scalar}`)
+    assert.ok(collectControlPathMirrorErrors(policyFixture, rule).length > 0)
+  })
+}
+
+for (const entry of ['  -', '  - # missing scalar']) {
+  test(`rejects an absent list scalar rather than treating it as a quoted empty string: ${entry}`, () => {
+    assert.ok(collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter('extra:', entry)).length > 0)
+  })
+}

@@ -23,7 +23,9 @@ to that entire grammar or to any particular consumer's schema.
 
 Mapping colons require separation. Tabs in indentation, nested/inconsistently
 indented lists, inline nested mappings/sequences and trailing text after a quoted
-scalar fail closed. Each top-level list can choose its own indentation. Duplicate
+scalar fail closed. Each top-level list can choose its own indentation. Explicitly quoted empty
+metadata strings are accepted in both scalar and list form; missing/unquoted list
+values and empty paths are rejected. Duplicate
 keys are rejected without asserting that every loader resolves them the same way.
 Unquoted alias-like globs such as `**/.npmrc` must be quoted. Decoded path strings
 must be nonempty and free of surrounding whitespace and control characters.
@@ -40,9 +42,12 @@ isolated linked worktree. Before editing, the two changed script blobs were chec
 against live main `54e4c0a86fb77eabba73b5d21557d6f8720571bd` and matched exactly.
 The worktree snapshot itself is not represented as that complete remote commit.
 
-- Added 39 cases to the existing 26-case governance suite. Against the original
-  implementation: **32 passed, 33 failed**. After repair: **65 passed, 0 failed**.
-- `node --test scripts/check-*.test.mjs`: **177 passed, 2 failed**. Both failures
+- Added 45 cases to the existing 26-case governance suite. The initial 39-case
+  addition reproduced **32 passed, 33 failed**, then reached **65 passed**. The
+  first automated review identified quoted-empty metadata lists; six more cases
+  reproduced **69 passed, 2 failed** before that correction. Final focused result:
+  **71 passed, 0 failed**.
+- `node --test scripts/check-*.test.mjs`: **183 passed, 2 failed**. Both failures
   also reproduce against unchanged source: **138 passed, 2 failed** there.
   The link-check case expects `wrong case`, but gets `missing` on the local
   case-sensitive filesystem. An indirectly imported staging-composition test
@@ -52,8 +57,8 @@ The worktree snapshot itself is not represented as that complete remote commit.
   `node scripts/check-github-ops-governance.mjs` and `git diff --check` pass.
 
 Re-run the focused suite using `node --test scripts/check-docs-governance.test.mjs`.
-Hosted execution on the repository's configured Node version and independent
-review remain outstanding. There is no full frontend/backend/browser claim.
+Exact-head hosted execution on the repository's configured Node version and
+review of the follow-up correction remain outstanding. There is no full frontend/backend/browser claim.
 
 ## Integration
 

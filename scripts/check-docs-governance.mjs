@@ -83,6 +83,9 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
  */
 function parseFrontMatterScalar(rawValue) {
   const text = rawValue.trim()
+  if (text === '') {
+    return { value: null, error: 'empty unquoted scalar' }
+  }
 
   if (text.startsWith('"')) {
     const quoted = text.match(/^("(?:[^"\\]|\\.)*")(?:[ \t]+#.*)?$/)
@@ -170,9 +173,10 @@ function validateFrontMatterStructure(lines, rulePath) {
         structureErrors.push(`${rulePath} front matter has nested or inconsistent list indentation, which this check cannot parse: ${line.trim()}`)
         continue
       }
-      const { value, error } = parseFrontMatterScalar(entry[2] ?? '')
-      if (error !== null || value === '') {
-        structureErrors.push(`${rulePath} front matter has a list entry this check cannot parse (${error ?? 'empty scalar'}): ${line.trim()}`)
+      // Empty quoted metadata strings are valid; only the paths consumer requires nonempty values.
+      const { error } = parseFrontMatterScalar(entry[2] ?? '')
+      if (error !== null) {
+        structureErrors.push(`${rulePath} front matter has a list entry this check cannot parse (${error}): ${line.trim()}`)
       }
       continue
     }
