@@ -2,8 +2,9 @@
 
 Last Updated: 2026-09-13
 
-Status: PR candidate. No local Vitest, Stryker, browser, physical-device or
-screen-reader qualification is claimed.
+Status: draft PR #3090; hosted fake-timer ordering failure remains unresolved.
+No local Vitest, Stryker, browser, physical-device or screen-reader qualification
+is claimed. Do not merge until the exact-head frontend gate passes.
 
 ## Decision and boundaries
 
@@ -26,7 +27,12 @@ limits rather than describing a globally virtualized clock.
 ## Source guard architecture
 
 `src/tests/guards/timezoneEnvironment.spec.ts` reads the test tree through Vite's
-raw glob, following the existing source-guard pattern. A small test-only helper
+raw globs, following the existing source-guard pattern. Both `src/tests` and root
+`tests` sources are covered; root E2E, visual and generated-worker exclusions match
+`vitest.config.ts`. Named sentinels include a root unit spec, and excluded suites
+must not appear in the scan. This closes the first automated review's finding:
+the original glob covered only `src/tests` although ordinary Vitest also executes
+root unit specs. A small test-only helper
 uses the already-present TypeScript compiler API to find literal calls. Unlike
 comment-stripping regexes, AST traversal distinguishes calls from prose and
 fixture strings, including multiline and bracket-property forms. `.ts` is parsed
@@ -65,9 +71,24 @@ Executed standalone probes over the actual transpiled helper and scanner:
 - The local source-tree scan examined 418 files and found exactly the one intended
   self-test. This count describes that local snapshot, not current main.
 
-These do not execute fake timers, the Vite raw glob, the full type checker, or the
-Vitest suite. Hosted qualification must run the new guard (16 cases) and expanded
-helper suite (17 cases) in both relevant pools:
+The review follow-up expanded the standalone scan to 445 local files, again
+finding exactly one self-test; deliberate forbidden calls under both component
+and root-unit paths were detected. The count remains local-snapshot evidence.
+
+The initial hosted run 34725757086 at 062a35e32500d7692198d8b117c42e6f0447d5e7
+passed frontend lint, typecheck and build on both operating systems. The Linux
+suite reported 6,912 passed, three skipped and one failure, in the fake-timer
+ordering regression; the new source guard passed all 16 cases. The log reported
+`ReferenceError: NativeDateTimeFormat is not defined`. Its displayed helper
+excerpt does not match the fetched head/merge helper body, so no root-cause or
+repair is inferred from that trace. The first automated review separately found
+the root-unit scan gap, corrected above. This correction does not claim to fix the
+ordering failure or certify the full suite. No assertion is skipped or weakened.
+
+The standalone probes do not execute fake timers, the Vite raw glob, the full
+type checker, or Vitest. Reproduce the ordering failure on a clean exact-head
+checkout, retain its actual transformed-source/trace evidence, and qualify the
+new guard (16 cases) and expanded helper suite (17 cases) in both relevant pools:
 
 ```sh
 cd frontend/taskdeck-web

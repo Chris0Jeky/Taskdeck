@@ -3,7 +3,13 @@ import { findTimezoneStubs, isTimezoneHelperSelfTest } from '../utils/timezoneSo
 
 // No node:fs dependency in the Vitest/browser type-check project. Source parsing
 // ignores instrumentation/layout changes; unlike a facade regex, it reads calls.
-const sources = import.meta.glob('../**/*.{ts,tsx,js,mjs}', {
+const sources = import.meta.glob([
+  '../**/*.{ts,tsx,js,mjs}',
+  '../../../tests/**/*.{ts,tsx,js,mjs}',
+  '!../../../tests/e2e/**',
+  '!../../../tests/visual/**',
+  '!../../../tests/pwa-generated-worker.spec.ts',
+], {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>
 
@@ -13,6 +19,9 @@ describe('timezone environment convention (#3013)', () => {
     expect(sources['../utils/timeZone.spec.ts']).toBeTruthy()
     expect(sources['../components/CardModal.spec.ts']).toBeTruthy()
     expect(sources['../guards/timezoneEnvironment.spec.ts']).toBeTruthy()
+    expect(sources['../../../tests/demo-run.spec.ts']).toBeTruthy()
+    expect(Object.keys(sources).some(path => /\/tests\/(e2e|visual)\//.test(path))).toBe(false)
+    expect(sources['../../../tests/pwa-generated-worker.spec.ts']).toBeUndefined()
   })
 
   it('permits exactly the intentional helper self-test and no other literal TZ stub', () => {
@@ -57,6 +66,7 @@ describe('timezone environment convention (#3013)', () => {
     expect(matches).toHaveLength(1)
     expect(isTimezoneHelperSelfTest('../utils/timeZone.spec.ts', matches[0]!)).toBe(true)
     expect(isTimezoneHelperSelfTest('../components/Other.spec.ts', matches[0]!)).toBe(false)
+    expect(isTimezoneHelperSelfTest('../../../tests/demo-run.spec.ts', matches[0]!)).toBe(false)
     const other = findTimezoneStubs("it('another test', () => vi.stubEnv('TZ', 'Pacific/Midway'))")
     expect(isTimezoneHelperSelfTest('../utils/timeZone.spec.ts', other[0]!)).toBe(false)
   })
