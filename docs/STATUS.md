@@ -8,8 +8,11 @@ actually exported on the same board; requests without exported cards skip relati
 10,001st admitted row returns PayloadTooLarge with streaming guidance, while streaming exports
 retain their existing behavior. The cap matches the other buffered export limits and bounds
 retained relation DTOs. All 45 export-service cases and the real SQLite projection case pass;
-removing the ceiling reproduces the limit failure. Independent review is clean. The candidate
-follows #3085 and still requires combined backend and final hosted qualification before delivery.
+removing the ceiling reproduces the limit failure. Independent review is clean. This implementation
+is preserved on `codex/3069-buffered-relation-limit`, including the #3085 export correction. A
+parallel coordinator opened #3089 for the same issue during consolidation. Reconcile the two
+implementations before choosing a delivery branch; these local test results do not verify #3089.
+No combined backend or final hosted qualification is claimed for this saved alternative.
 
 Product recovery #3081 merged as `96f4b7cc2` after required run `34720964639` passed at
 `6bc8ea497` against main `160818440`. Final local qualification passed 9,839 backend tests
