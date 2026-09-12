@@ -49,6 +49,7 @@ describe('CardModal permission reconciliation', () => {
       currentBoard: board(true), currentBoardCards: [card],
       fetchCardComments: vi.fn().mockResolvedValue([]), fetchCardProvenance: vi.fn().mockResolvedValue(null),
       getCardComments: vi.fn().mockReturnValue([]), setEditingCard: vi.fn(), fetchBoard: vi.fn(), setCardArchived: vi.fn(),
+      updateCard: vi.fn(), deleteCard: vi.fn(), createCardComment: vi.fn(),
     }) as unknown as ReturnType<typeof useBoardStore>
     vi.mocked(useBoardStore).mockReturnValue(store)
   })
@@ -64,6 +65,36 @@ describe('CardModal permission reconciliation', () => {
     await button(wrapper, 'Save assignments').trigger('click')
     return { wrapper, save }
   }
+
+  it.each(['updateCard', 'deleteCard', 'createCardComment'] as const)('reconciles %s403 through the editor callback and preserves its draft', async operation => {
+    vi.mocked(store[operation]).mockRejectedValueOnce({ response: { status: 403 } })
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(board(false))
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels: [] }, attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('#card-title').setValue('Kept title')
+    if (operation === 'updateCard') await button(wrapper, 'Save Changes').trigger('click')
+    if (operation === 'createCardComment') {
+      await wrapper.get('#new-card-comment').setValue('Kept comment')
+      await wrapper.get('#add-card-comment').trigger('click')
+    }
+    if (operation === 'deleteCard') {
+      await button(wrapper, 'Delete Card').trigger('click')
+      await flushPromises()
+      Array.from(document.body.querySelectorAll('button'))
+        .find(candidate => candidate.textContent?.trim() === 'Delete')!.click()
+    }
+    await flushPromises()
+    expect(store[operation]).toHaveBeenCalledTimes(1)
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+    expect(wrapper.findComponent(CardArchiveAction).props('canWrite')).toBe(false)
+    expect(wrapper.findComponent(CardAssignmentField).props('readOnly')).toBe(true)
+    expect(wrapper.get('#card-parent').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('#card-work-item-type').attributes('disabled')).toBeDefined()
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Kept title')
+    if (operation === 'createCardComment') expect((wrapper.get('#new-card-comment').element as HTMLTextAreaElement).value).toBe('Kept comment')
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
+  })
 
   it.each([false, true])('reconciles real archive/restore write403 for archived=%s', async (isArchived) => {
     vi.mocked(store.setCardArchived).mockRejectedValueOnce({ response: { status: 403 } })

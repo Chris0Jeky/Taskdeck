@@ -394,6 +394,7 @@ const {
   getLabels: () => props.labels,
   onUpdated: () => emit('updated'),
   onClose: () => emit('close'),
+  onPermissionDenied: refreshTypePermission,
 })
 
 watch(hasUnsavedChanges, (dirty) => {
@@ -635,9 +636,9 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeleting || !detachPreview || !!deletePreviewError"
+        :disabled="isDeleting || !detachPreview || !!deletePreviewError || editorWritesBlocked"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        @click="handleDeleteConfirm"
+        @click="!editorWritesBlocked && handleDeleteConfirm()"
       >
         {{ isDeleting ? 'Deleting…' : 'Delete' }}
       </button>
@@ -663,10 +664,10 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeletingComment"
+        :disabled="isDeletingComment || editorWritesBlocked"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         data-testid="card-comment-delete-confirm"
-        @click="handleCommentDeleteConfirm"
+        @click="!editorWritesBlocked && handleCommentDeleteConfirm()"
       >
         {{ isDeletingComment ? t('cardModal.commentDelete.deleting') : t('cardModal.commentDelete.confirm') }}
       </button>
