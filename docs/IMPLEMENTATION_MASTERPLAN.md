@@ -2,11 +2,20 @@
 
 Last Updated: 2026-09-12
 
+## Archived external-import conflict qualification (2026-09-12, #2935)
+
+Report changed archived dedupe matches as structured conflicts before Apply, preserving skips,
+duplicate ambiguity and all-or-nothing planning. The submitted 13 regression cases are now
+compiled and pass within all 50 focused import tests. Independent review is clean and the full
+backend passes 9,747 tests with 34 existing skips. STATUS and the dedicated analysis note record
+the exact tested source/base and application-only scenario limits. Complete the hosted gate on
+#3068 before delivery; existing human-action and release decisions remain unchanged.
+
 ## Archive recovery delivery and remaining draft slice (2026-09-12)
 
 #3059 merged as `44d041ca7` after required hosted run `34714826369` passed at `7135d53a9`,
-closing #3033. Its post-merge review check is clear. #3064 is retargeted to main and carries the
-reviewed two-file #3023 draft-settlement correction; qualify its final head before merging it.
+closing #3033. Its post-merge review check is clear. #3064 then merged as `9a8c14c6b` after
+required run `34716287296` passed at `13dfde5ca`; its first post-merge review check is also clear.
 #3023 remains a partial repair with recovery-copy and other residuals open, and #3060 separately
 owns selected-snapshot settlement. Existing human-action and release decisions remain unchanged.
 

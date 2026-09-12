@@ -2,17 +2,26 @@
 
 Last Updated: 2026-09-12
 
+Changed archived external-import matches (#2935) now produce a structured planning conflict
+before Apply starts a transaction. Unchanged archived rows still skip, duplicate-key ambiguity
+still wins, and active rows retain their existing behavior. This avoids an Apply-time surprise
+without silently restoring or replacing archived work. All 50 focused import cases pass,
+including 13 new application regressions. Independent review is clean; the full backend passes
+9,747 tests with 34 existing skips at `dbe21a3e2`. The delivered archive base `9a8c14c6b` changes
+frontend/docs only, and final backend files match that tested tree. Required hosted qualification
+remains on #3068. New SQL/HTTP, competing-writer, browser and human acceptance are not claimed.
+
 Archive request ownership #3059 merged on 2026-09-12 as `44d041ca7` after required hosted run
 `34714826369` passed at reviewed head `7135d53a9`. #3033 is closed and its issue/PR project items
 are Done with Priority IV; the first post-merge check found no unresolved review threads. Pending
 archive/restore requests now retain ownership above the keyed action child when navigating away
 and back. The successful-settlement snapshot follow-up remains #3060.
 
-The separate #3023 candidate hides the kept-draft notice once a pending assignment save makes
+The delivered #3023 slice hides the kept-draft notice once a pending assignment save makes
 the draft clean and retains the lifecycle version freeze until reopening. Its failing-before
 regression and 108 related component tests pass, with lint, typecheck/build and bounded review
-clean. The new main base has the same tree as its reviewed archive parent. Exact-head hosted
-qualification remains required; recovery copy and the other #3023 residuals remain open.
+clean. PR #3064 merged as `9a8c14c6b` after required run `34716287296` passed at `13dfde5ca`;
+the first post-merge review check is clear. Recovery copy and other #3023 residuals remain open.
 
 Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
 #3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
