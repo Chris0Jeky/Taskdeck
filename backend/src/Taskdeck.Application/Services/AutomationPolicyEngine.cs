@@ -14,10 +14,14 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
         "Cannot modify proposals on an archived board. Restore the board before changing its decision history.";
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBoardDependencyRepository? _dependencies;
 
-    public AutomationPolicyEngine(IUnitOfWork unitOfWork)
+    public AutomationPolicyEngine(
+        IUnitOfWork unitOfWork,
+        IBoardDependencyRepository? dependencies = null)
     {
         _unitOfWork = unitOfWork;
+        _dependencies = dependencies;
     }
 
     public RiskLevel ClassifyRisk(IEnumerable<ProposalOperationDto> operations)
@@ -199,7 +203,8 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
             _unitOfWork,
             boardId,
             opList,
-            cancellationToken);
+            cancellationToken,
+            _dependencies);
     }
 
     // Delegates to the shared structure validator so Apply, revision-save, and the
