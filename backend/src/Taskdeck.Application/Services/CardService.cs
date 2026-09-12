@@ -147,14 +147,19 @@ public partial class CardService
             var staged = await StageCardCreationAsync(dto, cardId, cancellationToken);
             if (!staged.IsSuccess) return Result.Failure<CardDto>(staged.ErrorCode, staged.ErrorMessage);
             var card = staged.Value;
-            if (dto.ParentCardId.HasValue)
+            var stageCreationAudit = dto.ParentCardId.HasValue || dto.EstimatedEffortMinutes.HasValue;
+            var creationSummary = $"title={card.Title}; WorkItemType={card.WorkItemType}";
+            if (dto.ParentCardId.HasValue) creationSummary += $"; ParentCardId={card.ParentCardId}";
+            if (dto.EstimatedEffortMinutes.HasValue)
+                creationSummary += $"; Estimated effort: unknown -> {FormatEstimatedEffort(card.EstimatedEffortMinutes)}";
+            if (stageCreationAudit)
                 await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Created, actorUserId,
-                    $"title={card.Title}; WorkItemType={card.WorkItemType}; ParentCardId={card.ParentCardId}"), cancellationToken);
+                    creationSummary), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (!dto.ParentCardId.HasValue) await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, $"title={card.Title}; WorkItemType={card.WorkItemType}");
+            if (!stageCreationAudit) await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, creationSummary);
 
             var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
             return Result.Success(MapToDto(createdCard!));
@@ -200,6 +205,7 @@ public partial class CardService
                 ? new Card(cardId.Value, dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position)
                 : new Card(dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position);
             card.SetWorkItemType(workItemType);
+            card.SetEstimatedEffortMinutes(dto.EstimatedEffortMinutes);
             if (dto.ParentCardId.HasValue)
             {
                 var graph = await _unitOfWork.Cards.GetHierarchyByBoardIdAsync(dto.BoardId, cancellationToken);
@@ -237,6 +243,14 @@ public partial class CardService
     {
         try
         {
+            var changesEstimate = dto.EstimatedEffortMinutes.HasValue || dto.ClearEstimatedEffort;
+            if (dto.EstimatedEffortMinutes.HasValue && dto.ClearEstimatedEffort)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "EstimatedEffortMinutes and ClearEstimatedEffort cannot both be set.");
+            if (dto.EstimatedEffortMinutes is < 0 or > Card.MaxEstimatedEffortMinutes)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError,
+                    $"EstimatedEffortMinutes must be between 0 and {Card.MaxEstimatedEffortMinutes}, or null for unknown.");
+            if (changesEstimate && !dto.ExpectedUpdatedAt.HasValue)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "ExpectedUpdatedAt is required when changing estimated effort. Refresh the card first.");
             var changesParent = dto.ParentCardId.HasValue || dto.ClearParent;
             if (dto.ParentCardId.HasValue && dto.ClearParent)
                 return Result.Failure<CardDto>(ErrorCodes.ValidationError, "ParentCardId and ClearParent cannot both be set.");
@@ -268,6 +282,13 @@ public partial class CardService
             }
 
             var oldParentId = card.ParentCardId;
+            var oldEstimate = card.EstimatedEffortMinutes;
+            // An omitted/null estimate is unchanged; a repeated value or clear of unknown
+            // also leaves the version, audit and realtime stream untouched.
+            if (changesEstimate && dto.Title == null && dto.Description == null && !dto.DueDate.HasValue && !dto.ClearDueDate &&
+                !dto.IsBlocked.HasValue && dto.LabelIds == null && !workItemType.HasValue && !changesParent &&
+                oldEstimate == dto.EstimatedEffortMinutes)
+                return Result.Success(MapToDto(card));
             if (changesParent)
             {
                 var graph = await _unitOfWork.Cards.GetHierarchyByBoardIdAsync(card.BoardId, cancellationToken);
@@ -285,6 +306,7 @@ public partial class CardService
             var oldLabelIds = card.CardLabels.Select(cl => cl.LabelId).OrderBy(id => id).ToList();
 
             if (workItemType.HasValue) card.SetWorkItemType(workItemType.Value);
+            if (changesEstimate) card.SetEstimatedEffortMinutes(dto.EstimatedEffortMinutes);
 
             // Update basic fields
             if (dto.Title != null || dto.Description != null || dto.DueDate.HasValue)
@@ -316,6 +338,10 @@ public partial class CardService
             }
 
             var changeSummary = BuildCardChangeSummary(dto, oldTitle, oldDescription, oldDueDate, oldIsBlocked, oldBlockReason, oldLabelIds);
+            var estimateChanged = oldEstimate != card.EstimatedEffortMinutes;
+            if (estimateChanged)
+                changeSummary = $"Estimated effort: {FormatEstimatedEffort(oldEstimate)} -> {FormatEstimatedEffort(card.EstimatedEffortMinutes)}" +
+                    (changeSummary == "no fields changed" ? "" : $"; {changeSummary}");
             if (workItemType.HasValue && oldWorkItemType != workItemType.Value)
                 changeSummary = $"WorkItemType: {oldWorkItemType} -> {workItemType.Value}" +
                     (changeSummary == "no fields changed" ? "" : $"; {changeSummary}");
@@ -324,14 +350,15 @@ public partial class CardService
             {
                 changeSummary = $"ParentCardId: {oldParentId?.ToString() ?? "none"} -> {card.ParentCardId?.ToString() ?? "none"}; {changeSummary}";
                 board?.RecordHierarchyMutation();
-                await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Updated, actorUserId, changeSummary), cancellationToken);
             }
             else board?.RecordCardMutation();
+            if (changesParent || estimateChanged)
+                await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Updated, actorUserId, changeSummary), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "updated", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (!changesParent) await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId, changeSummary);
+            if (!changesParent && !estimateChanged) await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId, changeSummary);
 
             var updatedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(updatedCard!));
@@ -341,6 +368,13 @@ public partial class CardService
             return Result.Failure<CardDto>(ex.ErrorCode, ex.Message);
         }
     }
+
+    private static string FormatEstimatedEffort(int? minutes) => minutes switch
+    {
+        null => "unknown",
+        < 60 => $"{minutes}m",
+        _ => $"{minutes / 60}h {minutes % 60}m"
+    };
 
     private static string BuildCardChangeSummary(
         UpdateCardDto dto,
@@ -643,7 +677,8 @@ public partial class CardService
             card.WorkItemType.ToString(),
             card.ParentCardId,
             card.Assignments.OrderBy(a => a.UserId).Select(a => new CardAssignmentDto(
-                a.UserId, a.User?.Username ?? "Participant", a.AssignedAt, a.AssignedByUserId)).ToArray()
+                a.UserId, a.User?.Username ?? "Participant", a.AssignedAt, a.AssignedByUserId)).ToArray(),
+            card.EstimatedEffortMinutes
         );
     }
 
