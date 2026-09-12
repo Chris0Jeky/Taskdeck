@@ -3,8 +3,10 @@ import { boardsApi } from '../api/boardsApi'
 import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import { isDemoMode } from '../utils/demoMode'
 import { useBoardStore } from '../store/boardStore'
+import { useSessionStore } from '../store/sessionStore'
 
 export interface UseCardTypePermissionOptions {
+  getCardId?: () => string
   /** The board the open card belongs to. */
   getBoardId: () => string
   /** Whether the card editor is open; a closed editor asks the server nothing. */
@@ -49,6 +51,9 @@ export interface UseCardTypePermissionOptions {
  */
 export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   const boardStore = useBoardStore()
+  const session = useSessionStore()
+  const permissionRecovery = ref(false)
+  const accessUnavailable = ref(false)
 
   /** The permission this composable's own server read confirmed, scoped to its board. */
   const confirmed = ref<{ boardId: string; canWrite: boolean } | null>(null)
@@ -85,7 +90,9 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     confirmed.value && confirmed.value.boardId === options.getBoardId() ? confirmed.value.canWrite : null,
   )
 
-  const permission = computed<boolean | null>(() => statedPermission.value ?? confirmedPermission.value)
+  const permission = computed<boolean | null>(() => permissionRecovery.value
+    ? confirmedPermission.value
+    : statedPermission.value ?? confirmedPermission.value)
 
   /*
    * Whether this composable answers the permission question for the open card at all.
@@ -105,16 +112,20 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
    * affordance that would promise a refresh changing nothing; that stands. It is deliberately
    * NOT part of `canWrite`: restoring an archived card is a write the archive control offers
    * ON an archived card, so a permission the payload already states must still reach it.
-   * The residual is narrow and pre-existing: an archived card whose board payload omits the
-   * field keeps its disabled Restore, because nothing asks.
+   * An explicit reconciliation after a denied write also runs for an archived card, so a
+   * refused Restore can recover in place. The initial archived-card path is unchanged.
    */
-  const readDecides = computed(() => permissionDecides.value && !options.getCardIsArchived())
+  const readDecides = computed(() => permissionDecides.value &&
+    (permissionRecovery.value || !options.getCardIsArchived()))
 
   /** Board-level write permission: what every write gate in the editor is allowed to assume. */
   const canWrite = computed(() => permissionDecides.value && permission.value === true)
   const canEditType = computed(() => canWrite.value && !options.getCardIsArchived())
   const permissionChecking = computed(() => readDecides.value && permission.value === null && checking.value)
   const permissionUnknown = computed(() => readDecides.value && permission.value === null && !checking.value)
+  // A refused write never promises read access. A successful Viewer read can confirm it.
+  const readsBlocked = computed(() => permissionRecovery.value &&
+    (checking.value || accessUnavailable.value || confirmedPermission.value === null))
 
   async function read(boardId: string) {
     const current = ++generation
@@ -144,12 +155,23 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
        * only an explicit `false` is read-only. An archived board is read-only whatever the
        * field says.
        */
-      confirmed.value = { boardId, canWrite: board.canWrite !== false && board.isArchived !== true }
-    } catch {
+      // The legacy convention still applies on an initial missing-field read. After a
+      // write403 contradicted it, require an explicit permission before granting again.
+      if (permissionRecovery.value && board.isArchived !== true && typeof board.canWrite !== 'boolean') {
+        confirmed.value = null
+        failedBoardId.value = boardId
+      } else {
+        confirmed.value = { boardId, canWrite: board.canWrite !== false && board.isArchived !== true }
+      }
+      accessUnavailable.value = false
+    } catch (cause) {
       // A failed read grants nothing. The unknown state stands and the caller offers the
       // explicit retry; the server still refuses any write this control should not allow.
       if (current !== generation) return
+      confirmed.value = null
       failedBoardId.value = boardId
+      const status = (cause as { response?: { status?: number } })?.response?.status
+      accessUnavailable.value = status === 403 || status === 404
     } finally {
       if (current === generation) {
         inFlightBoardId = null
@@ -160,21 +182,51 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   }
 
   // A closed or replaced editor is not waiting for an answer, and must not be given one.
-  onScopeDispose(() => {
+  function cancelRead() {
     generation++
     inFlightRequest?.abort()
     inFlightRequest = null
     inFlightBoardId = null
-  })
+    checking.value = false
+  }
+  onScopeDispose(cancelRead)
 
   /** Explicit recovery from an unknown permission state. */
   async function refreshPermission() {
-    if (inFlightBoardId === options.getBoardId()) return
+    if (!options.getIsOpen() || !permissionDecides.value) return
+    // Invalidate both the loaded payload and our own earlier answer synchronously.
+    // A refusal also supersedes any read started before it, even for the same board.
+    permissionRecovery.value = true
+    confirmed.value = null
     await read(options.getBoardId())
   }
 
   watch(
-    [() => options.getIsOpen(), () => options.getBoardId(), permission, readDecides],
+    [() => options.getIsOpen(), () => options.getBoardId(), () => options.getCardId?.(), () => session.userId],
+    ([_open, _board, _card, actor], previous) => {
+      cancelRead()
+      confirmed.value = null
+      failedBoardId.value = null
+      // An account change cannot inherit the previous caller's cached board permission.
+      permissionRecovery.value = actor !== previous[3]
+      accessUnavailable.value = false
+    },
+    { flush: 'sync' },
+  )
+
+  watch(statedPermission, (value, previous) => {
+    if (!permissionRecovery.value || value === null || value === previous) return
+    // A later board-store permission update is server evidence too. Retire any older
+    // reconciliation read rather than letting its delayed answer reverse that update.
+    cancelRead()
+    confirmed.value = { boardId: options.getBoardId(), canWrite: value }
+    failedBoardId.value = null
+    accessUnavailable.value = false
+  }, { flush: 'sync' })
+
+  watch(
+    [() => options.getIsOpen(), () => options.getBoardId(), permission, readDecides,
+      () => options.getCardId?.(), () => session.userId],
     ([isOpen, boardId, currentPermission, decides]) => {
       if (!isOpen || !decides || currentPermission !== null) return
       // One automatic attempt per board: a second failure is the user's to ask for.
@@ -187,5 +239,6 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     { immediate: true },
   )
 
-  return { canWrite, canEditType, permissionChecking, permissionUnknown, refreshPermission }
+  return { canWrite, canEditType, permissionChecking, permissionUnknown, permissionRecovery,
+    accessUnavailable, readsBlocked, refreshPermission }
 }

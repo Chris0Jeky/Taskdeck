@@ -161,12 +161,15 @@ function acceptAssignments(saved: Card, previousVersion?: string) {
  * archived board and archived card stay read-only exactly as before, no ownership is
  * inferred on the client, and every write remains server-authoritative regardless.
  */
-const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown, refreshPermission: refreshTypePermission } =
+const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown,
+  permissionRecovery, accessUnavailable, readsBlocked, refreshPermission: refreshTypePermission } =
   useCardTypePermission({
     getBoardId: () => props.card.boardId,
+    getCardId: () => props.card.id,
     getIsOpen: () => props.isOpen,
     getCardIsArchived: () => cardIsArchived.value,
   })
+const editorWritesBlocked = computed(() => permissionRecovery.value && !boardCanWrite.value)
 
 const dialogRef = ref<HTMLElement | null>(null)
 const showDiscardConfirm = ref(false)
@@ -475,27 +478,38 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
-        <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :disabled="isSaving || cardIsArchived" />
+        <div v-if="permissionRecovery" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
+          <p role="status">
+            <template v-if="typePermissionChecking">Checking current board access. Your unsaved changes are kept.</template>
+            <template v-else-if="accessUnavailable">This board is no longer available to this editor. Your unsaved changes are kept. Ask a board admin to check your access, then refresh permission.</template>
+            <template v-else-if="typePermissionUnknown">Could not confirm current board permission. Editing stays locked. Your unsaved changes are kept; refresh permission to try again.</template>
+            <template v-else-if="!boardCanWrite">This board is read-only for you. Your unsaved changes are kept. Ask a board admin to restore write access, then refresh permission.</template>
+            <template v-else>Board write permission confirmed. Your unsaved changes are kept.</template>
+          </p>
+          <button type="button" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
+        </div>
+        <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :reads-blocked="readsBlocked" :disabled="isSaving || cardIsArchived" />
         <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
           :read-only="!boardCanWrite || cardIsArchived"
+          :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
-          @saved="acceptAssignments" />
+          @saved="acceptAssignments" @permission-denied="refreshTypePermission" />
         <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges"
-          @changed="handleArchiveChanged" @refresh="refreshArchiveState" />
+          @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="refreshTypePermission" />
         <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}
         </p>
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
         <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
-        <fieldset :disabled="cardIsArchived || isSaving" class="space-y-4">
+        <fieldset :disabled="cardIsArchived || isSaving || editorWritesBlocked" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
             v-model:work-item-type="workItemType"
             :can-edit-type="canEditType"
-            :type-permission-checking="typePermissionChecking"
-            :type-permission-unknown="typePermissionUnknown"
+            :type-permission-checking="typePermissionChecking && !permissionRecovery"
+            :type-permission-unknown="typePermissionUnknown && !permissionRecovery"
             @refresh-type-permission="refreshTypePermission"
             v-model:description="description"
             v-model:due-date="dueDate"
@@ -542,12 +556,13 @@ useEscapeToClose(
       <p v-if="assignmentSaving" role="status" class="text-sm">Saving assignments… the editor stays open until the server answers.</p>
       <p v-else-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
       <CardModalActions
-          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty"
+          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty && !editorWritesBlocked"
           :is-saving="isSaving"
+          :disabled="editorWritesBlocked"
           :card="card"
-          @save="handleSave"
+          @save="!editorWritesBlocked && handleSave()"
           @close="handleClose"
-        @delete-click="handleDeleteClick"
+        @delete-click="!editorWritesBlocked && handleDeleteClick()"
       />
     </div>
   </div>

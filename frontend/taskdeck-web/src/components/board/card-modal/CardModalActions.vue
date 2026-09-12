@@ -6,6 +6,7 @@ import type { Card } from '../../../types/board'
 const props = defineProps<{
   isFormValid: boolean
   isSaving?: boolean
+  disabled?: boolean
   card: Card
 }>()
 
@@ -31,6 +32,7 @@ async function handleShare() {
     <div class="flex gap-2">
       <button
         @click="$emit('delete-click')"
+        :disabled="disabled"
         type="button"
         class="px-4 py-2 text-sm font-medium text-error hover:text-error/80 hover:bg-error/10 border border-error/40 rounded-md transition-colors"
       >
