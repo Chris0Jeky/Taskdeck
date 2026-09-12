@@ -13,13 +13,18 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
 {
-    // Action types that actively mutate cards. "archive-lifecycle"/"restore-lifecycle" are the
-    // review-first card lifecycle actions: applying one flips the card's archived state, so the
-    // Cards row must disclose a board mutation rather than reporting "No board mutations".
-    private static readonly HashSet<string> CardMutatingActions = new(StringComparer.OrdinalIgnoreCase)
+    // Keep a stable display order and name the actual effect: legacy "archive" blocks a card;
+    // only the lifecycle actions change its archived state. Move aliases share one disclosure.
+    private static readonly (string Action, string Verb)[] CardMutationVerbs =
     {
-        "create", "move", "archive", "update", "delete", "bulk_move",
-        "archive-lifecycle", "restore-lifecycle"
+        ("create", "creates"),
+        ("move", "moves"),
+        ("bulk_move", "moves"),
+        ("archive", "blocks"),
+        ("update", "updates"),
+        ("delete", "deletes"),
+        ("archive-lifecycle", "archives"),
+        ("restore-lifecycle", "restores")
     };
 
     private readonly IUnitOfWork _unitOfWork;
@@ -91,15 +96,17 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         IReadOnlyList<ProposalOperationDto> operations,
         bool hasActiveWebhooks)
     {
-        var hasCardMutation = operations.Any(op =>
-            CardMutatingActions.Contains(op.ActionType) &&
-            string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase));
-        var hasCardRestore = operations.Any(op =>
-            string.Equals(op.ActionType, "restore-lifecycle", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase));
-        var cardMutationSummary = hasCardRestore
-            ? "Creates, moves, archives, or restores cards"
-            : "Creates, moves, or archives cards";
+        var cardActions = operations
+            .Where(op => string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase))
+            .Select(op => op.ActionType)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var cardVerbs = CardMutationVerbs
+            .Where(entry => cardActions.Contains(entry.Action))
+            .Select(entry => entry.Verb)
+            .Distinct()
+            .ToList();
+        var hasCardMutation = cardVerbs.Count > 0;
+        var cardMutationSummary = DescribeCardMutations(cardVerbs);
         var hasColumnMutation = operations.Any(op =>
             string.Equals(op.TargetType, "column", StringComparison.OrdinalIgnoreCase));
         var hasBoardMutation = hasCardMutation || hasColumnMutation;
@@ -137,6 +144,21 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
                 hasActiveWebhooks && hasAnyOperation ? SideEffectTone.Active : SideEffectTone.Passive),
             new("Calendar", "Calendar integration not yet available", SideEffectTone.Passive)
         };
+    }
+
+    private static string DescribeCardMutations(IReadOnlyList<string> verbs)
+    {
+        if (verbs.Count == 0)
+            return string.Empty;
+
+        var actions = verbs.Count switch
+        {
+            1 => verbs[0],
+            2 => string.Join(" and ", verbs),
+            _ => $"{string.Join(", ", verbs.Take(verbs.Count - 1))}, and {verbs[^1]}"
+        };
+
+        return $"{char.ToUpperInvariant(actions[0])}{actions[1..]} cards";
     }
 
     internal static Reversibility ComputeApplyRiskPosture(
