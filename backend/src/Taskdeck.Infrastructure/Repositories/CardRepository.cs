@@ -40,6 +40,13 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
     }
 
+    public async Task<IReadOnlyList<Card>> GetForEstimateRollupsAsync(Guid boardId, CancellationToken cancellationToken = default)
+        => await _dbSet.AsNoTracking().IgnoreAutoIncludes()
+            .Where(card => card.BoardId == boardId && !card.IsArchived)
+            .Include(card => card.Assignments)
+            .AsSingleQuery()
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<Card>> GetHierarchyByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
         => await _dbSet.Where(card => card.BoardId == boardId).ToListAsync(cancellationToken);
 

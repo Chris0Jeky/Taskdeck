@@ -60,6 +60,8 @@ function createMockState() {
       { id: 'board-2', name: 'Other' },
     ]),
     currentBoard: ref<{ id: string; name: string } | null>(null),
+    currentBoardRequestGeneration: ref(0),
+    currentBoardPayloadGeneration: ref(0),
     currentBoardCards: ref<Array<{ id: string }>>([]),
     currentBoardLabels: ref<Array<{ id: string }>>([]),
     cardCommentsByCardId: ref<Record<string, unknown>>({}),
@@ -622,6 +624,8 @@ describe('boardCrudStore', () => {
         }),
       )
       expect(state.currentBoard.value).toEqual(boardDetail)
+      expect(state.currentBoardRequestGeneration.value).toBe(1)
+      expect(state.currentBoardPayloadGeneration.value).toBe(1)
       expect(state.currentBoardCards.value).toEqual(cards)
       expect(state.currentBoardLabels.value).toEqual(labels)
       expect(committed).toBe(true)

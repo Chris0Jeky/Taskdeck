@@ -12,6 +12,19 @@ namespace Taskdeck.Api.Tests;
 public class McpApplicationServiceRegistrationTests
 {
     [Fact]
+    public void AddMcpApplicationServices_CanConstructEstimateRollupService()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new Mock<IUnitOfWork>().Object);
+        services.AddScoped(_ => new Mock<ICardAssignmentStore>().Object);
+        services.AddMcpApplicationServices();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<IBoardEstimateRollupService>().Should().BeOfType<BoardEstimateRollupService>();
+    }
+
+    [Fact]
     public void AddMcpApplicationServices_CanConstructProposalRevisionService()
     {
         // #1281: ProposalRevisionService gained an IAutomationPolicyEngine dependency. The minimal
