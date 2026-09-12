@@ -21,6 +21,7 @@ public sealed class DeferredBoardRealtimeNotifier : IBoardRealtimeNotifier
 {
     private readonly IBoardRealtimeNotifier _inner;
     private readonly List<BoardRealtimeEvent> _pending = new();
+    private int _preparedCount;
 
     public DeferredBoardRealtimeNotifier(IBoardRealtimeNotifier? inner = null)
     {
@@ -30,12 +31,32 @@ public sealed class DeferredBoardRealtimeNotifier : IBoardRealtimeNotifier
     /// <summary>Events staged but not yet published. Diagnostics and tests only.</summary>
     public int PendingCount => _pending.Count;
 
+    /// <summary>Events whose durable channel has been prepared in the caller's transaction.</summary>
+    public int PreparedCount => _preparedCount;
+
     public Task NotifyBoardMutationAsync(
         BoardRealtimeEvent mutation,
         CancellationToken cancellationToken = default)
     {
         _pending.Add(mutation);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Prepares the durable channel for every pending event without draining the buffer. Sinks
+    /// without the supplemental transactional capability retain the legacy flush behavior.
+    /// Successfully prepared events are remembered so a repeated call cannot stage duplicates.
+    /// </summary>
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        if (_inner is not ITransactionalBoardMutationNotifier transactional)
+            return;
+
+        while (_preparedCount < _pending.Count)
+        {
+            await transactional.StageBoardMutationAsync(_pending[_preparedCount], cancellationToken);
+            _preparedCount++;
+        }
     }
 
     /// <summary>
@@ -49,11 +70,22 @@ public sealed class DeferredBoardRealtimeNotifier : IBoardRealtimeNotifier
             return;
 
         var batch = _pending.ToArray();
+        var preparedCount = _preparedCount;
         _pending.Clear();
-        foreach (var mutation in batch)
-            await _inner.NotifyBoardMutationAsync(mutation, cancellationToken);
+        _preparedCount = 0;
+        for (var index = 0; index < batch.Length; index++)
+        {
+            if (index < preparedCount && _inner is ITransactionalBoardMutationNotifier transactional)
+                await transactional.NotifyCommittedBoardMutationAsync(batch[index], cancellationToken);
+            else
+                await _inner.NotifyBoardMutationAsync(batch[index], cancellationToken);
+        }
     }
 
     /// <summary>Drops every staged event — the write they describe did not survive.</summary>
-    public void Discard() => _pending.Clear();
+    public void Discard()
+    {
+        _pending.Clear();
+        _preparedCount = 0;
+    }
 }
