@@ -32,6 +32,7 @@ async function closeFromKeyboard() {
           :disabled="loading" @click="refresh">Refresh estimates</button>
       </div>
       <p class="text-sm">Estimates are optional. Known zero is included; missing estimates are counted separately. Parent and child estimates stay independent.</p>
+      <p class="text-sm">Current assignments and estimates only; these totals do not measure time worked or capacity.</p>
       <p v-if="stale" role="status">Board state changed. Refresh estimates to see the latest totals.</p>
       <p v-if="loading" role="status">Loading estimates…</p>
       <p v-else-if="error" role="alert">{{ error }}</p>
