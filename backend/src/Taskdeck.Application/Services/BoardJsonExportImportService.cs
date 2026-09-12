@@ -176,6 +176,11 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             var labels = dto.Labels ?? Enumerable.Empty<ImportLabelDto>();
             var columns = dto.Columns ?? Enumerable.Empty<ImportColumnDto>();
             var cards = (dto.Cards ?? Enumerable.Empty<ImportCardDto>()).ToList();
+            // Validate the entire payload before any board or card is added, including preview.
+            foreach (var card in cards)
+                if (card.EstimatedEffortMinutes is < 0 or > Card.MaxEstimatedEffortMinutes)
+                    throw new DomainException(ErrorCodes.ValidationError,
+                        $"Estimated effort for card '{card.Title}' must be between 0 and {Card.MaxEstimatedEffortMinutes} minutes, or unknown.");
             var sourceNames = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var source in cards.SelectMany(c => c.SourceAssignees ?? []))
             {
@@ -251,6 +256,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 var card = new Card(importCard.SourceId.HasValue ? cardIds[importCard.SourceId.Value] : Guid.NewGuid(),
                     board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
                 card.SetWorkItemType(Card.ParseWorkItemType(importCard.WorkItemType));
+                card.SetEstimatedEffortMinutes(importCard.EstimatedEffortMinutes);
                 if (importCard.ParentCardId is Guid sourceParent)
                 {
                     if (!cardIds.TryGetValue(sourceParent, out var newParent))
@@ -511,7 +517,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 card.DueDate,
                 labelNames,
                 thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived, card.WorkItemType, card.ParentCardId,
-                card.Assignments?.Select(a => new ImportSourceAssigneeDto(a.UserId.ToString(), a.DisplayName)).ToArray()));
+                card.Assignments?.Select(a => new ImportSourceAssigneeDto(a.UserId.ToString(), a.DisplayName)).ToArray(),
+                card.EstimatedEffortMinutes));
         }
 
         return new ImportBoardDto(
@@ -566,6 +573,6 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             labels,
             card.CreatedAt,
             card.UpdatedAt, card.IsArchived, card.WorkItemType.ToString(), card.ParentCardId,
-            CardService.MapToDto(card).Assignments);
+            CardService.MapToDto(card).Assignments, card.EstimatedEffortMinutes);
     }
 }

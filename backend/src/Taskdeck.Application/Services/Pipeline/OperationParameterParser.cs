@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Services.Pipeline;
 
@@ -9,6 +10,25 @@ namespace Taskdeck.Application.Services.Pipeline;
 /// </summary>
 public static class OperationParameterParser
 {
+    public static bool TryGetEstimatedEffortMinutes(JsonElement parameters, out int? value, out string error)
+    {
+        value = null;
+        error = string.Empty;
+        if (!parameters.TryGetProperty("estimatedEffortMinutes", out var property) || property.ValueKind == JsonValueKind.Null)
+            return true;
+
+        if (!TryGetRequiredInt32(parameters, "estimatedEffortMinutes", out var minutes, out error))
+            return false;
+        if (minutes < 0 || minutes > Card.MaxEstimatedEffortMinutes)
+        {
+            error = $"Parameter 'estimatedEffortMinutes' must be between 0 and {Card.MaxEstimatedEffortMinutes} whole minutes";
+            return false;
+        }
+
+        value = minutes;
+        return true;
+    }
+
     public static bool TryGetWorkItemType(JsonElement parameters, out string? workItemType, out string error)
     {
         workItemType = null;

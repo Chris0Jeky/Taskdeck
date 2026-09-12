@@ -41,6 +41,8 @@ export const useBoardStore = defineStore('board', () => {
     boards: state.boards,
     activeBoardId: state.activeBoardId,
     currentBoard: state.currentBoard,
+    currentBoardRequestGeneration: state.currentBoardRequestGeneration,
+    currentBoardPayloadGeneration: state.currentBoardPayloadGeneration,
     currentBoardCards: state.currentBoardCards,
     currentBoardLabels: state.currentBoardLabels,
     cardCommentsByCardId: state.cardCommentsByCardId,

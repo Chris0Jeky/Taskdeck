@@ -13,6 +13,53 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
+    [Theory]
+    [InlineData("/api/import/boards")]
+    [InlineData("/api/import/boards/json")]
+    [InlineData("/api/import/boards/preview")]
+    public async Task EstimatedEffort_AllImportRoutesRejectOutOfRangeAndNonIntegerPayloads(string route)
+    {
+        await EnsureAuthenticatedAsync();
+        var name = $"Rejected-estimate-{Guid.NewGuid():N}";
+        foreach (var rawEstimate in new[] { "-1", "1000001", "1.5", "true", "\"not-minutes\"" })
+        {
+            var json = $$"""{"name":"{{name}}","columns":[{"name":"Work","position":0}],"cards":[{"title":"Valid first","columnName":"Work","position":0},{"title":"Invalid later","columnName":"Work","position":1,"estimatedEffortMinutes":{{rawEstimate}}}],"labels":[]}""";
+            using var response = await _client.PostAsync(route,
+                new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{route} must reject {rawEstimate}");
+        }
+        var boards = (await _client.GetFromJsonAsync<PaginatedResult<BoardDto>>($"/api/boards?search={name}"))!;
+        boards.TotalCount.Should().Be(0, "no failed import may leave a board behind");
+    }
+
+    [Fact]
+    public async Task EstimatedEffort_RealDatabaseRoundTripPreservesActiveAndArchivedNullableValues()
+    {
+        await EnsureAuthenticatedAsync();
+        var cards = new List<ImportCardDto>();
+        foreach (var archived in new[] { false, true })
+        foreach (var minutes in new int?[] { null, 0, 135 })
+            cards.Add(new($"{archived}-{minutes?.ToString() ?? "unknown"}", null, "Work", cards.Count, null, [],
+                SourceId: Guid.NewGuid(), IsArchived: archived, EstimatedEffortMinutes: minutes));
+        var payload = new ImportBoardDto("Estimate round trip", null, [new("Work", 0, null)], cards, []);
+        var first = await _client.PostAsJsonAsync("/api/import/boards", payload);
+        first.EnsureSuccessStatusCode();
+        var firstId = (await first.Content.ReadFromJsonAsync<ImportResultDto>())!.BoardId!.Value;
+        var json = await _client.GetStringAsync($"/api/export/boards/{firstId}/json");
+        var second = await _client.PostAsync("/api/import/boards/json",
+            new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+        second.EnsureSuccessStatusCode();
+        var secondId = (await second.Content.ReadFromJsonAsync<ImportResultDto>())!.BoardId!.Value;
+        foreach (var archived in new[] { false, true })
+        {
+            var route = $"/api/boards/{secondId}/cards" + (archived ? "/archived" : "");
+            var imported = (await _client.GetFromJsonAsync<List<CardDto>>(route))!;
+            imported.Should().HaveCount(3);
+            foreach (var card in cards.Where(card => card.IsArchived == archived))
+                imported.Single(copy => copy.Title == card.Title).EstimatedEffortMinutes.Should().Be(card.EstimatedEffortMinutes);
+        }
+    }
+
     [Fact]
     public async Task ArchivedCards_RoundTripWithoutRevival_AndKeepFreshImportIds()
     {
