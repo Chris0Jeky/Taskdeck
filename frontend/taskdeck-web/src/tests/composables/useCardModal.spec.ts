@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { useCardModal, type UseCardModalOptions } from '../../composables/useCardModal'
 import { cardsApi } from '../../api/cardsApi'
-import type { Card, CardDetachPreview, Label } from '../../types/board'
+import type { Card, CardDetachPreview, Label, UpdateCardDto } from '../../types/board'
 import type { CardComment } from '../../types/comments'
 import { installTimeZone } from '../utils/timeZone'
 
@@ -218,6 +218,100 @@ describe('useCardModal', () => {
   })
 
   describe('estimated effort drafts', () => {
+    it.each([
+      { name: 'positive', initial: null, saved: 75 },
+      { name: 'zero', initial: 90, saved: 0 },
+      { name: 'clear', initial: 0, saved: null },
+    ])('accepts the $name receipt and resaves a newer title from a snapshot host', async ({ initial, saved }) => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: initial, updatedAt: 'loaded-v1' })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<Card>()
+      mockBoardStore.updateCard.mockReturnValueOnce(pending.promise)
+      // ColumnLane holds a selected-card snapshot: the store receipt never replaces
+      // ctx.cardRef, so the editor must learn its new baseline from its own save.
+      ctx.result.estimateHours.value = saved === null ? '' : String(Math.floor(saved / 60))
+      ctx.result.estimateMinutes.value = saved === null ? '' : String(saved % 60)
+      const firstSave = ctx.result.handleSave()
+      ctx.result.title.value = 'Newer title draft'
+      pending.resolve(makeCard({ estimatedEffortMinutes: saved, updatedAt: 'saved-v2' }))
+      await firstSave
+      expect(ctx.cardRef.value.updatedAt).toBe('loaded-v1')
+      expect(ctx.result.title.value).toBe('Newer title draft')
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      mockBoardStore.updateCard.mockImplementationOnce((_boardId: string, _cardId: string, update: UpdateCardDto) =>
+        update.expectedUpdatedAt === 'saved-v2'
+          ? Promise.resolve(makeCard({ title: 'Newer title draft', estimatedEffortMinutes: saved, updatedAt: 'saved-v3' }))
+          : Promise.reject({ response: { status: 409 } }),
+      )
+      await ctx.result.handleSave()
+      const retry = mockBoardStore.updateCard.mock.calls[1]![2]
+      expect(retry).toMatchObject({ title: 'Newer title draft', expectedUpdatedAt: 'saved-v2' })
+      expect(retry).not.toHaveProperty('estimatedEffortMinutes')
+      expect(retry).not.toHaveProperty('clearEstimatedEffort')
+      expect(ctx.result.saveError.value).toBeNull()
+      expect(ctx.onUpdated).toHaveBeenCalledTimes(1)
+      expect(ctx.onClose).toHaveBeenCalledTimes(1)
+      ctx.wrapper.unmount()
+    })
+
+    it.each([
+      { initial: null, saved: 0, next: { clearEstimatedEffort: true } },
+      { initial: 0, saved: null, next: { estimatedEffortMinutes: 0 } },
+    ])('uses the receipt baseline when a newer estimate draft reverses $saved', async ({ initial, saved, next }) => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: initial, updatedAt: 'loaded-v1' })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<Card>()
+      mockBoardStore.updateCard.mockReturnValueOnce(pending.promise)
+      ctx.result.estimateHours.value = saved === null ? '' : '0'
+      ctx.result.estimateMinutes.value = saved === null ? '' : '0'
+      const firstSave = ctx.result.handleSave()
+      ctx.result.estimateHours.value = initial === null ? '' : '0'
+      ctx.result.estimateMinutes.value = initial === null ? '' : '0'
+      pending.resolve(makeCard({ estimatedEffortMinutes: saved, updatedAt: 'saved-v2' }))
+      await firstSave
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      await ctx.result.handleSave()
+      expect(mockBoardStore.updateCard.mock.calls[1]![2]).toMatchObject({ ...next, expectedUpdatedAt: 'saved-v2' })
+      ctx.wrapper.unmount()
+    })
+
+    it.each(['card', 'board', 'account', 'reopen'] as const)('does not advance the current baseline from an old %s receipt', async context => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ estimatedEffortMinutes: 90, updatedAt: 'loaded-v1' })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      const pending = defer<Card>()
+      mockBoardStore.updateCard.mockReturnValueOnce(pending.promise)
+      ctx.result.estimateHours.value = '0'
+      ctx.result.estimateMinutes.value = '15'
+      const firstSave = ctx.result.handleSave()
+      if (context === 'card') ctx.cardRef.value = makeCard({ id: 'card-2', estimatedEffortMinutes: 120, updatedAt: 'current-v1' })
+      if (context === 'board') ctx.cardRef.value = makeCard({ boardId: 'board-2', estimatedEffortMinutes: 120, updatedAt: 'current-v1' })
+      if (context === 'account') mockSessionStore.userId = 'user-2'
+      if (context === 'reopen') {
+        ctx.isOpenRef.value = false
+        await nextTick()
+        ctx.isOpenRef.value = true
+      }
+      await nextTick()
+      ctx.result.estimateHours.value = context === 'card' || context === 'board' ? '2' : '1'
+      ctx.result.estimateMinutes.value = context === 'card' || context === 'board' ? '0' : '30'
+      ctx.result.title.value = 'Current editor draft'
+      pending.resolve(makeCard({ estimatedEffortMinutes: 15, updatedAt: 'old-receipt-v2' }))
+      await firstSave
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      await ctx.result.handleSave()
+      const currentSave = mockBoardStore.updateCard.mock.calls[1]![2]
+      expect(currentSave.expectedUpdatedAt).toBe(ctx.cardRef.value.updatedAt)
+      expect(currentSave).not.toHaveProperty('estimatedEffortMinutes')
+      expect(currentSave).not.toHaveProperty('clearEstimatedEffort')
+      ctx.wrapper.unmount()
+    })
+
     it.each([undefined, null, 0, 90, 1_000_000])('hydrates %s without making an unrelated save an estimate write', async value => {
       const ctx = mountComposable()
       ctx.cardRef.value = makeCard({ estimatedEffortMinutes: value })

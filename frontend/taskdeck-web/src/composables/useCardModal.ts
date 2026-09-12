@@ -329,9 +329,17 @@ export function useCardModal(options: UseCardModalOptions) {
     isSaving.value = true
     saveError.value = null
     try {
-      await boardStore.updateCard(targetCard.boardId, targetCard.id, update)
+      const saved = await boardStore.updateCard(targetCard.boardId, targetCard.id, update)
 
-      if (!ownsSave() || draftRevision !== submittedDraftRevision) return
+      if (!ownsSave()) return
+      // Snapshot hosts do not replace the selected card with the store receipt.
+      // Accept our committed version/estimate before keeping a newer draft, so
+      // its next save can use that version without resending an unchanged estimate.
+      if (options.getIsOpen() && saved?.id === targetCard.id && saved.boardId === targetCard.boardId) {
+        expectedUpdatedAt.value = saved.updatedAt
+        initialEstimateMinutes.value = saved.estimatedEffortMinutes ?? null
+      }
+      if (draftRevision !== submittedDraftRevision) return
       options.onUpdated()
       options.onClose()
     } catch (error) {
