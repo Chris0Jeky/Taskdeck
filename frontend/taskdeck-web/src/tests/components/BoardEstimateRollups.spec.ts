@@ -37,7 +37,7 @@ describe('Board estimate rollups', () => {
     const wrapper = mountPanel()
     expect(estimateRollupsApi.get).not.toHaveBeenCalled()
     await wrapper.get('button').trigger('click'); await flushPromises()
-    expect(estimateRollupsApi.get).toHaveBeenCalledWith('board')
+    expect(estimateRollupsApi.get).toHaveBeenCalledWith('board', { signal: expect.any(AbortSignal) })
     expect(wrapper.text()).toContain('1h 30m known estimate')
     expect(wrapper.text()).toContain('3 cards · 2 estimated')
     expect(wrapper.text()).toContain('1 missing estimates')

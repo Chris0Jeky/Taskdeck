@@ -84,6 +84,49 @@ public class DeferredBoardRealtimeNotifierTests
         deferred.PendingCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task Prepare_ShouldStageWithoutDraining_ThenFlushCommittedWithoutDoubleEnqueue()
+    {
+        var inner = new TransactionalNotifier();
+        var deferred = new DeferredBoardRealtimeNotifier(inner);
+        var mutation = Event("updated");
+
+        await deferred.NotifyBoardMutationAsync(mutation);
+        await deferred.PrepareAsync();
+        await deferred.PrepareAsync();
+
+        inner.Staged.Should().ContainSingle().Which.Should().BeSameAs(mutation);
+        inner.Published.Should().BeEmpty();
+        inner.LegacyPublished.Should().BeEmpty();
+        deferred.PendingCount.Should().Be(1);
+        deferred.PreparedCount.Should().Be(1);
+
+        await deferred.FlushAsync();
+        await deferred.FlushAsync();
+
+        inner.Published.Should().ContainSingle().Which.Should().BeSameAs(mutation);
+        inner.Staged.Should().ContainSingle();
+        inner.LegacyPublished.Should().BeEmpty();
+        deferred.PendingCount.Should().Be(0);
+        deferred.PreparedCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Prepare_ShouldLeaveFailedEventPendingWithoutMarkingItPrepared()
+    {
+        var inner = new TransactionalNotifier { StageException = new InvalidOperationException("stage failed") };
+        var deferred = new DeferredBoardRealtimeNotifier(inner);
+        await deferred.NotifyBoardMutationAsync(Event("updated"));
+
+        var act = () => deferred.PrepareAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("stage failed");
+        deferred.PendingCount.Should().Be(1);
+        deferred.PreparedCount.Should().Be(0);
+        inner.Published.Should().BeEmpty();
+        inner.LegacyPublished.Should().BeEmpty();
+    }
+
     private static BoardRealtimeEvent Event(string operation)
         => new(Guid.NewGuid(), "card", operation, Guid.NewGuid(), DateTimeOffset.UtcNow);
 
@@ -106,6 +149,35 @@ public class DeferredBoardRealtimeNotifierTests
         {
             Attempts++;
             throw new InvalidOperationException("channel down");
+        }
+    }
+
+    private sealed class TransactionalNotifier : IBoardRealtimeNotifier, ITransactionalBoardMutationNotifier
+    {
+        public List<BoardRealtimeEvent> Staged { get; } = [];
+        public List<BoardRealtimeEvent> Published { get; } = [];
+        public List<BoardRealtimeEvent> LegacyPublished { get; } = [];
+        public Exception? StageException { get; init; }
+
+        public Task NotifyBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            LegacyPublished.Add(mutation);
+            return Task.CompletedTask;
+        }
+
+        public Task StageBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            if (StageException is not null)
+                throw StageException;
+
+            Staged.Add(mutation);
+            return Task.CompletedTask;
+        }
+
+        public Task NotifyCommittedBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            Published.Add(mutation);
+            return Task.CompletedTask;
         }
     }
 }
