@@ -2,7 +2,7 @@ using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Realtime;
 
-public sealed class CompositeBoardRealtimeNotifier : IBoardRealtimeNotifier
+public sealed class CompositeBoardRealtimeNotifier : IBoardRealtimeNotifier, ITransactionalBoardMutationNotifier
 {
     private readonly SignalRBoardRealtimeNotifier _signalRNotifier;
     private readonly WebhookBoardMutationNotifier _webhookNotifier;
@@ -34,6 +34,20 @@ public sealed class CompositeBoardRealtimeNotifier : IBoardRealtimeNotifier
             cancellationToken,
             ct => _webhookNotifier.NotifyBoardMutationAsync(mutation, ct));
     }
+
+    public Task StageBoardMutationAsync(
+        BoardRealtimeEvent mutation,
+        CancellationToken cancellationToken = default) =>
+        _webhookNotifier.StageBoardMutationAsync(mutation, cancellationToken);
+
+    public Task NotifyCommittedBoardMutationAsync(
+        BoardRealtimeEvent mutation,
+        CancellationToken cancellationToken = default) =>
+        NotifySafeAsync(
+            "signalr",
+            mutation,
+            cancellationToken,
+            ct => _signalRNotifier.NotifyBoardMutationAsync(mutation, ct));
 
     private async Task NotifySafeAsync(
         string channel,

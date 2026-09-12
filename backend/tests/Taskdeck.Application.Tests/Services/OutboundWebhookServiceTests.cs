@@ -6,6 +6,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -325,6 +326,77 @@ public class OutboundWebhookServiceTests
         payload.RootElement.TryGetProperty("boardId", out _).Should().BeTrue();
         payload.RootElement.TryGetProperty("DeliveryId", out _).Should().BeFalse();
         payload.RootElement.GetProperty("deliveryId").GetGuid().Should().Be(createdDeliveries[0].Id);
+        _unitOfWorkMock.Verify(
+            unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task StageBoardMutationAsync_ShouldPrepareMatchingPendingDeliveriesWithoutSaving()
+    {
+        var boardId = Guid.NewGuid();
+        var matching = new OutboundWebhookSubscription(
+            boardId,
+            Guid.NewGuid(),
+            "https://example.com/matching",
+            "secret",
+            ["card.*"]);
+        var nonMatching = new OutboundWebhookSubscription(
+            boardId,
+            Guid.NewGuid(),
+            "https://example.com/non-matching",
+            "secret",
+            ["proposal.*"]);
+        _subscriptionRepositoryMock
+            .Setup(repository => repository.GetActiveByBoardAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([matching, nonMatching]);
+
+        var createdDeliveries = new List<OutboundWebhookDelivery>();
+        _deliveryRepositoryMock
+            .Setup(repository => repository.AddAsync(It.IsAny<OutboundWebhookDelivery>(), It.IsAny<CancellationToken>()))
+            .Callback<OutboundWebhookDelivery, CancellationToken>((delivery, _) => createdDeliveries.Add(delivery))
+            .ReturnsAsync((OutboundWebhookDelivery delivery, CancellationToken _) => delivery);
+
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+        var result = await service.StageBoardMutationAsync(
+            new BoardRealtimeEvent(boardId, "card", "updated", Guid.NewGuid(), DateTimeOffset.UtcNow));
+
+        result.IsSuccess.Should().BeTrue();
+        createdDeliveries.Should().ContainSingle();
+        createdDeliveries[0].SubscriptionId.Should().Be(matching.Id);
+        createdDeliveries[0].Status.Should().Be(WebhookDeliveryStatus.Pending);
+        matching.LastTriggeredAt.Should().NotBeNull();
+        nonMatching.LastTriggeredAt.Should().BeNull();
+        _unitOfWorkMock.Verify(
+            unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task StageBoardMutationAsync_ShouldPropagatePreparationFailureWithoutSaving()
+    {
+        var boardId = Guid.NewGuid();
+        var subscription = new OutboundWebhookSubscription(
+            boardId,
+            Guid.NewGuid(),
+            "https://example.com/hook",
+            "secret");
+        _subscriptionRepositoryMock
+            .Setup(repository => repository.GetActiveByBoardAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([subscription]);
+        _deliveryRepositoryMock
+            .Setup(repository => repository.AddAsync(It.IsAny<OutboundWebhookDelivery>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("staging failed"));
+
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+
+        var act = () => service.StageBoardMutationAsync(
+            new BoardRealtimeEvent(boardId, "card", "updated", Guid.NewGuid(), DateTimeOffset.UtcNow));
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("staging failed");
+        _unitOfWorkMock.Verify(
+            unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
