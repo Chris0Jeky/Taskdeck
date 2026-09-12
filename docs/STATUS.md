@@ -2,6 +2,22 @@
 
 Last Updated: 2026-09-12
 
+Proposal webhook durability (#3024) is implemented on a candidate branch. Events already buffered
+by the proposal executor now prepare filtered `Pending` delivery rows in its existing transaction,
+before the Applied-status save. Delivery rows, subscription trigger timestamps and proposal effects
+commit together or roll back together. Post-commit notification sends only the best-effort realtime
+channel; the existing delivery worker can claim committed webhook rows even if that flush is lost.
+This closes the missing-delivery window without changing review, approval or Apply requirements.
+No new queue schema or retry policy is introduced. Immediate notification producers and the separate
+assignment collector retain their current behavior; this is not an account-wide outbox conversion.
+
+Focused Application tests pass 39 cases and Composite API tests pass 10. Five real SQLite API
+tests pass for first-notification queue visibility, rollback, lost post-commit callback recovery and
+already-applied deduplication. Omitting durable preparation makes both lifecycle controls fail;
+restoring the reviewed executor bytes makes all five pass. Independent source review is clean.
+The full backend and final hosted gates remain pending. No actual process-kill,
+external HTTP delivery or release acceptance is claimed.
+
 Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
 thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
 context with labelled navigation. Typed additions and removals create review proposals; the graph

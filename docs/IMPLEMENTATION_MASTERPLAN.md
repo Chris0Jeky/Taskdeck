@@ -2,6 +2,20 @@
 
 Last Updated: 2026-09-12
 
+## Proposal webhook durability candidate (2026-09-12, #3024)
+
+Reuse the existing outbound delivery queue for events already buffered by the proposal executor.
+Prepare delivery rows before the final transaction save, commit them with the proposal effects,
+then publish realtime after commit without enqueueing webhooks again. The existing queue worker
+provides later delivery; no new schema, sweep or worker policy is needed. Preparation failure must
+roll back the proposal. This reduces silent integration gaps while retaining review-first writes.
+
+The implementation, 49 focused Application/Composite API tests, five real SQLite visibility/rollback/
+lost-flush tests and one independent review are complete. Two lifecycle controls fail when durable
+preparation is omitted and pass with the reviewed bytes restored. Complete the full backend and
+exact-head hosted gates before closing #3024. Broader notification
+producer changes, live HTTP and release qualification remain outside this slice.
+
 ## Typed relations candidate (2026-09-12, #2092)
 
 Five independently owned slices now integrate the accepted same-board relation contract: canonical
