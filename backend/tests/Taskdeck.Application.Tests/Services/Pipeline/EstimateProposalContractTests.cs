@@ -118,6 +118,17 @@ public class EstimateProposalContractTests
             [Operation(action, card, Parameters(board, column, card, "30"))])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
+    [Theory]
+    [InlineData("B")]
+    [InlineData("N")]
+    public async Task EstimatePin_UsesTheSameGuidFormatsAsOperationScope(string format)
+    {
+        var (unit, board, _, card) = Fixture();
+        var parameters = JsonSerializer.Serialize(new { cardId = card.Id.ToString(format), estimatedEffortMinutes = 0, expectedUpdatedAt = card.UpdatedAt });
+        var result = await ProposalOperationContractValidator.ValidateAsync(unit.Object, board.Id, [Operation("update", card, parameters)]);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
     private static string Parameters(Board board, Column column, Card card, string? estimate) =>
         JsonSerializer.Serialize(new { boardId = board.Id, columnId = column.Id, cardId = card.Id, title = "Estimate", expectedUpdatedAt = card.UpdatedAt })
             .TrimEnd('}') + (estimate is null ? "}" : $",\"estimatedEffortMinutes\":{estimate}}}");
