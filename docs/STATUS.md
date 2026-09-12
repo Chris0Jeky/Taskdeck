@@ -16,19 +16,29 @@ validator that already guards `POST /api/import/boards/preview`, `POST /api/impo
 `POST /api/import/boards/json` on main. This repair builds on the delivered #2240 assignment and explicit import-mapping contract;
 its merge-level delivery is reconciled below (#3036).
 
-Card editor write gates (#3028): the open card editor resolves the caller's board write
-permission once, server-side, when the loaded board payload omits the optional `canWrite`
-field, and the work-item type selector, parent selector, archive/restore control and
-assignment field all gate on that single answer instead of reading the omitted field as
-"no". A writer holding a payload cached before the field existed no longer watches one
-control enable while three stay disabled. Viewer, archived-board and archived-card
-behaviour is unchanged - restoring an archived card still needs only board write
-permission - the assignment field's own 403 lock (#2982) and its release rules are
-untouched, and a failed read still offers the explicit permission refresh. Verified
-locally: 85 focused tests (`CardModal`, `CardParentField`, `useCardTypePermission`), 322
-neighbouring card/board/Paper tests, typecheck and production build. Not verified: browser
-or screen-reader behaviour, and the residual that an archived card on such a payload still
-spends no read, so its Restore stays disabled as before.
+Card editor permission recovery (#3021/#3037/#3042, PR #3048) extends the shared write gate
+from #3028. A current assignment, card, comment or lifecycle write403 invalidates cached
+permission and starts one cancellable board read with a 10-second bound. A confirmed Writer
+recovers editing in place; Viewer, failed, denied or omitted permission after refusal grants
+nothing, stops dependent assignment/parent reads, and offers explicit retry while retaining
+drafts. Initial stated-permission paths add no reads, and the legacy omitted-field behavior
+for an initially archived card is unchanged. Archive failure after Escape rescues unusable
+native focus without stealing deliberate focus movement or affecting another card; late failed
+writes after mounted card switches produce a generic persistent notice (#3033). The A-to-B-to-A
+pending-write busy-ownership residual stays open in #3033. Qualification: full frontend at
+`8ab19e7ef` passed 6,776 tests with three existing skips; final `8582b7ac3` passed typecheck,
+build, 175 focused tests and three native Chromium focus cases after the bounded write403
+bridge. Real backend permission integration and screen-reader output were not tested.
+Fresh background board payloads that repeat the same permission boolean can still leave a denied
+editor locked until explicit permission refresh or reopen; that non-blocking recovery residual is
+tracked in #3049.
+
+Assignment revoke notifications (#2979, PR #3047) now publish each detached card's actual ID
+after the access/audit transaction commits, with no notification when assignments are unchanged.
+Five SQLite cases cover active and archived cards, retained owners, board/assignee isolation,
+persisted webhook metadata and save/commit rollback. Full backend at `4c2f60c59` passed 9,564
+tests with 34 existing skips. Live HTTP delivery and skipped PostgreSQL/Docker cases were not
+exercised locally; reliable delivery remains #3024.
 
 Card archive/restore (#2920): explicit, version-checked lifecycle actions preserve card identity,
 placement, labels, block state and history. Active surfaces exclude archived cards; Paper and
@@ -48,15 +58,26 @@ is a WIP question that does not arise. A proposal move into a column whose store
 are non-contiguous - a deleted middle card, or a sparse import - now applies instead of failing at
 execute and rolling the proposal back: the append position is the column's occupant count, and the
 card move clamps an overshooting insert to the end of the column, so what preview approves is what
-Apply performs (#3025). Preview still does not WIP-check create or move themselves
-(#3020), and the Review conflict/capacity projection still omits lifecycle effects (#3012).
+Apply performs (#3025). Ordered proposal validation now checks create and cross-column move
+capacity as well as restore (#3020), releasing capacity for earlier active-card deletion or
+lifecycle archive. Review warnings use the same ordered occupancy model, including lifecycle
+effects, and retain an earlier peak violation even if a later operation reduces the final count
+(#3012). Legacy archive still means Block and releases no slot. Existing producer timing stays
+intact: planner/policy/chat-create reject at creation; direct API/MCP/chat-move proposals retain
+their existing creation contract and are rejected during review validation when over capacity.
 
-Restore disclosure in Review side effects (#3008, PR #3018): the Cards side-effect row now reads
-"Creates, moves, archives, or restores cards" whenever a proposal contains a card-targeted
-`restore-lifecycle` operation, so restore-only and mixed archive/restore proposals no longer omit the
-restore from the reviewer-facing summary; non-restore wording, the seven categories, tones, webhook
-logic and apply-risk posture are unchanged. Evidence: 12 new Application tests (six proven red
-against the pre-fix analyzer) alongside the existing SideEffectAnalyzer suite, 64 passing.
+Review card side effects (#3031, extending #3008) now name only the actual operations in a stable,
+deduplicated order, including updates and deletes. Legacy archive is described as blocking;
+lifecycle archive and restore keep their distinct meanings. Categories, tones and execution
+authority are unchanged. Combined proposal qualification at `a7463be01`: 217 focused Application
+tests and 54 API/MCP cases pass, with 16 disclosure regressions and 14 ordered-capacity failures
+reproduced before their fixes. These changes make the review description and capacity refusal
+match the ordered proposal before Apply.
+
+Extraction gate regression tests (#2993, PR #3046) use asynchronous entry/release signals so the
+test itself no longer blocks worker threads. The cap, no-queue and permit-return assertions remain;
+six focused cases passed five consecutive runs and full backend at `5e3e230ab` passed 9,559 tests
+with 34 existing skips. This is test-harness repair, with no production extraction behavior change.
 
 Work-model and Review deliveries, verified 2026-09-11 against live GitHub. Merged: Task/Epic/Spike card work-item types (#2949, `7695211a0`), same-board hierarchy (#2965, `86c6f1bdf`), true card archive and restore (#2932, `19dc823c3`), active-card WIP and import counts excluding archived cards (#2951, `02abedfe9`), archived cards excluded from new workspace analysis (#2957, `93ca1cd21`), Inbox captures that keep updating through long triage runs (#2945, `fad49351f`), and Review/Apply legibility (#2942, `e9316fd82`; #2948, `be0e1349f`). Three more landed on 2026-09-11 as their own delivery records: archived-card dependency controls read-only (#2955, `34d1a4c8f`), Inbox status polls ordered with detail refreshes (#2959, `b58c1da4b`), and Review warnings tied to retained rows with truthful recovery (#2961, `401fd648c`). **Assignments #2240 and explicit assignee import mapping are delivered** in PR #2977 (merged 2026-09-11 as `15ee8065a`); blocker #2981 is closed. The migration, authorized participant choices, multiple assignments and explicit importer-or-unassigned mapping are on main. The feature remains in v0.4 under the 2026-09-06 ruling. This correction (#3036) verifies the merge and repository contracts, without rerunning the original behavioral qualification. #2930 remains open on its delayed-pin announcement residual. What this paragraph verifies is merge-level: each PR shows a merge commit and the issue state was read live. The per-PR behavioural claims and their test counts were **not** re-run by this pass and remain the authoring lane's record on each PR.
 

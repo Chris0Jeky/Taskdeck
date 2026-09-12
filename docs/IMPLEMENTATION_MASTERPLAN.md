@@ -2,6 +2,23 @@
 
 Last Updated: 2026-09-12
 
+## Product recovery integration (2026-09-12)
+
+Preserve the reviewed source commits for card-editor permission and archive focus recovery
+(#3021/#3037/#3042, PR #3048), assignment revoke notification identities (#2979, PR #3047),
+ordered proposal capacity and precise card effects (#3012/#3020/#3031), and asynchronous
+extraction gate tests (#2993, PR #3046). The integration branch qualifies these disjoint changes
+against main after the approved retained-merge-ref fix (#2987). Per-head test evidence and limits
+are in STATUS; final hosted qualification belongs to the integration PR.
+
+The assignment/import record correction (#3036, PR #3043) and inert private-hosting compatibility
+files (PR #2914) travel with this delivery. Hosting activation, provisioning and release acceptance
+remain separate. Keep #3033's A-to-B-to-A pending-write ownership residual, #3023's broader editor
+residuals, #3024's reliable delivery work, #3049's same-valued permission-payload recovery and
+#3044's remaining planning-reference cleanup open.
+The existing human actions in OUTSTANDING_TASKS remain unchanged, including CI-control decisions
+for #2931/#2838, private-instance settings and real-device/screen-reader qualification.
+
 ## Product trust reconciliation (2026-09-11)
 
 Main `02abedfe9` includes true archive/restore (#2932), Task/Epic/Spike (#2949), hierarchy
@@ -12,7 +29,7 @@ imperative and pending-delivery paragraphs are historical execution notes.
 Assignments #2240 and explicit importer-or-unassigned mapping are delivered in PR #2977
 (merge `15ee8065a`, 2026-09-11); HIGH #2981 is closed. This 2026-09-12 correction (#3036)
 reconciles the earlier parked snapshot against live merge state and current code. The separate
-permission-recovery and assignment-webhook residuals remain independently tracked; #2093's
+permission-recovery and assignment-webhook repairs are in the integration above; #2093's
 effort estimate and roll-ups remain the next work-model vertical, without a delivery claim.
 
 The maintainer has selected explicit assignee import mapping and effort minutes with hours/minutes
