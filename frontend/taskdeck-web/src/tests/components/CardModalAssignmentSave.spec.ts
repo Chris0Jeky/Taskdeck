@@ -346,6 +346,9 @@ describe('CardModal assignment save in flight (#2981)', () => {
     await flushPromises()
     store.currentBoard.canWrite = true
     await flushPromises()
+    // The flip must really have reached the field and started a second read;
+    // without this the test would pass even if the stub stopped propagating.
+    expect(cardsApi.getParticipants).toHaveBeenCalledTimes(2)
 
     // Still refused: the mutation really is still in flight.
     await wrapper.get('[aria-label="Close card editor"]').trigger('click')

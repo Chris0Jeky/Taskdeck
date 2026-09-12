@@ -46,8 +46,11 @@ const saveFailure = ref<'permission' | 'conflict' | 'ineligible' | 'unknown' | n
  * no-opped and `saving` — with it `locked`, and the `saving-change` the host
  * reads to refuse every close affordance (#2977/#2981) — stayed latched true
  * until the field was remounted by navigation. A read cannot invalidate a write
- * it does not contend with: a non-refreshing `load()` only replaces the
- * participant list, and the refreshing one is unreachable while `saving` holds.
+ * whose result it does not contend with: the branch that rewrites the baseline,
+ * version and displayed assignments is the refreshing one, and that is
+ * unreachable while `saving` holds (its button and `save()` itself are both shut
+ * by the other's flag), so no read body can contradict a receipt. The one state
+ * they do share is `needsRefresh`, which `load()` yields on explicitly below.
  * Each counter still rejects its own stale bodies — a superseded save, and a
  * read left behind by a newer read — and the card-identity watcher and unmount
  * bump both, because those invalidate everything in flight.
@@ -131,7 +134,15 @@ async function load(refresh = false) {
       // Keep the user's draft, including removed participants, for explicit correction.
       emit('saved', current)
     }
-    needsRefresh.value = false
+    /*
+     * This read cleared `saveFailure` before it started, so anything set there
+     * now came from a save that settled DURING it — the one overlap `readOnly`
+     * makes reachable (#3017). Clearing `needsRefresh` under it would withdraw
+     * the "Refresh current assignments" button while the alert still tells the
+     * user to press it, and re-enable Save against the version the refusal just
+     * invalidated. A read never answers a write's refusal.
+     */
+    if (!saveFailure.value) needsRefresh.value = false
   } catch {
     if (request === loadGeneration) {
       loadFailed.value = true

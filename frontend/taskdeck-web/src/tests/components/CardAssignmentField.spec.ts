@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CardAssignmentField from '../../components/board/CardAssignmentField.vue'
 import { cardsApi } from '../../api/cardsApi'
-import type { Card } from '../../types/board'
+import type { BoardParticipant, Card } from '../../types/board'
 
 vi.mock('../../api/cardsApi', () => ({ cardsApi: {
   getParticipants: vi.fn(), replaceAssignments: vi.fn(), getCard: vi.fn(),
@@ -169,6 +169,39 @@ describe('CardAssignmentField', () => {
       // The draft survives the refusal, and the ordinary recovery is offered.
       expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
       expect(button(wrapper, 'Refresh current assignments').attributes('disabled')).toBeUndefined()
+    })
+
+    /*
+     * The same overlap in the other order: the PUT answers while the reload is
+     * still open. `needsRefresh` is the one piece of state both write, so the
+     * trailing read must not clear the refusal's recovery out from under the
+     * message that names it.
+     */
+    it('does not let the trailing read withdraw the refusal the save just reported', async () => {
+      let failSave!: (reason: unknown) => void
+      vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise((_resolve, reject) => { failSave = reject }))
+      const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+      await flushPromises()
+      await wrapper.findAll('input')[1]!.setValue(true)
+      await button(wrapper, 'Save assignments').trigger('click')
+
+      // Hold the reload's participant read open past the PUT's answer.
+      let finishRead!: (people: BoardParticipant[]) => void
+      vi.mocked(cardsApi.getParticipants).mockReturnValueOnce(new Promise(resolve => { finishRead = resolve }))
+      await wrapper.setProps({ readOnly: true }); await flushPromises()
+      await wrapper.setProps({ readOnly: false }); await flushPromises()
+
+      failSave({ response: { status: 409 } }); await flushPromises()
+      expect(wrapper.text()).toContain('The card changed')
+
+      finishRead([{ userId: 'me', displayName: 'Owner' }, { userId: 'viewer', displayName: 'Viewer' }])
+      await flushPromises()
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+      expect(wrapper.text()).toContain('The card changed')
+      // The recovery the message names is still on screen, and the stale
+      // version cannot be resubmitted until it is used.
+      expect(button(wrapper, 'Refresh current assignments')).toBeDefined()
+      expect(button(wrapper, 'Save assignments').attributes('disabled')).toBeDefined()
     })
   })
 
