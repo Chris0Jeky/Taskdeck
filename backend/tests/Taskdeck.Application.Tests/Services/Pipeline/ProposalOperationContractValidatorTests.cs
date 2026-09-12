@@ -151,6 +151,74 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task TypedRelation_NormalizesDependsOnAndAllowsAnEarlierPreallocatedCreate()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Now", 0);
+        var createdId = Guid.NewGuid();
+        var existing = new Card(boardId, column.Id, "Existing target");
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unit.Setup(instance => instance.Cards).Returns(cards.Object);
+        unit.Setup(instance => instance.Columns).Returns(columns.Object);
+        cards.Setup(repository => repository.GetByIdAsync(createdId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Card?)null);
+        cards.Setup(repository => repository.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+
+        var create = CreateOperation(0, "create", createdId,
+            new { boardId, columnId = column.Id, title = "Created before relation" });
+        var relation = CreateOperation(1, "add-relation", createdId,
+            new { boardId, cardId = createdId, relatedCardId = existing.Id, relationType = "depends-on", expectedRevision = 0L });
+
+        var parsed = JsonSerializer.Deserialize<JsonElement>(relation.Parameters);
+        OperationParameterParser.TryGetRelationOperationParameters(parsed, out var normalized, out var error).Should().BeTrue(error);
+        normalized.Relation.Should().Be(new CardRelationEdge(existing.Id, createdId, "blocks"));
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [relation, create]);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task TypedRelation_RequiresRevisionRejectsArchivedCrossBoardAndLifecycleMixes()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Now", 0);
+        var source = new Card(boardId, column.Id, "Source");
+        var archived = new Card(boardId, column.Id, "Archived");
+        archived.Archive();
+        var otherBoardCard = new Card(Guid.NewGuid(), Guid.NewGuid(), "Other board");
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        unit.Setup(instance => instance.Cards).Returns(cards.Object);
+        cards.Setup(repository => repository.GetByIdAsync(source.Id, It.IsAny<CancellationToken>())).ReturnsAsync(source);
+        cards.Setup(repository => repository.GetByIdAsync(archived.Id, It.IsAny<CancellationToken>())).ReturnsAsync(archived);
+        cards.Setup(repository => repository.GetByIdAsync(otherBoardCard.Id, It.IsAny<CancellationToken>())).ReturnsAsync(otherBoardCard);
+
+        var missingPin = CreateOperation(0, "add-relation", source.Id,
+            new { boardId, cardId = source.Id, relatedCardId = archived.Id, relationType = "blocks" });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [missingPin]))
+            .ErrorMessage.Should().Contain("expectedRevision");
+
+        var archivedRelation = CreateOperation(0, "add-relation", source.Id,
+            new { boardId, cardId = source.Id, relatedCardId = archived.Id, relationType = "blocks", expectedRevision = 0L });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [archivedRelation]))
+            .ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+
+        var crossBoardRelation = CreateOperation(0, "add-relation", source.Id,
+            new { boardId, cardId = source.Id, relatedCardId = otherBoardCard.Id, relationType = "blocks", expectedRevision = 0L });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [crossBoardRelation]))
+            .ErrorCode.Should().Be(ErrorCodes.Forbidden);
+
+        var lifecycle = CreateOperation(1, "archive-lifecycle", source.Id,
+            new { cardId = source.Id, expectedUpdatedAt = source.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId,
+            [crossBoardRelation with { Parameters = JsonSerializer.Serialize(new { boardId, cardId = source.Id, relatedCardId = source.Id, relationType = "blocks", expectedRevision = 0L }) }, lifecycle]))
+            .ErrorMessage.Should().Contain("cannot be combined");
+    }
+
+    [Fact]
     public async Task ValidateAsync_ShouldCacheBoundedEntityLookupsAcrossOperations()
     {
         var boardId = Guid.NewGuid();
