@@ -19,6 +19,10 @@ producer changes, live HTTP and release qualification remain outside this slice.
 
 ## Typed relations candidate (2026-09-12, #2092)
 
+The candidate includes delivered archive recovery #3059 (`44d041ca7`). Only the concurrent
+canonical records needed merge resolution; both records are preserved and backend files are
+unchanged. Qualify the updated main base; the separate #3064 draft correction remains unmerged.
+
 Five independently owned slices now integrate the accepted same-board relation contract: canonical
 storage and migration, proposal semantics, API/MCP/chat producers, board/account portability and
 the shared thinking-deck UI. Existing dependency clients use an adapter over the same revisioned
@@ -40,6 +44,14 @@ closing #2092; keep the existing non-snapshot export and physical-device limitat
 The final LAN compatibility correction reuses the existing UUID fallback for proposal IDs and
 passes a missing-`randomUUID` regression, all four API-wrapper tests, lint and bounded review.
 Keep buffered export admission (#3069) and refresh control state (#3070) as separate follow-ups.
+
+## Estimate delivery (2026-09-12)
+
+#3054 merged as `54e4c0a86` after required hosted run `34713059470` passed at reviewed head
+`28c4f49de`. The merge preserves source PRs #3053/#3055 and closes #2093/#3044/#3049/#3062;
+all seven project items are marked Done. The first post-merge review-thread check is clear.
+Requalify the archive and typed-relation children against the delivered base before merging them.
+Existing bounded follow-ups and human release, hosting and device decisions remain separate.
 
 ## Estimates and derived rollups (2026-09-12, #2093)
 
@@ -80,8 +92,12 @@ are in STATUS; final hosted qualification belongs to the integration PR.
 
 The assignment/import record correction (#3036, PR #3043) and inert private-hosting compatibility
 files (PR #2914) travel with this delivery. Hosting activation, provisioning and release acceptance
-remain separate. Keep #3033's A-to-B-to-A pending-write ownership residual, #3023's broader editor
-residuals and #3024's reliable delivery work open. The #3044 planning-reference cleanup and #3049
+remain separate. The #3033 A-to-B-to-A pending-write follow-on now keeps ownership above the
+keyed child in the real editor. Its bounded host fix passes 151 focused tests, lint/typecheck/build
+and independent review; the earlier full frontend run preceded that fix. Merge #3054 first and
+requalify the retargeted child. Keep MEDIUM settled-state refresh #3060, broader editor #3023 and
+reliable delivery #3024 open.
+The #3044 planning-reference cleanup and #3049
 same-valued permission-payload recovery are reviewed and integrated into #3054 for final hosted CI.
 The existing human actions in OUTSTANDING_TASKS remain unchanged, including CI-control decisions
 for #2931/#2838, private-instance settings and real-device/screen-reader qualification.
