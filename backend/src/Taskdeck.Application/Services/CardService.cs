@@ -288,7 +288,22 @@ public partial class CardService
             if (changesEstimate && dto.Title == null && dto.Description == null && !dto.DueDate.HasValue && !dto.ClearDueDate &&
                 !dto.IsBlocked.HasValue && dto.LabelIds == null && !workItemType.HasValue && !changesParent &&
                 oldEstimate == dto.EstimatedEffortMinutes)
+            {
+                // Proposal validation can leave this card tracked before the executor opens its
+                // transaction. A competing commit in that gap would otherwise make the stale
+                // tracked value look like a successful no-op and let the proposal record Applied.
+                // The conditional self-assignment reaches the database without advancing the
+                // version, audit, or realtime stream for a truly unchanged card.
+                if (!await _unitOfWork.Cards.TryGuardVersionAsync(
+                        card.Id,
+                        dto.ExpectedUpdatedAt!.Value,
+                        cancellationToken))
+                    return Result.Failure<CardDto>(
+                        ErrorCodes.Conflict,
+                        "Card was updated by another session. Refresh and retry your changes.");
+
                 return Result.Success(MapToDto(card));
+            }
             if (changesParent)
             {
                 var graph = await _unitOfWork.Cards.GetHierarchyByBoardIdAsync(card.BoardId, cancellationToken);

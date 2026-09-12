@@ -92,7 +92,8 @@ public class EstimateProposalsApiTests(HostedWorkerDisabledTestWebApplicationFac
         [
             Op(0, "create", cardId, new { boardId, columnId, title = "Planned card", estimatedEffortMinutes = 60 }),
             Op(1, "update", cardId, new { cardId, estimatedEffortMinutes = 0 }),
-            Op(2, "update", cardId, new { cardId, clearEstimatedEffort = true })
+            Op(2, "update", cardId, new { cardId, clearEstimatedEffort = true }),
+            Op(3, "update", cardId, new { cardId, clearEstimatedEffort = true })
         ]);
         var diff = await ReadDiffAsync(client, proposal.Id);
         diff.Should().Contain("Effort estimate: (new card) -> 1h").And.Contain("Effort estimate: 1h -> 0m").And.Contain("Effort estimate: 0m -> unknown");
@@ -100,6 +101,58 @@ public class EstimateProposalsApiTests(HostedWorkerDisabledTestWebApplicationFac
         var applied = await ExecuteAsync(client, proposal.Id);
         applied.StatusCode.Should().Be(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync());
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{cardId}"))!.EstimatedEffortMinutes.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(60, false)]
+    [InlineData(null, true)]
+    public async Task ConcurrentWriterAfterValidation_SameValueEstimateStillConflictsWithoutAppliedReceipt(
+        int? estimate,
+        bool clearEstimate)
+    {
+        var race = new EstimateRaceInterceptor();
+        using var raceFactory = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
+            services.AddDbContext<TaskdeckDbContext>((provider, options) =>
+            {
+                var configuration = provider.GetRequiredService<IConfiguration>();
+                options.UseTaskdeckSqlite(configuration.GetConnectionString("DefaultConnection")!,
+                    configuration.GetSection("Database").Get<DatabaseSettings>() ?? new DatabaseSettings())
+                    .AddInterceptors(race);
+            });
+        }));
+        using var client = raceFactory.CreateClient();
+        var (userId, boardId, columnId) = await SetupAsync(client);
+        var card = await CreateCardAsync(client, boardId, columnId, estimate);
+        var operation = clearEstimate
+            ? Op(0, "update", card.Id, new { cardId = card.Id, clearEstimatedEffort = true, expectedUpdatedAt = card.UpdatedAt })
+            : Op(0, "update", card.Id, new { cardId = card.Id, estimatedEffortMinutes = estimate, expectedUpdatedAt = card.UpdatedAt });
+        var proposal = await CreateProposalAsync(client, userId, boardId, [operation]);
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null)).EnsureSuccessStatusCode();
+        race.TargetId = card.Id;
+        race.BeforeTransaction = async () =>
+        {
+            using var writerScope = raceFactory.Services.CreateScope();
+            var writer = writerScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var competing = await writer.Cards.SingleAsync(candidate => candidate.Id == card.Id);
+            competing.Update(title: "Competing committed title");
+            await writer.SaveChangesAsync();
+        };
+
+        var applied = await ExecuteAsync(client, proposal.Id);
+
+        applied.StatusCode.Should().Be(HttpStatusCode.Conflict, await applied.Content.ReadAsStringAsync());
+        race.Fired.Should().BeTrue("the competing context must commit after validation and before the executor transaction");
+        using var verifyScope = raceFactory.Services.CreateScope();
+        var db = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await db.Cards.SingleAsync(candidate => candidate.Id == card.Id);
+        persisted.Title.Should().Be("Competing committed title");
+        persisted.EstimatedEffortMinutes.Should().Be(estimate);
+        (await db.AutomationProposals.SingleAsync(candidate => candidate.Id == proposal.Id)).Status
+            .Should().NotBe(ProposalStatus.Applied);
+        (await db.AuditLogs.Where(log => log.EntityId == card.Id).ToListAsync())
+            .Should().NotContain(log => log.Changes != null && log.Changes.Contains(proposal.Id.ToString()));
     }
 
     [Fact]
