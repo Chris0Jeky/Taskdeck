@@ -52,14 +52,15 @@ public class AutomationExecutorService : IAutomationExecutorService
         ColumnService columnService,
         ILogger<AutomationExecutorService>? logger,
         CardAssignmentService? assignments = null,
-        IBoardRealtimeNotifier? realtimeNotifier = null)
+        IBoardRealtimeNotifier? realtimeNotifier = null,
+        IBoardRelationService? relations = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
         _realtimeNotifier = realtimeNotifier;
         _handlerRegistry = new OperationHandlerRegistry(
-            unitOfWork, cardService, boardService, columnService, assignments);
+            unitOfWork, cardService, boardService, columnService, assignments, relations);
         _auditRecorder = new ExecutionAuditRecorder(unitOfWork);
         _logger = logger;
     }

@@ -8,24 +8,45 @@ namespace Taskdeck.Infrastructure.Repositories;
 public sealed class BoardDependencyRepository(TaskdeckDbContext context) : IBoardDependencyRepository
 {
     public Task<BoardDependencies?> GetAsync(Guid boardId, CancellationToken cancellationToken) =>
-        context.Set<BoardDependencies>().AsNoTracking().SingleOrDefaultAsync(graph => graph.BoardId == boardId, cancellationToken);
+        context.Set<BoardDependencies>().Include(graph => graph.Relations)
+            .SingleOrDefaultAsync(graph => graph.BoardId == boardId, cancellationToken);
     public void AddForImport(BoardDependencies graph) => context.Set<BoardDependencies>().Add(graph);
-    public async Task<bool> SaveAsync(BoardDependencies graph, long expectedRevision, CancellationToken cancellationToken)
+
+    public async Task<bool> StageAsync(BoardDependencies graph, long expectedRevision, CancellationToken cancellationToken)
     {
         var entry = context.Entry(graph);
-        if (expectedRevision == 0) entry.State = EntityState.Added;
-        else
+        if (entry.State == EntityState.Detached)
         {
-            entry.State = EntityState.Modified;
-            entry.Property(value => value.Revision).OriginalValue = expectedRevision;
+            var stored = await GetAsync(graph.BoardId, cancellationToken);
+            if (stored is null)
+            {
+                if (expectedRevision != 0) return false;
+                context.Add(graph);
+            }
+            else
+            {
+                if (stored.Revision != expectedRevision) return false;
+                stored.ReplaceRelations(graph.ReadRelations());
+                entry = context.Entry(stored);
+            }
         }
+        if (entry.State != EntityState.Added)
+        {
+            entry.Property(value => value.Revision).OriginalValue = expectedRevision;
+            entry.Property(value => value.Revision).IsModified = true;
+        }
+        return true;
+    }
+
+    public async Task<bool> SaveAsync(BoardDependencies graph, long expectedRevision, CancellationToken cancellationToken)
+    {
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            if (!await StageAsync(graph, expectedRevision, cancellationToken)) return false;
             await context.SaveChangesAsync(cancellationToken);
-            // The write transaction serializes card deletion. Validate after acquiring its
-            // write lock and before committing; an earlier deletion rolls back graph + audit.
-            var ids = graph.ReadEdges().SelectMany(e => new[] { e.CardId, e.DependsOnCardId }).Distinct().ToArray();
+            // The write lock makes endpoint validation atomic with card deletion and audit.
+            var ids = graph.ReadRelations().SelectMany(e => new[] { e.SourceCardId, e.TargetCardId }).Distinct().ToArray();
             foreach (var batch in ids.Chunk(500))
                 if (await context.Cards.CountAsync(card => card.BoardId == graph.BoardId && batch.Contains(card.Id), cancellationToken) != batch.Length)
                 {
@@ -37,7 +58,7 @@ public sealed class BoardDependencyRepository(TaskdeckDbContext context) : IBoar
             return true;
         }
         catch (DbUpdateConcurrencyException) { context.ChangeTracker.Clear(); return false; }
-        catch (DbUpdateException ex) when (expectedRevision == 0 && ex.InnerException is SqliteException { SqliteExtendedErrorCode: 1555 or 2067 })
+        catch (DbUpdateException ex) when (ex.InnerException is SqliteException { SqliteExtendedErrorCode: 1555 or 2067 or 787 })
         { context.ChangeTracker.Clear(); return false; }
     }
 }

@@ -100,8 +100,9 @@ public sealed class ThinkingStepApiTests(TestWebApplicationFactory factory) : IC
         (await client.DeleteAsync($"/api/boards/{board.Id}/cards/{childId}")).EnsureSuccessStatusCode();
         (await client.PostAsJsonAsync(url, request)).EnsureSuccessStatusCode();
         (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!.Should().HaveCount(1);
-        var exported = (await client.GetFromJsonAsync<ExportBoardDto>($"/api/export/boards/{board.Id}/json"))!;
-        exported.ThinkingDecks![0].Material.Layers[0].Items[0].LinkedCardId.Should().BeNull();
+        var exported = (await client.GetFromJsonAsync<BoardExportEnvelope>($"/api/export/boards/{board.Id}/json"))!;
+        exported.Version.Should().Be(5);
+        exported.Payload.ThinkingDecks![0].Material.Layers[0].Items[0].LinkedCardId.Should().BeNull();
         // The source still has its tombstone; export normalization does not mutate it.
         (await client.GetFromJsonAsync<ThinkingDeckDto>(DeckUrl(board.Id, parent.Id)))!.Layers[0].Items[0].LinkedCardId.Should().Be(childId);
     }

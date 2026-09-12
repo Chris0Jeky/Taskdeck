@@ -3,9 +3,11 @@ import { computed, ref, toRef, watch } from 'vue'
 import ThinkingStepCard from './ThinkingStepCard.vue'
 import ThinkingQuestionAnswer from './ThinkingQuestionAnswer.vue'
 import CardDependencies from './CardDependencies.vue'
+import CardRelations from './CardRelations.vue'
 import { useThinkingDeck } from '../../composables/useThinkingDeck'
 import type { ThinkingLayer } from '../../types/thinking'
 import { isThinkingItemLayer, thinkingItemLabel, thinkingKinds } from '../../utils/thinkingLayerPresentation'
+import { isDemoMode } from '../../utils/demoMode'
 
 const props = defineProps<{ boardId: string; cardId: string }>()
 const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; busy: [busy: boolean] }>()
@@ -17,12 +19,14 @@ const pendingRemoval = ref<string | null>(null)
 const kinds = thinkingKinds
 const promoting = ref(false)
 const dependenciesBusy = ref(false)
+const relationsBusy = ref(false)
 const stepDrafts = ref<Record<string, boolean>>({})
 const privateDrafts = ref<Record<string, boolean>>({})
 const privateBusy = ref<Record<string, boolean>>({})
 const answering = computed(() => layers.value.some(layer => privateBusy.value[layer.id]))
-watch(answering, value => emit('busy', value), { flush: 'sync' })
-const anyDirty = computed(() => dependenciesBusy.value || promoting.value || dirty.value || layers.value.some(layer => privateDrafts.value[layer.id] || layer.items.some(item => stepDrafts.value[item.id])))
+const busy = computed(() => answering.value || relationsBusy.value)
+watch(busy, value => emit('busy', value), { flush: 'sync' })
+const anyDirty = computed(() => dependenciesBusy.value || relationsBusy.value || promoting.value || dirty.value || layers.value.some(layer => privateDrafts.value[layer.id] || layer.items.some(item => stepDrafts.value[item.id])))
 watch(anyDirty, value => emit('dirty-change', value), { immediate: true })
 function addItem(layer: ThinkingLayer) {
   if (layer.items.length < 50) layer.items.push({ id: crypto.randomUUID(), text: 'New item', completed: false, linkedCardId: null })
@@ -105,6 +109,7 @@ function reload() { confirmReload.value = false; void load() }
         <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict || answering" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
       </footer>
       <CardDependencies :board-id="boardId" :card-id="cardId" :can-write="canWrite" :refresh-permission="refreshPermission" @busy="dependenciesBusy = $event" />
+      <CardRelations v-if="!isDemoMode" :board-id="boardId" :card-id="cardId" :can-write="canWrite" :refresh-permission="refreshPermission" @busy="relationsBusy = $event" />
     </template>
   </section>
 </template>

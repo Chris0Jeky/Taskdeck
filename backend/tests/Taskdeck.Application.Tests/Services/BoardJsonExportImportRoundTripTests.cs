@@ -57,6 +57,220 @@ public class BoardJsonExportImportRoundTripTests
     }
 
     [Fact]
+    public void TypedRelations_UseV5EnvelopeAndRemainAvailableToTheImporter()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var source = Guid.NewGuid();
+        var target = Guid.NewGuid();
+        var export = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Relations", null, false, now, now), [], [], [], [], now, "exporter",
+            Relations: [new CardRelationEdge(source, target, "blocks")]);
+
+        var payload = BoardJsonExportImportService.ToPortablePayload(export);
+        payload.Should().BeOfType<BoardExportEnvelope>().Which.Version.Should().Be(5);
+        var imported = BoardJsonExportImportService.TryDeserializeImportDto(JsonSerializer.Serialize(payload, JsonOptions));
+
+        imported.Should().NotBeNull();
+        imported!.Relations.Should().ContainSingle()
+            .Which.Should().Be(new CardRelationEdge(source, target, "blocks"));
+    }
+
+    [Fact]
+    public void TypedRelations_V5EnvelopeWithoutRelationArrayFailsClosed()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var export = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Relations", null, false, now, now), [], [], [], [], now, "exporter");
+        var malformedV5 = new BoardExportEnvelope("taskdeck-board", 5, export);
+
+        BoardJsonExportImportService.TryDeserializeImportDto(JsonSerializer.Serialize(malformedV5, JsonOptions))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void TypedRelations_OlderEnvelopeDoesNotAcceptMetadataItCannotRepresent()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var export = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Relations", null, false, now, now), [], [], [], [], now, "exporter",
+            Relations: [new CardRelationEdge(Guid.NewGuid(), Guid.NewGuid(), "relates-to")]);
+        var malformedV4 = new BoardExportEnvelope("taskdeck-board", 4, export);
+
+        BoardJsonExportImportService.TryDeserializeImportDto(JsonSerializer.Serialize(malformedV4, JsonOptions))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TypedRelations_ContradictoryLegacyProjectionFailsBeforeAnyWrite()
+    {
+        var user = CreateUser("relation-mismatch");
+        SetupImportMocks(user);
+        var firstSourceId = Guid.NewGuid();
+        var secondSourceId = Guid.NewGuid();
+        var dto = new ImportBoardDto("Contradictory relations", null, [new("Work", 0, null)],
+            [new("First", null, "Work", 0, null, [], SourceId: firstSourceId),
+             new("Second", null, "Work", 1, null, [], SourceId: secondSourceId)], [],
+            Dependencies: [new CardDependency(firstSourceId, secondSourceId)],
+            Relations: [new CardRelationEdge(firstSourceId, secondSourceId, "blocks")]);
+
+        var result = await _service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _boardRepoMock.Verify(r => r.AddAsync(It.IsAny<Board>(), default), Times.Never);
+        _cardRepoMock.Verify(r => r.AddAsync(It.IsAny<Card>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task TypedRelations_ImportPreallocatesFreshCardIdsAndNormalizesDependsOn()
+    {
+        var user = CreateUser("relation-import");
+        SetupImportMocks(user);
+        var firstSourceId = Guid.NewGuid();
+        var secondSourceId = Guid.NewGuid();
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        BoardDependencies? stored = null;
+        dependencies.Setup(repository => repository.AddForImport(It.IsAny<BoardDependencies>()))
+            .Callback<BoardDependencies>(graph => stored = graph);
+        var service = new BoardJsonExportImportService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = true },
+            dependencies: dependencies.Object);
+        var importedCards = new List<Card>();
+        _cardRepoMock.Setup(repository => repository.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
+            .Callback<Card, CancellationToken>((card, _) => importedCards.Add(card))
+            .ReturnsAsync((Card card, CancellationToken _) => card);
+        var dto = new ImportBoardDto("Relations", null, [new("Work", 0, null)],
+            [new("First", null, "Work", 0, null, [], SourceId: firstSourceId),
+             new("Archived second", null, "Work", 1, null, [], SourceId: secondSourceId, IsArchived: true)], [],
+            Relations: [new CardRelationEdge(firstSourceId, secondSourceId, "depends-on")]);
+
+        var result = await service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        stored.Should().NotBeNull();
+        var first = importedCards.Single(card => card.Title == "First");
+        var second = importedCards.Single(card => card.Title == "Archived second");
+        first.Id.Should().NotBe(firstSourceId);
+        second.Id.Should().NotBe(secondSourceId);
+        stored!.ReadRelations().Should().ContainSingle()
+            .Which.Should().Be(new CardRelationEdge(second.Id, first.Id, "blocks"));
+    }
+
+    [Fact]
+    public async Task EstimatedEffort_RoundTripPreservesUnknownZeroAndPositiveForActiveAndArchivedCards()
+    {
+        var owner = CreateUser("estimate-owner");
+        var board = new Board("Estimates", ownerId: owner.Id);
+        var column = new Column(board.Id, "Work", 0);
+        var source = new List<Card>();
+        foreach (var archived in new[] { false, true })
+        foreach (var minutes in new int?[] { null, 0, 135, Card.MaxEstimatedEffortMinutes })
+        {
+            var card = new Card(board.Id, column.Id, $"{archived}-{minutes?.ToString() ?? "unknown"}", position: source.Count);
+            card.SetEstimatedEffortMinutes(minutes);
+            if (archived) card.Archive();
+            source.Add(card);
+            AddToPrivateCollection(column, "_cards", card);
+        }
+        AddToPrivateCollection(board, "_columns", column);
+        SetupExportMocks(board, owner);
+        SetupImportMocks(owner);
+        var imported = new List<Card>();
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
+            .Callback<Card, CancellationToken>((card, _) => imported.Add(card))
+            .ReturnsAsync((Card card, CancellationToken _) => card);
+
+        var exported = await _service.ExportBoardToJsonAsync(board.Id, owner.Id);
+        exported.IsSuccess.Should().BeTrue(exported.ErrorMessage);
+        using var json = JsonDocument.Parse(exported.Value);
+        json.RootElement.TryGetProperty("format", out _).Should().BeFalse("estimates are an additive field");
+        foreach (var card in json.RootElement.GetProperty("cards").EnumerateArray())
+            card.TryGetProperty("estimatedEffortMinutes", out _).Should().BeTrue();
+        var result = await _service.ImportBoardFromJsonAsync(exported.Value, owner.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        imported.Should().HaveCount(source.Count);
+        foreach (var original in source)
+        {
+            var copy = imported.Single(card => card.Title == original.Title);
+            copy.EstimatedEffortMinutes.Should().Be(original.EstimatedEffortMinutes);
+            copy.IsArchived.Should().Be(original.IsArchived);
+            copy.Id.Should().NotBe(original.Id);
+        }
+    }
+
+    [Theory]
+    [InlineData("typed", -1)]
+    [InlineData("typed", 1000001)]
+    [InlineData("json", -1)]
+    [InlineData("json", 1000001)]
+    [InlineData("preview", -1)]
+    [InlineData("preview", 1000001)]
+    [InlineData("v2", -1)]
+    [InlineData("v3", 1000001)]
+    [InlineData("v4", -1)]
+    [InlineData("source", 1000001)]
+    [InlineData("preview-v4", 1000001)]
+    public async Task EstimatedEffort_InvalidImportRejectsWholePayloadBeforeAnyWrite(string route, int minutes)
+    {
+        var user = CreateUser("bad-estimate");
+        SetupImportMocks(user);
+        var dto = new ImportBoardDto("Rejected estimates", null, [new("Work", 0, null)],
+            [new("Valid first", null, "Work", 0, null, []),
+             new("Invalid later", null, "Work", 1, null, [], EstimatedEffortMinutes: minutes)], []);
+        var json = JsonSerializer.Serialize(dto, JsonOptions);
+        if (route is "v2" or "v3" or "v4" or "source" or "preview-v4")
+        {
+            var boardId = Guid.NewGuid();
+            var columnId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var export = new ExportBoardDto(new(boardId, dto.Name, null, false, now, now),
+                [new(columnId, boardId, "Work", 0, null, 1, now, now)],
+                [new(Guid.NewGuid(), boardId, columnId, "Invalid estimate", string.Empty, null, false, null, 0, [], now, now,
+                    EstimatedEffortMinutes: minutes)], [], [], now, user.Username);
+            var version = route == "v2" ? 2 : route == "v3" ? 3 : 4;
+            object payload = new BoardExportEnvelope("taskdeck-board", version, export);
+            if (route == "source") payload = new { source = payload };
+            json = JsonSerializer.Serialize(payload, JsonOptions);
+        }
+
+        Result result = route switch
+        {
+            "typed" => await _service.ImportBoardAsync(dto, user.Id),
+            "preview" or "preview-v4" => await _service.PreviewBoardAsync(json, user.Id),
+            _ => await _service.ImportBoardFromJsonAsync(json, user.Id)
+        };
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _boardRepoMock.Verify(r => r.AddAsync(It.IsAny<Board>(), default), Times.Never);
+        _columnRepoMock.Verify(r => r.AddAsync(It.IsAny<Column>(), default), Times.Never);
+        _cardRepoMock.Verify(r => r.AddAsync(It.IsAny<Card>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EstimatedEffort_OmittedLegacyImportFieldRemainsUnknown()
+    {
+        var user = CreateUser("legacy-estimate");
+        SetupImportMocks(user);
+        Card? imported = null;
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
+            .Callback<Card, CancellationToken>((card, _) => imported = card)
+            .ReturnsAsync((Card card, CancellationToken _) => card);
+        const string json = """{"name":"Old export","columns":[{"name":"Work","position":0}],"cards":[{"title":"Old card","columnName":"Work","position":0}],"labels":[]}""";
+
+        var result = await _service.ImportBoardFromJsonAsync(json, user.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        imported.Should().NotBeNull();
+        imported!.EstimatedEffortMinutes.Should().BeNull();
+    }
+
+    [Fact]
     public async Task WorkItemType_RoundTripRetainsActiveAndArchivedTypesWithFreshIds()
     {
         var owner = CreateUser("type-owner");
