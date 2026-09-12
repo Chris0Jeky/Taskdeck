@@ -69,6 +69,10 @@ function noticeText() {
   return savePendingDismissButton()?.closest('[role="dialog"]')?.textContent ?? ''
 }
 
+function archiveConfirmationButton() {
+  return Array.from(document.body.querySelectorAll('button')).find(button => button.textContent === 'Confirm archive')
+}
+
 describe('CardModal assignment save in flight (#2981)', () => {
   let mockStore: Record<string, unknown>
 
@@ -80,6 +84,7 @@ describe('CardModal assignment save in flight (#2981)', () => {
       currentBoard: { id: 'board-1', canWrite: true, isArchived: false },
       currentBoardCards: [card],
       updateCard: vi.fn().mockResolvedValue(card),
+      setCardArchived: vi.fn(),
       deleteCard: vi.fn().mockResolvedValue(undefined),
       fetchCardComments: vi.fn().mockResolvedValue([]),
       fetchCardProvenance: vi.fn().mockResolvedValue(null),
@@ -312,6 +317,54 @@ describe('CardModal assignment save in flight (#2981)', () => {
     await flushPromises()
     expect(wrapper.emitted('close')).toHaveLength(1)
     expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('keeps the lifecycle control frozen after an archive settles before an assignment save', async () => {
+    const archive = createDeferred<void>()
+    const assignment = createDeferred<Card>()
+    vi.mocked((mockStore as { setCardArchived: ReturnType<typeof vi.fn> }).setCardArchived).mockReturnValue(archive.promise)
+    vi.mocked(cardsApi.replaceAssignments).mockReturnValue(assignment.promise)
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'modal' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    // Start the archive while the editor is clean, then submit an assignment
+    // edit while that lifecycle request still owns the active card version.
+    await fieldButton(wrapper, 'Archive card')!.trigger('click')
+    await flushPromises()
+    archiveConfirmationButton()!.click()
+    await flushPromises()
+    expect(mockStore.setCardArchived).toHaveBeenCalledWith('board-1', 'card-1', true, 'v1', 'v1:fixed')
+
+    const assignments = wrapper.get('[aria-label="Card assignments"]')
+    await assignments.findAll('input[type="checkbox"]')[0]!.setValue(true)
+    await fieldButton(wrapper, 'Save assignments')!.trigger('click')
+    await nextTick()
+    expect(cardsApi.replaceAssignments).toHaveBeenCalledWith('board-1', 'card-1', ['user-2'], 'v1')
+
+    // The archive commits first. The parent card snapshot still says v1, but
+    // the editor knows the card is archived and keeps the in-flight assignment
+    // receipt owned until it settles.
+    archive.resolve()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="card-archive-kept-draft"]').text()).toContain('This card is now archived')
+    const restoreWhileSaving = fieldButton(wrapper, 'Restore card')!
+    expect((restoreWhileSaving.element as HTMLButtonElement).disabled).toBe(true)
+
+    // Once the assignment receipt clears the local draft, the notice may leave
+    // with it, but the editor must not offer a restore that would send the
+    // pre-archive v1 from its stale prop and deterministically conflict.
+    assignment.resolve(savedCard)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="card-archive-kept-draft"]').exists()).toBe(false)
+    const restoreAfterSettlement = fieldButton(wrapper, 'Restore card')!
+    expect((restoreAfterSettlement.element as HTMLButtonElement).disabled).toBe(true)
+    await restoreAfterSettlement.trigger('click')
+    expect(mockStore.setCardArchived).toHaveBeenCalledTimes(1)
 
     wrapper.unmount()
   })

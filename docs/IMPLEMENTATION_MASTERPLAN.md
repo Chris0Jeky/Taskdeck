@@ -4,9 +4,9 @@ Last Updated: 2026-09-12
 
 ## Typed relations candidate (2026-09-12, #2092)
 
-The candidate includes delivered archive recovery #3059 (`44d041ca7`). Only the concurrent
-canonical records needed merge resolution; both records are preserved and backend files are
-unchanged. Qualify the updated main base; the separate #3064 draft correction remains unmerged.
+The candidate includes delivered archive recovery #3059 and draft correction #3064 through
+main `9a8c14c6b`. Only the concurrent canonical records needed merge resolution; both records
+are preserved and backend files are unchanged. Qualify the updated main base.
 
 Five independently owned slices now integrate the accepted same-board relation contract: canonical
 storage and migration, proposal semantics, API/MCP/chat producers, board/account portability and
@@ -36,6 +36,14 @@ negative controls reproduce both missing contracts; 91 Application cases and one
 pass after correction. STATUS records the bounded review and compatibility fix. Keep premature
 proposal-create events (#3073) and proposal-delete audit attribution (#3074) outside this correction.
 Requalify the final head before merge; approval and Apply remain explicit.
+
+## Archive recovery delivery and remaining draft slice (2026-09-12)
+
+#3059 merged as `44d041ca7` after required hosted run `34714826369` passed at `7135d53a9`,
+closing #3033. Its post-merge review check is clear. #3064 then merged as `9a8c14c6b` after
+required run `34716287296` passed at `13dfde5ca`; its first post-merge review check is also clear.
+#3023 remains a partial repair with recovery-copy and other residuals open, and #3060 separately
+owns selected-snapshot settlement. Existing human-action and release decisions remain unchanged.
 
 ## Estimate delivery (2026-09-12)
 
