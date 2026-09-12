@@ -51,12 +51,13 @@ describe('estimate read ownership and recovery', () => {
 
   it('does not start reads while closed or without a user', async () => {
     const { api } = create()
+    const platformTimerCount = vi.getTimerCount()
     await api.refresh()
     session.userId = ''
     api.toggle()
     await api.refresh()
     expect(estimateRollupsApi.get).not.toHaveBeenCalled()
-    expect(vi.getTimerCount()).toBe(0)
+    expect(vi.getTimerCount()).toBe(platformTimerCount)
   })
 
   it('aborts on close and reopens with a fresh request', async () => {
