@@ -1,6 +1,7 @@
 import { createApp, h, ref } from 'vue'
 import { createPinia } from 'pinia'
 import CardArchiveAction from '../../../src/components/board/CardArchiveAction.vue'
+import { useToastStore } from '../../../src/store/toastStore'
 import type { Card } from '../../../src/types/board'
 
 // Real Vue dialog and HTTP action, isolated from route/auth setup so Chromium
@@ -12,12 +13,16 @@ const card = ref({
 } as unknown as Card)
 
 createApp({
-  setup: () => () => h('main', [
+  setup: () => {
+    const toast = useToastStore()
+    return () => h('main', [
     h(CardArchiveAction, { card: card.value, canWrite: true }),
     h('button', { type: 'button' }, 'Unrelated action'),
     h('button', {
       type: 'button',
       onClick: () => { card.value = { ...card.value, id: 'focus-card-b' } },
     }, 'Switch card'),
-  ]),
+    h('output', { 'data-testid': 'write-notice' }, toast.toasts.map(item => item.message).join('\n')),
+    ])
+  },
 }).use(createPinia()).mount('#archive-focus')

@@ -49,6 +49,9 @@ for (const afterDismissal of ['no new focus', 'unrelated control', 'card switch'
     })
     await expect(confirmation).toHaveCount(0)
     if (afterDismissal === 'card switch') {
+      // The notice proves the old rejection has actually settled before the
+      // negative assertions about the new card's local error and focus.
+      await expect(page.getByTestId('write-notice')).toContainText('The archive requested for a previously viewed card could not be confirmed.')
       await expect(page.getByRole('alert')).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Switch card', exact: true })).toBeFocused()
       await expect(opener).toBeEnabled()
