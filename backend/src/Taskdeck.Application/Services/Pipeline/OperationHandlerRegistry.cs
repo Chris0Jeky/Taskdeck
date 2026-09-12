@@ -316,7 +316,17 @@ public class OperationHandlerRegistry
         if (targetColumn == null)
             return Result.Failure(ErrorCodes.NotFound, $"Column {columnId} not found");
 
-        var position = targetColumn.Cards.Any() ? targetColumn.Cards.Max(c => c.Position) + 1 : 0;
+        // Append: the index one past the last occupant of the list CardService.MoveCardAsync
+        // rebuilds, which is ICardRepository.GetByColumnIdAsync - active cards only, archived ones
+        // excluded. Deriving it from max(Position) + 1 instead broke whenever the column's stored
+        // positions were non-contiguous (#3025): a deleted middle card leaves 0 and 2, and an
+        // archived card holds a position without occupying a slot, so max + 1 overshot the list
+        // and CardService threw and rolled the proposal back. The service clamps an overshoot
+        // anyway, so this stays correct even if the two reads ever disagree - and it is what
+        // carries the one case that still overshoots by design: a move into the card's own
+        // column counts the mover here but excludes it there, so the clamp lands it at the
+        // bottom, which is what "move to the column it is already in" means.
+        var position = targetColumn.Cards.Count(card => !card.IsArchived);
         var dto = new MoveCardDto(columnId, position);
         var result = await _cardService.MoveCardAsync(cardId, dto, cancellationToken);
 

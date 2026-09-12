@@ -194,6 +194,119 @@ describe('CardModal', () => {
     wrapper.unmount()
   })
 
+  /*
+   * #3028. The type selector was not the only gate reading an omitted optional `canWrite`
+   * as "no" — the parent selector, the archive control and the assignment field did too, so
+   * a writer on a payload cached before the field existed watched one control enable and
+   * three stay dead. One resolved read now answers all four.
+   */
+  describe('card editor write gates on a board payload that omits canWrite', () => {
+    /** The four gates, read from the rendered editor exactly as a user meets them. */
+    function writeGates(wrapper: ReturnType<typeof mount>) {
+      const buttons = wrapper.findAll('button')
+      const archive = buttons.find(button => button.text() === 'Archive card' || button.text() === 'Restore card')
+      const assignments = wrapper.get('section[aria-label="Card assignments"]')
+      return {
+        type: !(wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled,
+        parent: !(wrapper.get('#card-parent').element as HTMLSelectElement).disabled,
+        archive: archive !== undefined && archive.attributes('disabled') === undefined,
+        // The write path of the assignment field: its selector, and the Save that only
+        // renders while the host reports write permission.
+        assignment: assignments.get('fieldset').attributes('disabled') === undefined
+          && buttons.some(button => button.text() === 'Save assignments'),
+      }
+    }
+
+    it('enables all four once the server answers, instead of one control out of four', async () => {
+      mockStore.currentBoard = { id: card.boardId, isArchived: false }
+      vi.mocked(boardsApi.getBoard).mockResolvedValue({ id: card.boardId, canWrite: true, isArchived: false } as any)
+      const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+
+      expect(writeGates(wrapper)).toEqual({ type: false, parent: false, archive: false, assignment: false })
+
+      await flushPromises()
+
+      expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+      expect(writeGates(wrapper)).toEqual({ type: true, parent: true, archive: true, assignment: true })
+      expect(wrapper.text()).not.toContain('Archive and restore require an active board with edit access.')
+      expect(wrapper.text()).not.toContain('Assignments are read-only.')
+      wrapper.unmount()
+    })
+
+    it('keeps all four read-only for a viewer', async () => {
+      mockStore.currentBoard = { id: card.boardId, canWrite: false, isArchived: false }
+      const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+      await flushPromises()
+
+      expect(writeGates(wrapper)).toEqual({ type: false, parent: false, archive: false, assignment: false })
+      expect(wrapper.text()).toContain('Archive and restore require an active board with edit access.')
+      expect(wrapper.text()).toContain('Assignments are read-only.')
+      expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+      expect(boardsApi.getBoard).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('keeps all four read-only on an archived board', async () => {
+      mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: true }
+      const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+      await flushPromises()
+
+      expect(writeGates(wrapper)).toEqual({ type: false, parent: false, archive: false, assignment: false })
+      expect(boardsApi.getBoard).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    /*
+     * An archived CARD is read-only for editing, but Restore is a write offered ON it, so
+     * the archive control keeps the permission the payload already states. Folding the card's
+     * archive state into the shared answer would have disabled the one control an archived
+     * card exists to offer — a regression, not a gate.
+     */
+    it('keeps the editable gates read-only on an archived card while Restore stays available', async () => {
+      mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: false }
+      card.isArchived = true
+      const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+      await flushPromises()
+
+      expect(writeGates(wrapper)).toEqual({ type: false, parent: false, archive: true, assignment: false })
+      expect(wrapper.findAll('button').some(button => button.text() === 'Restore card')).toBe(true)
+      expect(wrapper.text()).toContain('Assignments are read-only.')
+      expect(boardsApi.getBoard).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('offers one recovery control for all four when the read fails, and grants all four on the retry', async () => {
+      mockStore.currentBoard = { id: card.boardId, isArchived: false }
+      vi.mocked(boardsApi.getBoard).mockRejectedValueOnce(new Error('offline'))
+      const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+      await flushPromises()
+
+      expect(writeGates(wrapper)).toEqual({ type: false, parent: false, archive: false, assignment: false })
+      expect(wrapper.get('[data-testid="card-type-permission-unknown"]').exists()).toBe(true)
+
+      vi.mocked(boardsApi.getBoard).mockResolvedValueOnce({ id: card.boardId, canWrite: true, isArchived: false } as any)
+      await wrapper.get('[data-testid="card-type-permission-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(boardsApi.getBoard).toHaveBeenCalledTimes(2)
+      expect(writeGates(wrapper)).toEqual({ type: true, parent: true, archive: true, assignment: true })
+      expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('denies all four when the server answers false, and asks once', async () => {
+      mockStore.currentBoard = { id: card.boardId, isArchived: false }
+      vi.mocked(boardsApi.getBoard).mockResolvedValue({ id: card.boardId, canWrite: false, isArchived: false } as any)
+      const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+      await flushPromises()
+
+      expect(writeGates(wrapper)).toEqual({ type: false, parent: false, archive: false, assignment: false })
+      expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+  })
+
   it('should request capture provenance when modal opens', async () => {
     mount(CardModal, {
       props: {
