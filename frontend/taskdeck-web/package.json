@@ -32,6 +32,7 @@
     "test:e2e:live-llm:headed": "playwright test tests/e2e/live-llm.spec.ts --headed --reporter=line",
     "test:e2e:headed": "playwright test --headed",
     "mutation:test": "npx stryker run",
+    "mutation:smoke": "npx stryker run stryker.smoke.config.mjs && node scripts/check-mutation-smoke.mjs",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build -o storybook-static",
     "storybook:docs": "storybook build --docs -o storybook-docs",

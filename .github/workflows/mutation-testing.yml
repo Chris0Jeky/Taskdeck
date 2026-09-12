@@ -90,6 +90,10 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
+      - name: Run mutation activation smoke test
+        working-directory: frontend/taskdeck-web
+        run: npm run mutation:smoke
+
       - name: Run Stryker
         working-directory: frontend/taskdeck-web
         run: npx stryker run
