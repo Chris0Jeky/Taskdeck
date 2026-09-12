@@ -18,17 +18,34 @@ public class ReadTools
     private readonly CardService _cardService;
     private readonly IUserContextProvider _userContext;
     private readonly CardAssignmentService? _assignments;
+    private readonly IBoardEstimateRollupService? _estimateRollups;
 
     public ReadTools(
         BoardService boardService,
         CardService cardService,
         IUserContextProvider userContext,
-        CardAssignmentService? assignments = null)
+        CardAssignmentService? assignments = null,
+        IBoardEstimateRollupService? estimateRollups = null)
     {
         _boardService = boardService;
         _cardService = cardService;
         _userContext = userContext;
         _assignments = assignments;
+        _estimateRollups = estimateRollups;
+    }
+
+    [McpServerTool(Name = "get_board_estimate_rollups"), Description(
+        "Reads estimated effort for active cards on an authorized board, grouped by column and assignee, plus unassigned work. " +
+        "Totals contain known minutes and missing estimate counts; zero is known. Each assignee receives the card's full estimate, so participant totals overlap and must not be summed into the board total.")]
+    public async Task<string> GetBoardEstimateRollups(
+        [Description("Board ID (UUID)")] string board_id)
+    {
+        if (!Guid.TryParse(board_id, out var boardId))
+            return JsonSerializer.Serialize(new { error = "Provide a valid board ID." }, BoardResources.SerializerOptions);
+        if (_estimateRollups is null)
+            return JsonSerializer.Serialize(new { error = "Estimate rollups are unavailable in this host." }, BoardResources.SerializerOptions);
+        var result = await _estimateRollups.GetAsync(boardId, await _userContext.GetCurrentUserIdAsync());
+        return result.IsSuccess ? JsonSerializer.Serialize(result.Value, BoardResources.SerializerOptions) : Error(result);
     }
 
     [McpServerTool(Name = "list_board_participants"), Description("Lists active eligible assignees on an authorized board, including its owner. Returns names and IDs only; assignment never grants authority.")]
@@ -159,6 +176,7 @@ public class ReadTools
             workItemType = card.WorkItemType,
             parentCardId = card.ParentCardId,
             assignments = card.Assignments,
+            estimatedEffortMinutes = JsonSerializer.SerializeToElement(card.EstimatedEffortMinutes),
             updatedAt = card.UpdatedAt,
             hasDescription = !string.IsNullOrWhiteSpace(card.Description),
             labels = card.Labels.Select(l => l.Name),

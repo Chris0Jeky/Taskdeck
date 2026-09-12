@@ -2,7 +2,32 @@
 
 Last Updated: 2026-09-12
 
+## Estimates and derived rollups (2026-09-12, #2093)
+
+The complete estimate vertical is integrated for qualification: nullable bounded effort minutes,
+shared editor and Paper/Legacy quick-create, version-checked direct and reviewed automation writes,
+chat/MCP coverage, audit/provenance, portability, additive migration/rollback and current-state
+board/column/participant/unassigned totals. Existing User and board-access participation remain
+the identity boundary. Multiple assignees each receive the full card estimate; totals explain this
+overlap and never overwrite parent estimates. There are no persisted aggregates, work logs or
+capacity forecasts. [Contract](product/CARD_ESTIMATES.md).
+
+Five independently owned implementation slices are combined without conflict-resolution edits.
+Focused tests pass, including a real SQLite competing-writer rollback and editor resave regression.
+The full frontend suite and two real-API browser journeys pass. The combined backend exposed
+four architecture inventory/declaration failures, corrected and verified by the affected architecture
+and rollup API suites; STATUS records the original full-run result and exact limits. The final hosted
+gate remains pending, with no estimate merge or release claim. Canonical evidence is in STATUS and
+the delivery PR. The existing human-action file remains unchanged.
+PR #3054 also integrates the reviewed #3053 planning-reference correction and #3055 permission
+payload recovery with merge commits. Backend-less demo totals remain a bounded follow-up (#3056).
+
 ## Product recovery integration (2026-09-12)
+
+Merged in #3050 as `9c17a83bf` after exact-head required hosted run `34702720469` passed.
+The six source PRs and nine intended repair issues are confirmed merged/closed; the open
+residuals below remain separate. Source commits and local evidence were preserved before
+finished worktrees were removed.
 
 Preserve the reviewed source commits for card-editor permission and archive focus recovery
 (#3021/#3037/#3042, PR #3048), assignment revoke notification identities (#2979, PR #3047),
@@ -13,9 +38,13 @@ are in STATUS; final hosted qualification belongs to the integration PR.
 
 The assignment/import record correction (#3036, PR #3043) and inert private-hosting compatibility
 files (PR #2914) travel with this delivery. Hosting activation, provisioning and release acceptance
-remain separate. Keep #3033's A-to-B-to-A pending-write ownership residual, #3023's broader editor
-residuals, #3024's reliable delivery work, #3049's same-valued permission-payload recovery and
-#3044's remaining planning-reference cleanup open.
+remain separate. The #3033 A-to-B-to-A pending-write follow-on now keeps ownership above the
+keyed child in the real editor. Its bounded host fix passes 151 focused tests, lint/typecheck/build
+and independent review; the earlier full frontend run preceded that fix. Merge #3054 first and
+requalify the retargeted child. Keep MEDIUM settled-state refresh #3060, broader editor #3023 and
+reliable delivery #3024 open.
+The #3044 planning-reference cleanup and #3049
+same-valued permission-payload recovery are reviewed and integrated into #3054 for final hosted CI.
 The existing human actions in OUTSTANDING_TASKS remain unchanged, including CI-control decisions
 for #2931/#2838, private-instance settings and real-device/screen-reader qualification.
 
@@ -30,13 +59,13 @@ Assignments #2240 and explicit importer-or-unassigned mapping are delivered in P
 (merge `15ee8065a`, 2026-09-11); HIGH #2981 is closed. This 2026-09-12 correction (#3036)
 reconciles the earlier parked snapshot against live merge state and current code. The separate
 permission-recovery and assignment-webhook repairs are in the integration above; #2093's
-effort estimate and roll-ups remain the next work-model vertical, without a delivery claim.
+effort estimate and rollups are implemented and undergoing the qualification recorded above.
 
 The maintainer has selected explicit assignee import mapping and effort minutes with hours/minutes
-display. #2093 is Next behind the shared assignment paths; #2092 remains Pending with a contract
+display. #2093 is Now with the shared assignment paths available; #2092 remains Pending with a contract
 to migrate the existing dependency graph. Both #2240 and #2093 are now v0.4, superseding the
-old v0.3 assignment exception and unanswered-fork/unit notes below. No estimate or typed-link
-implementation is claimed. The scalar estimate has no intrinsic assignment dependency; path
+old v0.3 assignment exception and unanswered-fork/unit notes below. Typed-link implementation
+remains separate. The scalar estimate has no intrinsic assignment dependency; path
 ownership and per-participant totals explain the chosen order.
 
 See the [delivery, risk and architecture assessment](analysis/2026-09-11-product-trust-reconciliation.md)

@@ -184,6 +184,11 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
             return Result.Failure(ErrorCodes.ValidationError, typeError);
 
+        if (!OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimatedEffortMinutes, out var estimateError))
+            return Result.Failure(ErrorCodes.ValidationError, estimateError);
+        if (parameters.TryGetProperty("clearEstimatedEffort", out _))
+            return Result.Failure(ErrorCodes.ValidationError, "Parameter 'clearEstimatedEffort' is supported only by card update operations");
+
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 parameters, "dueDate", out _, out var dueDate, out var dueDateError))
             return Result.Failure(ErrorCodes.ValidationError, dueDateError);
@@ -220,7 +225,8 @@ public class OperationHandlerRegistry
         if (!labelResolution.IsSuccess)
             return Result.Failure(labelResolution.ErrorCode, labelResolution.ErrorMessage);
 
-        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value, workItemType, parentId);
+        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value, workItemType, parentId,
+            EstimatedEffortMinutes: estimatedEffortMinutes);
         var result = await _cardService.CreateCardAsync(dto, cardId, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
@@ -249,6 +255,13 @@ public class OperationHandlerRegistry
         if (dueDate.HasValue && clearDueDate)
             return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
 
+        if (!OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimatedEffortMinutes, out var estimateError))
+            return Result.Failure(ErrorCodes.ValidationError, estimateError);
+        if (!OperationParameterParser.TryGetOptionalBoolean(parameters, "clearEstimatedEffort", out _, out var clearEstimatedEffort, out var clearEstimateError))
+            return Result.Failure(ErrorCodes.ValidationError, clearEstimateError);
+        if (estimatedEffortMinutes.HasValue && clearEstimatedEffort)
+            return Result.Failure(ErrorCodes.ValidationError, "Parameters 'estimatedEffortMinutes' and 'clearEstimatedEffort' cannot both be specified");
+
         if (!OperationParameterParser.TryGetOptionalStringArray(
                 parameters, "labels", out var labelsProvided, out var labelNames, out var labelsError))
             return Result.Failure(ErrorCodes.ValidationError, labelsError);
@@ -257,10 +270,10 @@ public class OperationHandlerRegistry
             return Result.Failure(ErrorCodes.ValidationError, labelIdsError);
 
         var shouldClearDueDate = clearDueDate || (dueDateProvided && !dueDate.HasValue);
-        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided && workItemType is null && !parentId.HasValue && !clearParent)
+        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided && workItemType is null && !parentId.HasValue && !clearParent && !estimatedEffortMinutes.HasValue && !clearEstimatedEffort)
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
+                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', 'workItemType', 'estimatedEffortMinutes', or 'clearEstimatedEffort'");
 
         List<Guid>? labelIds = null;
         if (labelsProvided || labelIdsProvided)
@@ -290,6 +303,16 @@ public class OperationHandlerRegistry
                 return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
             expectedUpdatedAt = expected;
         }
+        if (estimatedEffortMinutes.HasValue || clearEstimatedEffort)
+        {
+            // The shared proposal gate already checked every estimate operation against
+            // the initial persisted timestamp. Earlier approved operations may have touched
+            // this tracked card; use that current timestamp while retaining the repository's
+            // concurrency token so a competing writer still aborts the transaction.
+            var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+            if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+            expectedUpdatedAt = card.UpdatedAt;
+        }
         var dto = new UpdateCardDto(
             title,
             description,
@@ -297,7 +320,8 @@ public class OperationHandlerRegistry
             null,
             null,
             labelIds,
-            ExpectedUpdatedAt: expectedUpdatedAt, ClearDueDate: shouldClearDueDate, WorkItemType: workItemType, ParentCardId: parentId, ClearParent: clearParent);
+            ExpectedUpdatedAt: expectedUpdatedAt, ClearDueDate: shouldClearDueDate, WorkItemType: workItemType, ParentCardId: parentId, ClearParent: clearParent,
+            EstimatedEffortMinutes: estimatedEffortMinutes, ClearEstimatedEffort: clearEstimatedEffort);
         var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);

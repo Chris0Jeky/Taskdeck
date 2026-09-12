@@ -44,6 +44,12 @@ public static class WriteToolSchemas
                         "type": "string",
                         "description": "Optional due date as YYYY-MM-DD or an ISO-8601 timestamp with an offset"
                     },
+                    "estimated_effort_minutes": {
+                        "type": ["integer", "null"],
+                        "minimum": 0,
+                        "maximum": 1000000,
+                        "description": "Optional planned effort in whole minutes; 0 is known zero and null or omission means unknown. This is not logged time."
+                    },
                     "labels": {
                         "type": "array",
                         "items": { "type": "string" },
@@ -101,7 +107,7 @@ public static class WriteToolSchemas
 
     public static TaskdeckToolSchema ProposeUpdateCard() => new(
         Name: "propose_update_card",
-        Description: "Create a proposal to update a card's title, description, due date, or labels. The proposal must be reviewed before it takes effect.",
+        Description: "Create a proposal to update a card's title, description, due date, effort estimate, or labels. The proposal must be reviewed before it takes effect.",
         ParametersSchema: ParseSchema("""
             {
                 "type": "object",
@@ -125,6 +131,20 @@ public static class WriteToolSchemas
                     "clear_due_date": {
                         "type": "boolean",
                         "description": "Set true to remove the current due date; do not combine with due_date"
+                    },
+                    "estimated_effort_minutes": {
+                        "type": ["integer", "null"],
+                        "minimum": 0,
+                        "maximum": 1000000,
+                        "description": "Planned effort in whole minutes; 0 is known zero and null or omission keeps the current estimate. Requires expected_updated_at; do not combine with clear_estimated_effort true."
+                    },
+                    "clear_estimated_effort": {
+                        "type": "boolean",
+                        "description": "Set true to clear the estimate to unknown. Requires expected_updated_at; do not combine with a non-null estimated_effort_minutes."
+                    },
+                    "expected_updated_at": {
+                        "type": "string",
+                        "description": "The exact updated_at from get_card_details; required when setting or clearing the estimate. Refresh the card when stale."
                     },
                     "labels": {
                         "type": "array",
