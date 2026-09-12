@@ -22,6 +22,7 @@ public class BoardResources
     private readonly LabelService _labelService;
     private readonly IUserContextProvider _userContext;
 
+    // Estimate projections use JsonElement to keep unknown as explicit null under these compact options.
     internal static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -177,6 +178,7 @@ public class BoardResources
             workItemType = c.WorkItemType,
             parentCardId = c.ParentCardId,
             assignments = c.Assignments,
+            estimatedEffortMinutes = JsonSerializer.SerializeToElement(c.EstimatedEffortMinutes),
             updatedAt = c.UpdatedAt,
             position = c.Position,
             labels = c.Labels.Select(l => l.Name),
@@ -241,6 +243,7 @@ public class BoardResources
             workItemType = card.WorkItemType.ToString(),
             parentCardId = card.ParentCardId,
             assignments = card.Assignments,
+            estimatedEffortMinutes = JsonSerializer.SerializeToElement(card.EstimatedEffortMinutes),
             detachPreview = detachPreview.Value,
             blockReason = card.BlockReason,
             dueDate = card.DueDate,

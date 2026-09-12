@@ -52,13 +52,15 @@ limits live in the [validation ledger](WORKSPACE_OVERHAUL_VALIDATION.md).
 
 | Surface | User-visible behavior | Boundaries / evidence |
 | --- | --- | --- |
-| Card archive/restore | Hide retained work from active surfaces; restore it to its original column subject to WIP. | Legacy archive proposals still mean Block. Active-card WIP and observation follow-ups are merged; restore preview now counts the occupancy the same proposal's earlier create/move operations take or free (#2926); batch archive/restore in one proposal stays refused outright. Create and move are still not WIP-checked at preview (#3020) and the conflict-warning projection still omits lifecycle effects (#3012). |
+| Card archive/restore | Hide retained work from active surfaces; restore it to its original column subject to WIP. | Legacy archive proposals still mean Block. Active-card WIP and observation follow-ups are merged; restore preview now counts the occupancy the same proposal's earlier create/move operations take or free (#2926); batch archive/restore in one proposal stays refused outright. Ordered create/move preview and lifecycle-aware conflict warnings are delivered in #3050 (#3020/#3012). |
 | [Card types](CARD_WORK_ITEM_TYPES.md) | Select Task, Epic or Spike in Paper or Legacy; existing cards default to Task. | Explicit metadata, independent of triage classification, parent and block state. |
 | [Card parents](CARD_HIERARCHY.md) | Select one same-board parent, with three links/four levels maximum. Archive/delete confirms direct-child detach; restore does not reattach. | Complete graph includes archived descendants; version/fingerprint conflicts require a new preview. No cascade or cross-board hierarchy. |
 
 These paths are implemented; combined [QA-05](https://github.com/Chris0Jeky/Taskdeck/issues/2903)
-acceptance remains separate. Assignments in [PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977)
-are parked on pending-save/discard blocker [#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981).
+acceptance remains separate. Multiple assignments and explicit assignee import mapping were delivered
+in [PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977), merged 2026-09-11 as
+`15ee8065a`; blocker [#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981) is closed. The
+assignment capability remains in v0.4 under the current qualification plan.
 
 ## Numeric boundaries to recheck on the candidate
 
@@ -83,7 +85,7 @@ Record the effective value in the session before testing the boundary and one va
 | Area | Current expectation | Owning work / horizon |
 | --- | --- | --- |
 | Hosted open registration | Not established by a local build or the overhaul. Trusted hosting, threat model, identity, cost/abuse controls, backups and operational acceptance precede public registration. | [#2243](https://github.com/Chris0Jeky/Taskdeck/issues/2243), v0.4; [QA-10](https://github.com/Chris0Jeky/Taskdeck/issues/2908). Existing private-instance prerequisites retain their own milestones. |
-| Expanded work model residuals | Assignments are not shipped. Richer typed links and effort estimates/current-state totals remain future work; estimates will use minutes with hours/minutes display. Generic custom fields retain their later collaboration gate. | [#2240](https://github.com/Chris0Jeky/Taskdeck/issues/2240), [#2092](https://github.com/Chris0Jeky/Taskdeck/issues/2092), [#2093](https://github.com/Chris0Jeky/Taskdeck/issues/2093), [#2094](https://github.com/Chris0Jeky/Taskdeck/issues/2094). Type/hierarchy parent #2087 is delivered. |
+| Expanded work model residuals | Multiple assignments and explicit assignee import mapping are delivered. Effort estimates and current-state totals are implemented and locally qualified in PR #3054, with final hosted CI pending; see [estimate behavior and limits](CARD_ESTIMATES.md). Richer typed links remain future work. Generic custom fields retain their later collaboration gate. | [#2240](https://github.com/Chris0Jeky/Taskdeck/issues/2240), [#2092](https://github.com/Chris0Jeky/Taskdeck/issues/2092), [#2093](https://github.com/Chris0Jeky/Taskdeck/issues/2093), [#2094](https://github.com/Chris0Jeky/Taskdeck/issues/2094). Type/hierarchy parent #2087 is delivered. |
 | Fabric foundations | Durable processing lifecycle, worker protocol/containment, representation migration and evidence anchors remain individually owned contracts. Native originals alone do not complete the general platform. | [#2254](https://github.com/Chris0Jeky/Taskdeck/issues/2254), children #2256–#2261/#2276, v0.4 foundation; [QA-11](https://github.com/Chris0Jeky/Taskdeck/issues/2909). |
 | General semantic candidates and boardless recall | The selected-card grounded-question producer is not global/vector recall. | [#2262](https://github.com/Chris0Jeky/Taskdeck/issues/2262), [#2263](https://github.com/Chris0Jeky/Taskdeck/issues/2263), v0.5. |
 | Packaged local speech / WhisperX / broad voice-note UX | Existing optional transcription does not supply one-click local speech or the general worker-based voice vertical. | [#2267](https://github.com/Chris0Jeky/Taskdeck/issues/2267), [#2268](https://github.com/Chris0Jeky/Taskdeck/issues/2268), [#2270](https://github.com/Chris0Jeky/Taskdeck/issues/2270), v0.5. |

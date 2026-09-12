@@ -948,6 +948,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("DueDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("EstimatedEffortMinutes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsArchived")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
