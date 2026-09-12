@@ -45,6 +45,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const router = useRouter()
 const boardStore = useBoardStore()
+// The version-keyed archive child resets its preview/error presentation, but its
+// submitted request must stay owned across card switches in this editor.
+const pendingArchiveRequests = ref(new Set<string>())
 /*
  * #2969. Archive recovery and archive completion were the two close paths that
  * emitted `close` without asking what every other path asks first: is there an
@@ -499,6 +502,7 @@ useEscapeToClose(
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
           @saved="acceptAssignments" @permission-denied="recoverFromPermissionDenied" />
         <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges"
+          :pending-requests="pendingArchiveRequests"
           @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="recoverFromPermissionDenied" />
         <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}

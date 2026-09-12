@@ -215,6 +215,110 @@ describe('CardArchiveAction request ownership (GH-2996)', () => {
     expect(buttonIn(modal(), 'Confirm archive').disabled).toBe(false)
   })
 
+  it.each([
+    { archive: true, outcome: 'success' }, { archive: true, outcome: 'failure' },
+    { archive: false, outcome: 'success' }, { archive: false, outcome: 'failure' },
+  ])('A-to-B-to-A preserves independent pending writes (archive=$archive, $outcome)', async ({ archive, outcome }) => {
+    const original = deferred<void>()
+    const other = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(original.promise).mockReturnValueOnce(other.promise)
+    const originalCard = { ...card, isArchived: !archive }
+    if (archive) {
+      await openConfirmation()
+      buttonIn(modal(), 'Confirm archive').click()
+    } else {
+      wrapper = mount(CardArchiveAction, { props: { card: originalCard }, attachTo: document.body })
+      await wrapper.get('button').trigger('click')
+    }
+    await flushPromises()
+    const view = wrapper!
+    const otherCard = { ...card, id: 'c2', title: 'Other card' }
+    await view.setProps({ card: otherCard })
+    expect(view.get('button').attributes('disabled')).toBeUndefined()
+    mocks.previewDetach.mockResolvedValueOnce({ ...freshPreview, cardId: otherCard.id })
+    await view.get('button').trigger('click')
+    await flushPromises()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    expect(mocks.setCardArchived).toHaveBeenCalledTimes(2)
+    expect(mocks.setCardArchived.mock.calls.map(call => call.slice(0, 3))).toEqual([
+      ['b', 'c1', archive], ['b', 'c2', true],
+    ])
+
+    await view.setProps({ card: originalCard })
+    expect(modal()).toBeNull()
+    const previewsBeforeReturn = mocks.previewDetach.mock.calls.length
+    expect(view.get('button').attributes('disabled')).toBeDefined()
+    await view.get('button').trigger('click')
+    expect(mocks.previewDetach).toHaveBeenCalledTimes(previewsBeforeReturn)
+    expect(mocks.setCardArchived).toHaveBeenCalledTimes(2)
+
+    await view.setProps({ card: otherCard })
+    const elsewhere = focusElsewhere()
+    if (outcome === 'success') original.resolve(undefined)
+    else original.reject(Object.assign(new Error('Private original failure'), { response: { status: 403 } }))
+    await flushPromises()
+    expect(view.get('button').attributes('disabled')).toBeDefined()
+    expect(document.activeElement).toBe(elsewhere)
+    expect(view.find('[role="alert"]').exists()).toBe(false)
+    expect(view.emitted('changed')).toBeUndefined()
+    expect(view.emitted('permission-denied')).toBeUndefined()
+    if (outcome === 'failure') {
+      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(`The ${archive ? 'archive' : 'restore'} requested for a previously viewed card could not be confirmed. Reopen that card and refresh its state before trying again.`)
+    } else expect(mocks.toastError).not.toHaveBeenCalled()
+
+    await view.setProps({ card: originalCard })
+    expect(view.get('button').attributes('disabled')).toBeUndefined()
+    expect(modal()).toBeNull()
+    expect(mocks.setCardArchived).toHaveBeenCalledTimes(2)
+    other.resolve(undefined)
+    await flushPromises()
+    expect(view.get('button').attributes('disabled')).toBeUndefined()
+    expect(view.emitted('changed')).toBeUndefined()
+    expect(view.emitted('permission-denied')).toBeUndefined()
+  })
+
+  it('pending ownership includes the board identity', async () => {
+    const original = deferred<void>()
+    const other = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(original.promise).mockReturnValueOnce(other.promise)
+    const archivedCard = { ...card, isArchived: true }
+    wrapper = mount(CardArchiveAction, { props: { card: archivedCard, canWrite: true }, attachTo: document.body })
+    await wrapper.get('button').trigger('click')
+    await wrapper.setProps({ card: { ...archivedCard, boardId: 'other-board' } })
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+    await wrapper.get('button').trigger('click')
+    expect(mocks.setCardArchived.mock.calls.map(call => call.slice(0, 2))).toEqual([
+      ['b', 'c1'], ['other-board', 'c1'],
+    ])
+    await wrapper.setProps({ card: archivedCard })
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    other.resolve(undefined)
+    await flushPromises()
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    original.resolve(undefined)
+    await flushPromises()
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+  })
+
+  it('a returning card keeps its pending preview until that request settles', async () => {
+    const held = deferred<CardDetachPreview>()
+    mocks.previewDetach.mockReturnValueOnce(held.promise)
+    wrapper = mount(CardArchiveAction, { props: { card }, attachTo: document.body })
+    await wrapper.get('button').trigger('click')
+    await wrapper.setProps({ card: { ...card, id: 'c2' } })
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+    await wrapper.setProps({ card })
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    await wrapper.get('button').trigger('click')
+    expect(mocks.previewDetach).toHaveBeenCalledTimes(1)
+    held.resolve(preview)
+    await flushPromises()
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+    expect(modal()).toBeNull()
+    expect(mocks.setCardArchived).not.toHaveBeenCalled()
+  })
+
   it('unmount suppresses late failed-write UI and global notices', async () => {
     const held = deferred<void>()
     mocks.setCardArchived.mockReturnValueOnce(held.promise)

@@ -30,7 +30,11 @@ const CHANGE_FAILURE = 'The card state could not be confirmed. Refresh before tr
  * prop and keep the payload-derived answer; the `undefined` default is what keeps "omitted"
  * distinguishable from "false", exactly as for `archived` above.
  */
-const props = withDefaults(defineProps<{ card: Card; disabled?: boolean; archived?: boolean; canWrite?: boolean }>(), {
+const props = withDefaults(defineProps<{
+  card: Card; disabled?: boolean; archived?: boolean; canWrite?: boolean
+  /** Stable editor-owned state for hosts that remount this control on a version change. */
+  pendingRequests?: Set<string>
+}>(), {
   archived: undefined,
   canWrite: undefined,
 })
@@ -38,7 +42,12 @@ const emit = defineEmits<{ changed: []; refresh: []; 'permission-denied': [] }>(
 const boardStore = useBoardStore()
 const toast = useToastStore()
 const preview = ref<CardDetachPreview | null>(null)
-const busy = ref(false)
+// Switching cards resets presentation, not submitted requests. Each card stays
+// busy until its own request settles, while unrelated cards remain actionable.
+// Capture this owner for the component lifetime, including its late finally work.
+const pendingCards = props.pendingRequests ?? ref(new Set<string>()).value
+const cardKey = computed(() => JSON.stringify([props.card.boardId, props.card.id]))
+const busy = computed(() => pendingCards.has(cardKey.value))
 const error = ref<string | null>(null)
 // True once an in-dialog refresh has replaced a failed child list. It keeps the
 // recovery control mounted across the error -> refreshed transition so keyboard
@@ -57,7 +66,6 @@ watch([() => props.card.boardId, () => props.card.id], () => {
   preview.value = null
   error.value = null
   refreshed.value = false
-  busy.value = false
 }, { flush: 'sync' })
 onBeforeUnmount(() => {
   unmounted = true
@@ -96,7 +104,8 @@ async function requestChange() {
   if (!allowed.value || props.disabled || busy.value || error.value) return
   const context = contextGeneration
   const confirmation = confirmationGeneration
-  busy.value = true
+  const requestKey = cardKey.value
+  pendingCards.add(requestKey)
   refreshed.value = false
   try {
     const fresh = await cardsApi.previewDetach(props.card.boardId, props.card.id)
@@ -107,7 +116,7 @@ async function requestChange() {
     error.value = getErrorDisplay(e, PREVIEW_FAILURE).message
     void focusRecovery(context, confirmation)
   } finally {
-    if (context === contextGeneration) busy.value = false
+    pendingCards.delete(requestKey)
   }
 }
 
@@ -121,7 +130,8 @@ async function refreshChildren() {
   if (busy.value || !confirming.value) return
   const context = contextGeneration
   const confirmation = confirmationGeneration
-  busy.value = true
+  const requestKey = cardKey.value
+  pendingCards.add(requestKey)
   try {
     const fresh = await cardsApi.previewDetach(props.card.boardId, props.card.id)
     if (context !== contextGeneration || confirmation !== confirmationGeneration) return
@@ -133,7 +143,7 @@ async function refreshChildren() {
     error.value = getErrorDisplay(e, PREVIEW_FAILURE).message
     void focusRecovery(context, confirmation)
   } finally {
-    if (context === contextGeneration) busy.value = false
+    pendingCards.delete(requestKey)
   }
 }
 
@@ -154,7 +164,8 @@ async function change() {
   const context = contextGeneration
   const confirmation = confirmationGeneration
   const archive = !archived.value
-  busy.value = true
+  const requestKey = cardKey.value
+  pendingCards.add(requestKey)
   try {
     await boardStore.setCardArchived(props.card.boardId, props.card.id, archive, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
     if (context !== contextGeneration) return
@@ -176,7 +187,7 @@ async function change() {
     // After dismissal, rescue lost focus without stealing it from another control.
     void focusRecovery(context, confirmation)
   } finally {
-    if (context === contextGeneration) busy.value = false
+    pendingCards.delete(requestKey)
   }
 }
 </script>
