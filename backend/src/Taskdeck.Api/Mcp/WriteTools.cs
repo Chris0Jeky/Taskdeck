@@ -23,6 +23,7 @@ public class WriteTools
     private readonly ICaptureService _captureService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
+    private readonly IBoardRelationService? _relations;
 
     public WriteTools(
         IAutomationProposalService proposalService,
@@ -43,14 +44,36 @@ public class WriteTools
         IUserContextProvider userContext,
         ICaptureService captureService,
         IUnitOfWork unitOfWork,
-        IAuthorizationService authorizationService)
+        IAuthorizationService authorizationService,
+        IBoardRelationService? relations = null)
     {
         _proposalService = proposalService;
         _userContext = userContext;
         _captureService = captureService;
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
+        _relations = relations;
     }
+
+    [McpServerTool(Name = "add_card_relation"), Description(
+        "Creates a proposal to add one typed relation between two active cards on the same board. Nothing changes until review, approval and Apply. The supplied expected revision is preserved exactly.")]
+    public Task<string> AddCardRelation(
+        string board_id,
+        string card_id,
+        string related_card_id,
+        string relation_type,
+        long expected_revision)
+        => ProposeCardRelation(board_id, card_id, related_card_id, relation_type, expected_revision, remove: false);
+
+    [McpServerTool(Name = "remove_card_relation"), Description(
+        "Creates a proposal to remove one typed relation between two active cards on the same board. Nothing changes until review, approval and Apply. The supplied expected revision is preserved exactly.")]
+    public Task<string> RemoveCardRelation(
+        string board_id,
+        string card_id,
+        string related_card_id,
+        string relation_type,
+        long expected_revision)
+        => ProposeCardRelation(board_id, card_id, related_card_id, relation_type, expected_revision, remove: true);
 
     /// <summary>
     /// Rejects label IDs that are not labels on the target board before a proposal is
@@ -96,12 +119,17 @@ public class WriteTools
         [Description("Optional. Due date as YYYY-MM-DD or an ISO-8601 timestamp with an explicit offset.")]
         string? due_date = null,
         [Description("Optional. Work item type: Task, Epic, or Spike. Defaults to Task.")]
-        string? work_item_type = null)
+        string? work_item_type = null,
+        [Description("Optional. Estimated effort in whole minutes (0 to 1000000). Omitted or null means unknown; 0 is a known zero estimate.")]
+        int? estimated_effort_minutes = null)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
         if (!Guid.TryParse(board_id, out var boardGuid))
             return Error("Invalid board_id format");
+
+        if (estimated_effort_minutes is < 0 or > Card.MaxEstimatedEffortMinutes)
+            return Error($"estimated_effort_minutes must be between 0 and {Card.MaxEstimatedEffortMinutes}");
 
         var canWrite = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
         if (!canWrite.IsSuccess)
@@ -140,6 +168,8 @@ public class WriteTools
             if (work_item_type is not ("Task" or "Epic" or "Spike")) return Error("work_item_type must be Task, Epic, or Spike");
             parameters["workItemType"] = work_item_type;
         }
+        if (estimated_effort_minutes.HasValue)
+            parameters["estimatedEffortMinutes"] = estimated_effort_minutes.Value;
         if (!string.IsNullOrWhiteSpace(description))
             parameters["description"] = description;
 
@@ -244,12 +274,12 @@ public class WriteTools
     }
 
     /// <summary>
-    /// Creates a PROPOSAL to update card fields (title, description, due date, labels).
+    /// Creates a PROPOSAL to update card fields (title, description, due date, labels, estimated effort).
     /// The card is NOT updated immediately -- the proposal must be approved first.
     /// Returns the proposal ID.
     /// </summary>
     [McpServerTool(Name = "update_card"), Description(
-        "Creates a PROPOSAL to update card fields (title, description, due date, labels). " +
+        "Creates a PROPOSAL to update card fields (title, description, due date, labels, estimated effort). " +
         "The card is NOT updated immediately -- the proposal must be approved first. " +
         "Returns the proposal ID.")]
     public async Task<string> UpdateCard(
@@ -269,10 +299,14 @@ public class WriteTools
         bool clear_due_date = false,
         [Description("Optional. Work item type: Task, Epic, or Spike.")]
         string? work_item_type = null,
-        [Description("Required for type or parent changes. Current card updatedAt timestamp from a fresh read.")]
+        [Description("Required for type, parent, or estimated effort changes. Current card updatedAt timestamp from a fresh read.")]
         string? expected_updated_at = null,
         [Description("Optional. Same-board parent card ID. Requires expected_updated_at.")] string? parent_card_id = null,
-        [Description("Remove the current parent. Requires expected_updated_at.")] bool clear_parent = false)
+        [Description("Remove the current parent. Requires expected_updated_at.")] bool clear_parent = false,
+        [Description("Optional. Estimated effort in whole minutes (0 to 1000000). Omitted or null leaves unchanged; 0 sets a known zero estimate. Requires expected_updated_at.")]
+        int? estimated_effort_minutes = null,
+        [Description("Optional. Set true to clear estimated effort to unknown. Cannot be combined with estimated_effort_minutes. Requires expected_updated_at.")]
+        bool clear_estimated_effort = false)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
@@ -281,8 +315,13 @@ public class WriteTools
         if (!Guid.TryParse(card_id, out var cardGuid))
             return Error("Invalid card_id format");
 
-        if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date && work_item_type == null && parent_card_id == null && !clear_parent)
-            return Error("At least one field (title, description, due_date, clear_due_date, or label_ids) must be provided");
+        if (estimated_effort_minutes is < 0 or > Card.MaxEstimatedEffortMinutes)
+            return Error($"estimated_effort_minutes must be between 0 and {Card.MaxEstimatedEffortMinutes}");
+        if (estimated_effort_minutes.HasValue && clear_estimated_effort)
+            return Error("estimated_effort_minutes and clear_estimated_effort cannot both be specified");
+
+        if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date && work_item_type == null && parent_card_id == null && !clear_parent && estimated_effort_minutes == null && !clear_estimated_effort)
+            return Error("At least one card field or explicit clear action must be provided");
 
         var parameters = new Dictionary<string, object?>
         {
@@ -290,7 +329,7 @@ public class WriteTools
             ["cardId"] = cardGuid
         };
 
-        if (work_item_type is not null || parent_card_id is not null || clear_parent)
+        if (work_item_type is not null || parent_card_id is not null || clear_parent || estimated_effort_minutes.HasValue || clear_estimated_effort)
         {
             var access = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
             if (!access.IsSuccess) return Error(access);
@@ -298,10 +337,10 @@ public class WriteTools
             if (work_item_type is not null && work_item_type is not ("Task" or "Epic" or "Spike")) return Error("work_item_type must be Task, Epic, or Spike");
             if (!DateTimeOffset.TryParse(expected_updated_at, System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.RoundtripKind, out var expected))
-                return Error("expected_updated_at is required for a type or parent change");
+                return Error("expected_updated_at is required for a type, parent, or estimated effort change");
             var card = await _unitOfWork.Cards.GetByIdAsync(cardGuid);
             if (card is null || card.BoardId != boardGuid) return Error("Card not found on board");
-            if (card.IsArchived || card.UpdatedAt != expected) return Error("Card is archived or changed. Refresh it before proposing a type or parent change.");
+            if (card.IsArchived || card.UpdatedAt != expected) return Error("Card is archived or changed. Refresh it before proposing a type, parent, or estimated effort change.");
             if (work_item_type is not null) parameters["workItemType"] = work_item_type;
             if (parent_card_id is not null)
             {
@@ -334,6 +373,11 @@ public class WriteTools
 
         if (clear_due_date)
             parameters["clearDueDate"] = true;
+
+        if (estimated_effort_minutes.HasValue)
+            parameters["estimatedEffortMinutes"] = estimated_effort_minutes.Value;
+        if (clear_estimated_effort)
+            parameters["clearEstimatedEffort"] = true;
 
         var summary = title != null ? $"Update card: {title}" : "Update card fields";
 
@@ -446,6 +490,59 @@ public class WriteTools
             ProposalSourceType.Manual, actor, valid.Value, RiskLevel.Medium, Guid.NewGuid().ToString(), boardId,
             Operations: [new(0, ProposalAssignmentContract.Action, "card", parameters, Guid.NewGuid().ToString(), cardId.ToString())]));
         return result.IsSuccess ? ProposalCreated(result.Value.Id, "Review, approve and Apply explicitly in Taskdeck.") : Error(result);
+    }
+
+    private async Task<string> ProposeCardRelation(
+        string boardId,
+        string cardId,
+        string relatedCardId,
+        string relationType,
+        long expectedRevision,
+        bool remove)
+    {
+        if (_relations is null)
+            return Error("Card relations are unavailable in this host.");
+
+        var actor = await _userContext.GetCurrentUserIdAsync();
+        if (!Guid.TryParse(boardId, out var boardGuid) ||
+            !Guid.TryParse(cardId, out var cardGuid) ||
+            !Guid.TryParse(relatedCardId, out var relatedCardGuid) ||
+            string.IsNullOrWhiteSpace(relationType))
+        {
+            return Error("Provide board_id, card_id, related_card_id and relation_type as valid values.");
+        }
+
+        var edge = new CardRelationEdge(cardGuid, relatedCardGuid, relationType);
+        // This is the same server-side validation the proposal handler uses. It verifies
+        // the trusted actor, both active endpoints, board membership and the caller-pinned
+        // revision before creating a proposal; no caller-provided authority is consulted.
+        var validation = await _relations.ValidateMutationAsync(
+            actor, boardGuid, edge, expectedRevision, remove, CancellationToken.None);
+        if (!validation.IsSuccess)
+            return Error(validation);
+
+        var parameters = JsonSerializer.Serialize(new
+        {
+            boardId = boardGuid,
+            cardId = cardGuid,
+            relatedCardId = relatedCardGuid,
+            relationType,
+            expectedRevision
+        }, BoardResources.SerializerOptions);
+        var action = remove ? "remove-relation" : "add-relation";
+        var proposal = new CreateProposalDto(
+            ProposalSourceType.Manual,
+            actor,
+            remove ? "Remove card relation" : "Add card relation",
+            RiskLevel.Medium,
+            Guid.NewGuid().ToString(),
+            boardGuid,
+            Operations: [new(0, action, "card", parameters, Guid.NewGuid().ToString(), cardGuid.ToString())]);
+
+        var result = await _proposalService.CreateProposalAsync(proposal);
+        return result.IsSuccess
+            ? ProposalCreated(result.Value.Id, "Proposal created. Review, approve and Apply explicitly in Taskdeck.")
+            : Error(result);
     }
 
     private async Task<string> ProposeCardLifecycle(string boardId, string cardId, string timestamp, bool archive, string? fingerprint = null)

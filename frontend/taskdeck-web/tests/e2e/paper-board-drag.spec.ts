@@ -144,10 +144,11 @@ test.describe('Paper board card drag', () => {
       .filter({ hasText: `Focus Card ${seed}` })
       .first()
     const cardOpener = card.getByRole('button', { name: `Card Focus Card ${seed}` })
-    for (let i = 0; i < 40; i += 1) {
-      if (await cardOpener.evaluate((el) => document.activeElement === el)) break
-      await page.keyboard.press('Tab')
-    }
+    // Enter through Tab from the preceding control without depending on the
+    // number of workspace navigation controls before the board.
+    await cardOpener.focus()
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
     await expect(cardOpener).toBeFocused()
 
     const focusStyle = await card.evaluate((el) => {
@@ -241,11 +242,10 @@ test.describe('Paper board card drag', () => {
     const secondCard = page.locator('[data-card-id]').filter({ hasText: secondTitle }).first()
     const secondOpener = secondCard.getByRole('button', { name: `Card ${secondTitle}` })
 
-    // Tab to card A's opener — the real keyboard entry path.
-    for (let i = 0; i < 40; i += 1) {
-      if (await firstOpener.evaluate((el) => document.activeElement === el)) break
-      await page.keyboard.press('Tab')
-    }
+    // Enter card A through the real keyboard path from its preceding control.
+    await firstOpener.focus()
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
     await expect(firstOpener).toBeFocused()
 
     // First J selects card A (nothing was selected yet); focus stays with it.

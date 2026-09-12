@@ -6,6 +6,8 @@ import { useToastStore } from '../../store/toastStore'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
 import CardItem from './CardItem.vue'
 import CardModal from './CardModal.vue'
+import CardEstimateField from './CardEstimateField.vue'
+import { parseEstimatedEffort } from '../../utils/estimatedEffort'
 import ColumnEditModal from './ColumnEditModal.vue'
 import type { Column, Card, Label } from '../../types/board'
 import { logError } from '../../utils/errorReporting'
@@ -28,6 +30,10 @@ const emit = defineEmits<{
 const boardStore = useBoardStore()
 const toast = useToastStore()
 const newCardTitle = ref('')
+const newEstimateHours = ref('')
+const newEstimateMinutes = ref('')
+const newEstimate = computed(() => parseEstimatedEffort(newEstimateHours.value, newEstimateMinutes.value))
+const creatingCard = ref(false)
 const showCardForm = ref(false)
 const selectedCard = ref<Card | null>(null)
 const showCardModal = ref(false)
@@ -55,20 +61,26 @@ function openCardForm() {
 }
 
 async function createCard() {
-  if (!newCardTitle.value.trim()) return
+  if (!newCardTitle.value.trim() || newEstimate.value.error || creatingCard.value) return
 
+  creatingCard.value = true
   try {
     await boardStore.createCard(props.boardId, {
       columnId: props.column.id,
       title: newCardTitle.value,
+      ...(newEstimate.value.value === null ? {} : { estimatedEffortMinutes: newEstimate.value.value }),
     })
 
     newCardTitle.value = ''
+    newEstimateHours.value = ''
+    newEstimateMinutes.value = ''
     showCardForm.value = false
   } catch (error) {
     const { message } = getErrorDisplay(error, 'Failed to create card')
     toast.error(message)
     logError('Failed to create card:', error)
+  } finally {
+    creatingCard.value = false
   }
 }
 
@@ -264,30 +276,38 @@ const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
         class="td-column-lane__card-form"
       >
         <form @submit.prevent="createCard">
-          <textarea
-            data-action="add-card-input"
-            v-model="newCardTitle"
-            aria-label="New card title"
-            placeholder="Enter card title..."
-            class="td-column-lane__card-input"
-            rows="3"
-          ></textarea>
-          <div class="td-column-lane__card-form-actions">
-            <button
-              type="submit"
-              class="td-column-lane__form-btn td-column-lane__form-btn--primary"
-            >
-              Add
-            </button>
-            <button
-              type="button"
-              data-action="cancel-add-card"
-              @click="showCardForm = false"
-              class="td-column-lane__form-btn td-column-lane__form-btn--secondary"
-            >
-              Cancel
-            </button>
-          </div>
+          <fieldset :disabled="creatingCard">
+            <textarea
+              data-action="add-card-input"
+              v-model="newCardTitle"
+              aria-label="New card title"
+              placeholder="Enter card title..."
+              class="td-column-lane__card-input"
+              rows="3"
+            ></textarea>
+            <details class="my-2">
+              <summary class="cursor-pointer text-xs text-on-surface-variant">Add estimate (optional)</summary>
+              <CardEstimateField v-model:hours="newEstimateHours" v-model:minutes="newEstimateMinutes" class="mt-2"
+                :read-only="boardStore.currentBoard?.canWrite === false || boardStore.currentBoard?.isArchived === true" />
+            </details>
+            <div class="td-column-lane__card-form-actions">
+              <button
+                type="submit"
+                :disabled="!!newEstimate.error || !newCardTitle.trim() || creatingCard"
+                class="td-column-lane__form-btn td-column-lane__form-btn--primary"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                data-action="cancel-add-card"
+                @click="showCardForm = false"
+                class="td-column-lane__form-btn td-column-lane__form-btn--secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </fieldset>
         </form>
       </div>
     </div>

@@ -16,7 +16,9 @@ public static class WriteToolSchemas
         ProposeArchiveCard(),
         ProposeUpdateCard(),
         ProposeBulkMove(),
-        ProposeCreateColumn()
+        ProposeCreateColumn(),
+        ProposeAddCardRelation(),
+        ProposeRemoveCardRelation()
     };
 
     public static IReadOnlyList<TaskdeckToolSchema> GetAll() => CachedAll;
@@ -43,6 +45,12 @@ public static class WriteToolSchemas
                     "due_date": {
                         "type": "string",
                         "description": "Optional due date as YYYY-MM-DD or an ISO-8601 timestamp with an offset"
+                    },
+                    "estimated_effort_minutes": {
+                        "type": ["integer", "null"],
+                        "minimum": 0,
+                        "maximum": 1000000,
+                        "description": "Optional planned effort in whole minutes; 0 is known zero and null or omission means unknown. This is not logged time."
                     },
                     "labels": {
                         "type": "array",
@@ -101,7 +109,7 @@ public static class WriteToolSchemas
 
     public static TaskdeckToolSchema ProposeUpdateCard() => new(
         Name: "propose_update_card",
-        Description: "Create a proposal to update a card's title, description, due date, or labels. The proposal must be reviewed before it takes effect.",
+        Description: "Create a proposal to update a card's title, description, due date, effort estimate, or labels. The proposal must be reviewed before it takes effect.",
         ParametersSchema: ParseSchema("""
             {
                 "type": "object",
@@ -125,6 +133,20 @@ public static class WriteToolSchemas
                     "clear_due_date": {
                         "type": "boolean",
                         "description": "Set true to remove the current due date; do not combine with due_date"
+                    },
+                    "estimated_effort_minutes": {
+                        "type": ["integer", "null"],
+                        "minimum": 0,
+                        "maximum": 1000000,
+                        "description": "Planned effort in whole minutes; 0 is known zero and null or omission keeps the current estimate. Requires expected_updated_at; do not combine with clear_estimated_effort true."
+                    },
+                    "clear_estimated_effort": {
+                        "type": "boolean",
+                        "description": "Set true to clear the estimate to unknown. Requires expected_updated_at; do not combine with a non-null estimated_effort_minutes."
+                    },
+                    "expected_updated_at": {
+                        "type": "string",
+                        "description": "The exact updated_at from get_card_details; required when setting or clearing the estimate. Refresh the card when stale."
                     },
                     "labels": {
                         "type": "array",
@@ -188,6 +210,47 @@ public static class WriteToolSchemas
             }
             """),
         Required: new[] { "name" }
+    );
+
+    public static TaskdeckToolSchema ProposeAddCardRelation() => CardRelationSchema(
+        "propose_add_card_relation",
+        "Create a proposal to add one typed relation between two active cards on this board. The proposal must be reviewed before it takes effect.");
+
+    public static TaskdeckToolSchema ProposeRemoveCardRelation() => CardRelationSchema(
+        "propose_remove_card_relation",
+        "Create a proposal to remove one typed relation between two active cards on this board. The proposal must be reviewed before it takes effect.");
+
+    private static TaskdeckToolSchema CardRelationSchema(string name, string description) => new(
+        Name: name,
+        Description: description,
+        ParametersSchema: ParseSchema("""
+            {
+                "type": "object",
+                "properties": {
+                    "card_id": {
+                        "type": "string",
+                        "description": "Source card UUID"
+                    },
+                    "related_card_id": {
+                        "type": "string",
+                        "description": "Related card UUID on the same board"
+                    },
+                    "relation_type": {
+                        "type": "string",
+                        "enum": ["relates-to", "blocks", "depends-on", "duplicates", "spawned-from"],
+                        "description": "Relation kind. depends-on is canonicalized to blocks with reversed endpoints."
+                    },
+                    "expected_revision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The exact relations revision returned by get_board_card_relations; refresh when stale."
+                    }
+                },
+                "required": ["card_id", "related_card_id", "relation_type", "expected_revision"],
+                "additionalProperties": false
+            }
+            """),
+        Required: new[] { "card_id", "related_card_id", "relation_type", "expected_revision" }
     );
 
     private static JsonElement ParseSchema(string json)

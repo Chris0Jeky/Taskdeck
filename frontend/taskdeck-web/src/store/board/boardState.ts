@@ -42,6 +42,12 @@ export function createBoardState() {
   const boards = ref<Board[]>([])
   const activeBoardId = ref<string | null>(null)
   const currentBoard = ref<BoardDetail | null>(null)
+  // These two monotonic values retain the source of the current detail payload
+  // without extending the Board DTO. A consumer can distinguish a committed
+  // server response from a local patch, and reject a response whose request
+  // began before its own recovery boundary.
+  const currentBoardRequestGeneration = ref(0)
+  const currentBoardPayloadGeneration = ref(0)
   const currentBoardCards = ref<Card[]>([])
   const currentBoardLabels = ref<Label[]>([])
   const cardCommentsByCardId = ref<Record<string, CardComment[]>>({})
@@ -56,6 +62,8 @@ export function createBoardState() {
     boards,
     activeBoardId,
     currentBoard,
+    currentBoardRequestGeneration,
+    currentBoardPayloadGeneration,
     currentBoardCards,
     currentBoardLabels,
     cardCommentsByCardId,

@@ -24,7 +24,8 @@ public record ExportBoardDto(
     DateTimeOffset ExportedAt,
     string ExportedBy,
     IReadOnlyList<ExportThinkingDeckDto>? ThinkingDecks = null,
-    IReadOnlyList<CardDependency>? Dependencies = null);
+    IReadOnlyList<CardDependency>? Dependencies = null,
+    IReadOnlyList<CardRelationEdge>? Relations = null);
 
 // The envelope deliberately has no top-level board/name: older importers reject it
 // instead of importing the cards while silently discarding their relationships.
@@ -40,7 +41,8 @@ public record ImportBoardDto(
     IEnumerable<ImportCardDto> Cards,
     IEnumerable<ImportLabelDto> Labels,
     IReadOnlyList<CardDependency>? Dependencies = null,
-    IReadOnlyDictionary<string, Guid?>? AssigneeMappings = null);
+    IReadOnlyDictionary<string, Guid?>? AssigneeMappings = null,
+    IReadOnlyList<CardRelationEdge>? Relations = null);
 
 public record ImportSourceAssigneeDto(string SourceKey, string DisplayName);
 public record ImportAssigneePreviewDto(string SourceKey, string DisplayName, int AffectedCardCount);
@@ -60,7 +62,8 @@ public record ImportCardDto(
     DateTimeOffset? DueDate,
     IEnumerable<string>? Labels,
     ThinkingMaterialDto? Thinking = null, Guid? SourceId = null, bool IsArchived = false, string WorkItemType = "Task", Guid? ParentCardId = null,
-    IReadOnlyList<ImportSourceAssigneeDto>? SourceAssignees = null);
+    IReadOnlyList<ImportSourceAssigneeDto>? SourceAssignees = null,
+    int? EstimatedEffortMinutes = null);
 
 public record ImportLabelDto(
     string Name,
