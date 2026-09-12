@@ -397,6 +397,12 @@ public class AutomationExecutorService : IAutomationExecutorService
                 return Result.Failure<ProposalExecutionReceipt>(failedResult.ErrorCode, failureReason);
             }
 
+            // Prepare durable webhook deliveries while the operation transaction is still open.
+            // The Applied status save below persists the board writes, audit rows, status, and
+            // prepared Pending deliveries together. Preparation failures must abort all of them.
+            if (deferredNotifications is not null)
+                await deferredNotifications.PrepareAsync(cancellationToken);
+
             // The board marker, operation effects, audit rows, and Applied status share this outer
             // transaction. Do not re-check archived state here: an approved operation may itself
             // archive the board, and the pre-operation guard already ordered that legitimate write.

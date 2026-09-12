@@ -10,11 +10,13 @@ public class UserService : IUserService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActiveUserCache? _activeUserCache;
+    private readonly CardAssignmentService _assignments;
 
-    public UserService(IUnitOfWork unitOfWork, IActiveUserCache? activeUserCache = null)
+    public UserService(IUnitOfWork unitOfWork, CardAssignmentService assignments, IActiveUserCache? activeUserCache = null)
     {
         _unitOfWork = unitOfWork;
         _activeUserCache = activeUserCache;
+        _assignments = assignments;
     }
 
     public async Task<Result<UserDto>> CreateUserAsync(CreateUserDto dto)
@@ -109,15 +111,40 @@ public class UserService : IUserService
 
     public async Task<Result> DeactivateUserAsync(Guid userId)
     {
-        var user = await _unitOfWork.Users.GetByIdAsync(userId);
-        if (user == null)
-            return Result.Failure(ErrorCodes.NotFound, $"User with ID {userId} not found");
+        IReadOnlyList<Card> detachedCards;
+        await _unitOfWork.BeginTransactionAsync();
+        try
+        {
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            if (user == null)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                return Result.Failure(ErrorCodes.NotFound, $"User with ID {userId} not found");
+            }
 
-        user.Deactivate();
-        await _unitOfWork.SaveChangesAsync();
+            // The controller permits self-deactivation only: the target is also the actor.
+            // Cleanup includes archived cards and every board, without granting board authority.
+            detachedCards = await _assignments.StageDetachAsync(userId, null, userId, "user-deactivated");
+            user.Deactivate();
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.CommitTransactionAsync();
+        }
+        catch (DomainException ex)
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            return Result.Failure(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            throw;
+        }
 
-        // Invalidate the cache so the middleware rejects this user's JWT immediately
+        // Never publish or invalidate before commit. The production composite notifier owns
+        // channel failure logging; a post-commit failure must not enter the rollback block.
         _activeUserCache?.Invalidate(userId);
+        foreach (var card in detachedCards)
+            await _assignments.NotifyAsync(card.BoardId, card.Id);
 
         return Result.Success();
     }
