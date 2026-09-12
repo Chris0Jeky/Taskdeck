@@ -40,7 +40,7 @@ test('keeps explicit prerequisites across experiences, navigation and portable i
   const exported = await request.get(`${API_BASE_URL}/export/boards/${boardId}/json`, { headers })
   await assertOk(exported, 'export graph')
   const payload = await exported.json()
-  expect(payload.version).toBe(2)
+  expect(payload.version).toBe(5)
   await assertOk(await request.post(`${API_BASE_URL}/import/boards/json`, { headers, data: payload }), 'import graph')
   await page.setViewportSize({ width: 375, height: 812 })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
