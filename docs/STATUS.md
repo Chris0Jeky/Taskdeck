@@ -41,6 +41,18 @@ recorded the traversal stopping before the first card after the Estimates contro
 The tests now enter the card with Tab from its preceding control; their focus-ring and J/Enter
 assertions are unchanged. Both corrected real-API tests pass (17.9 seconds). A new hosted gate
 is required; the failure is not classified as flaky.
+The next browser gate exposed a real card-create/detail-refresh race: the POST continuation could
+append a card already committed by the detail read. Reconciliation now preserves that payload,
+avoids double-counting and isolates a different selected board. A fresh-store regression in the
+first correction was fixed with failing-before evidence; all 50 store tests and both real API
+estimate journeys pass (53.4 seconds), and bounded independent review is clean.
+Same-valued estimate proposals now perform an atomic persisted-version guard before accepting
+a no-op. Two real SQLite competing-writer cases reproduced false HTTP 200/Applied receipts with
+the original branch and pass as HTTP 409 with the guard. All 36 focused service/API/persistence
+tests pass, including unchanged-version, clear-null, ordered-write and planned-create controls;
+independent review is clean and the six reviewed source files match the integrated Git blobs.
+The final hosted gate remains required. Bounded follow-ups retain rollup snapshot consistency
+(#3058), request timeout/recovery (#3063) and older-reader export protection (#3065).
 PR #3054 also preserves the reviewed commits from #3053 (planning/backup references) and #3055
 (same-valued permission recovery). Their source evidence is retained; final combined CI is required.
 [Contract and limits](product/CARD_ESTIMATES.md).

@@ -21,6 +21,9 @@ gate remains pending, with no estimate merge or release claim. Canonical evidenc
 the delivery PR. The existing human-action file remains unchanged.
 PR #3054 also integrates the reviewed #3053 planning-reference correction and #3055 permission
 payload recovery with merge commits. Backend-less demo totals remain a bounded follow-up (#3056).
+Final qualification also closes the card-create/detail-refresh duplication race and guards
+same-valued estimate proposals against a concurrent card write. Both fixes have failing-before
+regressions and clean bounded reviews; STATUS records their scoped tests and actual browser proof.
 
 ## Product recovery integration (2026-09-12)
 
