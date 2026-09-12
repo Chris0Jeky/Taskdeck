@@ -1,6 +1,7 @@
 import http from './http'
 import type { Proposal } from '../types/automation'
 import type { BoardCardRelations, CreateRelationProposalInput, RelationProposalParameters } from '../types/cardRelations'
+import { createSourceUploadId } from '../utils/sourceUploadId'
 
 const proposalRoute = '/automation/proposals'
 
@@ -27,7 +28,7 @@ function makeOperation(
     targetType: 'card',
     targetId: input.cardId,
     parameters: JSON.stringify(parameters),
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: createSourceUploadId(),
   }
 }
 
@@ -39,7 +40,7 @@ async function createProposal(
     sourceType: 2, // ProposalSourceType.Manual in the numeric HTTP contract.
     summary: relationSummary(actionType, input.relationType),
     riskLevel: 0, // RiskLevel.Low in the numeric HTTP contract.
-    correlationId: crypto.randomUUID(),
+    correlationId: createSourceUploadId(),
     boardId: input.boardId,
     operations: [makeOperation(actionType, input)],
   })
