@@ -69,7 +69,7 @@ drafts. Initial stated-permission paths add no reads, and the legacy omitted-fie
 for an initially archived card is unchanged. Archive failure after Escape rescues unusable
 native focus without stealing deliberate focus movement or affecting another card; late failed
 writes after mounted card switches produce a generic persistent notice (#3033). The A-to-B-to-A
-pending-write busy-ownership residual stays open in #3033. Qualification: full frontend at
+pending-write busy-ownership residual is repaired in the reviewed #3033 follow-on below. Qualification: full frontend at
 `8ab19e7ef` passed 6,776 tests with three existing skips; final `8582b7ac3` passed typecheck,
 build, 175 focused tests and three native Chromium focus cases after the bounded write403
 bridge. Real backend permission integration and screen-reader output were not tested.
@@ -80,6 +80,16 @@ preserve the existing fail-closed and cancellation behavior. Focused specs passe
 frontend passed 6,794 with three existing skips across 438 files. Typecheck/build passed before the
 four-line fixture-only repair, which received a clean bounded follow-up review. Final hosted CI and
 live browser permission transitions remain separate qualification evidence.
+
+The #3033 follow-on retains pending archive/restore and preview ownership per board/card while a
+mounted action is reused across A-to-B-to-A navigation. Returning to A cannot submit its still-pending
+request again, while B remains actionable; settling one request releases only its own card. Six
+deferred cases failed before the fix and all 52 focused archive/permission tests pass. On the reviewed
+estimate/permission integration base, the full frontend passed 6,862 tests with three existing skips
+across 440 files, plus production build. Source lint/typecheck/build and independent review passed.
+Final hosted CI remains required. No new browser or screen-reader run is claimed; the earlier native
+focus proof belongs to #3048. Request ownership remains local to the mounted component; server
+version checks still govern independent components and tabs.
 
 Assignment revoke notifications (#2979, PR #3047) now publish each detached card's actual ID
 after the access/audit transaction commits, with no notification when assignments are unchanged.
