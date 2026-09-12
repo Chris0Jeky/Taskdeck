@@ -116,6 +116,63 @@ describe('CardAssignmentField', () => {
   })
 
   /*
+   * #3017. `load()` and `save()` used to share one generation counter, so a
+   * background board refetch that flips `readOnly` back to writable mid-save
+   * ran `load()`, bumped the counter, and made the PUT's own `finally` a no-op.
+   * `saving` — and with it `locked` and the `saving-change` the host reads to
+   * refuse every close affordance (#2977/#2981) — then stayed true for the life
+   * of the mount. Each request now settles on its own counter, so a concurrent
+   * read can never strand a write.
+   */
+  describe('a read that starts while the save is in flight (#3017)', () => {
+    async function saveInterruptedByReload(settle: (finish: (value: Card) => void, fail: (reason: unknown) => void) => void) {
+      let finish!: (value: Card) => void
+      let fail!: (reason: unknown) => void
+      vi.mocked(cardsApi.replaceAssignments).mockReturnValue(new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+      const wrapper = mount(CardAssignmentField, { props: { card, readOnly: false } })
+      await flushPromises()
+      await wrapper.findAll('input')[1]!.setValue(true)
+      await button(wrapper, 'Save assignments').trigger('click')
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([true])
+
+      // The board refetch lands mid-PUT and reports write permission again,
+      // which is the one input that re-runs load() while a save is unanswered.
+      await wrapper.setProps({ readOnly: true }); await flushPromises()
+      await wrapper.setProps({ readOnly: false }); await flushPromises()
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([true])
+      expect(cardsApi.getParticipants).toHaveBeenCalledTimes(2)
+
+      settle(finish, fail)
+      await flushPromises()
+      return wrapper
+    }
+
+    it('settles the save and releases the host close affordances', async () => {
+      const wrapper = await saveInterruptedByReload(finish => finish({ ...card, updatedAt: 'v2', assignments: [
+        { userId: 'viewer', displayName: 'Viewer', assignedAt: 'now', assignedByUserId: 'me' },
+      ] }))
+
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+      expect(wrapper.text()).not.toContain('cannot be discarded')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeUndefined()
+      // The receipt is applied, so the host is not left permanently dirty either.
+      expect(wrapper.emitted('saved')?.at(-1)?.[0]).toMatchObject({ updatedAt: 'v2' })
+      expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([false])
+    })
+
+    it('settles a failed save and still reports the refusal', async () => {
+      const wrapper = await saveInterruptedByReload((_finish, fail) => fail({ response: { status: 409 } }))
+
+      expect(wrapper.emitted('saving-change')?.at(-1)).toEqual([false])
+      expect(wrapper.text()).not.toContain('cannot be discarded')
+      expect(wrapper.text()).toContain('The card changed')
+      // The draft survives the refusal, and the ordinary recovery is offered.
+      expect((wrapper.findAll('input')[1]!.element as HTMLInputElement).checked).toBe(true)
+      expect(button(wrapper, 'Refresh current assignments').attributes('disabled')).toBeUndefined()
+    })
+  })
+
+  /*
    * #2982. A downgrade to Viewer between the participant read and the PUT is a
    * settled fact, not an uncertain outcome: the user keeps read access, so
    * every read this field can make still succeeds and none of them is evidence
