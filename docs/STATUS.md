@@ -2,6 +2,15 @@
 
 Last Updated: 2026-09-12
 
+Buffered account relation exports (#3069) now use the existing authorized, no-tracking projection
+in 500-row pages and admit at most 10,000 relation rows. Both endpoints must be in the cards
+actually exported on the same board; requests without exported cards skip relation reads. The
+10,001st admitted row returns PayloadTooLarge with streaming guidance, while streaming exports
+retain their existing behavior. The cap matches the other buffered export limits and bounds
+retained relation DTOs. All 45 export-service cases and the real SQLite projection case pass;
+removing the ceiling reproduces the limit failure. Independent review is clean. The candidate
+follows #3085 and still requires combined backend and final hosted qualification before delivery.
+
 Product recovery #3081 merged as `96f4b7cc2` after required run `34720964639` passed at
 `6bc8ea497` against main `160818440`. Final local qualification passed 9,839 backend tests
 with 34 existing skips and 6,907 frontend tests with three existing skips. Issues #2935, #3000,

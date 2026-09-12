@@ -2,6 +2,15 @@
 
 Last Updated: 2026-09-12
 
+## Buffered relation export admission candidate (2026-09-12, #3069)
+
+Use the existing authorized no-tracking relation pages for buffered account exports. Retain only
+rows whose endpoints are in the exported card set, accept up to 10,000 rows, and direct larger
+requests to streaming. Empty card payloads avoid graph reads; streaming remains unchanged.
+The two-file source passes 45 export-service tests, one real SQLite projection test and an
+independent review, with a causal limit control. Preserve its commit on the #3085 parent;
+complete combined backend and exact-head/base hosted qualification before delivery.
+
 ## Relation audit and portability follow-ups (2026-09-12, #3074 and #3065)
 
 The audit-attribution correction preserves the execution applier through proposal card deletion;
