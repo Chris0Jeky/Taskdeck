@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CardArchiveAction from '../../components/board/CardArchiveAction.vue'
 import type { Card, CardDetachPreview } from '../../types/board'
 
-const mocks = vi.hoisted(() => ({ previewDetach: vi.fn(), setCardArchived: vi.fn() }))
+const mocks = vi.hoisted(() => ({ previewDetach: vi.fn(), setCardArchived: vi.fn(), toastError: vi.fn() }))
 vi.mock('../../api/cardsApi', () => ({ cardsApi: { previewDetach: mocks.previewDetach } }))
+vi.mock('../../store/toastStore', () => ({ useToastStore: () => ({ error: mocks.toastError }) }))
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: () => ({
     currentBoard: { id: 'b', canWrite: true, isArchived: false },
@@ -34,6 +35,7 @@ const buttonIn = (root: ParentNode | null, text: string) =>
 let wrapper: VueWrapper | null = null
 async function openConfirmation() {
   wrapper = mount(CardArchiveAction, { props: { card }, attachTo: document.body })
+  wrapper.get('button').element.focus()
   await wrapper.get('button').trigger('click')
   await flushPromises()
   expect(modal()).not.toBeNull()
@@ -117,6 +119,28 @@ describe('CardArchiveAction request ownership (GH-2996)', () => {
     }
   })
 
+  it.each(['body', 'disabled', 'removed'] as const)('a dismissed write failure rescues %s focus', async lostFocus => {
+    const held = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(held.promise)
+    const view = await openConfirmation()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    await escape()
+    if (lostFocus === 'body') (document.activeElement as HTMLElement)?.blur()
+    else {
+      const previous = focusElsewhere()
+      if (lostFocus === 'disabled') previous.disabled = true
+      else previous.remove()
+    }
+    held.reject(new Error('Could not confirm archive'))
+    await flushPromises()
+
+    expect(modal()).toBeNull()
+    expect(document.activeElement).toBe(buttonIn(view.element, 'Refresh card state'))
+    expect(mocks.setCardArchived).toHaveBeenCalledTimes(1)
+    expect(view.emitted('changed')).toBeUndefined()
+  })
+
   it.each(['success', 'failure'] as const)('a card switch discards old preview %s without clearing a newer busy state', async outcome => {
     const old = deferred<CardDetachPreview>()
     const current = deferred<CardDetachPreview>()
@@ -149,6 +173,126 @@ describe('CardArchiveAction request ownership (GH-2996)', () => {
     held.resolve(undefined)
     await flushPromises()
     expect(view.emitted('changed')).toHaveLength(1)
+  })
+
+  it.each([
+    { archive: true, outcome: 'success' }, { archive: true, outcome: 'failure' },
+    { archive: false, outcome: 'success' }, { archive: false, outcome: 'failure' },
+  ])('a switched-card write (archive=$archive, $outcome) preserves the new request owner', async ({ archive, outcome }) => {
+    const old = deferred<void>()
+    const current = deferred<CardDetachPreview>()
+    mocks.setCardArchived.mockReturnValueOnce(old.promise)
+    if (archive) {
+      await openConfirmation()
+      buttonIn(modal(), 'Confirm archive').click()
+    } else {
+      wrapper = mount(CardArchiveAction, { props: { card: { ...card, isArchived: true } }, attachTo: document.body })
+      await wrapper.get('button').trigger('click')
+    }
+    await flushPromises()
+    const view = wrapper!
+    await view.setProps({ card: { ...card, id: 'c2' } })
+    mocks.previewDetach.mockReturnValueOnce(current.promise)
+    await view.get('button').trigger('click')
+    const elsewhere = focusElsewhere()
+
+    if (outcome === 'success') old.resolve(undefined)
+    else old.reject(new Error('Old card private error detail'))
+    await flushPromises()
+
+    expect(modal()).toBeNull()
+    expect(view.find('[role="alert"]').exists()).toBe(false)
+    expect(view.get('button').attributes('disabled')).toBeDefined()
+    expect(document.activeElement).toBe(elsewhere)
+    expect(view.emitted('changed')).toBeUndefined()
+    expect(view.emitted('refresh')).toBeUndefined()
+    if (outcome === 'failure') {
+      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(`The ${archive ? 'archive' : 'restore'} requested for a previously viewed card could not be confirmed. Reopen that card and refresh its state before trying again.`)
+    } else expect(mocks.toastError).not.toHaveBeenCalled()
+
+    current.resolve({ ...freshPreview, cardId: 'c2' })
+    await flushPromises()
+    expect(buttonIn(modal(), 'Confirm archive').disabled).toBe(false)
+  })
+
+  it('unmount suppresses late failed-write UI and global notices', async () => {
+    const held = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(held.promise)
+    const view = await openConfirmation()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    view.unmount()
+    wrapper = null
+    const elsewhere = focusElsewhere()
+    held.reject(new Error('Obsolete failure'))
+    await flushPromises()
+
+    expect(mocks.toastError).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(elsewhere)
+    expect(view.emitted('changed')).toBeUndefined()
+  })
+
+  it.each([
+    { archived: false, dismiss: false },
+    { archived: false, dismiss: true },
+    { archived: true, dismiss: false },
+  ])('a current-card write 403 emits permission-denied (archived=$archived, dismiss=$dismiss)', async ({ archived, dismiss }) => {
+    const held = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(held.promise)
+    if (archived) {
+      wrapper = mount(CardArchiveAction, { props: { card: { ...card, isArchived: true } }, attachTo: document.body })
+      await wrapper.get('button').trigger('click')
+    } else {
+      await openConfirmation()
+      buttonIn(modal(), 'Confirm archive').click()
+      await flushPromises()
+      if (dismiss) await escape()
+    }
+    held.reject(Object.assign(new Error('Write access denied'), { response: { status: 403 } }))
+    await flushPromises()
+
+    expect(wrapper!.emitted('permission-denied')).toEqual([[]])
+    expect(wrapper!.emitted('changed')).toBeUndefined()
+    expect(mocks.setCardArchived).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['card', 'board', 'unmount'] as const)('a 403 after a %s context change cannot invalidate current permissions', async contextChange => {
+    const held = deferred<void>()
+    mocks.setCardArchived.mockReturnValueOnce(held.promise)
+    const view = await openConfirmation()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    if (contextChange === 'unmount') {
+      view.unmount()
+      wrapper = null
+    } else {
+      await view.setProps({ card: contextChange === 'card'
+        ? { ...card, id: 'c2' }
+        : { ...card, boardId: 'other-board' } })
+    }
+    held.reject(Object.assign(new Error('Old permission denial'), { response: { status: 403 } }))
+    await flushPromises()
+
+    expect(view.emitted('permission-denied')).toBeUndefined()
+    expect(view.emitted('changed')).toBeUndefined()
+    if (contextChange !== 'unmount') expect(view.find('[role="alert"]').exists()).toBe(false)
+  })
+
+  it.each([404, 409, 500])('a write %s does not emit permission-denied', async status => {
+    mocks.setCardArchived.mockRejectedValueOnce({ response: { status } })
+    const view = await openConfirmation()
+    buttonIn(modal(), 'Confirm archive').click()
+    await flushPromises()
+    expect(view.emitted('permission-denied')).toBeUndefined()
+  })
+
+  it('a preview 403 does not claim a confirmed write permission denial', async () => {
+    mocks.previewDetach.mockRejectedValueOnce({ response: { status: 403 } })
+    wrapper = mount(CardArchiveAction, { props: { card }, attachTo: document.body })
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('permission-denied')).toBeUndefined()
+    expect(mocks.setCardArchived).not.toHaveBeenCalled()
   })
 
   it('unmount discards a late write receipt instead of notifying an obsolete parent', async () => {
