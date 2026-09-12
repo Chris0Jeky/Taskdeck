@@ -2,6 +2,16 @@
 
 Last Updated: 2026-09-12
 
+## Paper archive settlement candidate (2026-09-12, #3060)
+
+The selected-inspector follow-up to delivered #3059 now accepts a successful inactive child's
+committed receipt only when the board and card still match. It updates the replacement action's
+lifecycle/version before releasing pending ownership and preserves a newer returned-card draft.
+Both archive and restore stale-state regressions were reproduced before the fix; seven focused
+cases and independent review pass. This candidate incorporates recovery integration #3081 while
+preserving its own source commit, with no manual runtime conflict. Complete the combined frontend and required hosted gate before
+delivery. #3023 and parked #3057 remain separate; existing human actions are unchanged.
+
 ## Product recovery integration (2026-09-12)
 
 Typed relations #3066 delivered #2092 as `160818440` after its exact-head required gate;
