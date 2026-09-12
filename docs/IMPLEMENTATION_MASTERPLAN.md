@@ -1,16 +1,38 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-13
 
-## Paper archive settlement candidate (2026-09-12, #3060)
+## Relation audit and portability follow-ups (2026-09-12, #3074 and #3065)
+
+The audit-attribution correction preserves the execution applier through proposal card deletion;
+its regression uses a different requester and retains the removed-edge receipt. The portability
+correction selects the existing v5 envelope for every non-null estimate, including zero, even on a
+graph-free board. Review exposed the original import fixture's empty-graph assumption. The normal
+card-API replacement fails before the correction, then passes within 22 export API and 48 service
+cases; unknown-only boards retain their previous legacy representation. Preserve the original
+commits and this bounded correction. The earlier 9,842-pass/34-skip full backend result predates
+the correction; a new full run and final hosted qualification remain pending at this checkpoint.
+No new format number, approval policy or direct-delete behavior is introduced. Existing human
+actions remain separate.
+
+## Product recovery delivery (2026-09-12)
+
+#3081 merged as `96f4b7cc2` after required run `34720964639` passed at reviewed `6bc8ea497`
+against main `160818440`. It preserves source PRs #3068, #3071, #3075, #3078 and #3080 and closes
+#2935, #3000, #3024, #3056 and #3063. All eleven project items are Done; the first post-merge
+thread check is clear. STATUS records the complete local gate and the historical source limits.
+Archive reselection remains its separate #3060 candidate; permission PR #3072 stays parked.
+## Paper archive settlement delivery (2026-09-12, #3060)
 
 The selected-inspector follow-up to delivered #3059 now accepts a successful inactive child's
 committed receipt only when the board and card still match. It updates the replacement action's
 lifecycle/version before releasing pending ownership and preserves a newer returned-card draft.
 Both archive and restore stale-state regressions were reproduced before the fix; seven focused
-cases and independent review pass. This candidate incorporates recovery integration #3081 while
-preserving its own source commit, with no manual runtime conflict. Complete the combined frontend and required hosted gate before
-delivery. #3023 and parked #3057 remain separate; existing human actions are unchanged.
+cases and independent review pass. #3082 merged as `2cdc45257` after required run `34722482168`
+passed at `29a3142a9` against delivered recovery `96f4b7cc2`. Full frontend qualification passes
+6,909 tests with three existing skips plus lint/typecheck/build. The MEDIUM form/assignment write
+baseline follow-up is tracked in #3083. #3023 and parked #3057 remain separate; existing human
+actions are unchanged.
 
 ## Product recovery integration (2026-09-12)
 

@@ -1,15 +1,37 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-13
 
+Product recovery #3081 merged as `96f4b7cc2` after required run `34720964639` passed at
+`6bc8ea497` against main `160818440`. Final local qualification passed 9,839 backend tests
+with 34 existing skips and 6,907 frontend tests with three existing skips. Issues #2935, #3000,
+#3024, #3056 and #3063 are closed; the integration and its five preserved source PRs are merged
+and all eleven project items are Done with their verified priorities. The first post-merge review
+check is clear. Candidate wording below remains historical; parked #3072 is excluded.
+
+Two bounded follow-ups remain in #3085: proposal card deletion carries the authenticated applier
+into its removed-relations audit (#3074), and estimate-bearing board exports use the existing v5
+envelope even when no relation graph row exists (#3065). Review identified that the original
+import-based fixture manufactured an empty graph and missed the ordinary card-API path. The
+replacement creates the board and null/zero/positive estimates through the normal APIs; it fails
+without the version correction and passes with current-reader fresh-ID roundtrip preservation.
+All 48 focused board-JSON service cases and 22 export API cases pass after correction, including
+zero-only and unknown-only legacy coverage. The inspected pre-estimate reader at `9c17a83bf`
+rejects v5 before mapping; no historical binary execution is claimed. The audit source separately
+passes 29 registry and 12 typed-relation API cases with a causal missing-actor control.
+The earlier complete backend run passed 9,842 tests with 34 existing skips before this version
+correction. A new full backend run is pending; the PR records the focused correction review and
+required hosted gate against its final head and base. Existing human actions remain unchanged.
 Paper archive/restore settlement (#3060) now reconciles the committed lifecycle and card version
 when the user switches A-to-B-to-A before the request completes. The current matching inspector
 receives that result before the shared pending lock is released, while retaining newer local draft
 edits. Unrelated selections and failed stale requests retain their existing event, permission and
 focus guards. Seven focused ownership cases pass, including both lifecycle directions, and the
-independent review is clean. The candidate includes recovery integration #3081; final combined
-frontend and hosted qualification are recorded on the delivery PR before merge. The broader #3023
-draft residuals and parked #3057 permission work remain separate.
+independent review is clean. #3082 merged as `2cdc45257` after required run `34722482168`
+passed at `29a3142a9` against main `96f4b7cc2`; combined frontend qualification passes 6,909 tests
+with three existing skips, lint, typecheck and build. The confirmed MEDIUM late-restore form and
+assignment write-version follow-up is tracked in #3083; stale writes are rejected and drafts kept.
+The broader #3023 draft residuals and parked #3057 permission work remain separate.
 
 Typed relations #3066 merged on 2026-09-12 as `160818440`, after required run
 `34718378428` passed at reviewed head `7c66104b3` against main `9a8c14c6b`.
