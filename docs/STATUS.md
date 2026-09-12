@@ -29,9 +29,13 @@ pending-write busy-ownership residual stays open in #3033. Qualification: full f
 `8ab19e7ef` passed 6,776 tests with three existing skips; final `8582b7ac3` passed typecheck,
 build, 175 focused tests and three native Chromium focus cases after the bounded write403
 bridge. Real backend permission integration and screen-reader output were not tested.
-Fresh background board payloads that repeat the same permission boolean can still leave a denied
-editor locked until explicit permission refresh or reopen; that non-blocking recovery residual is
-tracked in #3049.
+The same-valued permission recovery follow-up (#3049) is implemented for qualification. A committed
+board-detail read that began after denial can restore editing even when `canWrite` remains true;
+local object replacement and pre-denial in-flight reads grant nothing. Request/payload generations
+preserve the existing fail-closed and cancellation behavior. Focused specs passed 100 tests; the full
+frontend passed 6,794 with three existing skips across 438 files. Typecheck/build passed before the
+four-line fixture-only repair, which received a clean bounded follow-up review. Final hosted CI and
+live browser permission transitions remain separate qualification evidence.
 
 Assignment revoke notifications (#2979, PR #3047) now publish each detached card's actual ID
 after the access/audit transaction commits, with no notification when assignments are unchanged.
