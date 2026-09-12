@@ -16,9 +16,11 @@ tests pass for first-notification queue visibility, rollback, lost post-commit c
 already-applied deduplication. Omitting durable preparation makes both lifecycle controls fail;
 restoring the reviewed executor bytes makes all five pass. Independent source review is clean.
 The complete backend gate passes 9,802 tests across all six projects with 34 existing skips and
-zero failures at `0a65b536b`. The later inherited LAN and archive corrections change only frontend and docs;
-the final backend tree is identical to that tested head. Exact-head hosted qualification remains
-required. No actual process-kill, external HTTP delivery or release acceptance is claimed.
+zero failures at `0a65b536b`. The later inherited chat correction changes only its nine tool,
+registration and test files; those changes pass 91 Application cases and one API registry case
+on the parent. Webhook implementation and durability tests are unchanged. Exact-head hosted
+qualification remains required for the combined tree. No actual process-kill, external HTTP
+delivery or release acceptance is claimed.
 
 The typed-relation candidate now includes archive recovery merge `44d041ca7` (#3059), whose
 required hosted gate passed at `7135d53a9`; #3033 is closed. Integration resolved only the

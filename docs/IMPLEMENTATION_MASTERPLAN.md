@@ -17,6 +17,11 @@ passes 9,802 tests with 34 existing skips and no failures. Complete exact-head h
 before closing #3024. Broader notification
 producer changes, live HTTP and release qualification remain outside this slice.
 
+The child now includes the parent's corrected chat ID/revision contracts. Only those nine backend
+tool/registration/test files differ from the full-backend checkpoint; their 91 Application and one
+API registry cases pass on the parent. Webhook source and durability tests remain unchanged.
+Qualify the combined head and retarget after parent delivery before merging this child.
+
 ## Typed relations candidate (2026-09-12, #2092)
 
 The candidate includes delivered archive recovery #3059 (`44d041ca7`). Only the concurrent
