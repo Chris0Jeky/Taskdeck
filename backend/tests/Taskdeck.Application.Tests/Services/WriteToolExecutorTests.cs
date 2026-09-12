@@ -876,6 +876,32 @@ public class WriteToolExecutorTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeCardRelation_ResolvesNFormatAndBracedActiveBoardIdsForAddAndRemove(bool remove)
+    {
+        CreateProposalDto? captured = null;
+        var source = CreateCard("Source");
+        var target = CreateCard("Target");
+        SetupBoardCards(source, target);
+        _relations.Setup(service => service.ValidateMutationAsync(
+                _userId, _boardId, It.IsAny<CardRelationEdge>(), 9, remove, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new BoardRelationsDto(_boardId, 9, [], true)));
+        SetupProposalCreation(Guid.NewGuid(), proposal => captured = proposal);
+        IToolExecutor executor = remove
+            ? new ProposeRemoveCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object)
+            : new ProposeAddCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{source.Id:N}}","related_card_id":"{{{target.Id:D}}}","relation_type":"blocks","expected_revision":9}"""));
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        captured!.Operations!.Single().ActionType.Should().Be(remove ? "remove-relation" : "add-relation");
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(source.Id);
+        parameters.RootElement.GetProperty("relatedCardId").GetGuid().Should().Be(target.Id);
+    }
+
+    [Theory]
     [InlineData("unknown")]
     [InlineData("ambiguous")]
     [InlineData("cross-board")]

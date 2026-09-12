@@ -129,6 +129,9 @@ public abstract class ProposeCardRelationExecutor : IToolExecutor
 
     private static Guid? ResolveActiveCardId(IEnumerable<Card> cards, string reference)
     {
+        if (Guid.TryParse(reference, out var parsedId))
+            return cards.Any(card => card.Id == parsedId) ? parsedId : null;
+
         var matches = cards.Where(card => card.Id.ToString().StartsWith(reference, StringComparison.OrdinalIgnoreCase)).ToList();
         return matches.Count == 1 ? matches[0].Id : null;
     }
