@@ -44,6 +44,7 @@ public class McpToolsTests : IDisposable
         services.AddScoped<LabelService>();
         services.AddScoped<AuthorizationService>();
         services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
+        services.AddScoped<IBoardRelationService, BoardRelationService>();
         services.AddScoped<AutomationProposalService>();
         services.AddScoped<IAutomationProposalService>(sp => sp.GetRequiredService<AutomationProposalService>());
         services.AddScoped<CaptureService>();
@@ -110,6 +111,38 @@ public class McpToolsTests : IDisposable
         denied.RootElement.TryGetProperty("board", out _).Should().BeFalse();
         using var malformed = JsonDocument.Parse(await Tools(user.Id).GetBoardEstimateRollups("not-a-board"));
         malformed.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TypedRelationTools_CreateOneProposalWithTheCallerPinnedRevisionWithoutMutatingTheGraph()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, columnId) = await SetupBoardAsync(scope);
+        var cards = scope.ServiceProvider.GetRequiredService<CardService>();
+        var source = (await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Source", null, null, null))).Value;
+        var target = (await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Target", null, null, null))).Value;
+        var relations = scope.ServiceProvider.GetRequiredService<IBoardRelationService>();
+        var before = await relations.GetAsync(owner.Id, boardId, CancellationToken.None);
+        before.IsSuccess.Should().BeTrue(before.ErrorMessage);
+        before.Value.Revision.Should().Be(0);
+        var tools = CreateWriteTools(scope, owner.Id);
+
+        using var response = JsonDocument.Parse(await tools.AddCardRelation(
+            boardId.ToString(), source.Id.ToString(), target.Id.ToString(), "depends-on", before.Value.Revision));
+        var proposalId = response.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        var operation = proposal.Operations.Should().ContainSingle().Subject;
+        operation.ActionType.Should().Be("add-relation");
+        operation.TargetType.Should().Be("card");
+        using var parameters = JsonDocument.Parse(operation.Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(source.Id);
+        parameters.RootElement.GetProperty("relatedCardId").GetGuid().Should().Be(target.Id);
+        parameters.RootElement.GetProperty("expectedRevision").GetInt64().Should().Be(before.Value.Revision);
+        (await relations.GetAsync(owner.Id, boardId, CancellationToken.None)).Value.Relations.Should().BeEmpty();
+
+        using var stale = JsonDocument.Parse(await tools.RemoveCardRelation(
+            boardId.ToString(), source.Id.ToString(), target.Id.ToString(), "blocks", before.Value.Revision + 1));
+        stale.RootElement.GetProperty("error").GetString().Should().Contain("Reload");
     }
 
     [Theory]
@@ -1306,7 +1339,9 @@ public class McpToolsTests : IDisposable
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(userId),
             scope.ServiceProvider.GetRequiredService<ICaptureService>(),
-            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>(),
+            scope.ServiceProvider.GetRequiredService<IAuthorizationService>(),
+            scope.ServiceProvider.GetRequiredService<IBoardRelationService>());
     }
 
     private static async Task ApproveAndExecuteAsync(IServiceScope scope, Guid userId, Guid proposalId)
