@@ -74,6 +74,11 @@ const pendingArchiveRefresh = ref(false)
 const archiveStateAfterChange = ref<boolean | null>(null)
 const archiveCompletedWithDraft = ref(false)
 const cardIsArchived = computed(() => archiveStateAfterChange.value ?? props.card.isArchived === true)
+// A draft may settle after the lifecycle request that made it unsaveable. The
+// notice follows that draft, but the lifecycle receipt still belongs to the
+// pre-change prop version for this mounted editor. Keep that control frozen
+// until reopening supplies an authoritative card/version snapshot (#3023).
+const showArchiveDraftNotice = computed(() => archiveCompletedWithDraft.value && hasUnsavedChanges.value)
 // What is actually possible from this state: the card is archived, so nothing
 // can be saved on it; the archive control cannot restore it either, because
 // restoring is a lifecycle change and this editor still holds unsaved work.
@@ -500,10 +505,10 @@ useEscapeToClose(
           :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
           @saved="acceptAssignments" @permission-denied="refreshTypePermission" />
-        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges"
+        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges || archiveCompletedWithDraft"
           :pending-requests="pendingArchiveRequests"
           @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="refreshTypePermission" />
-        <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
+        <p v-if="showArchiveDraftNotice" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}
         </p>
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
