@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Services.Tools;
@@ -13,16 +14,19 @@ public abstract class ProposeCardRelationExecutor : IToolExecutor
 {
     private readonly IAutomationProposalService _proposalService;
     private readonly IBoardRelationService _relations;
+    private readonly IUnitOfWork? _unitOfWork;
     private readonly bool _remove;
 
     protected ProposeCardRelationExecutor(
         IAutomationProposalService proposalService,
         IBoardRelationService relations,
-        bool remove)
+        bool remove,
+        IUnitOfWork? unitOfWork = null)
     {
         _proposalService = proposalService;
         _relations = relations;
         _remove = remove;
+        _unitOfWork = unitOfWork;
     }
 
     public string ToolName => _remove ? "propose_remove_card_relation" : "propose_add_card_relation";
@@ -37,11 +41,16 @@ public abstract class ProposeCardRelationExecutor : IToolExecutor
     public async Task<string> ExecuteAsync(ToolExecutionContext context, JsonElement arguments, CancellationToken ct = default)
     {
         if (arguments.ValueKind != JsonValueKind.Object ||
-            !TryGetGuid(arguments, "card_id", out var cardId) ||
-            !TryGetGuid(arguments, "related_card_id", out var relatedCardId))
+            !TryGetString(arguments, "card_id", out var cardReference) ||
+            !TryGetString(arguments, "related_card_id", out var relatedCardReference))
         {
-            return Error("card_id and related_card_id must be UUIDs on the current board.");
+            return Error("card_id and related_card_id are required on the current board.");
         }
+
+        var resolved = await ResolveCardIdsAsync(context.BoardId, cardReference, relatedCardReference, ct);
+        if (resolved is null)
+            return Error("card_id and related_card_id must identify unambiguous active cards on the current board.");
+        var (cardId, relatedCardId) = resolved.Value;
 
         if (!arguments.TryGetProperty("relation_type", out var relationTypeElement) ||
             relationTypeElement.ValueKind != JsonValueKind.String ||
@@ -102,12 +111,37 @@ public abstract class ProposeCardRelationExecutor : IToolExecutor
         }, ToolJsonOptions.Default);
     }
 
-    private static bool TryGetGuid(JsonElement arguments, string propertyName, out Guid value)
+    private async Task<(Guid CardId, Guid RelatedCardId)?> ResolveCardIdsAsync(
+        Guid boardId, string cardReference, string relatedCardReference, CancellationToken ct)
     {
-        value = Guid.Empty;
+        if (_unitOfWork is null)
+        {
+            return Guid.TryParse(cardReference, out var parsedCardId) && Guid.TryParse(relatedCardReference, out var parsedRelatedCardId)
+                ? (parsedCardId, parsedRelatedCardId)
+                : null;
+        }
+
+        var activeCards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId, ct);
+        var cardId = ResolveActiveCardId(activeCards, cardReference);
+        var relatedCardId = ResolveActiveCardId(activeCards, relatedCardReference);
+        return cardId is not null && relatedCardId is not null ? (cardId.Value, relatedCardId.Value) : null;
+    }
+
+    private static Guid? ResolveActiveCardId(IEnumerable<Card> cards, string reference)
+    {
+        if (Guid.TryParse(reference, out var parsedId))
+            return cards.Any(card => card.Id == parsedId) ? parsedId : null;
+
+        var matches = cards.Where(card => card.Id.ToString().StartsWith(reference, StringComparison.OrdinalIgnoreCase)).ToList();
+        return matches.Count == 1 ? matches[0].Id : null;
+    }
+
+    private static bool TryGetString(JsonElement arguments, string propertyName, out string value)
+    {
+        value = string.Empty;
         return arguments.TryGetProperty(propertyName, out var property)
             && property.ValueKind == JsonValueKind.String
-            && Guid.TryParse(property.GetString(), out value);
+            && !string.IsNullOrWhiteSpace(value = property.GetString() ?? string.Empty);
     }
 
     private static string Error(string message) => JsonSerializer.Serialize(new { error = message }, ToolJsonOptions.Default);
@@ -115,10 +149,12 @@ public abstract class ProposeCardRelationExecutor : IToolExecutor
 
 public sealed class ProposeAddCardRelationExecutor(
     IAutomationProposalService proposalService,
-    IBoardRelationService relations)
-    : ProposeCardRelationExecutor(proposalService, relations, remove: false);
+    IBoardRelationService relations,
+    IUnitOfWork? unitOfWork = null)
+    : ProposeCardRelationExecutor(proposalService, relations, remove: false, unitOfWork);
 
 public sealed class ProposeRemoveCardRelationExecutor(
     IAutomationProposalService proposalService,
-    IBoardRelationService relations)
-    : ProposeCardRelationExecutor(proposalService, relations, remove: true);
+    IBoardRelationService relations,
+    IUnitOfWork? unitOfWork = null)
+    : ProposeCardRelationExecutor(proposalService, relations, remove: true, unitOfWork);

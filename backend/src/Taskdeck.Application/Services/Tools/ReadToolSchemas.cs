@@ -14,7 +14,8 @@ public static class ReadToolSchemas
         ListCardsInColumn(),
         GetCardDetails(),
         SearchCards(),
-        GetBoardLabels()
+        GetBoardLabels(),
+        GetBoardCardRelations()
     };
 
     public static IReadOnlyList<TaskdeckToolSchema> GetAll() => CachedAll;
@@ -100,6 +101,15 @@ public static class ReadToolSchemas
                 "required": [],
                 "additionalProperties": false
             }
+            """),
+        Required: Array.Empty<string>()
+    );
+
+    public static TaskdeckToolSchema GetBoardCardRelations() => new(
+        Name: "get_board_card_relations",
+        Description: "Get the current board card-relation graph, including its revision and canonical edges. Use this before proposing a relation change.",
+        ParametersSchema: ParseSchema("""
+            { "type": "object", "properties": {}, "required": [], "additionalProperties": false }
             """),
         Required: Array.Empty<string>()
     );

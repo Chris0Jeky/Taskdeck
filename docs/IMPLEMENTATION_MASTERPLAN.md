@@ -45,6 +45,13 @@ The final LAN compatibility correction reuses the existing UUID fallback for pro
 passes a missing-`randomUUID` regression, all four API-wrapper tests, lint and bounded review.
 Keep buffered export admission (#3069) and refresh control state (#3070) as separate follow-ups.
 
+The chat-contract correction resolves active-board short IDs and preserves full UUID formats,
+and registers the authorized graph/revision reader already named by the proposal schema. Causal
+negative controls reproduce both missing contracts; 91 Application cases and one API registry case
+pass after correction. STATUS records the bounded review and compatibility fix. Keep premature
+proposal-create events (#3073) and proposal-delete audit attribution (#3074) outside this correction.
+Requalify the final head before merge; approval and Apply remain explicit.
+
 ## Estimate delivery (2026-09-12)
 
 #3054 merged as `54e4c0a86` after required hosted run `34713059470` passed at reviewed head

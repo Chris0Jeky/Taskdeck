@@ -8,10 +8,10 @@ namespace Taskdeck.Application.Tests.Services;
 public class ReadToolSchemasTests
 {
     [Fact]
-    public void GetAll_Returns5Schemas()
+    public void GetAll_Returns6Schemas()
     {
         var schemas = ReadToolSchemas.GetAll();
-        schemas.Count.Should().Be(5);
+        schemas.Count.Should().Be(6);
     }
 
     [Fact]
@@ -65,6 +65,15 @@ public class ReadToolSchemasTests
         var schema = ReadToolSchemas.GetBoardLabels();
         schema.Name.Should().Be("get_board_labels");
         schema.Required.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetBoardCardRelations_HasNoRequiredParameters()
+    {
+        var schema = ReadToolSchemas.GetBoardCardRelations();
+        schema.Name.Should().Be("get_board_card_relations");
+        schema.Required.Should().BeEmpty();
+        schema.Description.Should().Contain("revision");
     }
 
     [Theory]
