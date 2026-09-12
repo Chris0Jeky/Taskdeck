@@ -9,8 +9,8 @@ export default {
     task: 'Task',
     epic: 'Epic',
     spike: 'Spike',
-    permissionChecking: 'Comprobando si puedes cambiar el tipo en este tablero…',
-    permissionUnknown: 'El tablero cargado no indica si puedes cambiar el tipo.',
+    permissionChecking: 'Comprobando si puedes editar este tablero…',
+    permissionUnknown: 'El tablero cargado no indica si puedes editarlo.',
     permissionRefresh: 'Actualizar el permiso',
   },
   commentDelete: {

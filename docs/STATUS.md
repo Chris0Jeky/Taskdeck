@@ -2,6 +2,20 @@
 
 Last Updated: 2026-09-12
 
+Card editor write gates (#3028): the open card editor resolves the caller's board write
+permission once, server-side, when the loaded board payload omits the optional `canWrite`
+field, and the work-item type selector, parent selector, archive/restore control and
+assignment field all gate on that single answer instead of reading the omitted field as
+"no". A writer holding a payload cached before the field existed no longer watches one
+control enable while three stay disabled. Viewer, archived-board and archived-card
+behaviour is unchanged - restoring an archived card still needs only board write
+permission - the assignment field's own 403 lock (#2982) and its release rules are
+untouched, and a failed read still offers the explicit permission refresh. Verified
+locally: 85 focused tests (`CardModal`, `CardParentField`, `useCardTypePermission`), 322
+neighbouring card/board/Paper tests, typecheck and production build. Not verified: browser
+or screen-reader behaviour, and the residual that an archived card on such a payload still
+spends no read, so its Restore stays disabled as before.
+
 Card archive/restore (#2920): explicit, version-checked lifecycle actions preserve card identity,
 placement, labels, block state and history. Active surfaces exclude archived cards; Paper and
 Legacy offer an authorized archived list and restore to the original column, subject to its WIP
@@ -16,7 +30,11 @@ on archive/delete (including archived children), and no reattachment on restore.
 earlier card create and move operations produce, so a restore behind an operation that takes the
 last slot is refused at approve instead of failing mid-apply and rolling back (#2926). Batch
 archive/restore in one proposal stays refused outright by the one-hierarchy-operation rule, so that
-is a WIP question that does not arise. Preview still does not WIP-check create or move themselves
+is a WIP question that does not arise. A proposal move into a column whose stored card positions
+are non-contiguous - a deleted middle card, or a sparse import - now applies instead of failing at
+execute and rolling the proposal back: the append position is the column's occupant count, and the
+card move clamps an overshooting insert to the end of the column, so what preview approves is what
+Apply performs (#3025). Preview still does not WIP-check create or move themselves
 (#3020), and the Review conflict/capacity projection still omits lifecycle effects (#3012).
 
 Restore disclosure in Review side effects (#3008, PR #3018): the Cards side-effect row now reads

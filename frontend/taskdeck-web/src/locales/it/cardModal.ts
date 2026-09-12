@@ -9,8 +9,8 @@ export default {
     task: 'Task',
     epic: 'Epic',
     spike: 'Spike',
-    permissionChecking: 'Verifica se puoi cambiare il tipo in questa bacheca…',
-    permissionUnknown: 'La bacheca caricata non indica se puoi cambiare il tipo.',
+    permissionChecking: 'Verifica se puoi modificare questa bacheca…',
+    permissionUnknown: 'La bacheca caricata non indica se puoi modificarla.',
     permissionRefresh: 'Aggiorna il permesso',
   },
   commentDelete: {
