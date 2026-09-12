@@ -29,6 +29,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<CardService>();
         services.AddScoped<CardAssignmentService>();
         services.AddScoped<IBoardEstimateRollupService, BoardEstimateRollupService>();
+        services.AddScoped<IBoardRelationService, BoardRelationService>();
         services.AddScoped<CardCommentService>();
         services.AddScoped<ThinkingDeckService>();
         services.AddScoped<BoardDependencyService>();
@@ -159,6 +160,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, ProposeUpdateCardExecutor>();
         services.AddScoped<IToolExecutor, ProposeBulkMoveExecutor>();
         services.AddScoped<IToolExecutor, ProposeCreateColumnExecutor>();
+        services.AddScoped<IToolExecutor, ProposeAddCardRelationExecutor>();
+        services.AddScoped<IToolExecutor, ProposeRemoveCardRelationExecutor>();
 
         services.AddScoped<IDailySealService, DailySealService>();
 
