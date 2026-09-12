@@ -31,6 +31,12 @@ reviews are clean, including the bounded graph-preview and deferred-publication 
 hosted qualification remains required. This section supersedes the historical Pending note below;
 the candidate remains unmerged and existing human-action and release decisions are unchanged.
 
+The bounded hosted follow-up corrects the dependency journey's expected v5 export envelope
+(one real browser journey passes) and replaces account-wide tracked relation retention with
+authorized, no-tracking export pages (20 focused tests pass; independent review clean). The
+delivered estimate merge `54e4c0a86` is integrated. Qualify this final head against main before
+closing #2092; keep the existing non-snapshot export and physical-device limitations explicit.
+
 ## Estimates and derived rollups (2026-09-12, #2093)
 
 The complete estimate vertical is integrated for qualification: nullable bounded effort minutes,

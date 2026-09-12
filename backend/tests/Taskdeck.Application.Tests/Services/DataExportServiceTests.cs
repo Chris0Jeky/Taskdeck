@@ -1130,6 +1130,9 @@ public class DataExportServiceStreamingTests
         var dependencies = new Mock<IBoardDependencyRepository>();
         dependencies.Setup(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(graph);
+        dependencies.Setup(repository => repository.GetExportPageByUserIdAsync(
+                _userId, 0, 500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new UserDataExportCardRelationDto(boardId, first.Id, archivedSecond.Id, "blocks")]);
         var cards = new Mock<ICardRepository>();
         cards.Setup(repository => repository.GetExportPageByUserIdAsync(_userId, 0, 500, It.IsAny<CancellationToken>()))
             .ReturnsAsync([first, archivedSecond]);
@@ -1159,8 +1162,53 @@ public class DataExportServiceStreamingTests
         relations[0].GetProperty("sourceCardId").GetGuid().Should().Be(first.Id);
         relations[0].GetProperty("targetCardId").GetGuid().Should().Be(archivedSecond.Id);
         relations[0].GetProperty("relationType").GetString().Should().Be("blocks");
-        dependencies.Verify(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        dependencies.Verify(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()), Times.Once);
         dependencies.Verify(repository => repository.GetAsync(It.Is<Guid>(id => id != boardId), It.IsAny<CancellationToken>()), Times.Never);
+        dependencies.Verify(repository => repository.GetExportPageByUserIdAsync(
+            _userId, 0, 500, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_StreamsRelationPagesWithoutLoadingGraphs()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var boardId = Guid.NewGuid();
+        var firstPage = Enumerable.Range(0, 500)
+            .Select(index => new UserDataExportCardRelationDto(
+                boardId, Guid.NewGuid(), Guid.NewGuid(), "blocks"))
+            .ToArray();
+        var finalRelation = new UserDataExportCardRelationDto(
+            boardId, Guid.NewGuid(), Guid.NewGuid(), "duplicates");
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        dependencies.Setup(repository => repository.GetExportPageByUserIdAsync(
+                _userId, 0, 500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(firstPage);
+        dependencies.Setup(repository => repository.GetExportPageByUserIdAsync(
+                _userId, 500, 500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([finalRelation]);
+        var service = new DataExportService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object,
+            EmptyWorkspaceInsightRepository.Create(),
+            dependencies: dependencies.Object);
+
+        using var stream = new MemoryStream();
+        var result = await service.StreamUserDataExportAsync(_userId, stream);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        using var json = System.Text.Json.JsonDocument.Parse(stream.ToArray());
+        var relations = json.RootElement.GetProperty("data").GetProperty("relations");
+        relations.GetArrayLength().Should().Be(501);
+        relations[500].GetProperty("sourceCardId").GetGuid().Should().Be(finalRelation.SourceCardId);
+        dependencies.Verify(repository => repository.GetExportPageByUserIdAsync(
+            _userId, 0, 500, It.IsAny<CancellationToken>()), Times.Once);
+        dependencies.Verify(repository => repository.GetExportPageByUserIdAsync(
+            _userId, 500, 500, It.IsAny<CancellationToken>()), Times.Once);
+        dependencies.Verify(repository => repository.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

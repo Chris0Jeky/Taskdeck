@@ -526,18 +526,9 @@ public class DataExportService : IDataExportService
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);
 
-            // Keep only relation candidates and their endpoints. Card exports can be arbitrarily
-            // large, while each board relation graph is capped at 500 rows.
-            var streamedRelationScopes = new Dictionary<Guid, RelationExportScope?>();
             writer.WriteStartArray("cards");
             await foreach (var card in StreamCardsAsync(userId, cancellationToken))
             {
-                if (!streamedRelationScopes.TryGetValue(card.BoardId, out var relationScope))
-                {
-                    relationScope = await LoadRelationScopeAsync(card.BoardId, cancellationToken);
-                    streamedRelationScopes.Add(card.BoardId, relationScope);
-                }
-                relationScope?.Observe(card.Id);
                 JsonSerializer.SerializeToElement(card, PortabilityJsonOptions).WriteTo(writer);
                 await writer.FlushAsync(cancellationToken);
             }
@@ -545,16 +536,10 @@ public class DataExportService : IDataExportService
             await writer.FlushAsync(cancellationToken);
 
             writer.WriteStartArray("relations");
-            foreach (var (boardId, relationScope) in streamedRelationScopes)
+            await foreach (var relation in StreamRelationsForExportAsync(userId, cancellationToken))
             {
-                if (relationScope is null)
-                    continue;
-                foreach (var edge in relationScope.ReadExportableRelations())
-                {
-                    JsonSerializer.SerializeToElement(new UserDataExportCardRelationDto(
-                        boardId, edge.SourceCardId, edge.TargetCardId, edge.RelationType), PortabilityJsonOptions).WriteTo(writer);
-                    await writer.FlushAsync(cancellationToken);
-                }
+                JsonSerializer.SerializeToElement(relation, PortabilityJsonOptions).WriteTo(writer);
+                await writer.FlushAsync(cancellationToken);
             }
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);
@@ -1303,30 +1288,28 @@ public class DataExportService : IDataExportService
         return relations;
     }
 
-    private async Task<RelationExportScope?> LoadRelationScopeAsync(Guid boardId, CancellationToken cancellationToken)
+    private async IAsyncEnumerable<UserDataExportCardRelationDto> StreamRelationsForExportAsync(
+        Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (_dependencies is null || boardId == Guid.Empty)
-            return null;
-        var graph = await _dependencies.GetAsync(boardId, cancellationToken);
-        return graph is null ? null : new RelationExportScope(graph.ReadRelations());
-    }
+        if (_dependencies is null)
+            yield break;
 
-    private sealed class RelationExportScope(IReadOnlyList<CardRelationEdge> relations)
-    {
-        private readonly IReadOnlyList<CardRelationEdge> _relations = relations;
-        private readonly HashSet<Guid> _relationEndpoints = relations
-            .SelectMany(edge => new[] { edge.SourceCardId, edge.TargetCardId })
-            .ToHashSet();
-        private readonly HashSet<Guid> _exportedEndpoints = [];
-
-        public void Observe(Guid cardId)
+        const int pageSize = 500;
+        for (var offset = 0; ; offset += pageSize)
         {
-            if (_relationEndpoints.Contains(cardId))
-                _exportedEndpoints.Add(cardId);
-        }
+            cancellationToken.ThrowIfCancellationRequested();
+            var page = await _dependencies.GetExportPageByUserIdAsync(
+                userId, offset, pageSize, cancellationToken);
+            foreach (var relation in page)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return relation;
+            }
 
-        public IEnumerable<CardRelationEdge> ReadExportableRelations() => _relations.Where(edge =>
-            _exportedEndpoints.Contains(edge.SourceCardId) && _exportedEndpoints.Contains(edge.TargetCardId));
+            if (page.Count < pageSize)
+                yield break;
+        }
     }
 
     private static UserDataExportWorkspaceMemoryDto MapWorkspaceMemory(Domain.Entities.WorkspaceMemory memory) => new(

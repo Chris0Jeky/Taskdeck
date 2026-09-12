@@ -49,6 +49,17 @@ actual competing contexts. Generic web draft-admission parity remains #3061; the
 estimate export boundary remains #3065. Exact-head hosted qualification is still required. No
 relation merge, release or device/screen-reader acceptance is claimed.
 
+The first hosted relation gate exposed an outdated dependency browser assertion expecting export
+version 2. The v5 assertion now passes the full focused dependency/import journey in Chromium
+(49.0 seconds); import, navigation, mobile bounds and accessibility assertions remain intact.
+A confirmed streaming-export memory regression is also corrected: account relations use bounded,
+no-tracking projection pages, with both endpoints constrained to the same authorized board. All
+11 streaming Application tests and nine real SQLite persistence tests pass, including paging,
+archived endpoints, unauthorized/cross-board exclusion and an empty EF tracker. Independent fix
+review is clean. Account exports retain their existing non-snapshot semantics. Both corrections
+require a new hosted gate; the earlier global teardown timeout is not yet declared resolved.
+The estimate parent has merged as `54e4c0a86`; this candidate includes that delivered base.
+
 Card estimates and current-state rollups (#2093) are implemented on the integration branch.
 Optional whole-minute estimates display as hours/minutes in shared card details and both Paper
 and Legacy quick-create. Blank means unknown; explicit zero remains known. A successful save

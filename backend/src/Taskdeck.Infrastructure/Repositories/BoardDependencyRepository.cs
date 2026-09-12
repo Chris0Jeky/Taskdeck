@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
@@ -10,6 +11,36 @@ public sealed class BoardDependencyRepository(TaskdeckDbContext context) : IBoar
     public Task<BoardDependencies?> GetAsync(Guid boardId, CancellationToken cancellationToken) =>
         context.Set<BoardDependencies>().Include(graph => graph.Relations)
             .SingleOrDefaultAsync(graph => graph.BoardId == boardId, cancellationToken);
+
+    public async Task<IReadOnlyList<UserDataExportCardRelationDto>> GetExportPageByUserIdAsync(
+        Guid userId, int offset, int limit, CancellationToken cancellationToken)
+    {
+        // This must match CardRepository.GetExportPageByUserIdAsync: archived cards are portable,
+        // but each relation endpoint has to be on a board the account owns or can read.
+        var accessibleCards = context.Cards.Where(card =>
+            card.Board.OwnerId == userId || card.Board.BoardAccesses.Any(access => access.UserId == userId));
+
+        return await context.Set<CardRelation>()
+            .AsNoTracking()
+            .Where(relation =>
+                accessibleCards.Any(card =>
+                    card.Id == relation.SourceCardId && card.BoardId == relation.BoardId) &&
+                accessibleCards.Any(card =>
+                    card.Id == relation.TargetCardId && card.BoardId == relation.BoardId))
+            .OrderBy(relation => relation.BoardId)
+            .ThenBy(relation => relation.SourceCardId)
+            .ThenBy(relation => relation.TargetCardId)
+            .ThenBy(relation => relation.RelationType)
+            .Skip(Math.Max(offset, 0))
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select(relation => new UserDataExportCardRelationDto(
+                relation.BoardId,
+                relation.SourceCardId,
+                relation.TargetCardId,
+                relation.RelationType))
+            .ToListAsync(cancellationToken);
+    }
+
     public void AddForImport(BoardDependencies graph) => context.Set<BoardDependencies>().Add(graph);
 
     public async Task<bool> StageAsync(BoardDependencies graph, long expectedRevision, CancellationToken cancellationToken)
