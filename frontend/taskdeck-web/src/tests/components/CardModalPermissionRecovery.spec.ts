@@ -10,7 +10,7 @@ import { useBoardStore } from '../../store/boardStore'
 import type { BoardDetail, Card } from '../../types/board'
 
 vi.mock('../../api/cardsApi', () => ({ cardsApi: {
-  getCards: vi.fn(), getParticipants: vi.fn(), getCard: vi.fn(), replaceAssignments: vi.fn(),
+  getCards: vi.fn(), getParticipants: vi.fn(), getCard: vi.fn(), replaceAssignments: vi.fn(), previewDetach: vi.fn(),
 } }))
 vi.mock('../../api/boardsApi', () => ({ boardsApi: { getBoard: vi.fn() } }))
 vi.mock('../../store/boardStore', () => ({ useBoardStore: vi.fn() }))
@@ -41,11 +41,14 @@ describe('CardModal permission reconciliation', () => {
     vi.mocked(cardsApi.getCards).mockResolvedValue([])
     vi.mocked(cardsApi.getParticipants).mockResolvedValue([{ userId: 'user-2', displayName: 'Teammate' }])
     vi.mocked(cardsApi.getCard).mockResolvedValue(card)
+    vi.mocked(cardsApi.previewDetach).mockResolvedValue({
+      cardId: card.id, expectedUpdatedAt: card.updatedAt, expectedChildrenFingerprint: 'v1:children', children: [],
+    })
     vi.mocked(boardsApi.getBoard).mockResolvedValue(board(true))
     store = reactive({
       currentBoard: board(true), currentBoardCards: [card],
       fetchCardComments: vi.fn().mockResolvedValue([]), fetchCardProvenance: vi.fn().mockResolvedValue(null),
-      getCardComments: vi.fn().mockReturnValue([]), setEditingCard: vi.fn(), fetchBoard: vi.fn(),
+      getCardComments: vi.fn().mockReturnValue([]), setEditingCard: vi.fn(), fetchBoard: vi.fn(), setCardArchived: vi.fn(),
     }) as unknown as ReturnType<typeof useBoardStore>
     vi.mocked(useBoardStore).mockReturnValue(store)
   })
@@ -61,6 +64,32 @@ describe('CardModal permission reconciliation', () => {
     await button(wrapper, 'Save assignments').trigger('click')
     return { wrapper, save }
   }
+
+  it.each([false, true])('reconciles real archive/restore write403 for archived=%s', async (isArchived) => {
+    vi.mocked(store.setCardArchived).mockRejectedValueOnce({ response: { status: 403 } })
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(board(false))
+    const wrapper = mount(CardModal, {
+      props: { card: { ...card, isArchived }, isOpen: true, labels: [] }, attachTo: document.body,
+    })
+    await flushPromises()
+    await button(wrapper, isArchived ? 'Restore card' : 'Archive card').trigger('click')
+    await flushPromises()
+    if (!isArchived) {
+      const confirm = Array.from(document.body.querySelectorAll('button'))
+        .find(candidate => candidate.textContent?.trim() === 'Confirm archive')!
+      confirm.click()
+      await flushPromises()
+    }
+    expect(store.setCardArchived).toHaveBeenCalledTimes(1)
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+    expect(wrapper.findComponent(CardArchiveAction).emitted('permission-denied')).toEqual([[]])
+    expect(wrapper.findComponent(CardArchiveAction).props('canWrite')).toBe(false)
+    expect(wrapper.findComponent(CardAssignmentField).props('readOnly')).toBe(true)
+    expect(wrapper.get('#card-parent').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('#card-work-item-type').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
+  })
 
   it.each([
     ['modal', true], ['inspector', true], ['modal', undefined], ['inspector', undefined],
