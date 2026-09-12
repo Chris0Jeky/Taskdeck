@@ -28,6 +28,7 @@ public static class McpResourcesAndToolsRegistration
             ["search_cards"] = ApiKeyScope.Read,
             ["list_board_participants"] = ApiKeyScope.Read,
             ["get_board_summary"] = ApiKeyScope.Read,
+            ["get_board_estimate_rollups"] = ApiKeyScope.Read,
             ["get_proposal_status"] = ApiKeyScope.Read,
             ["list_proposals"] = ApiKeyScope.Read,
             ["create_card"] = ApiKeyScope.Propose,
