@@ -72,10 +72,10 @@ export function createCardActions(
       // A board-detail refresh can commit the created card while this POST is
       // still resolving. Keep that newer snapshot intact instead of appending a
       // second copy or advancing its column count again. A response that
-      // outlives navigation likewise belongs to the board that initiated it,
-      // not whichever board is currently selected.
+      // reaches a different selected board likewise belongs to the board that
+      // initiated it. A fresh store has no detail yet and still seeds its cards.
       if (
-        state.currentBoard.value?.id === boardId &&
+        (state.currentBoard.value === null || state.currentBoard.value.id === boardId) &&
         !state.currentBoardCards.value.some((existing) => existing.id === newCard.id)
       ) {
         state.currentBoardCards.value.push(newCard)

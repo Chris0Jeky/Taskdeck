@@ -175,6 +175,24 @@ describe('cardStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
+    it('adds a created card before board detail has loaded', async () => {
+      const newCard = {
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'New Card',
+      }
+      state.currentBoard.value = null
+      state.currentBoardCards.value = []
+      mockCardsApi.createCard.mockResolvedValueOnce(newCard)
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      await createCard('board-1', { title: 'New Card', columnId: 'col-1' } as any)
+
+      expect(state.currentBoardCards.value).toEqual([newCard])
+      expect(helpers.updateColumnCardCount).toHaveBeenCalledWith('col-1', 1)
+    })
+
     it('preserves a board-detail card that commits before the create response', async () => {
       let resolveCreate!: (card: Record<string, unknown>) => void
       mockCardsApi.createCard.mockImplementationOnce(() => new Promise((resolve) => {
