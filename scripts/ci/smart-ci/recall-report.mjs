@@ -547,6 +547,8 @@ export function normaliseObservation(raw, policy, options = {}) {
   }
 
   const plan = raw.plan;
+  const unqualifiedMergeRef = isObject(plan)
+    && plan.mergeRefQualification === 'stale-base-unqualified';
   const legacyMergeBaseReceipt = isObject(plan)
     && !Object.hasOwn(plan, 'mergeBaseSha')
     && !Object.hasOwn(plan, 'mergeBaseTipSha');
@@ -556,14 +558,15 @@ export function normaliseObservation(raw, policy, options = {}) {
   const planErrors = validatePlan(plan, policy);
   if (planErrors.length > 0) addError(`plan-invalid:${planErrors.join('; ')}`);
   if (isObject(plan)) {
+    if (unqualifiedMergeRef) addError('merge-ref-unqualified');
     if (plan.plannerError) addError('planner-error');
     if (plan.policyId !== policy.policyId) addError('policy-id-mismatch');
     if (plan.mode !== policy.mode) addError('plan-mode-mismatch');
     if (options.policyDigest && plan.policyDigest !== options.policyDigest) addError('policy-digest-mismatch');
     if (!validSha(plan.baseSha)) addError('plan-base-sha-invalid');
     if (plan.headSha !== headSha) addError('plan-head-sha-mismatch');
-    if (!validSha(plan.mergeSha)) addError('plan-merge-sha-invalid');
-    if (!validSha(plan.mergeTreeSha)) addError('plan-merge-tree-sha-invalid');
+    if (!unqualifiedMergeRef && !validSha(plan.mergeSha)) addError('plan-merge-sha-invalid');
+    if (!unqualifiedMergeRef && !validSha(plan.mergeTreeSha)) addError('plan-merge-tree-sha-invalid');
     if (!isObject(plan.event)) addError('plan-event-missing');
     else {
       if (plan.event.pullRequest !== prNumber) addError('plan-pr-number-mismatch');
@@ -572,8 +575,10 @@ export function normaliseObservation(raw, policy, options = {}) {
       if (!REQUIRED_PULL_REQUEST_ACTIONS.has(plan.event.action)) addError('plan-event-action-not-required');
       if (plan.event.ref !== raw.baseBranch) addError('plan-base-branch-mismatch');
     }
-    validateCommit(raw.planMergeCommit, plan.mergeSha, [observedPlanBaseSha, headSha], plan.mergeTreeSha, 'plan-merge-commit');
-    if (headSha === finalHeadSha) {
+    if (!unqualifiedMergeRef) {
+      validateCommit(raw.planMergeCommit, plan.mergeSha, [observedPlanBaseSha, headSha], plan.mergeTreeSha, 'plan-merge-commit');
+    }
+    if (!unqualifiedMergeRef && headSha === finalHeadSha) {
       if (observedPlanBaseSha !== baseSha) addError('final-plan-base-sha-mismatch');
       if (isObject(raw.mergeCommit) && plan.mergeTreeSha !== raw.mergeCommit.treeSha) addError('final-plan-merge-tree-mismatch');
     }

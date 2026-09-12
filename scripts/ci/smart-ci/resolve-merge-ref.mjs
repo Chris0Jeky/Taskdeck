@@ -12,6 +12,8 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const GITHUB_API_VERSION = '2022-11-28';
 export const AUTH_HEADER_ENV = 'TASKDECK_GIT_HTTP_EXTRAHEADER';
 
 export const MAX_ATTEMPTS = 3;
@@ -133,34 +135,99 @@ export async function observeBaseTip({
   return tip.toLowerCase();
 }
 
+/**
+ * Prove that one commit is in the exact named repository history leading to another.
+ * The compare API avoids shallow-checkout ambiguity. Only validated repository and SHA
+ * identifiers enter the URL; the read-only token stays in the Authorization header.
+ */
+export async function verifyBaseHistoryAncestor({
+  repository,
+  ancestorSha,
+  descendantSha,
+  token = process.env.GH_TOKEN,
+  request = globalThis.fetch,
+}) {
+  const repositoryName = String(repository ?? '');
+  if (!REPOSITORY_PATTERN.test(repositoryName)) {
+    throw new Error('GITHUB_REPOSITORY must be an owner/name pair');
+  }
+  const [owner, name] = repositoryName.split('/');
+  if (owner === '.' || owner === '..' || name === '.' || name === '..') {
+    throw new Error('GITHUB_REPOSITORY must contain ordinary owner and repository names');
+  }
+  const ancestor = requireSha(ancestorSha, 'base history ancestor');
+  const descendant = requireSha(descendantSha, 'base history descendant');
+  if (ancestor === descendant) return true;
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new Error('GH_TOKEN is required for the read-only base history check');
+  }
+  if (typeof request !== 'function') throw new Error('a GitHub compare request function is required');
+
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/compare/${ancestor}...${descendant}`;
+  const response = await request(url, {
+    method: 'GET',
+    redirect: 'error',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': GITHUB_API_VERSION,
+    },
+  });
+  if (!response || response.ok !== true) {
+    const status = Number.isInteger(response && response.status) ? response.status : 'unknown';
+    throw new Error(`GitHub compare could not verify base history (status ${status})`);
+  }
+  if (typeof response.json !== 'function') {
+    throw new Error('GitHub compare returned an unreadable response');
+  }
+  const payload = await response.json();
+  const baseCommit = String(payload && payload.base_commit ? payload.base_commit.sha ?? '' : '').toLowerCase();
+  const mergeBase = String(payload && payload.merge_base_commit ? payload.merge_base_commit.sha ?? '' : '').toLowerCase();
+  return payload && payload.status === 'ahead'
+    && Number.isInteger(payload.ahead_by) && payload.ahead_by > 0
+    && Number.isInteger(payload.behind_by) && payload.behind_by === 0
+    && baseCommit === ancestor
+    && mergeBase === ancestor;
+}
+
 function removeOutputs(paths) {
   for (const path of paths) rmSync(path, { force: true });
 }
 
-function publishOutputs(observation, outputs) {
+function publishEntries(entries, cleanupPaths) {
+  const outputPaths = entries.map(([path]) => path);
+  const temporaryPaths = outputPaths.map((path) => `${path}.tmp-${process.pid}`);
+
+  try {
+    for (const path of outputPaths) mkdirSync(dirname(path), { recursive: true });
+    removeOutputs([...temporaryPaths, ...cleanupPaths]);
+    entries.forEach(([, value], index) => {
+      writeFileSync(temporaryPaths[index], `${value}\n`, { encoding: 'utf8', flag: 'wx' });
+    });
+    entries.forEach(([path], index) => renameSync(temporaryPaths[index], path));
+  } catch (error) {
+    removeOutputs([...temporaryPaths, ...cleanupPaths]);
+    throw error;
+  }
+}
+
+function publishQualifiedOutputs(observation, outputs, cleanupPaths) {
   const entries = [
     [outputs.merge, observation.mergeSha],
     [outputs.tree, observation.treeSha],
     [outputs.mergeBase, observation.mergeBaseSha],
     [outputs.mergeBaseTip, observation.mergeBaseTipSha ?? 'null'],
   ];
-  const outputPaths = entries.map(([path]) => path);
-  const temporaryPaths = outputPaths.map((path) => `${path}.tmp-${process.pid}`);
-
-  try {
-    for (const path of outputPaths) mkdirSync(dirname(path), { recursive: true });
-    removeOutputs(temporaryPaths);
-    entries.forEach(([, value], index) => {
-      writeFileSync(temporaryPaths[index], `${value}\n`, { encoding: 'utf8', flag: 'wx' });
-    });
-    entries.forEach(([path], index) => renameSync(temporaryPaths[index], path));
-  } catch (error) {
-    removeOutputs([...temporaryPaths, ...outputPaths]);
-    throw error;
-  }
+  entries.push([outputs.qualification, 'qualified']);
+  publishEntries(entries, cleanupPaths);
 }
 
-function mismatchReason(observation, expectedBase, expectedHead) {
+function publishUnqualifiedStatus(qualificationOutput, cleanupPaths) {
+  if (!qualificationOutput) throw new Error('qualification output is required for an unqualified merge ref');
+  publishEntries([[qualificationOutput, 'stale-base-unqualified']], cleanupPaths);
+}
+
+function observationReason(observation, expectedHead) {
   if (!observation || typeof observation !== 'object') return 'merge ref unavailable';
   const values = [
     observation.mergeSha,
@@ -169,24 +236,19 @@ function mismatchReason(observation, expectedBase, expectedHead) {
     observation.treeSha,
   ];
   if (values.some((value) => !SHA_PATTERN.test(String(value ?? '')))) return 'invalid observation';
-  if (observation.mergeBaseSha.toLowerCase() !== expectedBase
-    && observation.headSha.toLowerCase() !== expectedHead) return 'base and head mismatch';
-  if (observation.mergeBaseSha.toLowerCase() !== expectedBase) return 'base mismatch';
   if (observation.headSha.toLowerCase() !== expectedHead) return 'head mismatch';
   return null;
 }
 
 /**
- * Resolve one exact control-base/event-head merge identity. Failed or mismatched
+ * Resolve one exact named-base/event-head merge identity. Failed or mismatched
  * observations are retried twice, then remain fail-closed with no output files.
  *
- * The event head must match exactly — that is the untrusted side of the merge and is never
- * negotiable. The first parent is allowed to be the base branch's *live* tip on origin when
- * the base advanced after dispatch (`merge-ref-moved`): GitHub regenerates the merge ref
- * against the current base, so demanding the dispatch-time control base turned every base
- * push during a run into a planner error (CI-03 #2327). Both accepted first parents are heads
- * of the same branch that already supplies the control-plane tooling, so no untrusted content
- * enters the binding.
+ * The event head must match exactly. The first parent qualifies only when it equals the
+ * authenticated tip of the event's named base ref. A retained first parent that is positively
+ * proven to be in that tip's history is classified as stale and publishes no merge identity.
+ * The expected base remains control-code provenance; it need not be related to a non-default
+ * or stacked PR base.
  */
 export async function resolveMergeRef({
   expectedBase,
@@ -195,8 +257,10 @@ export async function resolveMergeRef({
   treeOutput,
   mergeBaseOutput,
   mergeBaseTipOutput,
+  qualificationOutput,
   observe,
   resolveBaseTip = null,
+  verifyBaseAncestor = null,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   log = () => {},
 }) {
@@ -206,53 +270,86 @@ export async function resolveMergeRef({
   const treeOutputPath = requireOutputPath(treeOutput, 'tree output path');
   const mergeBaseOutputPath = requireOutputPath(mergeBaseOutput, 'merge base output path');
   const mergeBaseTipOutputPath = requireOutputPath(mergeBaseTipOutput, 'merge base tip output path');
-  const outputPaths = [mergeOutputPath, treeOutputPath, mergeBaseOutputPath, mergeBaseTipOutputPath];
+  const qualificationOutputPath = requireOutputPath(qualificationOutput, 'merge ref qualification output path');
+  const outputPaths = [mergeOutputPath, treeOutputPath, mergeBaseOutputPath, mergeBaseTipOutputPath, qualificationOutputPath];
   if (new Set(outputPaths).size !== outputPaths.length) throw new Error('merge identity output paths must differ');
   if (typeof observe !== 'function') throw new Error('merge-ref observer is required');
+  if (typeof resolveBaseTip !== 'function') throw new Error('named base-ref resolver is required');
+  if (typeof verifyBaseAncestor !== 'function') throw new Error('base-history verifier is required');
 
   removeOutputs(outputPaths);
   let finalReason = 'merge ref unavailable';
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     let observation = null;
-    let movedBase = null;
+    let liveBaseTip = null;
     try {
       observation = await observe();
-      finalReason = mismatchReason(observation, normalizedBase, normalizedHead);
+      finalReason = observationReason(observation, normalizedHead);
     } catch {
       finalReason = 'merge ref unavailable';
     }
 
-    if (finalReason === 'base mismatch' && typeof resolveBaseTip === 'function') {
-      // The head already matched exactly; only the first parent moved. Accept it if — and
-      // only if — it is the live tip of the base ref on origin.
+    if (finalReason === null) {
+      // The head already matched exactly. Authenticate the named base tip before deciding
+      // whether the observed first parent is current, retained, or unrelated.
       try {
         const tip = await resolveBaseTip();
-        if (SHA_PATTERN.test(String(tip ?? '')) && String(tip).toLowerCase() === observation.mergeBaseSha.toLowerCase()) {
-          movedBase = String(tip).toLowerCase();
-          finalReason = null;
-        } else {
-          finalReason = 'base mismatch (not the live base branch tip)';
-        }
+        liveBaseTip = requireSha(tip, 'named base branch tip');
+        finalReason = observation.mergeBaseSha.toLowerCase() === liveBaseTip
+          ? null
+          : 'base mismatch (retained first parent differs from the named base branch tip)';
       } catch {
         finalReason = 'base mismatch (the base branch tip could not be read)';
       }
     }
 
     if (finalReason === null) {
-      const resolved = { ...observation, mergeRefMoved: movedBase !== null, mergeBaseTipSha: movedBase };
-      publishOutputs(resolved, {
+      const distinctNamedBase = liveBaseTip !== normalizedBase;
+      const resolved = {
+        ...observation,
+        mergeRefMoved: distinctNamedBase,
+        mergeBaseTipSha: distinctNamedBase ? liveBaseTip : null,
+        mergeRefQualification: 'qualified',
+      };
+      publishQualifiedOutputs(resolved, {
         merge: mergeOutputPath,
         tree: treeOutputPath,
         mergeBase: mergeBaseOutputPath,
         mergeBaseTip: mergeBaseTipOutputPath,
-      });
-      if (movedBase) {
-        log(`merge-ref-moved — the base advanced from ${normalizedBase} to the live base branch tip ${movedBase} after dispatch; the event head matched exactly on attempt ${attempt}/${MAX_ATTEMPTS}`);
+        qualification: qualificationOutputPath,
+      }, outputPaths);
+      if (distinctNamedBase) {
+        log(`merge-ref-moved: named base tip ${liveBaseTip} differed from control checkout ${normalizedBase}; the merge ref matched that named tip and the exact event head on attempt ${attempt}/${MAX_ATTEMPTS}`);
       } else {
-        log(`merge ref matched the control base and event head on attempt ${attempt}/${MAX_ATTEMPTS}`);
+        log(`merge ref matched the named base tip and exact event head on attempt ${attempt}/${MAX_ATTEMPTS}`);
       }
       return resolved;
+    }
+
+    if (attempt === MAX_ATTEMPTS
+      && finalReason === 'base mismatch (retained first parent differs from the named base branch tip)'
+      && observation
+      && liveBaseTip) {
+      try {
+        const retainedBase = observation.mergeBaseSha.toLowerCase();
+        const retainedIsAncestor = await verifyBaseAncestor(retainedBase, liveBaseTip);
+        if (!retainedIsAncestor) {
+          finalReason = 'base mismatch (retained first parent was not proven in named base history)';
+        } else {
+          const resolved = {
+            ...observation,
+            mergeRefMoved: false,
+            mergeBaseTipSha: liveBaseTip,
+            mergeRefQualification: 'stale-base-unqualified',
+          };
+          publishUnqualifiedStatus(qualificationOutputPath, outputPaths);
+          log(`merge-ref-unqualified: the exact event head matched, but retained first parent ${retainedBase} differs from current named base tip ${liveBaseTip} and remains in its history; no merge identity was qualified`);
+          return resolved;
+        }
+      } catch {
+        finalReason = 'base mismatch (base history could not be verified)';
+      }
     }
 
     if (attempt < MAX_ATTEMPTS) {
@@ -266,14 +363,17 @@ export async function resolveMergeRef({
 }
 
 /**
- * Write the planner note for an accepted `merge-ref-moved` resolution. Always LF-terminated so
- * the note the planner receives does not depend on the checkout's line endings.
+ * Write a planner diagnostic for a distinct named-base tip or a retained stale merge ref.
+ * Always LF-terminated so the note does not depend on the checkout's line endings.
  */
 export function writeMergeRefNote(noteOutput, expectedBase, resolved) {
   mkdirSync(dirname(noteOutput), { recursive: true });
+  const note = resolved.mergeRefQualification === 'stale-base-unqualified'
+    ? `merge-ref-unqualified: exact event head matched, but retained first parent ${resolved.mergeBaseSha} differs from current named base tip ${resolved.mergeBaseTipSha} and remains in its history; no merge or tree qualification was published`
+    : `merge-ref-moved: named base tip ${resolved.mergeBaseTipSha} differed from control checkout ${String(expectedBase).toLowerCase()}; the merge ref matched that named tip and the exact event head`;
   writeFileSync(
     noteOutput,
-    `merge-ref-moved: the base advanced from ${String(expectedBase).toLowerCase()} to ${resolved.mergeBaseTipSha} after dispatch; the merge ref was regenerated against the base branch live tip on origin and the event head matched exactly\n`,
+    `${note}\n`,
     { encoding: 'utf8' },
   );
 }
@@ -288,6 +388,7 @@ function parseArgs(argv) {
     treeOutput: null,
     mergeBaseOutput: null,
     mergeBaseTipOutput: null,
+    qualificationOutput: null,
     noteOutput: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -302,6 +403,7 @@ function parseArgs(argv) {
       case '--tree-out': args.treeOutput = next(); break;
       case '--merge-base-out': args.mergeBaseOutput = next(); break;
       case '--merge-base-tip-out': args.mergeBaseTipOutput = next(); break;
+      case '--qualification-out': args.qualificationOutput = next(); break;
       case '--note-out': args.noteOutput = next(); break;
       default: throw new Error(`unknown argument: ${argument}`);
     }
@@ -319,6 +421,7 @@ async function main() {
     treeOutput: args.treeOutput,
     mergeBaseOutput: args.mergeBaseOutput,
     mergeBaseTipOutput: args.mergeBaseTipOutput,
+    qualificationOutput: args.qualificationOutput,
     observe: () => observeMergeRef({
       pullRequestNumber: args.pullRequestNumber,
       token: process.env.GH_TOKEN,
@@ -326,9 +429,17 @@ async function main() {
     resolveBaseTip: args.baseRef
       ? () => observeBaseTip({ baseRef: args.baseRef, token: process.env.GH_TOKEN })
       : null,
+    verifyBaseAncestor: args.baseRef
+      ? (ancestorSha, descendantSha) => verifyBaseHistoryAncestor({
+        repository: process.env.GITHUB_REPOSITORY,
+        ancestorSha,
+        descendantSha,
+        token: process.env.GH_TOKEN,
+      })
+      : null,
     log: (message) => process.stderr.write(`${message}\n`),
   });
-  if (args.noteOutput && resolved.mergeRefMoved) {
+  if (args.noteOutput && (resolved.mergeRefMoved || resolved.mergeRefQualification === 'stale-base-unqualified')) {
     writeMergeRefNote(args.noteOutput, args.expectedBase, resolved);
   }
 }

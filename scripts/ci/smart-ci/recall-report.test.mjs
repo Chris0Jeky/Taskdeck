@@ -37,6 +37,7 @@ function planFor(prNumber, headSha, options = {}) {
     isDraft: false,
     baseSha: options.baseSha,
     headSha,
+    mergeRefQualification: options.mergeRefQualification ?? 'qualified',
     mergeBaseSha: options.mergeBaseSha,
     mergeBaseTipSha: options.mergeBaseTipSha ?? null,
     mergeSha: options.mergeSha,
@@ -68,12 +69,19 @@ function observation(prNumber, options = {}) {
   const headBranch = `issue-${prNumber}/fixture`;
   const baseSha = options.baseSha ?? shaFor(100000 + prNumber);
   const planBaseSha = options.planBaseSha ?? baseSha;
-  const mergeBaseSha = options.mergeBaseSha ?? planBaseSha;
+  const mergeRefQualification = options.mergeRefQualification ?? 'qualified';
+  const mergeBaseSha = Object.hasOwn(options, 'mergeBaseSha')
+    ? options.mergeBaseSha
+    : (mergeRefQualification === 'stale-base-unqualified' ? null : planBaseSha);
   const mergeBaseTipSha = options.mergeBaseTipSha ?? null;
-  const planMergeSha = options.planMergeSha ?? shaFor(200000 + prNumber);
-  const planMergeTreeSha = options.planMergeTreeSha ?? shaFor(300000 + prNumber);
+  const planMergeSha = Object.hasOwn(options, 'planMergeSha')
+    ? options.planMergeSha
+    : (mergeRefQualification === 'stale-base-unqualified' ? null : shaFor(200000 + prNumber));
+  const planMergeTreeSha = Object.hasOwn(options, 'planMergeTreeSha')
+    ? options.planMergeTreeSha
+    : (mergeRefQualification === 'stale-base-unqualified' ? null : shaFor(300000 + prNumber));
   const mergeCommitSha = options.mergeCommitSha ?? shaFor(400000 + prNumber);
-  const mergeTreeSha = options.mergeTreeSha ?? planMergeTreeSha;
+  const mergeTreeSha = options.mergeTreeSha ?? planMergeTreeSha ?? shaFor(300000 + prNumber);
   const shadowRunId = options.shadowRunId ?? 10000 + prNumber;
   const requiredRunId = options.requiredRunId ?? 20000 + prNumber;
   const runAttempt = options.runAttempt ?? 1;
@@ -122,10 +130,11 @@ function observation(prNumber, options = {}) {
       baseSha: planBaseSha,
       mergeBaseSha,
       mergeBaseTipSha,
+      mergeRefQualification,
       mergeSha: planMergeSha,
       mergeTreeSha: planMergeTreeSha,
     }),
-    planMergeCommit: {
+    planMergeCommit: mergeRefQualification === 'stale-base-unqualified' ? null : {
       sha: planMergeSha,
       parents: [mergeBaseSha, headSha],
       treeSha: planMergeTreeSha,
@@ -263,6 +272,15 @@ test('planner errors, invalid plans and policy drift make observations unusable'
   assert(normaliseObservation(drifted, policy, window).errors.includes('policy-digest-mismatch'));
 });
 
+test('a stale-base-unqualified shadow receipt is excluded from recall evidence', () => {
+  const raw = observation(404, { mergeRefQualification: 'stale-base-unqualified' });
+
+  const result = normaliseObservation(raw, policy, window);
+  assert.equal(result.usable, false);
+  assert.ok(result.errors.includes('merge-ref-unqualified'));
+  assert.equal(result.errors.some((error) => error.startsWith('plan-invalid:')), false);
+});
+
 test('artifact, PR and SHA bindings fail closed', () => {
   const noArtifact = observation(7, { mutate: (raw) => { raw.artifact = null; } });
   assert(normaliseObservation(noArtifact, policy, window).errors.includes('plan-artifact-missing'));
@@ -372,6 +390,19 @@ test('missed failures and unusable observations have distinct non-zero exits', (
   const unusableReport = buildRecallReport(unusable, policy, window);
   assert.equal(unusableReport.unusableObservationCount, 1);
   assert.equal(exitCodeForReport(unusableReport), 1);
+});
+
+test('a stale merge-ref receipt keeps its PR visible but makes the report unusable', () => {
+  const rows = Array.from({ length: 19 }, (_, index) => observation(500 + index));
+  rows.push(observation(519, { mergeRefQualification: 'stale-base-unqualified' }));
+
+  const report = buildRecallReport(rows, policy, window);
+  const stalePull = report.pullRequests.find((pull) => pull.prNumber === 519);
+  assert.equal(report.unusableObservationCount, 1);
+  assert.equal(report.readyForSelection, false);
+  assert.equal(stalePull.usable, false);
+  assert.ok(stalePull.errors.includes('merge-ref-unqualified'));
+  assert.equal(exitCodeForReport(report), 1);
 });
 
 test('twenty green observations do not turn zero-failure families into evidence', () => {
@@ -542,6 +573,7 @@ test('recall validates an accepted moved-base plan against its observed first pa
 
 test('recall uses legacy plan.baseSha only when both merge-base fields are absent', () => {
   const legacy = observation(399);
+  delete legacy.plan.mergeRefQualification;
   delete legacy.plan.mergeBaseSha;
   delete legacy.plan.mergeBaseTipSha;
   assert.equal(normaliseObservation(legacy, policy, window).usable, true);
