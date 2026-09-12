@@ -2,6 +2,15 @@
 
 Last Updated: 2026-09-12
 
+Paper archive/restore settlement (#3060) now reconciles the committed lifecycle and card version
+when the user switches A-to-B-to-A before the request completes. The current matching inspector
+receives that result before the shared pending lock is released, while retaining newer local draft
+edits. Unrelated selections and failed stale requests retain their existing event, permission and
+focus guards. Seven focused ownership cases pass, including both lifecycle directions, and the
+independent review is clean. The candidate includes recovery integration #3081; final combined
+frontend and hosted qualification are recorded on the delivery PR before merge. The broader #3023
+draft residuals and parked #3057 permission work remain separate.
+
 Typed relations #3066 merged on 2026-09-12 as `160818440`, after required run
 `34718378428` passed at reviewed head `7c66104b3` against main `9a8c14c6b`.
 Issue #2092 is closed; its issue and PR project items are Done with Priority II,
