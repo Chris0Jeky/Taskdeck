@@ -2,6 +2,14 @@
 
 Last Updated: 2026-09-12
 
+## Archive recovery delivery and remaining draft slice (2026-09-12)
+
+#3059 merged as `44d041ca7` after required hosted run `34714826369` passed at `7135d53a9`,
+closing #3033. Its post-merge review check is clear. #3064 is retargeted to main and carries the
+reviewed two-file #3023 draft-settlement correction; qualify its final head before merging it.
+#3023 remains a partial repair with recovery-copy and other residuals open, and #3060 separately
+owns selected-snapshot settlement. Existing human-action and release decisions remain unchanged.
+
 ## Estimate delivery (2026-09-12)
 
 #3054 merged as `54e4c0a86` after required hosted run `34713059470` passed at reviewed head
