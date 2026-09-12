@@ -2,6 +2,39 @@
 
 Last Updated: 2026-09-12
 
+## Product recovery integration (2026-09-12)
+
+Typed relations #3066 delivered #2092 as `160818440` after its exact-head required gate;
+its issue and PR project items are Done with Priority II and post-merge review is clear.
+Preserve that source and the reviewed commits for #3024, #2935, #3000, #3063 and #3056 in
+one candidate against the delivered base. Runtime merges are automatic; both concurrent
+canonical progress records are retained. The source-blob comparison and bounded integration
+review are clean. Combined frontend qualification passes 6,907 tests with three existing
+skips, lint and typecheck/build. Complete the combined backend and hosted gates before delivery.
+[Qualification record](analysis/2026-09-12-product-recovery-qualification.md) distinguishes source
+results from final integrated proof. Keep permission PR #3072 parked and existing human
+actions and release decisions unchanged.
+
+## Proposal webhook durability candidate (2026-09-12, #3024)
+
+Reuse the existing outbound delivery queue for events already buffered by the proposal executor.
+Prepare delivery rows before the final transaction save, commit them with the proposal effects,
+then publish realtime after commit without enqueueing webhooks again. The existing queue worker
+provides later delivery; no new schema, sweep or worker policy is needed. Preparation failure must
+roll back the proposal. This reduces silent integration gaps while retaining review-first writes.
+
+The implementation, 49 focused Application/Composite API tests, five real SQLite visibility/rollback/
+lost-flush tests and one independent review are complete. Two lifecycle controls fail when durable
+preparation is omitted and pass with the reviewed bytes restored. The complete backend gate now
+passes 9,802 tests with 34 existing skips and no failures. Complete exact-head hosted qualification
+before closing #3024. Broader notification
+producer changes, live HTTP and release qualification remain outside this slice.
+
+The child now includes the parent's corrected chat ID/revision contracts. Only those nine backend
+tool/registration/test files differ from the full-backend checkpoint; their 91 Application and one
+API registry cases pass on the parent. Webhook source and durability tests remain unchanged.
+Qualify the combined head and retarget after parent delivery before merging this child.
+
 ## Typed relations candidate (2026-09-12, #2092)
 
 The candidate includes delivered archive recovery #3059 and draft correction #3064 through
@@ -37,6 +70,15 @@ negative controls reproduce both missing contracts; 91 Application cases and one
 pass after correction. STATUS records the bounded review and compatibility fix. Keep premature
 proposal-create events (#3073) and proposal-delete audit attribution (#3074) outside this correction.
 Requalify the final head before merge; approval and Apply remain explicit.
+
+## Archived external-import conflict qualification (2026-09-12, #2935)
+
+Report changed archived dedupe matches as structured conflicts before Apply, preserving skips,
+duplicate ambiguity and all-or-nothing planning. The submitted 13 regression cases are now
+compiled and pass within all 50 focused import tests. Independent review is clean and the full
+backend passes 9,747 tests with 34 existing skips. STATUS and the dedicated analysis note record
+the exact tested source/base and application-only scenario limits. Complete the hosted gate on
+#3068 before delivery; existing human-action and release decisions remain unchanged.
 
 ## Archive recovery delivery and remaining draft slice (2026-09-12)
 

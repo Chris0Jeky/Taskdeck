@@ -2,6 +2,44 @@
 
 Last Updated: 2026-09-12
 
+Typed relations #3066 merged on 2026-09-12 as `160818440`, after required run
+`34718378428` passed at reviewed head `7c66104b3` against main `9a8c14c6b`.
+Issue #2092 is closed; its issue and PR project items are Done with Priority II,
+and the first post-merge thread check is clear. The webhook child #3071 now targets
+main; its source branch remains available. The relation candidate records below
+retain historical evidence and are superseded by this delivery record.
+
+The product recovery candidate combines typed relations, transactional proposal webhook
+staging, archived-import conflict planning, deactivation assignment cleanup and two estimate
+recovery fixes. All source commits are preserved, all 94 changed code/test blobs match their
+reviewed owners, and the bounded integration review is clean. Combined frontend qualification
+passes lint, typecheck/build and 6,907 tests with three existing skips. Deactivation's source
+backend passes 9,746 tests with 34 existing skips; the demo omission is confirmed in Chromium.
+The integration PR carries final combined backend and hosted gate results.
+[Current qualification and limits](analysis/2026-09-12-product-recovery-qualification.md)
+supersede the separate candidate gate wording below; the source evidence remains historical.
+Permission PR #3072 stays parked and excluded. All 41 human actions remain unchanged.
+
+Proposal webhook durability (#3024) is implemented on a candidate branch. Events already buffered
+by the proposal executor now prepare filtered `Pending` delivery rows in its existing transaction,
+before the Applied-status save. Delivery rows, subscription trigger timestamps and proposal effects
+commit together or roll back together. Post-commit notification sends only the best-effort realtime
+channel; the existing delivery worker can claim committed webhook rows even if that flush is lost.
+This closes the missing-delivery window without changing review, approval or Apply requirements.
+No new queue schema or retry policy is introduced. Immediate notification producers and the separate
+assignment collector retain their current behavior; this is not an account-wide outbox conversion.
+
+Focused Application tests pass 39 cases and Composite API tests pass 10. Five real SQLite API
+tests pass for first-notification queue visibility, rollback, lost post-commit callback recovery and
+already-applied deduplication. Omitting durable preparation makes both lifecycle controls fail;
+restoring the reviewed executor bytes makes all five pass. Independent source review is clean.
+The complete backend gate passes 9,802 tests across all six projects with 34 existing skips and
+zero failures at `0a65b536b`. The later inherited chat correction changes only its nine tool,
+registration and test files; those changes pass 91 Application cases and one API registry case
+on the parent. Webhook implementation and durability tests are unchanged. Exact-head hosted
+qualification remains required for the combined tree. No actual process-kill, external HTTP
+delivery or release acceptance is claimed.
+
 The typed-relation candidate includes delivered archive recovery #3059 and draft settlement #3064
 through main `9a8c14c6b`. Their required hosted gates passed; #3033 is closed and #3023 retains
 its broader residuals. Integration resolved only concurrent STATUS/MASTERPLAN records, preserving
@@ -67,6 +105,15 @@ API wrapper passes all four focused tests with distinct valid IDs and unchanged 
 The bounded compatibility review and targeted lint pass. This is simulated API-availability
 proof, not a physical-device LAN acceptance. Buffered export limits and refresh control feedback
 remain separate follow-ups #3069 and #3070.
+
+Changed archived external-import matches (#2935) now produce a structured planning conflict
+before Apply starts a transaction. Unchanged archived rows still skip, duplicate-key ambiguity
+still wins, and active rows retain their existing behavior. This avoids an Apply-time surprise
+without silently restoring or replacing archived work. All 50 focused import cases pass,
+including 13 new application regressions. Independent review is clean; the full backend passes
+9,747 tests with 34 existing skips at `dbe21a3e2`. The delivered archive base `9a8c14c6b` changes
+frontend/docs only, and final backend files match that tested tree. Required hosted qualification
+remains on #3068. New SQL/HTTP, competing-writer, browser and human acceptance are not claimed.
 
 Archive request ownership #3059 merged on 2026-09-12 as `44d041ca7` after required hosted run
 `34714826369` passed at reviewed head `7135d53a9`. #3033 is closed and its issue/PR project items

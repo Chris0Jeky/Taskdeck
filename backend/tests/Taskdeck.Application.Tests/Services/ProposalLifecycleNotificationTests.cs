@@ -7,6 +7,7 @@ using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -103,6 +104,8 @@ public class ProposalLifecycleNotificationTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
         _rolledBack.Should().BeTrue("the failing operation must roll the archive back");
         _committed.Should().BeFalse();
+        _notifier.Staged.Should().BeEmpty(
+            "durable delivery preparation waits until every operation succeeds");
         _notifier.Published.Should().BeEmpty(
             "a lifecycle change that was rolled back must never reach realtime subscribers");
     }
@@ -144,6 +147,8 @@ public class ProposalLifecycleNotificationTests
         _notifier.Published.Should().OnlyContain(p => p.CommittedAtPublishTime,
             "every event staged inside the transaction waits for the commit");
         _notifier.Published.Select(p => (p.Mutation.Operation, p.Mutation.EntityId))
+            .Should().Equal(("archived", (Guid?)card.Id), ("updated", child.Id));
+        _notifier.Staged.Select(e => (e.Operation, e.EntityId))
             .Should().Equal(("archived", (Guid?)card.Id), ("updated", child.Id));
     }
 
@@ -204,6 +209,93 @@ public class ProposalLifecycleNotificationTests
         published.Mutation.EntityId.Should().Be(card.Id);
         published.CommittedAtPublishTime.Should().BeTrue(
             "the event must be published after the proposal transaction commits, not before");
+        _notifier.Staged.Should().ContainSingle().Which.Should().BeSameAs(published.Mutation);
+        _notifier.CommittedAtStageTime.Should().ContainSingle().Which.Should().BeFalse(
+            "durable webhook rows must be prepared before the transaction commits");
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldRollbackAndPublishNothing_WhenDurablePreparationFails()
+    {
+        var failingNotifier = new FailingTransactionalNotifier();
+        var executor = new AutomationExecutorService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            new CardService(_unitOfWorkMock.Object, failingNotifier),
+            new BoardService(_unitOfWorkMock.Object),
+            new ColumnService(_unitOfWorkMock.Object),
+            logger: null,
+            assignments: null,
+            realtimeNotifier: failingNotifier);
+        var (board, column, card) = SeedBoard(archived: false);
+        var proposalId = Guid.NewGuid();
+        var entity = ArrangeApprovedProposal(
+            proposalId,
+            board.Id,
+            [LifecycleOperation(proposalId, sequence: 0, card, archive: true)]);
+
+        var result = await executor.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        failingNotifier.StageAttempts.Should().Be(1);
+        failingNotifier.CommittedAttempts.Should().Be(0);
+        failingNotifier.LegacyAttempts.Should().Be(0);
+        _rolledBack.Should().BeTrue();
+        _committed.Should().BeFalse();
+        entity.Status.Should().Be(ProposalStatus.Failed);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldCommitWithoutStagingOrPublishing_WhenNoBufferedMutationExists()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        var proposalId = Guid.NewGuid();
+        ArrangeApprovedProposal(proposalId, board.Id, []);
+
+        var result = await _executor.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        _committed.Should().BeTrue();
+        _notifier.Staged.Should().BeEmpty();
+        _notifier.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldNotStageOrPublish_WhenProposalWasAlreadyApplied()
+    {
+        var proposalId = Guid.NewGuid();
+        var proposal = new ProposalDto(
+            proposalId,
+            ProposalSourceType.Manual,
+            null,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            ProposalStatus.Applied,
+            RiskLevel.Low,
+            "Already applied",
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            DateTime.UtcNow.AddDays(1),
+            DateTime.UtcNow,
+            Guid.NewGuid(),
+            DateTime.UtcNow,
+            null,
+            $"corr-{proposalId:N}",
+            []);
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(proposal));
+
+        var result = await _executor.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _notifier.Staged.Should().BeEmpty();
+        _notifier.Published.Should().BeEmpty();
     }
 
     [Theory]
@@ -337,7 +429,7 @@ public class ProposalLifecycleNotificationTests
     /// Captures each published event together with whether the unit of work had already committed
     /// at that moment — the ordering assertion the issue asks for.
     /// </summary>
-    private sealed class RecordingBoardRealtimeNotifier : IBoardRealtimeNotifier
+    private sealed class RecordingBoardRealtimeNotifier : IBoardRealtimeNotifier, ITransactionalBoardMutationNotifier
     {
         private readonly Func<bool> _committedProbe;
         private readonly List<(BoardRealtimeEvent Mutation, bool CommittedAtPublishTime)> _published = new();
@@ -345,10 +437,50 @@ public class ProposalLifecycleNotificationTests
         public RecordingBoardRealtimeNotifier(Func<bool> committedProbe) => _committedProbe = committedProbe;
 
         public IReadOnlyList<(BoardRealtimeEvent Mutation, bool CommittedAtPublishTime)> Published => _published;
+        public List<BoardRealtimeEvent> Staged { get; } = [];
+        public List<bool> CommittedAtStageTime { get; } = [];
 
         public Task NotifyBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
         {
             _published.Add((mutation, _committedProbe()));
+            return Task.CompletedTask;
+        }
+
+        public Task StageBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            Staged.Add(mutation);
+            CommittedAtStageTime.Add(_committedProbe());
+            return Task.CompletedTask;
+        }
+
+        public Task NotifyCommittedBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            _published.Add((mutation, _committedProbe()));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailingTransactionalNotifier : IBoardRealtimeNotifier, ITransactionalBoardMutationNotifier
+    {
+        public int LegacyAttempts { get; private set; }
+        public int StageAttempts { get; private set; }
+        public int CommittedAttempts { get; private set; }
+
+        public Task NotifyBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            LegacyAttempts++;
+            return Task.CompletedTask;
+        }
+
+        public Task StageBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            StageAttempts++;
+            throw new InvalidOperationException("durable staging failed");
+        }
+
+        public Task NotifyCommittedBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            CommittedAttempts++;
             return Task.CompletedTask;
         }
     }
