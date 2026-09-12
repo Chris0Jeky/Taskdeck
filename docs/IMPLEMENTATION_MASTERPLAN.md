@@ -2,6 +2,26 @@
 
 Last Updated: 2026-09-12
 
+## Proposal webhook durability candidate (2026-09-12, #3024)
+
+Reuse the existing outbound delivery queue for events already buffered by the proposal executor.
+Prepare delivery rows before the final transaction save, commit them with the proposal effects,
+then publish realtime after commit without enqueueing webhooks again. The existing queue worker
+provides later delivery; no new schema, sweep or worker policy is needed. Preparation failure must
+roll back the proposal. This reduces silent integration gaps while retaining review-first writes.
+
+The implementation, 49 focused Application/Composite API tests, five real SQLite visibility/rollback/
+lost-flush tests and one independent review are complete. Two lifecycle controls fail when durable
+preparation is omitted and pass with the reviewed bytes restored. The complete backend gate now
+passes 9,802 tests with 34 existing skips and no failures. Complete exact-head hosted qualification
+before closing #3024. Broader notification
+producer changes, live HTTP and release qualification remain outside this slice.
+
+The child now includes the parent's corrected chat ID/revision contracts. Only those nine backend
+tool/registration/test files differ from the full-backend checkpoint; their 91 Application and one
+API registry cases pass on the parent. Webhook source and durability tests remain unchanged.
+Qualify the combined head and retarget after parent delivery before merging this child.
+
 ## Typed relations candidate (2026-09-12, #2092)
 
 The candidate includes delivered archive recovery #3059 and draft correction #3064 through

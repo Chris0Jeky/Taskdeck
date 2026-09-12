@@ -2,6 +2,26 @@
 
 Last Updated: 2026-09-12
 
+Proposal webhook durability (#3024) is implemented on a candidate branch. Events already buffered
+by the proposal executor now prepare filtered `Pending` delivery rows in its existing transaction,
+before the Applied-status save. Delivery rows, subscription trigger timestamps and proposal effects
+commit together or roll back together. Post-commit notification sends only the best-effort realtime
+channel; the existing delivery worker can claim committed webhook rows even if that flush is lost.
+This closes the missing-delivery window without changing review, approval or Apply requirements.
+No new queue schema or retry policy is introduced. Immediate notification producers and the separate
+assignment collector retain their current behavior; this is not an account-wide outbox conversion.
+
+Focused Application tests pass 39 cases and Composite API tests pass 10. Five real SQLite API
+tests pass for first-notification queue visibility, rollback, lost post-commit callback recovery and
+already-applied deduplication. Omitting durable preparation makes both lifecycle controls fail;
+restoring the reviewed executor bytes makes all five pass. Independent source review is clean.
+The complete backend gate passes 9,802 tests across all six projects with 34 existing skips and
+zero failures at `0a65b536b`. The later inherited chat correction changes only its nine tool,
+registration and test files; those changes pass 91 Application cases and one API registry case
+on the parent. Webhook implementation and durability tests are unchanged. Exact-head hosted
+qualification remains required for the combined tree. No actual process-kill, external HTTP
+delivery or release acceptance is claimed.
+
 The typed-relation candidate includes delivered archive recovery #3059 and draft settlement #3064
 through main `9a8c14c6b`. Their required hosted gates passed; #3033 is closed and #3023 retains
 its broader residuals. Integration resolved only concurrent STATUS/MASTERPLAN records, preserving

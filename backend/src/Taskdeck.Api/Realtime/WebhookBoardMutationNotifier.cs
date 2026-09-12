@@ -42,4 +42,16 @@ public sealed class WebhookBoardMutationNotifier : IBoardRealtimeNotifier
                 mutation.BoardId);
         }
     }
+
+    public async Task StageBoardMutationAsync(
+        BoardRealtimeEvent mutation,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _outboundWebhookService.StageBoardMutationAsync(mutation, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Could not stage outbound webhook deliveries ({result.ErrorCode}).");
+        }
+    }
 }
