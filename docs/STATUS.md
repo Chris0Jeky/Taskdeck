@@ -2,6 +2,11 @@
 
 Last Updated: 2026-09-12
 
+The typed-relation candidate now includes archive recovery merge `44d041ca7` (#3059), whose
+required hosted gate passed at `7135d53a9`; #3033 is closed. Integration resolved only the
+concurrent STATUS/MASTERPLAN records, preserving both. Backend files are unchanged. Requalify
+this candidate against the delivered base; #3064's remaining draft slice stays separate.
+
 Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
 thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
 context with labelled navigation. Typed additions and removals create review proposals; the graph

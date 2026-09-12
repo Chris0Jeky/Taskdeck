@@ -4,6 +4,10 @@ Last Updated: 2026-09-12
 
 ## Typed relations candidate (2026-09-12, #2092)
 
+The candidate includes delivered archive recovery #3059 (`44d041ca7`). Only the concurrent
+canonical records needed merge resolution; both records are preserved and backend files are
+unchanged. Qualify the updated main base; the separate #3064 draft correction remains unmerged.
+
 Five independently owned slices now integrate the accepted same-board relation contract: canonical
 storage and migration, proposal semantics, API/MCP/chat producers, board/account portability and
 the shared thinking-deck UI. Existing dependency clients use an adapter over the same revisioned
