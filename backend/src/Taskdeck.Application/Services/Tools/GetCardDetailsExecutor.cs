@@ -66,6 +66,7 @@ public sealed class GetCardDetailsExecutor : IToolExecutor
             workItemType = card.WorkItemType.ToString(),
             parentCardId = card.ParentCardId,
             assignments = CardService.MapToDto(card).Assignments,
+            estimatedEffortMinutes = card.EstimatedEffortMinutes,
             description = card.Description ?? "",
             column = column?.Name ?? "Unknown",
             labels = cardLabels,
