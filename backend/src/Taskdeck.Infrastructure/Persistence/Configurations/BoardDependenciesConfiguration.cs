@@ -10,7 +10,8 @@ public sealed class BoardDependenciesConfiguration : IEntityTypeConfiguration<Bo
         builder.ToTable("BoardDependencies");
         builder.HasKey(graph => graph.BoardId);
         builder.Property(graph => graph.Revision).IsConcurrencyToken();
-        builder.Property(graph => graph.EdgesJson).IsRequired();
+        builder.HasMany(graph => graph.Relations).WithOne().HasForeignKey(edge => edge.BoardId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(graph => graph.Relations).AutoInclude();
         builder.HasOne<Board>().WithOne().HasForeignKey<BoardDependencies>(graph => graph.BoardId).OnDelete(DeleteBehavior.Cascade);
     }
 }
