@@ -25,11 +25,12 @@ async function closeFromKeyboard() {
   <section class="border-b border-outline-variant/30 bg-surface-container px-4 py-2" aria-label="Board estimates">
     <button ref="trigger" type="button" class="rounded border border-outline-variant/40 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2"
       :aria-expanded="open" :aria-controls="panelId" @click="toggle">Estimates</button>
-    <div v-if="open" :id="panelId" class="mt-3 space-y-4" @keydown.esc.stop.prevent="closeFromKeyboard">
+    <div v-if="open" :id="panelId" role="region" :aria-labelledby="panelId + '-title'"
+      class="mt-3 space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 class="font-semibold">Active card estimates</h2>
+        <h2 :id="panelId + '-title'" class="font-semibold">Active card estimates</h2>
         <button type="button" class="rounded border border-outline-variant/40 px-3 py-2 text-sm"
-          :disabled="loading" @click="refresh">Refresh estimates</button>
+          :disabled="loading" @click="refresh" @keydown.esc.stop.prevent="closeFromKeyboard">Refresh estimates</button>
       </div>
       <p class="text-sm">Estimates are optional. Known zero is included; missing estimates are counted separately. Parent and child estimates stay independent.</p>
       <p class="text-sm">Current assignments and estimates only; these totals do not measure time worked or capacity.</p>
