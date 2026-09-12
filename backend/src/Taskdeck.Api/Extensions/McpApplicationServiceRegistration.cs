@@ -31,6 +31,7 @@ public static class McpApplicationServiceRegistration
         services.AddScoped<CardService>();
         services.AddScoped<CardAssignmentService>();
         services.AddScoped<IBoardEstimateRollupService, BoardEstimateRollupService>();
+        services.AddScoped<IBoardRelationService, BoardRelationService>();
         services.AddScoped<LabelService>();
         services.AddScoped<AutomationProposalService>();
         services.AddScoped<IAutomationProposalService>(
