@@ -2,10 +2,12 @@
 import { useI18n } from 'vue-i18n'
 import type { CardWorkItemType, Card } from '../../../types/board'
 import { TdDateField } from '../../ui'
+import CardEstimateField from '../CardEstimateField.vue'
 
 defineProps<{
   card: Card
   canEditType: boolean
+  canEditEstimate?: boolean
   /** A server read of the caller's board write permission is in flight (#2952). */
   typePermissionChecking?: boolean
   /** The caller's board write permission could not be established; offer recovery (#2952). */
@@ -19,6 +21,8 @@ const workItemType = defineModel<CardWorkItemType>('workItemType', { required: t
 const title = defineModel<string>('title', { required: true })
 const description = defineModel<string>('description', { required: true })
 const dueDate = defineModel<string>('dueDate', { required: true })
+const estimateHours = defineModel<string>('estimateHours', { default: '' })
+const estimateMinutes = defineModel<string>('estimateMinutes', { default: '' })
 const isBlocked = defineModel<boolean>('isBlocked', { required: true })
 const blockReason = defineModel<string>('blockReason', { required: true })
 
@@ -123,6 +127,9 @@ defineEmits<{
       <span v-if="isOverdue" class="font-medium">(Overdue)</span>
     </p>
   </div>
+
+  <!-- Optional estimate -->
+  <CardEstimateField v-model:hours="estimateHours" v-model:minutes="estimateMinutes" :read-only="!canEditEstimate" />
 
   <!-- Blocked Status -->
   <div class="border border-outline-variant/30 rounded-md p-4">
