@@ -615,6 +615,7 @@ public partial class CardService
             var confirmed = ValidateDetachConfirmation(card, children, confirmation);
             if (!confirmed.IsSuccess) return confirmed;
             await StageDetachChildrenAsync(card, children, actorUserId, cancellationToken);
+            await _unitOfWork.Cards.StageRelationRemovalAsync(card, actorUserId, cancellationToken);
             await _unitOfWork.Cards.DeleteAsync(card, cancellationToken);
             board?.RecordHierarchyMutation();
             await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Deleted, actorUserId, $"title={card.Title}"), cancellationToken);
