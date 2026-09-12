@@ -4,6 +4,7 @@ import TdDialog from '../ui/TdDialog.vue'
 import CardDetachList from './CardDetachList.vue'
 import { cardsApi } from '../../api/cardsApi'
 import { useBoardStore } from '../../store/boardStore'
+import { useToastStore } from '../../store/toastStore'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
 import type { Card, CardDetachPreview } from '../../types/board'
 
@@ -33,8 +34,9 @@ const props = withDefaults(defineProps<{ card: Card; disabled?: boolean; archive
   archived: undefined,
   canWrite: undefined,
 })
-const emit = defineEmits<{ changed: []; refresh: [] }>()
+const emit = defineEmits<{ changed: []; refresh: []; 'permission-denied': [] }>()
 const boardStore = useBoardStore()
+const toast = useToastStore()
 const preview = ref<CardDetachPreview | null>(null)
 const busy = ref(false)
 const error = ref<string | null>(null)
@@ -48,6 +50,7 @@ const pageRecoveryButton = ref<HTMLButtonElement | null>(null)
 // additionally ends on dismissal; closing a dialog does not cancel a submitted write.
 let contextGeneration = 0
 let confirmationGeneration = 0
+let unmounted = false
 watch([() => props.card.boardId, () => props.card.id], () => {
   contextGeneration++
   confirmationGeneration++
@@ -57,6 +60,7 @@ watch([() => props.card.boardId, () => props.card.id], () => {
   busy.value = false
 }, { flush: 'sync' })
 onBeforeUnmount(() => {
+  unmounted = true
   contextGeneration++
   confirmationGeneration++
 })
@@ -72,7 +76,17 @@ const allowed = computed(() => props.canWrite ?? (boardStore.currentBoard?.id ==
 // `disabled` when `focus()` lands on it.
 async function focusRecovery(context = contextGeneration, confirmation = confirmationGeneration) {
   await nextTick()
-  if (context !== contextGeneration || confirmation !== confirmationGeneration) return
+  if (context !== contextGeneration) return
+  if (confirmation !== confirmationGeneration) {
+    // Dismissal can leave focus on body because the pending write disabled the
+    // opener. Rescue that dead end, but never reclaim a usable new focus target.
+    const active = document.activeElement
+    const hasUsableFocus = active instanceof HTMLElement
+      && active !== document.body && active !== document.documentElement
+      && active.isConnected && !active.matches(':disabled, [aria-disabled="true"]')
+      && !active.closest('[inert]')
+    if (confirming.value || hasUsableFocus) return
+  }
   const target = confirming.value ? dialogRecoveryButton.value : pageRecoveryButton.value
   target?.focus()
 }
@@ -139,9 +153,10 @@ async function change() {
   if (!allowed.value || props.disabled || busy.value || error.value) return
   const context = contextGeneration
   const confirmation = confirmationGeneration
+  const archive = !archived.value
   busy.value = true
   try {
-    await boardStore.setCardArchived(props.card.boardId, props.card.id, !archived.value, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
+    await boardStore.setCardArchived(props.card.boardId, props.card.id, archive, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
     if (context !== contextGeneration) return
     preview.value = null
     refreshed.value = false
@@ -149,10 +164,16 @@ async function change() {
     // Preserve its completion receipt for the same card without reopening the dialog.
     emit('changed')
   } catch (e) {
-    if (context !== contextGeneration) return
+    if (context !== contextGeneration) {
+      // A switched card must not inherit this failure. Keep a neutral receipt
+      // without old-card content, parent events, or changes to the new editor.
+      if (!unmounted) toast.error(`The ${archive ? 'archive' : 'restore'} requested for a previously viewed card could not be confirmed. Reopen that card and refresh its state before trying again.`)
+      return
+    }
+    if ((e as { response?: { status?: number } } | null)?.response?.status === 403) emit('permission-denied')
     error.value = getErrorDisplay(e, CHANGE_FAILURE).message
     refreshed.value = false
-    // Report failure on the page after dismissal, without stealing focus back.
+    // After dismissal, rescue lost focus without stealing it from another control.
     void focusRecovery(context, confirmation)
   } finally {
     if (context === contextGeneration) busy.value = false

@@ -2363,15 +2363,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }
 
-    [Fact]
-    public async Task RestoreProposal_WhenAnEarlierOperationTakesTheLastWipSlot_IsRejectedAtApproveAndMutatesNothing()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task OrderedCapacity_RejectsTheFirstExcessOperationWithoutMutation_AndAppliesWhenItFits(
+        bool fillByCreate, bool restoreFirst)
     {
-        // #2926: ProposalOperationContractValidator measured every restore-lifecycle against the
-        // column's count at the moment of validation, but Apply runs operations in Sequence order.
-        // A create into the restore target column took the last WIP slot first, so the proposal
-        // passed preview and failed halfway through execute, rolling back. The contract now
-        // projects the preceding operations' occupancy, so the whole proposal is refused at the
-        // approve gate with the existing WipLimitExceeded shape and the board is never touched.
+        // Create, cross-column move and restore all consume active capacity in Sequence order.
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "cumulative-restore-wip");
         var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "cumulative-restore-wip");
@@ -2391,16 +2391,33 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         archived.StatusCode.Should().Be(HttpStatusCode.OK, await archived.Content.ReadAsStringAsync());
         archivedCard = (await archived.Content.ReadFromJsonAsync<CardDto>())!;
 
+        CardDto? mover = null;
+        if (!fillByCreate)
+        {
+            var createdSource = await client.PostAsJsonAsync($"/api/boards/{boardId}/columns",
+                new CreateColumnDto(boardId, "Source", 1, null));
+            createdSource.StatusCode.Should().Be(HttpStatusCode.Created, await createdSource.Content.ReadAsStringAsync());
+            var sourceId = (await createdSource.Content.ReadFromJsonAsync<ColumnDto>())!.Id;
+            var createdMover = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+                new CreateCardDto(boardId, sourceId, "Mover", null, null, null));
+            createdMover.StatusCode.Should().Be(HttpStatusCode.Created, await createdMover.Content.ReadAsStringAsync());
+            mover = (await createdMover.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+
         // The column now holds one archived card and no active ones, so a lone restore fits.
         var newCardId = Guid.NewGuid();
         CreateProposalDto BuildProposal() => new(
             ProposalSourceType.Manual, user.UserId, "Fill the slot, then restore", RiskLevel.Low,
             Guid.NewGuid().ToString(), boardId, Operations:
             [
-                new CreateProposalOperationDto(0, "create", "card",
-                    JsonSerializer.Serialize(new { boardId, columnId, title = "Takes the last slot" }),
-                    Guid.NewGuid().ToString(), newCardId.ToString()),
-                new CreateProposalOperationDto(1, "restore-lifecycle", "card",
+                fillByCreate
+                    ? new CreateProposalOperationDto(restoreFirst ? 1 : 0, "create", "card",
+                        JsonSerializer.Serialize(new { boardId, columnId, title = "Takes the last slot" }),
+                        Guid.NewGuid().ToString(), newCardId.ToString())
+                    : new CreateProposalOperationDto(restoreFirst ? 1 : 0, "move", "card",
+                        JsonSerializer.Serialize(new { cardId = mover!.Id, columnId }),
+                        Guid.NewGuid().ToString(), mover!.Id.ToString()),
+                new CreateProposalOperationDto(restoreFirst ? 0 : 1, "restore-lifecycle", "card",
                     JsonSerializer.Serialize(new { boardId, cardId = archivedCard.Id, expectedUpdatedAt = archivedCard.UpdatedAt }),
                     Guid.NewGuid().ToString(), archivedCard.Id.ToString())
             ]);
@@ -2409,10 +2426,16 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
         var proposal = (await created.Content.ReadFromJsonAsync<ProposalDto>())!;
 
+        var diff = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        diff.StatusCode.Should().Be(HttpStatusCode.BadRequest, await diff.Content.ReadAsStringAsync());
         var approve = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
         var approveBody = await approve.Content.ReadAsStringAsync();
         approve.StatusCode.Should().Be(HttpStatusCode.BadRequest, approveBody);
-        approveBody.Should().Contain("original column is full");
+        approveBody.Should().Contain("WipLimitExceeded").And.Contain(
+            restoreFirst ? fillByCreate ? "Cannot add card" : "Cannot move card" : "original column is full");
+        var conflicts = await client.GetFromJsonAsync<List<ConflictRowDto>>($"/api/automation/proposals/{proposal.Id}/conflicts");
+        conflicts.Should().Contain(row => row.Key == "wip-limit");
+        conflicts.Should().NotContain(row => row.Key == "capacity");
 
         // A refused approve leaves the proposal PendingReview, and AutomationExecutorService's
         // status gate turns execute away before it materializes or revalidates anything. That is
@@ -2428,6 +2451,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             .IsArchived.Should().BeTrue();
         (await client.GetAsync($"/api/boards/{boardId}/cards/{newCardId}"))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        if (mover is not null)
+            (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{mover.Id}"))!.ColumnId.Should().Be(mover.ColumnId);
 
         // Control: the identical proposal fits once the column has room for both cards, and it
         // applies end to end - the projection must not be a blanket refusal of mixed proposals.
@@ -2447,7 +2472,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{archivedCard.Id}"))!
             .IsArchived.Should().BeFalse();
-        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{newCardId}"))!
+        (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{(fillByCreate ? newCardId : mover!.Id)}"))!
             .ColumnId.Should().Be(columnId);
     }
 

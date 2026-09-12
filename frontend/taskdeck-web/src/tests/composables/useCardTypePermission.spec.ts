@@ -6,6 +6,8 @@ import { boardsApi } from '../../api/boardsApi'
 import type { Board, BoardDetail } from '../../types/board'
 
 vi.mock('../../api/boardsApi', () => ({ boardsApi: { getBoard: vi.fn() } }))
+const session = reactive({ userId: 'user-1' })
+vi.mock('../../store/sessionStore', () => ({ useSessionStore: () => session }))
 
 const demo = vi.hoisted(() => ({ enabled: false }))
 vi.mock('../../utils/demoMode', () => ({ get isDemoMode() { return demo.enabled } }))
@@ -38,18 +40,20 @@ function create(options: { boardId?: string; isOpen?: boolean; cardIsArchived?: 
   const boardId = ref(options.boardId ?? 'board-1')
   const isOpen = ref(options.isOpen ?? true)
   const cardIsArchived = ref(options.cardIsArchived ?? false)
+  const cardId = ref('card-1')
   let api!: Harness
   const wrapper = mount(defineComponent({
     setup() {
       api = useCardTypePermission({
         getBoardId: () => boardId.value,
+        getCardId: () => cardId.value,
         getIsOpen: () => isOpen.value,
         getCardIsArchived: () => cardIsArchived.value,
       })
       return () => null
     },
   }))
-  return { api, wrapper, boardId, isOpen, cardIsArchived }
+  return { api, wrapper, boardId, cardId, isOpen, cardIsArchived }
 }
 
 describe('useCardTypePermission', () => {
@@ -61,6 +65,100 @@ describe('useCardTypePermission', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it.each([true, undefined])('invalidates earlier canWrite=%s and recovers a quiet board through explicit retry', async (canWrite) => {
+    mockBoardStore.currentBoard = board({ canWrite })
+    vi.mocked(boardsApi.getBoard).mockResolvedValue(detail({ canWrite: true }))
+    const { api, wrapper } = create()
+    await flushPromises()
+    expect(api.canWrite.value).toBe(true)
+    vi.mocked(boardsApi.getBoard).mockClear()
+    let finish!: (value: BoardDetail) => void
+    vi.mocked(boardsApi.getBoard).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const recovery = api.refreshPermission()
+    expect(api.canWrite.value).toBe(false)
+    expect(api.readsBlocked.value).toBe(true)
+    finish(detail({ canWrite: false }))
+    await recovery
+    expect(api.canWrite.value).toBe(false)
+    expect(api.readsBlocked.value).toBe(false)
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+
+    // No realtime event or board-store replacement is needed to observe a restored Writer.
+    await api.refreshPermission()
+    expect(api.canWrite.value).toBe(true)
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it.each([undefined, 403, 404, 500])('grants nothing after denial when revalidation returns %s', async (status) => {
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    const { api, wrapper } = create()
+    if (status === undefined) vi.mocked(boardsApi.getBoard).mockResolvedValue(detail())
+    else vi.mocked(boardsApi.getBoard).mockRejectedValue({ response: { status } })
+    await api.refreshPermission()
+    await flushPromises()
+    expect(api.canWrite.value).toBe(false)
+    expect(api.permissionUnknown.value).toBe(true)
+    expect(api.readsBlocked.value).toBe(true)
+    expect(api.accessUnavailable.value).toBe(status === 403 || status === 404)
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('supersedes a read begun before a newer refusal on the same board', async () => {
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    const { api, wrapper } = create()
+    let finish!: (value: BoardDetail) => void
+    vi.mocked(boardsApi.getBoard).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const oldRead = api.refreshPermission()
+    const oldSignal = vi.mocked(boardsApi.getBoard).mock.calls[0]![1]!.signal!
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(detail({ canWrite: false }))
+    await api.refreshPermission()
+    expect(oldSignal.aborted).toBe(true)
+    finish(detail({ canWrite: true }))
+    await oldRead
+    expect(api.canWrite.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['close', 'card', 'account'])('cancels revalidation when the editor context changes: %s', async (change) => {
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    const { api, wrapper, isOpen, cardId } = create()
+    let finish!: (value: BoardDetail) => void
+    vi.mocked(boardsApi.getBoard).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const oldRead = api.refreshPermission()
+    const signal = vi.mocked(boardsApi.getBoard).mock.calls[0]![1]!.signal!
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce(detail({ canWrite: false }))
+    if (change === 'close') isOpen.value = false
+    else if (change === 'card') cardId.value = 'next-card'
+    else session.userId = 'next-user'
+    expect(signal.aborted).toBe(true)
+    finish(detail({ canWrite: false }))
+    await oldRead
+    await flushPromises()
+    expect(api.permissionRecovery.value).toBe(change === 'account')
+    expect(api.canWrite.value).toBe(change !== 'account')
+    wrapper.unmount()
+    session.userId = 'user-1'
+  })
+
+  it('accepts a newer explicit board permission update and cancels an older reconciliation', async () => {
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    const { api, wrapper } = create()
+    let finish!: (value: BoardDetail) => void
+    vi.mocked(boardsApi.getBoard).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const oldRead = api.refreshPermission()
+    mockBoardStore.currentBoard.canWrite = false
+    expect(api.canWrite.value).toBe(false)
+    finish(detail({ canWrite: true }))
+    await oldRead
+    expect(api.canWrite.value).toBe(false)
+    mockBoardStore.currentBoard.canWrite = true
+    expect(api.canWrite.value).toBe(true)
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('gates on a stated permission without asking the server', async () => {
