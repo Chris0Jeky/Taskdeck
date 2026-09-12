@@ -152,6 +152,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, GetCardDetailsExecutor>();
         services.AddScoped<IToolExecutor, SearchCardsExecutor>();
         services.AddScoped<IToolExecutor, GetBoardLabelsExecutor>();
+        services.AddScoped<IToolExecutor, GetBoardCardRelationsExecutor>();
 
         // Tool-calling infrastructure (write tools — always produce proposals, GP-06)
         services.AddScoped<IToolExecutor, ProposeCreateCardExecutor>();

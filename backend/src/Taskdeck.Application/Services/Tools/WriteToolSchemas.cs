@@ -229,11 +229,11 @@ public static class WriteToolSchemas
                 "properties": {
                     "card_id": {
                         "type": "string",
-                        "description": "Source card UUID"
+                        "description": "Source card full UUID or an unambiguous short ID from the current board"
                     },
                     "related_card_id": {
                         "type": "string",
-                        "description": "Related card UUID on the same board"
+                        "description": "Related card full UUID or an unambiguous short ID from the current board"
                     },
                     "relation_type": {
                         "type": "string",

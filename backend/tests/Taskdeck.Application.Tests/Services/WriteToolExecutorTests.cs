@@ -849,6 +849,67 @@ public class WriteToolExecutorTests
         _proposalService.Verify(service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeCardRelation_ResolvesShortActiveBoardIdsForAddAndRemove(bool remove)
+    {
+        CreateProposalDto? captured = null;
+        var source = CreateCard("Source");
+        var target = CreateCard("Target");
+        SetupBoardCards(source, target);
+        _relations.Setup(service => service.ValidateMutationAsync(
+                _userId, _boardId, It.IsAny<CardRelationEdge>(), 9, remove, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new BoardRelationsDto(_boardId, 9, [], true)));
+        SetupProposalCreation(Guid.NewGuid(), proposal => captured = proposal);
+        IToolExecutor executor = remove
+            ? new ProposeRemoveCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object)
+            : new ProposeAddCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(source.Id)}}","related_card_id":"{{BoardContextBuilder.FormatShortId(target.Id)}}","relation_type":"blocks","expected_revision":9}"""));
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        captured!.Operations!.Single().ActionType.Should().Be(remove ? "remove-relation" : "add-relation");
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(source.Id);
+        parameters.RootElement.GetProperty("relatedCardId").GetGuid().Should().Be(target.Id);
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("ambiguous")]
+    [InlineData("cross-board")]
+    public async Task ProposeCardRelation_RejectsUnknownOrAmbiguousActiveBoardReferencesBeforeValidation(string caseName)
+    {
+        var source = CreateCard("Source");
+        var target = CreateCard("Target");
+        if (caseName == "ambiguous")
+        {
+            var sharedPrefix = BoardContextBuilder.FormatShortId(source.Id);
+            var collisionId = Guid.Parse(sharedPrefix + Guid.NewGuid().ToString()[8..]);
+            var collision = new Card(collisionId, _boardId, Guid.NewGuid(), "Collision");
+            SetupBoardCards(source, target, collision);
+        }
+        else
+        {
+            SetupBoardCards(source, target);
+        }
+
+        var reference = caseName switch
+        {
+            "unknown" => "deadbeef",
+            "cross-board" => new Card(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Foreign").Id.ToString(),
+            _ => BoardContextBuilder.FormatShortId(source.Id)
+        };
+        var executor = new ProposeAddCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{reference}}","related_card_id":"{{BoardContextBuilder.FormatShortId(target.Id)}}","relation_type":"blocks","expected_revision":2}"""));
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("unambiguous active cards");
+        _relations.Verify(service => service.ValidateMutationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CardRelationEdge>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        _proposalService.Verify(service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public void CardRelationToolSchemas_RequirePinnedRevisionAndCanonicalKinds()
     {
@@ -857,6 +918,8 @@ public class WriteToolExecutorTests
             schema.Name.Should().StartWith("propose_");
             schema.Required.Should().BeEquivalentTo(["card_id", "related_card_id", "relation_type", "expected_revision"]);
             var properties = schema.ParametersSchema.GetProperty("properties");
+            properties.GetProperty("card_id").GetProperty("description").GetString().Should().Contain("short ID");
+            properties.GetProperty("related_card_id").GetProperty("description").GetString().Should().Contain("short ID");
             properties.GetProperty("expected_revision").GetProperty("type").GetString().Should().Be("integer");
             properties.GetProperty("relation_type").GetProperty("enum").EnumerateArray().Select(kind => kind.GetString())
                 .Should().Equal("relates-to", "blocks", "depends-on", "duplicates", "spawned-from");
