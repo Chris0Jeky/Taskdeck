@@ -6,6 +6,8 @@ namespace Taskdeck.Domain.Entities;
 
 public class Card : Entity
 {
+    public const int MaxEstimatedEffortMinutes = 1_000_000;
+
     private string _title = string.Empty;
     private readonly List<CardLabel> _cardLabels = new();
     private readonly List<CardAssignment> _assignments = new();
@@ -58,6 +60,7 @@ public class Card : Entity
 
     public string Description { get; private set; } = string.Empty;
     public DateTimeOffset? DueDate { get; private set; }
+    public int? EstimatedEffortMinutes { get; private set; }
     public bool IsBlocked { get; private set; }
     public bool IsArchived { get; private set; }
     public CardWorkItemType WorkItemType { get; private set; } = CardWorkItemType.Task;
@@ -103,6 +106,17 @@ public class Card : Entity
     {
         EnsureActive();
         DueDate = null;
+        Touch();
+    }
+
+    public void SetEstimatedEffortMinutes(int? estimatedEffortMinutes)
+    {
+        EnsureActive();
+        if (estimatedEffortMinutes is < 0 or > MaxEstimatedEffortMinutes)
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"EstimatedEffortMinutes must be between 0 and {MaxEstimatedEffortMinutes}, or null for unknown.");
+        if (EstimatedEffortMinutes == estimatedEffortMinutes) return;
+        EstimatedEffortMinutes = estimatedEffortMinutes;
         Touch();
     }
 
