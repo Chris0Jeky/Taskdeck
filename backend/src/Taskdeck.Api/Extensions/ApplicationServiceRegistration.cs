@@ -28,6 +28,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
         services.AddScoped<CardAssignmentService>();
+        services.AddScoped<IBoardEstimateRollupService, BoardEstimateRollupService>();
         services.AddScoped<CardCommentService>();
         services.AddScoped<ThinkingDeckService>();
         services.AddScoped<BoardDependencyService>();

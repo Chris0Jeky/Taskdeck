@@ -14,6 +14,14 @@ changes.
 
 ## Unreleased workspace overhaul
 
+Card estimates add nullable `Cards.EstimatedEffortMinutes` through
+`20260912155107_AddCardEstimatedEffort`. **BREAKING: none.** Existing cards remain unestimated;
+zero is an explicit known estimate. Normal startup applies this additive migration. Current board
+JSON and both account exports retain estimates, including archived cards. Developer rollback drops
+only the estimate column; reapplying it leaves retained cards unestimated and cannot recover the
+old values. Back up the stopped database before upgrading or rolling back. This schema rollback
+test does not establish support for application downgrades. [Estimate contract](docs/product/CARD_ESTIMATES.md).
+
 Card assignments add `CardAssignments` through the
 `20260910225616_AddCardAssignments` migration. Existing cards remain unassigned and retain their
 IDs, placement, hierarchy and history. Assignment does not grant board access. Board JSON with

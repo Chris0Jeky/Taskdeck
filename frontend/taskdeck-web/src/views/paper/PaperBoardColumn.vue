@@ -78,7 +78,7 @@ const emit = defineEmits<{
   (event: 'edit', column: Column): void
   (event: 'move', column: Column, direction: 'left' | 'right'): void
   (event: 'open-composer', column: Column): void
-  (event: 'submit-card', column: Column, title: string): void
+  (event: 'submit-card', column: Column, title: string, estimatedEffortMinutes?: number): void
   (event: 'cancel-composer'): void
   (event: 'card-click', card: Card): void
   (event: 'card-dragstart', card: Card, e: DragEvent): void
@@ -149,8 +149,9 @@ function onAddCard() {
   emit('open-composer', props.column)
 }
 
-function onComposerSubmit(title: string) {
-  emit('submit-card', props.column, title)
+function onComposerSubmit(title: string, estimatedEffortMinutes?: number) {
+  if (estimatedEffortMinutes === undefined) emit('submit-card', props.column, title)
+  else emit('submit-card', props.column, title, estimatedEffortMinutes)
 }
 
 function onComposerCancel() {

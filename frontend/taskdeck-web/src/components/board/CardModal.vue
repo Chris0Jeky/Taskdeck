@@ -338,6 +338,8 @@ const {
   title,
   description,
   dueDate,
+  estimateHours,
+  estimateMinutes,
   isBlocked,
   blockReason,
   selectedLabelIds,
@@ -514,6 +516,9 @@ useEscapeToClose(
             @refresh-type-permission="refreshTypePermission"
             v-model:description="description"
             v-model:due-date="dueDate"
+            v-model:estimate-hours="estimateHours"
+            v-model:estimate-minutes="estimateMinutes"
+            :can-edit-estimate="canEditType"
             v-model:is-blocked="isBlocked"
             v-model:block-reason="blockReason"
             :formatted-due-date="formattedDueDate"
