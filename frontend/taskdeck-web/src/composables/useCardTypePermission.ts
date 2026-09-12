@@ -212,15 +212,27 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   }
   onScopeDispose(cancelRead)
 
-  /** Explicit recovery from an unknown permission state. */
-  async function refreshPermission() {
+  async function beginPermissionRecovery(newDenial: boolean) {
     if (!options.getIsOpen() || !permissionDecides.value) return
-    // Invalidate both the loaded payload and our own earlier answer synchronously.
-    // A refusal also supersedes any read started before it, even for the same board.
+    // A manual retry remains tied to the refusal it is reconciling. Keep that
+    // boundary so a board-store read begun after the refusal remains fresh
+    // evidence when the retry fails. A newly refused write advances it.
     permissionRecovery.value = true
-    recoveryRequestGeneration = boardRequestGeneration.value
+    if (newDenial || recoveryRequestGeneration === null) {
+      recoveryRequestGeneration = boardRequestGeneration.value
+    }
     confirmed.value = null
     await read(options.getBoardId())
+  }
+
+  /** Explicit recovery from an unknown permission state. */
+  async function refreshPermission() {
+    await beginPermissionRecovery(false)
+  }
+
+  /** A newly refused write invalidates evidence that predated that refusal. */
+  async function recoverFromPermissionDenied() {
+    await beginPermissionRecovery(true)
   }
 
   watch(
@@ -274,5 +286,5 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   )
 
   return { canWrite, canEditType, permissionChecking, permissionUnknown, permissionRecovery,
-    accessUnavailable, readsBlocked, refreshPermission }
+    accessUnavailable, readsBlocked, refreshPermission, recoverFromPermissionDenied }
 }
