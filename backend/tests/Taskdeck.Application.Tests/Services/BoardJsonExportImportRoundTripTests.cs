@@ -57,6 +57,108 @@ public class BoardJsonExportImportRoundTripTests
     }
 
     [Fact]
+    public void TypedRelations_UseV5EnvelopeAndRemainAvailableToTheImporter()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var source = Guid.NewGuid();
+        var target = Guid.NewGuid();
+        var export = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Relations", null, false, now, now), [], [], [], [], now, "exporter",
+            Relations: [new CardRelationEdge(source, target, "blocks")]);
+
+        var payload = BoardJsonExportImportService.ToPortablePayload(export);
+        payload.Should().BeOfType<BoardExportEnvelope>().Which.Version.Should().Be(5);
+        var imported = BoardJsonExportImportService.TryDeserializeImportDto(JsonSerializer.Serialize(payload, JsonOptions));
+
+        imported.Should().NotBeNull();
+        imported!.Relations.Should().ContainSingle()
+            .Which.Should().Be(new CardRelationEdge(source, target, "blocks"));
+    }
+
+    [Fact]
+    public void TypedRelations_V5EnvelopeWithoutRelationArrayFailsClosed()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var export = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Relations", null, false, now, now), [], [], [], [], now, "exporter");
+        var malformedV5 = new BoardExportEnvelope("taskdeck-board", 5, export);
+
+        BoardJsonExportImportService.TryDeserializeImportDto(JsonSerializer.Serialize(malformedV5, JsonOptions))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void TypedRelations_OlderEnvelopeDoesNotAcceptMetadataItCannotRepresent()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var export = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Relations", null, false, now, now), [], [], [], [], now, "exporter",
+            Relations: [new CardRelationEdge(Guid.NewGuid(), Guid.NewGuid(), "relates-to")]);
+        var malformedV4 = new BoardExportEnvelope("taskdeck-board", 4, export);
+
+        BoardJsonExportImportService.TryDeserializeImportDto(JsonSerializer.Serialize(malformedV4, JsonOptions))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TypedRelations_ContradictoryLegacyProjectionFailsBeforeAnyWrite()
+    {
+        var user = CreateUser("relation-mismatch");
+        SetupImportMocks(user);
+        var firstSourceId = Guid.NewGuid();
+        var secondSourceId = Guid.NewGuid();
+        var dto = new ImportBoardDto("Contradictory relations", null, [new("Work", 0, null)],
+            [new("First", null, "Work", 0, null, [], SourceId: firstSourceId),
+             new("Second", null, "Work", 1, null, [], SourceId: secondSourceId)], [],
+            Dependencies: [new CardDependency(firstSourceId, secondSourceId)],
+            Relations: [new CardRelationEdge(firstSourceId, secondSourceId, "blocks")]);
+
+        var result = await _service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _boardRepoMock.Verify(r => r.AddAsync(It.IsAny<Board>(), default), Times.Never);
+        _cardRepoMock.Verify(r => r.AddAsync(It.IsAny<Card>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task TypedRelations_ImportPreallocatesFreshCardIdsAndNormalizesDependsOn()
+    {
+        var user = CreateUser("relation-import");
+        SetupImportMocks(user);
+        var firstSourceId = Guid.NewGuid();
+        var secondSourceId = Guid.NewGuid();
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        BoardDependencies? stored = null;
+        dependencies.Setup(repository => repository.AddForImport(It.IsAny<BoardDependencies>()))
+            .Callback<BoardDependencies>(graph => stored = graph);
+        var service = new BoardJsonExportImportService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = true },
+            dependencies: dependencies.Object);
+        var importedCards = new List<Card>();
+        _cardRepoMock.Setup(repository => repository.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
+            .Callback<Card, CancellationToken>((card, _) => importedCards.Add(card))
+            .ReturnsAsync((Card card, CancellationToken _) => card);
+        var dto = new ImportBoardDto("Relations", null, [new("Work", 0, null)],
+            [new("First", null, "Work", 0, null, [], SourceId: firstSourceId),
+             new("Archived second", null, "Work", 1, null, [], SourceId: secondSourceId, IsArchived: true)], [],
+            Relations: [new CardRelationEdge(firstSourceId, secondSourceId, "depends-on")]);
+
+        var result = await service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        stored.Should().NotBeNull();
+        var first = importedCards.Single(card => card.Title == "First");
+        var second = importedCards.Single(card => card.Title == "Archived second");
+        first.Id.Should().NotBe(firstSourceId);
+        second.Id.Should().NotBe(secondSourceId);
+        stored!.ReadRelations().Should().ContainSingle()
+            .Which.Should().Be(new CardRelationEdge(second.Id, first.Id, "blocks"));
+    }
+
+    [Fact]
     public async Task EstimatedEffort_RoundTripPreservesUnknownZeroAndPositiveForActiveAndArchivedCards()
     {
         var owner = CreateUser("estimate-owner");

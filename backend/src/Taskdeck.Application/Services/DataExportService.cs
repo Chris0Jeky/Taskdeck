@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
@@ -49,6 +50,7 @@ public class DataExportService : IDataExportService
     /// </summary>
     private readonly ICaptureStore? _captureStore;
     private readonly ISourcePortabilityStore? _sourceStorage;
+    private readonly IBoardDependencyRepository? _dependencies;
 
     /// <summary>Bounds one durable-capture lookup; kept under the 900-id batch cap the repositories share.</summary>
     private const int DurableCaptureChunkSize = 500;
@@ -62,7 +64,8 @@ public class DataExportService : IDataExportService
         IWorkspaceInsightRepository workspaceInsights,
         ILogger<DataExportService>? logger = null,
         ICaptureStore? captureStore = null,
-        ISourcePortabilityStore? sourceStorage = null)
+        ISourcePortabilityStore? sourceStorage = null,
+        IBoardDependencyRepository? dependencies = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -73,6 +76,7 @@ public class DataExportService : IDataExportService
         _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
         _sourceStorage = sourceStorage;
+        _dependencies = dependencies;
     }
 
     /// <summary>
@@ -414,6 +418,8 @@ public class DataExportService : IDataExportService
                     return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "Too many cards to buffer; use the streaming export endpoint.");
                 exportCards.Add(card);
             }
+            var exportRelations = await LoadRelationsForExportAsync(
+                exportCards, cancellationToken);
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -429,7 +435,7 @@ public class DataExportService : IDataExportService
                 exportMemories,
                 exportInsights,
                 nativeCaptures,
-                await BufferSourceStorageAsync(userId, cancellationToken), exportCards);
+                await BufferSourceStorageAsync(userId, cancellationToken), exportCards, exportRelations);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -520,11 +526,35 @@ public class DataExportService : IDataExportService
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);
 
+            // Keep only relation candidates and their endpoints. Card exports can be arbitrarily
+            // large, while each board relation graph is capped at 500 rows.
+            var streamedRelationScopes = new Dictionary<Guid, RelationExportScope?>();
             writer.WriteStartArray("cards");
             await foreach (var card in StreamCardsAsync(userId, cancellationToken))
             {
+                if (!streamedRelationScopes.TryGetValue(card.BoardId, out var relationScope))
+                {
+                    relationScope = await LoadRelationScopeAsync(card.BoardId, cancellationToken);
+                    streamedRelationScopes.Add(card.BoardId, relationScope);
+                }
+                relationScope?.Observe(card.Id);
                 JsonSerializer.SerializeToElement(card, PortabilityJsonOptions).WriteTo(writer);
                 await writer.FlushAsync(cancellationToken);
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            writer.WriteStartArray("relations");
+            foreach (var (boardId, relationScope) in streamedRelationScopes)
+            {
+                if (relationScope is null)
+                    continue;
+                foreach (var edge in relationScope.ReadExportableRelations())
+                {
+                    JsonSerializer.SerializeToElement(new UserDataExportCardRelationDto(
+                        boardId, edge.SourceCardId, edge.TargetCardId, edge.RelationType), PortabilityJsonOptions).WriteTo(writer);
+                    await writer.FlushAsync(cancellationToken);
+                }
             }
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);
@@ -1233,6 +1263,71 @@ public class DataExportService : IDataExportService
             extraction.ExtractedText,
             extraction.TextLength,
             extraction.CreatedAt);
+
+    /// <summary>
+    /// The account export owns no separate relation permission. Its card export is the scope:
+    /// a card page contains every card, including archived cards, on boards the user owns or can
+    /// read. A relation is emitted only for one of those complete board scopes, so a shared board
+    /// never exposes links from an unrelated board or a private card collection.
+    /// </summary>
+    private async Task<IReadOnlyList<UserDataExportCardRelationDto>> LoadRelationsForExportAsync(
+        IEnumerable<CardDto> exportedCards,
+        CancellationToken cancellationToken)
+        => await LoadRelationsForExportAsync(
+            exportedCards.GroupBy(card => card.BoardId)
+                .ToDictionary(group => group.Key, group => group.Select(card => card.Id).ToHashSet()),
+            cancellationToken);
+
+    private async Task<IReadOnlyList<UserDataExportCardRelationDto>> LoadRelationsForExportAsync(
+        IReadOnlyDictionary<Guid, HashSet<Guid>> exportedCardIdsByBoard,
+        CancellationToken cancellationToken)
+    {
+        if (_dependencies is null)
+            return [];
+
+        var relations = new List<UserDataExportCardRelationDto>();
+        foreach (var (boardId, cardIds) in exportedCardIdsByBoard)
+        {
+            if (boardId == Guid.Empty)
+                continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            var graph = await _dependencies.GetAsync(boardId, cancellationToken);
+            if (graph is null)
+                continue;
+
+            relations.AddRange(graph.ReadRelations()
+                .Where(edge => cardIds.Contains(edge.SourceCardId) && cardIds.Contains(edge.TargetCardId))
+                .Select(edge => new UserDataExportCardRelationDto(
+                    boardId, edge.SourceCardId, edge.TargetCardId, edge.RelationType)));
+        }
+        return relations;
+    }
+
+    private async Task<RelationExportScope?> LoadRelationScopeAsync(Guid boardId, CancellationToken cancellationToken)
+    {
+        if (_dependencies is null || boardId == Guid.Empty)
+            return null;
+        var graph = await _dependencies.GetAsync(boardId, cancellationToken);
+        return graph is null ? null : new RelationExportScope(graph.ReadRelations());
+    }
+
+    private sealed class RelationExportScope(IReadOnlyList<CardRelationEdge> relations)
+    {
+        private readonly IReadOnlyList<CardRelationEdge> _relations = relations;
+        private readonly HashSet<Guid> _relationEndpoints = relations
+            .SelectMany(edge => new[] { edge.SourceCardId, edge.TargetCardId })
+            .ToHashSet();
+        private readonly HashSet<Guid> _exportedEndpoints = [];
+
+        public void Observe(Guid cardId)
+        {
+            if (_relationEndpoints.Contains(cardId))
+                _exportedEndpoints.Add(cardId);
+        }
+
+        public IEnumerable<CardRelationEdge> ReadExportableRelations() => _relations.Where(edge =>
+            _exportedEndpoints.Contains(edge.SourceCardId) && _exportedEndpoints.Contains(edge.TargetCardId));
+    }
 
     private static UserDataExportWorkspaceMemoryDto MapWorkspaceMemory(Domain.Entities.WorkspaceMemory memory) => new(
         memory.Id, memory.BoardId, memory.InsightId, memory.SourceCardId, memory.SourceLayerId,

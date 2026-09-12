@@ -33,7 +33,19 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
     IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null,
     SourceStorageExportDto? SourceStorage = null,
-    IReadOnlyList<CardDto>? Cards = null);
+    IReadOnlyList<CardDto>? Cards = null,
+    IReadOnlyList<UserDataExportCardRelationDto>? Relations = null);
+
+/// <summary>
+/// A relation the account export is authorized to disclose. Both cards must be
+/// included in the export's card collection; the board identity prevents a
+/// relation from being reattached to a similarly named board on restore.
+/// </summary>
+public record UserDataExportCardRelationDto(
+    Guid BoardId,
+    Guid SourceCardId,
+    Guid TargetCardId,
+    string RelationType);
 
 public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
 
