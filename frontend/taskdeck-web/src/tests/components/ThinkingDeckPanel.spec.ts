@@ -2,6 +2,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ThinkingDeckPanel from '../../components/thinking/ThinkingDeckPanel.vue'
 import CardDependencies from '../../components/thinking/CardDependencies.vue'
+import CardRelations from '../../components/thinking/CardRelations.vue'
 import { thinkingApi } from '../../api/thinkingApi'
 import { boardDependenciesApi } from '../../api/boardDependenciesApi'
 import { cardsApi } from '../../api/cardsApi'
@@ -25,18 +26,20 @@ beforeEach(() => {
 })
 
 describe('ThinkingDeckPanel', () => {
-  it('passes only current confirmed card write permission to dependencies across card reads', async () => {
+  it('passes only current confirmed card write permission to relation panels across card reads', async () => {
     let resolve!: (value: Awaited<ReturnType<typeof thinkingApi.get>>) => void
     vi.mocked(thinkingApi.get).mockResolvedValueOnce({ cardId: 'card-a', revision: 0, schemaVersion: 1, canWrite: false, layers: [] })
-    const wrapper = mount(ThinkingDeckPanel, { props, global: { stubs: { CardDependencies: true } } })
+    const wrapper = mount(ThinkingDeckPanel, { props, global: { stubs: { CardDependencies: true, CardRelations: true } } })
     await flushPromises()
     expect(wrapper.getComponent(CardDependencies).props('canWrite')).toBe(false)
+    expect(wrapper.getComponent(CardRelations).props('canWrite')).toBe(false)
     vi.mocked(thinkingApi.get).mockReturnValueOnce(new Promise(r => { resolve = r }))
     await wrapper.setProps({ cardId: 'restored-card' })
     expect(wrapper.findComponent(CardDependencies).exists()).toBe(false)
     resolve({ cardId: 'restored-card', revision: 0, schemaVersion: 1, canWrite: true, layers: [] })
     await flushPromises()
     expect(wrapper.getComponent(CardDependencies).props('canWrite')).toBe(true)
+    expect(wrapper.getComponent(CardRelations).props('canWrite')).toBe(true)
     vi.mocked(thinkingApi.get).mockRejectedValueOnce(new Error('unavailable'))
     await wrapper.setProps({ cardId: 'unavailable-card' }); await flushPromises()
     expect(wrapper.findComponent(CardDependencies).exists()).toBe(false)
