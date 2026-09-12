@@ -1121,15 +1121,8 @@ public class DataExportServiceStreamingTests
         var boardId = Guid.NewGuid();
         var first = new Card(boardId, Guid.NewGuid(), "First");
         var archivedSecond = new Card(boardId, Guid.NewGuid(), "Archived second");
-        var excludedThird = new Card(boardId, Guid.NewGuid(), "Excluded third");
         archivedSecond.Archive();
-        var graph = new BoardDependencies(boardId);
-        graph.ReplaceRelations([
-            new CardRelationEdge(first.Id, archivedSecond.Id, "blocks"),
-            new CardRelationEdge(first.Id, excludedThird.Id, "duplicates")]);
         var dependencies = new Mock<IBoardDependencyRepository>();
-        dependencies.Setup(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(graph);
         dependencies.Setup(repository => repository.GetExportPageByUserIdAsync(
                 _userId, 0, 500, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new UserDataExportCardRelationDto(boardId, first.Id, archivedSecond.Id, "blocks")]);
@@ -1162,10 +1155,123 @@ public class DataExportServiceStreamingTests
         relations[0].GetProperty("sourceCardId").GetGuid().Should().Be(first.Id);
         relations[0].GetProperty("targetCardId").GetGuid().Should().Be(archivedSecond.Id);
         relations[0].GetProperty("relationType").GetString().Should().Be("blocks");
-        dependencies.Verify(repository => repository.GetAsync(boardId, It.IsAny<CancellationToken>()), Times.Once);
-        dependencies.Verify(repository => repository.GetAsync(It.Is<Guid>(id => id != boardId), It.IsAny<CancellationToken>()), Times.Never);
+        dependencies.Verify(repository => repository.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        dependencies.Verify(repository => repository.GetExportPageByUserIdAsync(
+            _userId, 0, 500, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Theory]
+    [InlineData(9_999, true)]
+    [InlineData(10_000, true)]
+    [InlineData(10_001, false)]
+    public async Task ExportUserDataAsync_EnforcesBufferedRelationAdmissionLimit(
+        int relationCount,
+        bool shouldSucceed)
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var boardId = Guid.NewGuid();
+        var source = new Card(boardId, Guid.NewGuid(), "Source");
+        var archivedTarget = new Card(boardId, Guid.NewGuid(), "Archived target");
+        archivedTarget.Archive();
+        var relations = Enumerable.Range(0, relationCount)
+            .Select(index => new UserDataExportCardRelationDto(
+                boardId, source.Id, archivedTarget.Id, $"blocks-{index}"))
+            .ToArray();
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        dependencies.Setup(repository => repository.GetExportPageByUserIdAsync(
+                _userId, It.IsAny<int>(), 500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int offset, int limit, CancellationToken _) =>
+                relations.Skip(offset).Take(limit).ToArray());
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(repository => repository.GetExportPageByUserIdAsync(
+                _userId, 0, 500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([source, archivedTarget]);
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Cards).Returns(cards.Object);
+        var service = new DataExportService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object,
+            EmptyWorkspaceInsightRepository.Create(),
+            dependencies: dependencies.Object);
+
+        var result = await service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().Be(shouldSucceed, result.ErrorMessage);
+        if (shouldSucceed)
+            result.Value.Data.Relations.Should().HaveCount(relationCount);
+        else
+        {
+            result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+            result.ErrorMessage.Should().Contain("streaming export endpoint");
+        }
+
+        dependencies.Verify(repository => repository.GetExportPageByUserIdAsync(
+            _userId, It.IsAny<int>(), 500, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        dependencies.Verify(repository => repository.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_OnlyIncludesRelationsForCardsInTheBufferedPayload()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var boardId = Guid.NewGuid();
+        var source = new Card(boardId, Guid.NewGuid(), "Source");
+        var archivedTarget = new Card(boardId, Guid.NewGuid(), "Archived target");
+        var omittedCard = new Card(boardId, Guid.NewGuid(), "Omitted");
+        archivedTarget.Archive();
+        var includedRelation = new UserDataExportCardRelationDto(boardId, source.Id, archivedTarget.Id, "blocks");
+        var orphanRelation = new UserDataExportCardRelationDto(boardId, source.Id, omittedCard.Id, "duplicates");
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        dependencies.Setup(repository => repository.GetExportPageByUserIdAsync(
+                _userId, 0, 500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([includedRelation, orphanRelation]);
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(repository => repository.GetExportPageByUserIdAsync(
+                _userId, 0, 500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([source, archivedTarget]);
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Cards).Returns(cards.Object);
+        var service = new DataExportService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object,
+            EmptyWorkspaceInsightRepository.Create(),
+            dependencies: dependencies.Object);
+
+        var result = await service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Data.Cards.Should().Contain(card => card.Id == archivedTarget.Id && card.IsArchived);
+        result.Value.Data.Relations.Should().BeEquivalentTo([includedRelation]);
         dependencies.Verify(repository => repository.GetExportPageByUserIdAsync(
             _userId, 0, 500, It.IsAny<CancellationToken>()), Times.Once);
+        dependencies.Verify(repository => repository.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_DoesNotReadRelations_WhenTheBufferedCardPayloadIsEmpty()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var dependencies = new Mock<IBoardDependencyRepository>(MockBehavior.Strict);
+        var service = new DataExportService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object,
+            EmptyWorkspaceInsightRepository.Create(),
+            dependencies: dependencies.Object);
+
+        var result = await service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Data.Relations.Should().BeEmpty();
     }
 
     [Fact]

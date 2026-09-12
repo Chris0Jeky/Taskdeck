@@ -34,6 +34,7 @@ public class DataExportService : IDataExportService
     private const int MaxBufferedArtefactRows = 10_000;
     private const long MaxBufferedTranscriptSerializedCharacters = 1_024_000;
     private const int MaxBufferedTranscriptRows = 10_000;
+    private const int MaxBufferedRelationRows = 10_000;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
     private readonly ILogger<DataExportService>? _logger;
@@ -419,7 +420,7 @@ public class DataExportService : IDataExportService
                 exportCards.Add(card);
             }
             var exportRelations = await LoadRelationsForExportAsync(
-                exportCards, cancellationToken);
+                userId, exportCards, cancellationToken);
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -1256,36 +1257,57 @@ public class DataExportService : IDataExportService
     /// never exposes links from an unrelated board or a private card collection.
     /// </summary>
     private async Task<IReadOnlyList<UserDataExportCardRelationDto>> LoadRelationsForExportAsync(
+        Guid userId,
         IEnumerable<CardDto> exportedCards,
         CancellationToken cancellationToken)
         => await LoadRelationsForExportAsync(
+            userId,
             exportedCards.GroupBy(card => card.BoardId)
                 .ToDictionary(group => group.Key, group => group.Select(card => card.Id).ToHashSet()),
             cancellationToken);
 
     private async Task<IReadOnlyList<UserDataExportCardRelationDto>> LoadRelationsForExportAsync(
+        Guid userId,
         IReadOnlyDictionary<Guid, HashSet<Guid>> exportedCardIdsByBoard,
         CancellationToken cancellationToken)
     {
-        if (_dependencies is null)
+        if (_dependencies is null || exportedCardIdsByBoard.Count == 0)
             return [];
 
         var relations = new List<UserDataExportCardRelationDto>();
-        foreach (var (boardId, cardIds) in exportedCardIdsByBoard)
+        for (var offset = 0; ;)
         {
-            if (boardId == Guid.Empty)
-                continue;
             cancellationToken.ThrowIfCancellationRequested();
-            var graph = await _dependencies.GetAsync(boardId, cancellationToken);
-            if (graph is null)
-                continue;
+            // Reuse the export projection so buffered exports do not retain BoardDependencies
+            // graphs. It applies the same owner/BoardAccess scope as the card export.
+            var page = await _dependencies.GetExportPageByUserIdAsync(
+                userId,
+                offset,
+                StreamPageSize,
+                cancellationToken);
 
-            relations.AddRange(graph.ReadRelations()
-                .Where(edge => cardIds.Contains(edge.SourceCardId) && cardIds.Contains(edge.TargetCardId))
-                .Select(edge => new UserDataExportCardRelationDto(
-                    boardId, edge.SourceCardId, edge.TargetCardId, edge.RelationType)));
+            foreach (var relation in page)
+            {
+                if (!exportedCardIdsByBoard.TryGetValue(relation.BoardId, out var cardIds) ||
+                    !cardIds.Contains(relation.SourceCardId) ||
+                    !cardIds.Contains(relation.TargetCardId))
+                    continue;
+
+                if (relations.Count >= MaxBufferedRelationRows)
+                {
+                    throw new DomainException(
+                        ErrorCodes.PayloadTooLarge,
+                        "Too many card relations to buffer; use the streaming export endpoint.");
+                }
+
+                relations.Add(relation);
+            }
+
+            if (page.Count < StreamPageSize)
+                return relations;
+
+            offset += page.Count;
         }
-        return relations;
     }
 
     private async IAsyncEnumerable<UserDataExportCardRelationDto> StreamRelationsForExportAsync(
