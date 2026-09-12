@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-11
+Last Updated: 2026-09-12
 
 ## Product trust reconciliation (2026-09-11)
 
@@ -9,9 +9,11 @@ Main `02abedfe9` includes true archive/restore (#2932), Task/Epic/Spike (#2949),
 Apply recovery (#2942/#2948). The overhaul/reminder train below is delivered; its earlier
 imperative and pending-delivery paragraphs are historical execution notes.
 
-Assignments #2240 are parked in PR #2977 on HIGH #2981, pending-save/discard truth. Existing
-PRs #2955/#2959/#2961 remain unmerged at this snapshot; #2930 retains its delayed-pin announcement
-residual. Finish those delivery contracts before adding competing writers.
+Assignments #2240 and explicit importer-or-unassigned mapping are delivered in PR #2977
+(merge `15ee8065a`, 2026-09-11); HIGH #2981 is closed. This 2026-09-12 correction (#3036)
+reconciles the earlier parked snapshot against live merge state and current code. The separate
+permission-recovery and assignment-webhook residuals remain independently tracked; #2093's
+effort estimate and roll-ups remain the next work-model vertical, without a delivery claim.
 
 The maintainer has selected explicit assignee import mapping and effort minutes with hours/minutes
 display. #2093 is Next behind the shared assignment paths; #2092 remains Pending with a contract
@@ -21,8 +23,8 @@ implementation is claimed. The scalar estimate has no intrinsic assignment depen
 ownership and per-participant totals explain the chosen order.
 
 See the [delivery, risk and architecture assessment](analysis/2026-09-11-product-trust-reconciliation.md)
-and [capability catalogue](product/FEATURE_CAPABILITIES.md). STATUS/readiness remain leased by
-#2947, TESTING_GUIDE by #2931, and UPGRADING by #2977; exact correction packets are recorded there.
+and [capability catalogue](product/FEATURE_CAPABILITIES.md). TESTING_GUIDE remains owned by open PR #2931; the earlier
+STATUS/readiness and assignment delivery leases have completed.
 No new release, hosted, stage-4/5 or delegated-authority approval is inferred.
 
 ## Earlier September 10 execution notes
