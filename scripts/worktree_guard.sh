@@ -185,6 +185,11 @@ fi
 
 _wt_expect_head="${WT_EXPECT_HEAD:-any}"
 _wt_expect_branch="${WT_EXPECT_BRANCH:-}"
+if [ -n "$_wt_expect_branch" ] && [[ "$_wt_expect_branch" =~ ^[[:space:]]+$ ]]; then
+    echo "ERROR [worktree_guard]: WT_EXPECT_BRANCH cannot be whitespace-only." >&2
+    _wt_cleanup
+    return 2 2>/dev/null || exit 2
+fi
 if [ -n "$_wt_expect_branch" ] && [ "$_wt_expect_head" = "detached" ]; then
     echo "ERROR [worktree_guard]: WT_EXPECT_HEAD=detached cannot be combined with WT_EXPECT_BRANCH." >&2
     _wt_cleanup
