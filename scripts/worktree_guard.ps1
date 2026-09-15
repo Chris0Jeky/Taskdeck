@@ -13,7 +13,7 @@
 # Exit codes (unchanged contract):
 #   0 - inside a valid linked worktree
 #   1 - FATAL: main checkout / not a linked worktree / HEAD expectation unmet
-#   2 - ERROR: setup failure, not inside a git repository, layout unreadable
+#   2 - ERROR: setup/configuration failure, repository/layout unreadable
 #
 # -AllowedMarkers is retained for invocation compatibility and is ADVISORY
 # only: a root outside those markers is reported but not rejected.
@@ -239,6 +239,14 @@ if ($symbolicHead.Succeeded -and $symbolicHead.ExitCode -eq 0 -and $symbolicHead
 $headState = if ([string]::IsNullOrEmpty($headBranch)) { "detached" } else { "branch" }
 
 $effectiveExpectHead = $ExpectHead
+if (-not [string]::IsNullOrEmpty($ExpectedBranch) -and [string]::IsNullOrWhiteSpace($ExpectedBranch)) {
+    Write-Error "ERROR [worktree_guard]: -ExpectedBranch cannot be whitespace-only." -ErrorAction Continue
+    exit 2
+}
+if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $effectiveExpectHead -eq "Detached") {
+    Write-Error "ERROR [worktree_guard]: -ExpectHead Detached cannot be combined with -ExpectedBranch." -ErrorAction Continue
+    exit 2
+}
 if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $effectiveExpectHead -eq "Any") {
     $effectiveExpectHead = "Branch"
 }

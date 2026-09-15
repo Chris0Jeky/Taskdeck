@@ -20,12 +20,12 @@
 # Exit/return codes (unchanged contract):
 #   0 - inside a valid linked worktree
 #   1 - FATAL: main checkout / not a linked worktree / HEAD expectation unmet
-#   2 - ERROR: not inside a git repository, or the layout could not be read
+#   2 - ERROR: setup/configuration failure, or repository layout unreadable
 #
 # Exports on success:
 #   WT_REPO_ROOT    - absolute path to the worktree's git toplevel
 #   WT_PROJECT_DIR  - same as WT_REPO_ROOT for Taskdeck's single-repo layout
-#   WT_GIT_DIR      - this worktree's git dir (<main-repo>/.git/worktrees/<name>)
+#   WT_GIT_DIR      - linked git dir, in the same path flavour as WT_REPO_ROOT
 #   WT_HEAD_STATE   - "detached" or "branch"
 #   WT_HEAD_BRANCH  - branch name when WT_HEAD_STATE=branch, otherwise empty
 
@@ -37,9 +37,10 @@ _wt_realdir() {
 }
 
 _wt_cleanup() {
-    unset -v _wt_toplevel _wt_gitdir _wt_common _wt_worktrees_dir _wt_pointer \
-        _wt_pointer_line _wt_pointer_dir _wt_head_branch _wt_head_state \
-        _wt_expect_head _wt_expect_branch _wt_conventional 2>/dev/null || true
+    unset -v _wt_toplevel _wt_gitdir _wt_gitdir_export _wt_common \
+        _wt_worktrees_dir _wt_pointer _wt_pointer_line _wt_pointer_dir \
+        _wt_head_branch _wt_head_state _wt_expect_head _wt_expect_branch \
+        _wt_conventional 2>/dev/null || true
     unset -f _wt_realdir _wt_fatal 2>/dev/null || true
     unset -f _wt_cleanup 2>/dev/null || true
 }
@@ -87,8 +88,15 @@ if [ -z "$_wt_gitdir" ] || [ -z "$_wt_common" ]; then
     return 2 2>/dev/null || exit 2
 fi
 
+# Preserve Git's own absolute spelling for the public export. Git for Windows
+# reports both this path and --show-toplevel as C:/..., whereas pwd -P below
+# deliberately normalizes the internal comparison path to /c/.... Mixing those
+# representations in the public contract made callers perform ad-hoc conversion.
+_wt_gitdir_export="$_wt_gitdir"
+
 # --git-common-dir may be relative to the current directory; normalize both so
-# they are comparable regardless of separator style or symlinks.
+# they are comparable regardless of separator style or symlinks. These physical
+# paths are private validation values and are not exported.
 _wt_gitdir="$(_wt_realdir "$_wt_gitdir")" || _wt_gitdir=""
 _wt_common="$(_wt_realdir "$_wt_common")" || _wt_common=""
 if [ -z "$_wt_gitdir" ] || [ -z "$_wt_common" ]; then
@@ -177,6 +185,16 @@ fi
 
 _wt_expect_head="${WT_EXPECT_HEAD:-any}"
 _wt_expect_branch="${WT_EXPECT_BRANCH:-}"
+if [ -n "$_wt_expect_branch" ] && [[ "$_wt_expect_branch" =~ ^[[:space:]]+$ ]]; then
+    echo "ERROR [worktree_guard]: WT_EXPECT_BRANCH cannot be whitespace-only." >&2
+    _wt_cleanup
+    return 2 2>/dev/null || exit 2
+fi
+if [ -n "$_wt_expect_branch" ] && [ "$_wt_expect_head" = "detached" ]; then
+    echo "ERROR [worktree_guard]: WT_EXPECT_HEAD=detached cannot be combined with WT_EXPECT_BRANCH." >&2
+    _wt_cleanup
+    return 2 2>/dev/null || exit 2
+fi
 if [ -n "$_wt_expect_branch" ] && [ "$_wt_expect_head" = "any" ]; then
     _wt_expect_head="branch"
 fi
@@ -218,7 +236,7 @@ esac
 
 export WT_REPO_ROOT="$_wt_toplevel"
 export WT_PROJECT_DIR="$_wt_toplevel"
-export WT_GIT_DIR="$_wt_gitdir"
+export WT_GIT_DIR="$_wt_gitdir_export"
 export WT_HEAD_STATE="$_wt_head_state"
 export WT_HEAD_BRANCH="$_wt_head_branch"
 
