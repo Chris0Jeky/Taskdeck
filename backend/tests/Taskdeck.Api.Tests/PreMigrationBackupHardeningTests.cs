@@ -109,7 +109,7 @@ public sealed class PreMigrationBackupHardeningTests : IDisposable
         field.Should().NotBeNull(
             "the comparer policy must be explicit because case-insensitive dedupe can let an invalid case variant hide a valid Linux snapshot");
 
-        var comparer = field!.GetValue(null).Should().BeAssignableTo<StringComparer>().Subject;
+        var comparer = field!.GetValue(null).Should().BeAssignableTo<StringComparer>().Which;
         comparer.Equals(
                 "taskdeck.db-pre-migration-20260101T000000000Z-000001.db",
                 "taskdeck.db-pre-migration-20260101t000000000z-000001.db")
