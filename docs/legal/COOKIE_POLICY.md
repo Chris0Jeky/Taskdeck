@@ -11,7 +11,7 @@
 
 > **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** Like the rest of the `docs/legal/` package, this draft is no longer planned — Taskdeck is personal-use only, never distributed or hosted as a service. Retained only as a template; any self-hosted deployment is the operator's sole responsibility. See `docs/legal/README.md` and `docs/STATUS.md`.
 
-**Last updated:** 2026-04-23 (draft)
+**Last updated:** 2026-09-15 (draft)
 **Tracking issue:** `#548` (LEGAL-01)
 
 ## 1. Summary
@@ -78,7 +78,7 @@ and consent handling must be followed.
 
 | Item | Key | Purpose | Default state |
 |---|---|---|---|
-| Analytics-consent flag | `taskdeck_telemetry_consent` | Records whether the user has opted in to product analytics. | **Not written unless the user interacts with the consent UI.** The code explicitly refuses to auto-restore consent when the browser sends Do-Not-Track or Global Privacy Control signals. |
+| Analytics-consent flag | `taskdeck_telemetry_consent` | Records whether the user has opted in to product analytics. Revocation immediately clears buffered events, stops the flush timer, rotates the anonymous session ID, and invalidates in-flight retry ownership. If the browser refuses the storage write, the in-memory choice still applies for the current session and Taskdeck shows a persistent warning that the choice may not survive a reload. | **Not written unless the user interacts with the consent UI.** The code explicitly refuses to auto-restore consent when the browser sends Do-Not-Track or Global Privacy Control signals. |
 | Analytics script state | managed by `useAnalyticsScript` | Loads a third-party analytics script only after opt-in and only if the operator has configured one. The composable is cookie-free by design. | **Off by default.** No third-party analytics script is shipped or configured. |
 
 If the operator enables analytics:
@@ -108,8 +108,11 @@ operators should enumerate any such cookies here before publishing.
   site data in your browser. Doing so will sign you out; your server-side
   account data is not affected.
 - You can revoke analytics consent (if you ever granted it) via the
-  in-product controls; this clears the consent flag and stops the analytics
-  script.
+  in-product controls. Revocation clears buffered events, stops the flush
+  timer, rotates the anonymous session ID, invalidates retries owned by the
+  previous consent period, and removes the analytics script. It cannot recall
+  data already sent. If the browser refuses to save the changed preference,
+  Taskdeck warns that the in-memory choice may not survive a reload.
 - You can request data export and account deletion via the endpoints
   described in the Privacy Policy (Section 7).
 
