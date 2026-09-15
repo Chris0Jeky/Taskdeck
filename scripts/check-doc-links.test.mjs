@@ -11,6 +11,7 @@ import {
   extractLocalTargets,
   collectMarkdownFiles,
   findBrokenLinks,
+  findMaskingDiagnostics,
   formatBrokenLinks,
   existsCaseExact,
   skippedDirectories,
@@ -183,18 +184,19 @@ test('a missing target is reported and an existing one is not', () => {
   )
 })
 
-test('masking diagnostics and real broken links are both reported', () => {
+test('masking warnings are separate and do not suppress real broken links', () => {
   withFixture(
     {
       'docs/index.md': ['Before `unterminated', '', '[bad](./gone.md)'].join('\n'),
     },
     (root) => {
       assert.deepEqual(
+        findMaskingDiagnostics(root).map(({ line, target, reason }) => ({ line, target, reason })),
+        [{ line: 1, target: '`', reason: 'unbalanced inline code span' }],
+      )
+      assert.deepEqual(
         findBrokenLinks(root).map(({ line, target, reason }) => ({ line, target, reason })),
-        [
-          { line: 1, target: '`', reason: 'unbalanced inline code span' },
-          { line: 3, target: './gone.md', reason: 'missing' },
-        ],
+        [{ line: 3, target: './gone.md', reason: 'missing' }],
       )
     },
   )
