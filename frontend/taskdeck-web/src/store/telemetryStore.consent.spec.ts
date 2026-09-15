@@ -93,12 +93,13 @@ describe('telemetry consent ownership', () => {
     const store = await activeStore()
     const toast = useToastStore()
     store.emit('buffered.event')
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
 
     expect(() => store.setConsent(false)).not.toThrow()
 
+    expect(setItem).toHaveBeenCalledWith('taskdeck_telemetry_consent', 'false')
     expect(store.eventBuffer).toHaveLength(0)
     expect(store.isActive).toBe(false)
     expect(vi.getTimerCount()).toBe(0)
@@ -117,12 +118,13 @@ describe('telemetry consent ownership', () => {
     const store = useTelemetryStore()
     const toast = useToastStore()
     await store.loadConfig()
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
 
     expect(() => store.setConsent(true)).not.toThrow()
 
+    expect(setItem).toHaveBeenCalledWith('taskdeck_telemetry_consent', 'true')
     expect(store.isActive).toBe(true)
     expect(toast.toasts).toHaveLength(1)
     expect(toast.toasts[0]).toMatchObject({
@@ -136,11 +138,15 @@ describe('telemetry consent ownership', () => {
   })
 
   it('does not restore consent when storage cannot be read', () => {
-    const store = useTelemetryStore()
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    window.localStorage.setItem('taskdeck_telemetry_consent', 'true')
+    const getItem = vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
+    const store = useTelemetryStore()
+
     expect(() => store.restoreConsent()).not.toThrow()
+
+    expect(getItem).toHaveBeenCalledWith('taskdeck_telemetry_consent')
     expect(store.consentGiven).toBe(false)
   })
 })
