@@ -75,6 +75,20 @@ describe('telemetry consent ownership', () => {
     expect(store.eventBuffer.map((event) => event.event)).toEqual(['retry.event'])
   })
 
+  it('drops a failed batch when server telemetry becomes inactive in flight', async () => {
+    const store = await activeStore()
+    const reject = pendingSend()
+    store.emit('config-loss.event')
+    const flushing = store.flush()
+    store.serverConfig = null
+    reject()
+    await flushing
+
+    expect(store.consentGiven).toBe(true)
+    expect(store.isActive).toBe(false)
+    expect(store.eventBuffer).toHaveLength(0)
+  })
+
   it('revokes and warns even when the disabled preference cannot be persisted', async () => {
     const store = await activeStore()
     const toast = useToastStore()
