@@ -20,6 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Validate shell guard export path contract
+        shell: bash
+        run: bash scripts/worktree_guard.path-flavor.tests.sh
+
       - name: Validate detached-first worktree helper
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1
@@ -45,6 +49,7 @@ jobs:
           bash scripts/worktree_guard.tests.sh
           bash scripts/worktree_guard.submodule.tests.sh
           bash scripts/worktree_guard.expectation.tests.sh
+          bash scripts/worktree_guard.path-flavor.tests.sh
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
