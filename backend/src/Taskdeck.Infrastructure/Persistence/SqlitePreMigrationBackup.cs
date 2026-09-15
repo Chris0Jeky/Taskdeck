@@ -522,7 +522,9 @@ internal static class SqlitePreMigrationBackup
     /// Removes crash-old staging files that match this database's strict current or legacy
     /// snapshot shape. The staging file and either SQLite sidecar are treated as one liveness
     /// unit: the newest last-write time wins, so an active WAL is never reclaimed because the
-    /// main staging file itself has been quiet.
+    /// main staging file itself has been quiet. A surviving sidecar can rediscover its canonical
+    /// staging set after a previous partial cleanup, and the marker is deleted last so any
+    /// sidecar failure remains discoverable on the next migration.
     /// </summary>
     private static void PruneOrphanedTemporarySnapshots(
         string directory,
@@ -535,13 +537,19 @@ internal static class SqlitePreMigrationBackup
         var legacyPattern = LegacyNamePattern(legacyKey);
         var cutoffUtc = nowUtc.Subtract(OrphanedTemporarySnapshotMinimumAge);
 
-        var globs = new List<string>
-        {
-            key + FileNameMarker + "*" + FileExtension + TemporaryExtension,
-        };
+        var prefixes = new List<string> { key };
         if (!string.Equals(key, legacyKey, StringComparison.Ordinal))
         {
-            globs.Add(legacyKey + FileNameMarker + "*" + FileExtension + TemporaryExtension);
+            prefixes.Add(legacyKey);
+        }
+
+        var globs = new List<string>();
+        foreach (var prefix in prefixes)
+        {
+            var temporaryGlob = prefix + FileNameMarker + "*" + FileExtension + TemporaryExtension;
+            globs.Add(temporaryGlob);
+            globs.Add(temporaryGlob + "-wal");
+            globs.Add(temporaryGlob + "-shm");
         }
 
         var seen = new HashSet<string>(SnapshotFileNameComparer);
@@ -550,9 +558,15 @@ internal static class SqlitePreMigrationBackup
         {
             foreach (var glob in globs)
             {
-                foreach (var temporaryPath in Directory.EnumerateFiles(directory, glob))
+                foreach (var candidatePath in Directory.EnumerateFiles(directory, glob))
                 {
-                    var temporaryFileName = Path.GetFileName(temporaryPath);
+                    var candidateFileName = Path.GetFileName(candidatePath);
+                    var temporaryFileName = candidateFileName.EndsWith("-wal", StringComparison.Ordinal)
+                        ? candidateFileName[..^"-wal".Length]
+                        : candidateFileName.EndsWith("-shm", StringComparison.Ordinal)
+                            ? candidateFileName[..^"-shm".Length]
+                            : candidateFileName;
+
                     if (!temporaryFileName.EndsWith(TemporaryExtension, StringComparison.Ordinal))
                     {
                         continue;
@@ -569,11 +583,12 @@ internal static class SqlitePreMigrationBackup
                         continue;
                     }
 
+                    var temporaryPath = Path.Combine(directory, temporaryFileName);
                     var artifacts = new[]
                     {
-                        temporaryPath,
                         temporaryPath + "-wal",
                         temporaryPath + "-shm",
+                        temporaryPath,
                     };
 
                     try
