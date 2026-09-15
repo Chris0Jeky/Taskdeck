@@ -70,8 +70,8 @@ sh_output="$(
     cd -- "$FIXTURE_ROOT/detached"
     WT_EXPECT_HEAD=detached \
     WT_EXPECT_BRANCH=guard-test-branch \
-        bash -c 'source "$1"' bash "$SH_GUARD"
- 2>&1)"
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
 sh_code=$?
 set -e
 assert_setup_error "shell guard" "$sh_code" "$sh_output"
@@ -84,8 +84,8 @@ else
         cd -- "$FIXTURE_ROOT/detached"
         "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
             -ExpectHead Detached \
-            -ExpectedBranch guard-test-branch
-     2>&1)"
+            -ExpectedBranch guard-test-branch 2>&1
+    )"
     ps_code=$?
     set -e
     assert_setup_error "PowerShell guard" "$ps_code" "$ps_output"
