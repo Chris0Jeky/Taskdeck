@@ -128,6 +128,42 @@ public sealed class PreMigrationBackupHardeningTests : IDisposable
     }
 
     [Fact]
+    public void Backup_preserves_stale_noncanonical_staging_names()
+    {
+        CreateStandaloneWalDatabase();
+        Directory.CreateDirectory(_backupDirectory);
+
+        var nonAsciiTimestamp = ManagedTemporarySnapshot("2026010١T000000000Z", "000007");
+        var impossibleTimestamp = ManagedTemporarySnapshot("20261301T000000000Z", "000008");
+        var nonCanonicalSequence = ManagedTemporarySnapshot("20260107T000000000Z", "0000009");
+        var zeroSequence = ManagedTemporarySnapshot("20260108T000000000Z", "000000");
+        var candidates = new[]
+        {
+            nonAsciiTimestamp,
+            impossibleTimestamp,
+            nonCanonicalSequence,
+            zeroSequence,
+        };
+
+        foreach (var path in candidates)
+        {
+            File.WriteAllText(path, "non-canonical staging fixture");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.Subtract(TimeSpan.FromDays(2)));
+        }
+
+        SqlitePreMigrationBackup.Create(
+            _dbPath,
+            new DatabaseBackupSettings { RetainCount = 5 },
+            logger: null);
+
+        foreach (var path in candidates)
+        {
+            File.Exists(path).Should().BeTrue(
+                "cleanup may delete only a canonical filename that this helper can actually emit");
+        }
+    }
+
+    [Fact]
     public void Retention_orders_and_prunes_sequences_larger_than_long_max_value()
     {
         CreateStandaloneWalDatabase();
