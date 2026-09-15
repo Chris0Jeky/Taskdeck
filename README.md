@@ -1,55 +1,120 @@
 # Taskdeck
 
-**The local-first, review-first action-item engine.**
+**A local-first, review-first work operating system for turning context into accountable work.**
 
-Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turns them into source-linked proposals. You decide what is correct; only then does Taskdeck apply approved board changes. Your entire workspace lives in a single SQLite file you own - back it up together with its local configuration keys (see [UPGRADING.md](UPGRADING.md)). When a live provider is configured, transcript-source captures get LLM-backed extraction with evidence spans that deep-link back to the transcript (deterministic fallback otherwise); ordinary short-form capture triage is always deterministic and offline.
+Taskdeck takes the messy material work arrives in—notes, transcripts, checklists, emails, files, and agent requests—and turns it into source-linked proposals. You inspect the diff, provenance, side effects, and risk; only an explicit approval and apply step changes the board.
+
+The current product wedge is a dependable capture-to-action loop. The destination is broader: an adaptive project companion where people and agents can understand work, propose changes, coordinate execution, and retain evidence without silently taking authority away from the user.
 
 [![CI](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml/badge.svg)](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml)
 [![Status: Beta](https://img.shields.io/badge/status-beta-5b5bd6.svg)](https://github.com/Chris0Jeky/Taskdeck/releases)
 [![License: GPL v3](https://img.shields.io/badge/license-GPL_v3-blue.svg)](LICENSE)
 
+[Download the latest stable release](https://github.com/Chris0Jeky/Taskdeck/releases/latest) ·
+[Try the v0.3 release candidate](https://github.com/Chris0Jeky/Taskdeck/releases/tag/v0.3.0-rc.1) ·
+[Documentation](https://chris0jeky.github.io/Taskdeck/) ·
+[Start here](docs/START_HERE.md) ·
+[Product direction](docs/strategy/PRODUCT_DIRECTION.md)
+
 ![Taskdeck capture, proposal, review, and apply loop](docs/assets/taskdeck-core-loop.gif)
 
-> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The current open-source core is GPL-3.0-only; the transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md). Automated DCO enforcement is paused; [#2019](https://github.com/Chris0Jeky/Taskdeck/issues/2019) is the future restoration tracker. The required branch-protection gate covers the secret/dependency/SAST scans (ADR-0035).
+> **Beta software.** Taskdeck is in the v0.x free open beta. Expect breaking changes while public run paths, onboarding, collaboration, agent access, transcript workflows, backup/recovery, and release operations are hardened. The current stable release is v0.2.0; v0.3.0-rc.1 is a prerelease and is not marked Latest. Windows 10/11 x64 is the supported desktop release platform today.
 
-## The loop
+## The core loop
 
-1. **Capture** - paste a note, email, checklist, or transcript text into Inbox.
-2. **Proposal** - Taskdeck prepares structured, source-linked board changes instead of mutating the board directly.
-3. **Review** - inspect the diff, side effects, provenance, and risk; approve or reject it.
-4. **Apply** - approved changes land on the board with an audit trail.
+1. **Capture** — paste or submit raw context into Inbox.
+2. **Understand** — deterministic logic and, where explicitly configured, a bounded live model extract structured work and evidence.
+3. **Propose** — Taskdeck prepares source-linked operations instead of mutating the workspace directly.
+4. **Review** — inspect the before/after state, provenance, confidence, side effects, and risk.
+5. **Apply** — an authorized user applies approved operations and Taskdeck records the outcome.
 
-Taskdeck ships this capture -> proposal -> review -> apply loop today, including transcript-source LLM triage with evidence spans when a live provider is configured - the default Mock provider falls back to deterministic triage without evidence links (transcript-source triage has a separately gated extraction leg, and Automation Chat uses the configured provider when one is enabled - both may send bounded content to it; ordinary short-form capture triage stays deterministic and offline, and the default provider is the offline Mock). The active roadmap lives in [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md) under the direction in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md).
+That loop already ships for notes, checklists, and transcript-source captures. With a configured live provider, transcript extraction can return evidence spans that deep-link to the stored source. If the provider is unavailable or unusable, the system degrades visibly to deterministic extraction. Ordinary short-form capture triage remains deterministic and offline.
 
-## Why Taskdeck
+## Why Taskdeck exists
 
-- **Local-first ownership.** The default runtime uses SQLite, so backup and portability start with a file you control.
-- **Review-first trust.** Automation stops at a proposal. Approval and execution are explicit human actions.
-- **Useful provenance.** Capture-linked proposals preserve where suggested work came from.
-- **Agent-safe writes.** The MCP server lets AI clients read Taskdeck and propose changes without granting them the ability to approve their own work.
-- **Calm product surface.** The Paper workspace keeps Inbox, Review, and Boards focused on the decisions that matter.
+Useful automation should not require surrendering ownership or accepting invisible mutations.
 
-Taskdeck is single-instance and self-hosted in the current beta. A managed hosted service is a future commercial possibility, not a shipped feature or a requirement for using the open-source core.
+- **Local-first ownership.** The default workspace is one SQLite file you control. Back it up together with its local configuration keys.
+- **Review-first automation.** Agents and integrations can prepare work; approval and execution remain distinct capabilities.
+- **Provenance by default.** Suggested cards and operations retain where they came from and what evidence supports them.
+- **Legible state.** Unknown, degraded, stale, blocked, and failed states remain visible instead of being painted as success.
+- **Calm execution.** Inbox, Review, Boards, search, notifications, and operations surfaces focus on decisions rather than activity theatre.
+- **Portable core.** The open-source, self-hosted product is useful without a managed service.
+
+Taskdeck is single-instance and self-hosted in the current beta. A managed hosted service is part of the longer commercial direction, not a shipped requirement or a claim about today’s product.
+
+## What ships today
+
+### Work and capture
+
+- boards, columns, cards, labels, ownership, archive/restore, search, and notifications;
+- Inbox captures with explicit dispositions and source retention;
+- transcript-source extraction with evidence-linked proposals when a live provider is configured;
+- deterministic fallback and visible degradation receipts;
+- Review queue with proposal history, approval, rejection, apply, and blocked-operation reporting;
+- JSON and board exports, local operations views, and authenticated self-hosted access.
+
+### Review-gated agent access
+
+Taskdeck includes an MCP server for clients such as Claude Code and Cursor.
+
+- read tools expose boards, cards, captures, proposals, and resources;
+- mutating board tools produce reviewable proposals;
+- MCP intentionally exposes no approve or apply tool, so an agent cannot approve its own proposal;
+- bounded workflow writes such as creating a capture or dismissing a completed proposal are separate `manage` operations;
+- local stdio and API-key-authenticated Streamable HTTP transports are supported;
+- v0.3 keys use explicit independent `read`, `propose`, and `manage` capabilities; upgraded legacy keys retain Full access until replaced.
+
+See [MCP_SERVER.md](docs/MCP_SERVER.md) for packaged Windows, Docker, source, Claude Code, Claude Desktop, and Cursor setup.
+
+### Local and self-hosted operation
+
+- self-contained Windows x64 portable release;
+- source launchers for Windows and macOS/Linux;
+- production Dockerfile and Compose baseline;
+- SQLite migrations, pre-migration snapshots, backup/restore guidance, and upgrade notes;
+- health, release, provenance, security-scan, and CI contracts;
+- mock, OpenAI, and compatible/local provider integrations behind explicit configuration.
+
+## Direction at a glance
+
+Taskdeck’s roadmap has three layers that should not be confused.
+
+### Destination: adaptive work operating system
+
+Taskdeck should become a project companion that can hold context, work structure, decisions, agents, collaboration, and execution history in one legible system. It should support both serious Jira-like operation and a lighter flow-oriented mode without splitting into two products.
+
+### Engine: context-to-action with user-sovereign automation
+
+The durable engine is a Context Fabric that can ingest and relate text, transcripts, files, images, meetings, messages, project state, and agent output. Every automated change remains explainable, reviewable, attributable, and bounded by an authority profile.
+
+### Current wedge: messy context into daily work
+
+The near-term product stays focused on the loop people can evaluate now: capture raw material, understand it, create proposals, review the evidence, and apply accountable work.
+
+### Release horizons
+
+- **v0.3 — Accountable Agents + Downloadable Beta:** scoped MCP keys, a dependable live Review queue, honest provider degradation, packaged operation, and release hardening. `v0.3.0-rc.1` is published; final has no fixed date.
+- **v0.4 — Hosted Open Beta + Work Model + Fabric Foundation:** install-free access, opt-in analytics, work-model foundations, durable capture/evidence structures, and extraction-worker seams. This is planned, not shipped.
+- **v0.5 — Speak, Type, Paste, or Drop:** one capture surface for text, voice, meetings, images, and files, with boardless understanding before filing.
+- **v0.6 — Under Your Rules:** processing profiles, authority profiles, policy-aware agents, and clearer user/organization control.
+- **v0.7 and beyond — Project Companion:** richer collaboration, planning, execution, insights, and an adaptive interface built on the same review/provenance contracts.
+
+The canonical direction is [PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md). The execution ledger is [REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md). Neither is a promise that an unshipped release or hosted service exists today.
 
 ## Quick start
 
 Choose the path that matches how you want to evaluate Taskdeck.
 
-### 1. Desktop release
+### Windows desktop
 
-The self-contained desktop executable is the quickest path for the 0.x releases. **Windows 10/11 x64
-is the only supported desktop platform.** Download the Windows ZIP and checksum from the
-[latest public release](https://github.com/Chris0Jeky/Taskdeck/releases/latest), then follow the
-[Windows quick start](docs/releases/WINDOWS_QUICK_START.md) for verification, extraction, launch,
-registration, shutdown, backup, and optional OpenAI setup. **Known v0.1.1 limitation:** on a machine
-that previously configured the retired Gemini provider through user-scoped environment variables, the
-app can exit before listening with a misleading port/data-folder error — the workaround is in
-[UPGRADING.md](UPGRADING.md#version-notes); the fix shipped in v0.1.2. The non-Windows archives
-attached to v0.1.0 remain available as historical artifacts; they are not a continuing support promise.
+Download the stable Windows x64 ZIP and checksum from the [latest release](https://github.com/Chris0Jeky/Taskdeck/releases/latest), verify it, extract it, and run `Taskdeck.Api.exe`.
 
-### 2. Docker
+The release is currently an unsigned portable ZIP. Follow the [Windows quick start](docs/releases/WINDOWS_QUICK_START.md) for verification, SmartScreen guidance, registration, shutdown, backup, and optional model-provider setup.
 
-Build and run the production image locally:
+The v0.3.0-rc.1 prerelease contains schema and integration behavior changes. Read [UPGRADING.md](UPGRADING.md) before opening a workspace you care about with it.
+
+### Docker
 
 ```bash
 docker build -f deploy/Dockerfile.production -t taskdeck:local .
@@ -66,21 +131,11 @@ docker run --rm -p 5000:5000 \
   taskdeck:local
 ```
 
-Keep `deploy/.env.docker-run` with the `taskdeck-data` volume and reuse it for every restart. Back up both together: replacing `Jwt__SecretKey` signs everyone out, while losing or replacing `Connectors__EncryptionKey` makes connector credentials already stored in SQLite undecryptable. The env file is ignored by Git; never commit it.
+Keep the secret file and data volume together. Replacing `Jwt__SecretKey` signs users out; losing `Connectors__EncryptionKey` makes already stored connector credentials undecryptable. See [DEPLOYMENT_CONTAINERS.md](docs/ops/DEPLOYMENT_CONTAINERS.md).
 
-Or use the Compose baseline:
+### From source
 
-```bash
-cp deploy/.env.example deploy/.env
-# Set TASKDECK_JWT_SECRET and TASKDECK_CONNECTORS_ENCRYPTION_KEY in deploy/.env.
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
-```
-
-Open `http://localhost:5000` after the direct `docker run` command. The Compose baseline publishes its reverse proxy at `http://localhost:8080`. See [DEPLOYMENT_CONTAINERS.md](docs/ops/DEPLOYMENT_CONTAINERS.md) for secret generation, volumes, health checks, and shutdown.
-
-### 3. From source
-
-Prerequisites: .NET 8 SDK and Node.js 24.x (minimum 24.13.1 LTS).
+Requirements: .NET 8 SDK and Node.js 24.x, minimum 24.13.1 LTS.
 
 ```powershell
 git clone https://github.com/Chris0Jeky/Taskdeck.git
@@ -94,97 +149,47 @@ cd Taskdeck
 scripts/dev-up.sh --seed
 ```
 
-The seeded account is `demo` / `demo123`. These source-only credentials are not present in the
-Windows release. The source launcher intentionally leaves the API and frontend running as background
-processes, prints their PIDs, API URL, and expected frontend entry point, and records them for the
-matching stop command. Open `http://localhost:5173`; if Vite selects a fallback port, use the `Local:`
-URL in the frontend dev-server output. Stop the whole stack with
-`.\scripts\dev-up.ps1 -Stop` or `scripts/dev-up.sh --stop`; closing the launching shell is not the
-documented stop path. See the [source startup troubleshooting](docs/product/DEMO_PLAYBOOK.md#source-startup-troubleshooting)
-if readiness, ports, or a stale PID file blocks startup.
+The source-only seeded account is `demo` / `demo123`. Open the frontend URL printed by the launcher and stop the stack with `dev-up -Stop` or `dev-up.sh --stop`; closing the shell is not the documented stop path.
 
-For the first guided run, see [START_HERE.md](docs/START_HERE.md).
-
-## MCP: write access with a human gate
-
-Taskdeck includes an MCP server for AI clients such as Claude Code and Cursor. Read tools expose boards, cards, captures, and proposal status. Board-mutating tools stop at proposals, and MCP intentionally exposes no approve or apply tool, so an agent cannot approve its own suggested board changes. Bounded workflow actions such as creating a capture or dismissing a proposal are direct writes.
-
-Taskdeck supports local stdio plus API-key-authenticated Streamable HTTP at `/mcp`. The
-[MCP server quickstart](docs/MCP_SERVER.md) covers the packaged desktop release, released Docker
-image, source checkout, and setup for Claude Code, Claude Desktop, and Cursor:
+## MCP transports
 
 | Mode | Command / endpoint | Intended use |
-|---|---|---|
-| Packaged Windows stdio | `C:\absolute\path\to\Taskdeck.Api.exe --mcp` | Released desktop ZIP; zero network listener |
-| Released Docker stdio | `docker run --rm -i --no-healthcheck --user 1001:1001 ... IMAGE dotnet Taskdeck.Api.dll --mcp` | Released image sharing the normal web volume |
-| Source stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | Source checkout; zero network listener |
-| Standalone HTTP | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp --transport http` → `http://127.0.0.1:5001/mcp` | Local HTTP client or same-host sidecar |
-| Co-hosted HTTP | `<your Taskdeck API base>/mcp` | Reuse the normal API process and database |
+| --- | --- | --- |
+| Packaged Windows stdio | `C:\absolute\path\to\Taskdeck.Api.exe --mcp` | released desktop ZIP; no network listener |
+| Released Docker stdio | `docker run --rm -i --no-healthcheck --user 1001:1001 ... IMAGE dotnet Taskdeck.Api.dll --mcp` | released image sharing the normal web volume |
+| Source stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | source checkout; no network listener |
+| Standalone HTTP | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp --transport http` → `http://127.0.0.1:5001/mcp` | local HTTP client or same-host sidecar |
+| Co-hosted HTTP | `<your Taskdeck API base>/mcp` | reuse the normal API process and database |
 
-Every Taskdeck process that should share a workspace must use the same `ConnectionStrings__DefaultConnection`. `dev-up` prints the database path, but its environment override belongs only to the API process it launches; a later MCP process does not inherit it. The launchers use these stable paths:
+All processes that should share a workspace must use the same `ConnectionStrings__DefaultConnection`. HTTP keys should remain least-privilege and on trusted transport. The standalone server binds to `127.0.0.1` by default and does not enable cross-origin browser MCP. Using `--host` does not replace TLS, host allowlists, or network controls.
 
-- Windows: `Data Source=$env:LOCALAPPDATA\Taskdeck\taskdeck-dev.db` (PowerShell expands `$env:LOCALAPPDATA` when you assign the value).
-- macOS/Linux: `Data Source=${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db` (the shell expands the data directory when you export the value).
+Runtime tool-hash approval remains planned; scoped-key enforcement does not imply that separate lifecycle exists.
 
-Before using stdio, run the corresponding web app once and create an active local user. Use
-[mcp.example.json](mcp.example.json) for the packaged Windows executable or
-[mcp-docker.example.json](mcp-docker.example.json) for the released image; each file defines exactly
-one active server. The stdio server uses `McpServer__DefaultUserId` only when it names an existing
-active user. When that setting is absent, stdio starts only if the database has exactly one active
-user; zero or multiple active users fail with setup guidance. A present empty, zero, malformed,
-missing, or inactive ID fails closed and never falls back to another account. See the
-[quickstart](docs/MCP_SERVER.md#from-source) for source-checkout configuration and database paths.
-
-For HTTP (since `v0.3.0-rc.1` — not in v0.2.0, whose keys are unscoped), create a key in **Settings → API Keys** and select at least one explicit capability: `read` searches and inspects Taskdeck state and MCP resources; `propose` creates reviewable board-change proposals but cannot approve them; `manage` creates Inbox captures and dismisses completed proposals. The three capabilities are independent and combinable. Existing keys upgraded from the unscoped schema retain **Full** (`read` + `propose` + `manage`) access until they are replaced; new API, UI, and CLI keys never default to Full.
-
-Start the standalone command with the same `ConnectionStrings__DefaultConnection` as the web app. Claude Code can use [mcp-claude-code-http.example.json](mcp-claude-code-http.example.json), whose `${VAR}` / `${VAR:-default}` expansion is Claude Code-specific. In Cursor or another client, configure the same URL and `Authorization` header through that client's native secret/environment support rather than committing a raw key. The real route requires `Authorization: Bearer tdsk_...`; missing, invalid, expired, or revoked keys receive `401`, and `/` is not an MCP endpoint. Authentication attempts are bounded by client IP before key lookup, and valid requests are rate-limited independently by the key's opaque ID. Tool and resource discovery shows only targets allowed by the key, and direct invocation of a missing, unknown, or unauthorized target fails closed.
-
-The standalone server binds only to `127.0.0.1` by default and replaces blank or ASP.NET any-host `AllowedHosts` values (`*`, `0.0.0.0`, `[::]`, including mixed lists) with the loopback allowlist. Keep bearer keys on loopback. If you deliberately use `--host` for a container, tunnel, or deployment, terminate TLS before the request reaches an untrusted network and set `AllowedHosts` to the exact public host names; `--host` does not relax host-header validation. Cross-origin browser MCP is not enabled. Runtime tool-hash approval remains planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309); scoped HTTP key enforcement does not imply that separate approval lifecycle exists.
-
-## Current scope
-
-Shipped now:
-
-- capture, triage, proposal review, explicit approval, and audited apply;
-- boards, cards, labels, Inbox, Review, search, notifications, and local operations surfaces;
-- SQLite persistence, JSON/board exports, authentication, and self-hosted container support;
-- MCP resources, review-gated board changes, and bounded workflow actions;
-- mock, OpenAI, and config-gated compatible/local provider integrations.
-
-Shipped releases and the active roadmap:
-
-- **v0.1.0 "First Light" (2026-08-19), v0.1.1 (2026-08-21), v0.1.2 (2026-08-25), and v0.2.0 "Coherent Context-to-Action Loop" (2026-08-29):** shipped; the latest release carries the live-verified transcript triage engine with evidence-linked spans, explicit capture dispositions, the board inspector, and archived-board card-write protection on the `CardService` and bulk-writer paths (the CLI's unscoped card move is the tracked residual, `#2125`) — still an unsigned Windows x64 portable ZIP;
-- **v0.3 Accountable Agents + Downloadable Beta:** **`v0.3.0-rc.1` shipped 2026-08-30** as a GitHub *pre-release* (tag at `9d2ea3c7c`); v0.3.0 final **when it is ready — no fixed date**: packaged MCP with scoped keys, a Review queue that stays live, honest triage degradation, a double-click start that survives leftover provider settings, the trusted private-instance proof, and the fix/improvement queue in the milestone.
-- **v0.4 Hosted Open Beta + Work Model + Fabric Foundation:** the install-free hosted open beta reachable from anywhere (`#2243`), the work-model slices, opt-in analytics, and the Context Fabric foundation (ADR-0065, tracker `#2254`) — the durable capture aggregate, representations and evidence anchors (behaviour-preserving), plus the sidecar host that the extraction worker needs — the seams later releases build on.
-- **v0.5 Speak, Type, Paste, or Drop → v0.6 Under Your Rules → v1.0:** voice notes and meetings, a single capture surface for text, paste, images and files, boardless understanding, then processing and authority profiles — the ladder is in `docs/strategy/PRODUCT_DIRECTION.md` §5 and stays a plan, not a promise, until each release ships.
-
-Direction lives in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md); the execution plan is [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md). Taskdeck is not claiming a hosted service or a stable v1 API today.
-
-## Technology
+## Architecture
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | Backend | .NET 8, ASP.NET Core, EF Core, SQLite |
 | Frontend | Vue 3, TypeScript, Pinia, Vite, Tailwind CSS |
 | Realtime | SignalR |
 | Testing | xUnit, Vitest, Playwright |
-| LLM | Mock by default; OpenAI and compatible/local providers are config-gated |
+| Model providers | Mock by default; OpenAI and compatible/local providers are config-gated |
+| Agent interface | MCP over stdio or authenticated Streamable HTTP |
 
 ```text
 backend/          .NET solution and layered application
 frontend/         Vue application and browser tests
-docs/             Product, architecture, operations, and contributor guidance
+docs/             Product, architecture, operations, decisions, and contributor guidance
 deploy/           Container and deployment configuration
-scripts/          Development, demo, verification, and operations helpers
+scripts/          Development, demo, verification, release, and operations helpers
 ```
 
 ## Verification
 
 ```bash
-# Backend
 dotnet test backend/Taskdeck.sln -c Release -m:1
 
-# Frontend (run from frontend/taskdeck-web)
+cd frontend/taskdeck-web
 npm run typecheck
 npm run build
 npx vitest --run
@@ -193,18 +198,20 @@ npx playwright test --reporter=line
 
 See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for suite ownership and CI parity.
 
-## Contributing
+## Security, privacy, and operational limits
 
-External code contributions are currently paused; the commercial model is decided as open-core with managed hosting and services ([ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md)), and contributions reopen only behind a relicensing-capable CLA or contribution grant; see the notice at the top of [CONTRIBUTING.md](CONTRIBUTING.md) and [issue #2012](https://github.com/Chris0Jeky/Taskdeck/issues/2012). Issues and bug reports are welcome. `Signed-off-by:` trailers are currently optional and are not checked for merge eligibility; see the [paused Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin-enforcement-paused). The required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
+- The default provider is the offline Mock provider. A configured live provider may receive bounded transcript or Automation Chat content; ordinary short-form triage stays deterministic and offline.
+- Protect the SQLite database, secret configuration, backups, and connector keys together.
+- The Windows release is unsigned today; installers, signing, SBOM/attestation expansion, and additional platforms remain tracked work.
+- Taskdeck sends no product telemetry unless a future explicitly opt-in path is activated; see [TELEMETRY.md](docs/TELEMETRY.md).
+- Non-SQLite databases are not supported by the current release contract.
+- The current product is not a stable v1 API, multi-tenant SaaS, autonomous agent platform, or guarantee that model output is correct.
+- Recent reliability work—backup retention, workspace interleavings, webhook time normalization, container release contracts, import diagnostics, accessibility, and modal/viewport behavior—supports the beta’s trust boundary; it does not expand the product claim by itself.
 
-Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
+Read [SECURITY.md](SECURITY.md), [UPGRADING.md](UPGRADING.md), and the architecture decisions before production or exposed-network deployment.
 
-## License and security
+## Contributing and licence
 
-Taskdeck's current open-source core is released under the [GNU General Public License version 3 only](LICENSE). Earlier copies released under MIT keep their existing grants; the transition, permanent free-core boundary, and posture for any future additive commercial module are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md).
+Issues and bug reports are welcome. External code contributions are currently paused while the open-core commercial model and relicensing-capable contribution terms are completed; see [CONTRIBUTING.md](CONTRIBUTING.md), [ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md), and issue `#2012`.
 
-Found a vulnerability? Follow the private reporting process in [SECURITY.md](SECURITY.md). Do not open a public issue for a suspected security problem.
-
----
-
-[First 15 minutes](docs/START_HERE.md) | [Upgrading and backups](UPGRADING.md) | [Documentation index](docs/INDEX.md) | [Issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues)
+The current open-source core is GPL-3.0-only. The licence transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md).
