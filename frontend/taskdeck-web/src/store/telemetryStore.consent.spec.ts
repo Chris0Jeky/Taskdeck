@@ -117,7 +117,7 @@ describe('telemetry consent ownership', () => {
       title: 'Telemetry preference not saved',
       label: 'warning',
       message:
-        'Telemetry is enabled for this session, but that choice could not be saved. It will be disabled after reload.',
+        'Telemetry is enabled for this session, but that choice could not be saved. It may be disabled after reload.',
     })
   })
 
