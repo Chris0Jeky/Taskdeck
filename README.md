@@ -153,13 +153,13 @@ The source-only seeded account is `demo` / `demo123`. Open the frontend URL prin
 
 ## MCP transports
 
-| Mode | Entry point | Intended use |
+| Mode | Command / endpoint | Intended use |
 | --- | --- | --- |
-| Packaged Windows stdio | `Taskdeck.Api.exe --mcp` | released desktop ZIP; no network listener |
-| Released Docker stdio | container command invoking `Taskdeck.Api.dll --mcp` | share the normal web volume |
+| Packaged Windows stdio | `C:\absolute\path\to\Taskdeck.Api.exe --mcp` | released desktop ZIP; no network listener |
+| Released Docker stdio | `docker run --rm -i --no-healthcheck --user 1001:1001 ... IMAGE dotnet Taskdeck.Api.dll --mcp` | released image sharing the normal web volume |
 | Source stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | source checkout; no network listener |
-| Standalone HTTP | `--mcp --transport http` on loopback | local HTTP client or sidecar |
-| Co-hosted HTTP | `<Taskdeck API>/mcp` | reuse the normal API process/database |
+| Standalone HTTP | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp --transport http` → `http://127.0.0.1:5001/mcp` | local HTTP client or same-host sidecar |
+| Co-hosted HTTP | `<your Taskdeck API base>/mcp` | reuse the normal API process and database |
 
 All processes that should share a workspace must use the same `ConnectionStrings__DefaultConnection`. HTTP keys should remain least-privilege and on trusted transport. The standalone server binds to `127.0.0.1` by default and does not enable cross-origin browser MCP. Using `--host` does not replace TLS, host allowlists, or network controls.
 
