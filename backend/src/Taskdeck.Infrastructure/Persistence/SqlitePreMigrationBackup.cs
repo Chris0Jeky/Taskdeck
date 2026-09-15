@@ -305,18 +305,74 @@ internal static class SqlitePreMigrationBackup
 
     /// <summary>
     /// Matches the current naming scheme for one database: full file name, marker, timestamp,
-    /// sequence.
+    /// sequence. ASCII digits are explicit: .NET's <c>\d</c> also accepts Unicode decimal digits,
+    /// which this helper never emits and must therefore never treat as a managed deletion target.
     /// </summary>
     private static Regex CurrentNamePattern(string key) => new(
-        "^" + Regex.Escape(key + FileNameMarker) + @"(\d{8}T\d{9}Z)-(\d{6,})" + Regex.Escape(FileExtension) + "$",
+        "^" + Regex.Escape(key + FileNameMarker) + @"([0-9]{8}T[0-9]{9}Z)-([0-9]{6,})" + Regex.Escape(FileExtension) + "$",
         RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Matches the pre-#1839 naming scheme: file name stem, marker, timestamp, no sequence.
     /// </summary>
     private static Regex LegacyNamePattern(string legacyKey) => new(
-        "^" + Regex.Escape(legacyKey + FileNameMarker) + @"(\d{8}T\d{9}Z)" + Regex.Escape(FileExtension) + "$",
+        "^" + Regex.Escape(legacyKey + FileNameMarker) + @"([0-9]{8}T[0-9]{9}Z)" + Regex.Escape(FileExtension) + "$",
         RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A regex match is only the lexical first gate. Managed names must round-trip through the
+    /// exact formatter used by <see cref="BuildFileName"/> so cleanup never claims an impossible
+    /// date, a zero sequence, or a differently padded number that Taskdeck could not create.
+    /// </summary>
+    private static bool TryParseCurrentSnapshotFileName(
+        Regex pattern,
+        string fileName,
+        out BigInteger sequence,
+        out string timestamp)
+    {
+        var match = pattern.Match(fileName);
+        timestamp = match.Success ? match.Groups[1].Value : string.Empty;
+        sequence = BigInteger.Zero;
+
+        if (!match.Success
+            || !IsCanonicalTimestamp(timestamp)
+            || !BigInteger.TryParse(
+                match.Groups[2].ValueSpan,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out sequence)
+            || sequence < BigInteger.One)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            sequence.ToString(SequenceFormat, CultureInfo.InvariantCulture),
+            match.Groups[2].Value,
+            StringComparison.Ordinal);
+    }
+
+    private static bool TryParseLegacySnapshotFileName(
+        Regex pattern,
+        string fileName,
+        out string timestamp)
+    {
+        var match = pattern.Match(fileName);
+        timestamp = match.Success ? match.Groups[1].Value : string.Empty;
+        return match.Success && IsCanonicalTimestamp(timestamp);
+    }
+
+    private static bool IsCanonicalTimestamp(string timestamp) =>
+        DateTimeOffset.TryParseExact(
+            timestamp,
+            TimestampFormat,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var parsed)
+        && string.Equals(
+            parsed.ToString(TimestampFormat, CultureInfo.InvariantCulture),
+            timestamp,
+            StringComparison.Ordinal);
 
     /// <summary>
     /// Finds every managed snapshot for one database in <paramref name="directory"/>, in BOTH the
@@ -373,28 +429,19 @@ internal static class SqlitePreMigrationBackup
                     continue;
                 }
 
-                var match = currentPattern.Match(fileName);
-                if (match.Success)
+                if (TryParseCurrentSnapshotFileName(
+                        currentPattern,
+                        fileName,
+                        out var sequence,
+                        out var timestamp))
                 {
-                    // File-name components are bounded by the filesystem, but not by Int64. An
-                    // arbitrary-precision parse keeps every valid managed file orderable and
-                    // therefore eligible for both sequence allocation and retention.
-                    if (BigInteger.TryParse(
-                            match.Groups[2].ValueSpan,
-                            NumberStyles.None,
-                            CultureInfo.InvariantCulture,
-                            out var sequence))
-                    {
-                        snapshots.Add(new Snapshot(path, fileName, sequence, match.Groups[1].Value));
-                    }
-
+                    snapshots.Add(new Snapshot(path, fileName, sequence, timestamp));
                     continue;
                 }
 
-                match = legacyPattern.Match(fileName);
-                if (match.Success)
+                if (TryParseLegacySnapshotFileName(legacyPattern, fileName, out timestamp))
                 {
-                    snapshots.Add(new Snapshot(path, fileName, LegacySequence, match.Groups[1].Value));
+                    snapshots.Add(new Snapshot(path, fileName, LegacySequence, timestamp));
                 }
             }
         }
@@ -573,7 +620,8 @@ internal static class SqlitePreMigrationBackup
                     }
 
                     var snapshotFileName = temporaryFileName[..^TemporaryExtension.Length];
-                    if (!currentPattern.IsMatch(snapshotFileName) && !legacyPattern.IsMatch(snapshotFileName))
+                    if (!TryParseCurrentSnapshotFileName(currentPattern, snapshotFileName, out _, out _)
+                        && !TryParseLegacySnapshotFileName(legacyPattern, snapshotFileName, out _))
                     {
                         continue;
                     }
