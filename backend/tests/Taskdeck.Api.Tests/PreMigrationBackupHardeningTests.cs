@@ -39,20 +39,40 @@ public sealed class PreMigrationBackupHardeningTests : IDisposable
         var staleWal = staleTemporary + "-wal";
         var staleShm = staleTemporary + "-shm";
         var recentTemporary = ManagedTemporarySnapshot("20260102T000000000Z", "000002");
+        var oldTemporaryWithRecentWal = ManagedTemporarySnapshot("20260103T000000000Z", "000003");
+        var recentWal = oldTemporaryWithRecentWal + "-wal";
         var unrelatedTemporary = Path.Combine(_backupDirectory, "manual-copy.db.tmp");
 
-        foreach (var path in new[] { staleTemporary, staleWal, staleShm, recentTemporary, unrelatedTemporary })
+        foreach (var path in new[]
+                 {
+                     staleTemporary,
+                     staleWal,
+                     staleShm,
+                     recentTemporary,
+                     oldTemporaryWithRecentWal,
+                     recentWal,
+                     unrelatedTemporary,
+                 })
         {
             File.WriteAllText(path, "orphan fixture");
         }
 
         var staleAt = DateTime.UtcNow.Subtract(TimeSpan.FromDays(2));
-        foreach (var path in new[] { staleTemporary, staleWal, staleShm, unrelatedTemporary })
+        foreach (var path in new[]
+                 {
+                     staleTemporary,
+                     staleWal,
+                     staleShm,
+                     oldTemporaryWithRecentWal,
+                     unrelatedTemporary,
+                 })
         {
             File.SetLastWriteTimeUtc(path, staleAt);
         }
 
-        File.SetLastWriteTimeUtc(recentTemporary, DateTime.UtcNow);
+        var recentAt = DateTime.UtcNow;
+        File.SetLastWriteTimeUtc(recentTemporary, recentAt);
+        File.SetLastWriteTimeUtc(recentWal, recentAt);
 
         var created = SqlitePreMigrationBackup.Create(
             _dbPath,
@@ -64,6 +84,9 @@ public sealed class PreMigrationBackupHardeningTests : IDisposable
         File.Exists(staleWal).Should().BeFalse("the stale staging file's WAL sidecar belongs to the same orphan");
         File.Exists(staleShm).Should().BeFalse("the stale staging file's SHM sidecar belongs to the same orphan");
         File.Exists(recentTemporary).Should().BeTrue("a young staging file may still belong to another live process");
+        File.Exists(oldTemporaryWithRecentWal).Should().BeTrue(
+            "a recently active SQLite sidecar means the staging set may still belong to a live process");
+        File.Exists(recentWal).Should().BeTrue("cleanup must preserve the complete live staging set");
         File.Exists(unrelatedTemporary).Should().BeTrue("cleanup must only touch this helper's strict filename contract");
     }
 
