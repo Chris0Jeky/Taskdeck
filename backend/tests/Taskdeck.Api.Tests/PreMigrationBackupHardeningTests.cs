@@ -91,6 +91,43 @@ public sealed class PreMigrationBackupHardeningTests : IDisposable
     }
 
     [Fact]
+    public void Backup_discovers_sidecar_only_orphans_and_preserves_recent_or_unrelated_sidecars()
+    {
+        CreateStandaloneWalDatabase();
+        Directory.CreateDirectory(_backupDirectory);
+
+        var staleWalOnly = ManagedTemporarySnapshot("20260104T000000000Z", "000004") + "-wal";
+        var staleShmOnly = ManagedTemporarySnapshot("20260105T000000000Z", "000005") + "-shm";
+        var recentWalOnly = ManagedTemporarySnapshot("20260106T000000000Z", "000006") + "-wal";
+        var unrelatedWalOnly = Path.Combine(_backupDirectory, "manual-copy.db.tmp-wal");
+
+        foreach (var path in new[] { staleWalOnly, staleShmOnly, recentWalOnly, unrelatedWalOnly })
+        {
+            File.WriteAllText(path, "sidecar-only orphan fixture");
+        }
+
+        var staleAt = DateTime.UtcNow.Subtract(TimeSpan.FromDays(2));
+        File.SetLastWriteTimeUtc(staleWalOnly, staleAt);
+        File.SetLastWriteTimeUtc(staleShmOnly, staleAt);
+        File.SetLastWriteTimeUtc(unrelatedWalOnly, staleAt);
+        File.SetLastWriteTimeUtc(recentWalOnly, DateTime.UtcNow);
+
+        SqlitePreMigrationBackup.Create(
+            _dbPath,
+            new DatabaseBackupSettings { RetainCount = 5 },
+            logger: null);
+
+        File.Exists(staleWalOnly).Should().BeFalse(
+            "cleanup must retry a stale WAL sidecar even when an earlier pass already removed the main staging file");
+        File.Exists(staleShmOnly).Should().BeFalse(
+            "cleanup must retry a stale SHM sidecar even when an earlier pass already removed the main staging file");
+        File.Exists(recentWalOnly).Should().BeTrue(
+            "a recent sidecar-only set may still belong to an active process and must not be reclaimed");
+        File.Exists(unrelatedWalOnly).Should().BeTrue(
+            "sidecar discovery must still enforce the helper's strict managed filename contract");
+    }
+
+    [Fact]
     public void Retention_orders_and_prunes_sequences_larger_than_long_max_value()
     {
         CreateStandaloneWalDatabase();
