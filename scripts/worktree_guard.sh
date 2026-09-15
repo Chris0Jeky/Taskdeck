@@ -20,7 +20,7 @@
 # Exit/return codes (unchanged contract):
 #   0 - inside a valid linked worktree
 #   1 - FATAL: main checkout / not a linked worktree / HEAD expectation unmet
-#   2 - ERROR: not inside a git repository, or the layout could not be read
+#   2 - ERROR: setup/configuration failure, or repository layout unreadable
 #
 # Exports on success:
 #   WT_REPO_ROOT    - absolute path to the worktree's git toplevel
@@ -177,6 +177,11 @@ fi
 
 _wt_expect_head="${WT_EXPECT_HEAD:-any}"
 _wt_expect_branch="${WT_EXPECT_BRANCH:-}"
+if [ -n "$_wt_expect_branch" ] && [ "$_wt_expect_head" = "detached" ]; then
+    echo "ERROR [worktree_guard]: WT_EXPECT_HEAD=detached cannot be combined with WT_EXPECT_BRANCH." >&2
+    _wt_cleanup
+    return 2 2>/dev/null || exit 2
+fi
 if [ -n "$_wt_expect_branch" ] && [ "$_wt_expect_head" = "any" ]; then
     _wt_expect_head="branch"
 fi
