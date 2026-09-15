@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Cross-shell regression contract for contradictory worktree HEAD expectations.
-# Supplying a branch name while explicitly requiring a detached HEAD is a caller
-# setup error, not a condition either guard may silently resolve or ignore.
+# Cross-shell regression contract for malformed or contradictory worktree HEAD
+# expectations. These are caller setup errors, not conditions either guard may
+# silently resolve, normalize differently, or treat as ordinary HEAD mismatch.
 
 set -euo pipefail
 
@@ -42,16 +42,17 @@ assert_setup_error() {
     local name="$1"
     local code="$2"
     local output="$3"
+    local expected="$4"
 
     if [ "$code" -ne 2 ]; then
         printf '%s\n' "$output" >&2
-        fail "$name must exit 2 for contradictory expectations (got $code)"
+        fail "$name must exit 2 for invalid expectations (got $code)"
     fi
-    if ! printf '%s' "$output" | grep -qF -- "cannot be combined"; then
+    if ! printf '%s' "$output" | grep -qF -- "$expected"; then
         printf '%s\n' "$output" >&2
-        fail "$name did not explain the contradictory expectations"
+        fail "$name did not explain the invalid expectations (missing '$expected')"
     fi
-    pass "$name rejects contradictory expectations as a setup error"
+    pass "$name rejects invalid expectations as a setup error"
 }
 
 if [ ! -f "$SH_GUARD" ] || [ ! -f "$PS_GUARD" ]; then
@@ -74,7 +75,19 @@ sh_output="$(
 )"
 sh_code=$?
 set -e
-assert_setup_error "shell guard" "$sh_code" "$sh_output"
+assert_setup_error "shell guard contradictory expectation" "$sh_code" "$sh_output" "cannot be combined"
+
+set +e
+sh_whitespace_output="$(
+    cd -- "$FIXTURE_ROOT/detached"
+    WT_EXPECT_HEAD=any \
+    WT_EXPECT_BRANCH='   ' \
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
+sh_whitespace_code=$?
+set -e
+assert_setup_error "shell guard whitespace-only branch" \
+    "$sh_whitespace_code" "$sh_whitespace_output" "cannot be whitespace-only"
 
 if [ -z "$PS_EXE" ]; then
     printf '  SKIP: PowerShell guard contract (no powershell/pwsh on PATH)\n'
@@ -88,7 +101,20 @@ else
     )"
     ps_code=$?
     set -e
-    assert_setup_error "PowerShell guard" "$ps_code" "$ps_output"
+    assert_setup_error "PowerShell guard contradictory expectation" \
+        "$ps_code" "$ps_output" "cannot be combined"
+
+    set +e
+    ps_whitespace_output="$(
+        cd -- "$FIXTURE_ROOT/detached"
+        "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
+            -ExpectHead Any \
+            -ExpectedBranch '   ' 2>&1
+    )"
+    ps_whitespace_code=$?
+    set -e
+    assert_setup_error "PowerShell guard whitespace-only branch" \
+        "$ps_whitespace_code" "$ps_whitespace_output" "cannot be whitespace-only"
 fi
 
 printf 'worktree_guard expectation contract passed.\n'
