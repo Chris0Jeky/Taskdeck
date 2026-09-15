@@ -12,6 +12,11 @@ import { logWarn } from '../utils/errorReporting'
  * the keyboard. Binding the overlay to `visualViewport.offsetTop` /
  * `visualViewport.height` keeps those actions on screen.
  *
+ * Browser pinch zoom also changes those measurements, but it is not a keyboard
+ * contraction. While `visualViewport.scale` is above 1, browser zoom owns
+ * navigation and this composable exposes the caller's normal fallback instead.
+ * Returning to scale 1 resumes visual-viewport geometry on the next event.
+ *
  * Two custom properties are emitted, namespaced by `prefix`:
  *   `${prefix}-visual-viewport-height`
  *   `${prefix}-visual-viewport-offset-top`
@@ -37,11 +42,11 @@ export interface UseVisualViewportOptions {
 }
 
 export interface UseVisualViewportResult {
-  /** True when `window.visualViewport` is present and being observed. */
+  /** True when visual-viewport geometry is present and actively being followed. */
   supported: Ref<boolean>
-  /** Current visual viewport height in CSS pixels (layout height when unsupported). */
+  /** Current visual viewport height in CSS pixels (layout height when unsupported or zoomed). */
   height: Ref<number>
-  /** Current visual viewport top offset in CSS pixels (0 when unsupported). */
+  /** Current visual viewport top offset in CSS pixels (0 when unsupported or zoomed). */
   offsetTop: Ref<number>
   /** Bind to an element's `:style`. Empty object under the `'unset'` fallback. */
   style: ComputedRef<Record<string, string>>
@@ -70,9 +75,12 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
     }
 
     const visualViewport = window.visualViewport
-    supported.value = Boolean(visualViewport)
-    height.value = visualViewport?.height ?? window.innerHeight
-    offsetTop.value = visualViewport?.offsetTop ?? 0
+    const followsVisualViewport = Boolean(visualViewport)
+      && (visualViewport?.scale ?? 1) <= 1
+
+    supported.value = followsVisualViewport
+    height.value = followsVisualViewport ? visualViewport!.height : window.innerHeight
+    offsetTop.value = followsVisualViewport ? visualViewport!.offsetTop : 0
   }
 
   // Read eagerly so the very first render is already bound to the visual
