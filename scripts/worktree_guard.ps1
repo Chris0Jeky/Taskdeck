@@ -239,6 +239,10 @@ if ($symbolicHead.Succeeded -and $symbolicHead.ExitCode -eq 0 -and $symbolicHead
 $headState = if ([string]::IsNullOrEmpty($headBranch)) { "detached" } else { "branch" }
 
 $effectiveExpectHead = $ExpectHead
+if (-not [string]::IsNullOrEmpty($ExpectedBranch) -and [string]::IsNullOrWhiteSpace($ExpectedBranch)) {
+    Write-Error "ERROR [worktree_guard]: -ExpectedBranch cannot be whitespace-only." -ErrorAction Continue
+    exit 2
+}
 if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $effectiveExpectHead -eq "Detached") {
     Write-Error "ERROR [worktree_guard]: -ExpectHead Detached cannot be combined with -ExpectedBranch." -ErrorAction Continue
     exit 2
