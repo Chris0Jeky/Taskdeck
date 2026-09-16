@@ -312,7 +312,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
         if (_context.Database.IsSqlite())
         {
-            // SQLite cannot translate ORDER BY on a DateTimeOffset column in LINQ, so the ordering +
+            // SQLite cannot translate ORDER BY on a DateTimeOffset column from LINQ, so the ordering +
             // LIMIT/OFFSET live in raw SQL. The (CreatedAt desc, Id) total order keeps paging stable so no
             // row is skipped or duplicated across pages. The re-sort defensively re-establishes that order
             // in case EF reshapes the query; the tie-break uses Id.ToString() with an ordinal comparison so
