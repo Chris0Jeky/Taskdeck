@@ -93,16 +93,15 @@ describe('timeZone test helper (#2943)', () => {
       })
     })
 
-    it('resolves a wall clock on the far side of a DST transition', () => {
-      // 01:30 on 2026-11-01 is ambiguous in New York (it happens twice); the
-      // helper must still land on an instant that shows exactly that clock.
-      const instant = instantAtZonedWallClock([2026, 10, 1, 1, 30, 0], 'America/New_York')
-
-      expect(zonedParts(instant, 'America/New_York')).toMatchObject({
-        month: 10,
-        day: 1,
-        hour: 1,
-        minute: 30,
+    it.each([
+      { zone: 'America/New_York', wall: [2026, 10, 1, 1, 30, 0], expected: '2026-11-01T05:30:00.000Z' },
+      { zone: 'Europe/Berlin', wall: [2026, 9, 25, 2, 30, 0], expected: '2026-10-25T01:30:00.000Z' },
+    ])('pins the existing overlap occurrence in $zone without promising one global policy', ({ zone, wall, expected }) => {
+      const instant = instantAtZonedWallClock(wall as WallClock, zone)
+      expect(instant.toISOString()).toBe(expected)
+      expect(zonedParts(instant, zone)).toEqual({
+        year: wall[0], month: wall[1], day: wall[2],
+        hour: wall[3], minute: wall[4], second: wall[5],
       })
     })
 
@@ -207,13 +206,38 @@ describe('timeZone test helper (#2943)', () => {
       // Installed BEFORE useFakeTimers, the Intl default zone is discarded —
       // vitest swaps `Intl` itself for a clock-aware stand-in. `Date`'s local
       // accessors survive because those are patched on `Date.prototype`.
-      restore = installTimeZone('Pacific/Kiritimati')
-      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('Pacific/Kiritimati')
+      const hostZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const installedZone = hostZone === 'Pacific/Kiritimati' ? 'Pacific/Midway' : 'Pacific/Kiritimati'
+      const instant = instantAtZonedWallClock([2026, 7, 19, 12, 0, 0], installedZone)
+      expect(installedZone).not.toBe(hostZone)
+      restore = installTimeZone(installedZone)
+      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(installedZone)
 
       vi.useFakeTimers()
 
-      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).not.toBe('Pacific/Kiritimati')
-      expect(new Date(Date.UTC(2026, 7, 18, 22, 0, 0)).getDate()).toBe(19)
+      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(hostZone)
+      expect(new Date(instant.getTime()).getDate()).toBe(19)
+    })
+
+    it('does not replace the host local-parts constructor, parser or local setters', () => {
+      const constructor = Date
+      const parser = Date.parse
+      const setter = Date.prototype.setHours
+      const localPartsBefore = new Date(2026, 7, 19, 12, 0, 0).getTime()
+      const parsedBefore = Date.parse('2026-08-19T12:00:00')
+      const before = new Date(localPartsBefore)
+      before.setHours(24, 0, 0, 0)
+
+      restore = installTimeZone('Pacific/Kiritimati')
+
+      expect(Date).toBe(constructor)
+      expect(Date.parse).toBe(parser)
+      expect(Date.prototype.setHours).toBe(setter)
+      expect(new Date(2026, 7, 19, 12, 0, 0).getTime()).toBe(localPartsBefore)
+      expect(Date.parse('2026-08-19T12:00:00')).toBe(parsedBefore)
+      const after = new Date(localPartsBefore)
+      after.setHours(24, 0, 0, 0)
+      expect(after.getTime()).toBe(before.getTime())
     })
 
     it('restores exactly once, however many times it is called', () => {
