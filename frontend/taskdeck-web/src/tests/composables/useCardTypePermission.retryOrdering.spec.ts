@@ -33,10 +33,6 @@ function board(canWrite = true): Board {
   } as Board
 }
 
-function detail(canWrite = true): BoardDetail {
-  return { ...board(canWrite), columns: [] } as BoardDetail
-}
-
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason: unknown) => void
