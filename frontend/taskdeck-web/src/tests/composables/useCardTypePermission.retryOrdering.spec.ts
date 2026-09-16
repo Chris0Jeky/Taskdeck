@@ -148,4 +148,42 @@ describe('useCardTypePermission explicit retry ordering', () => {
     expect(api.readsBlocked.value).toBe(false)
     wrapper.unmount()
   })
+
+  it.each([
+    [false, true],
+    [true, false],
+  ] as const)(
+    'lets a board payload committed after the retry starts win over the direct %s response when it says %s',
+    async (directPermission, newerStorePermission) => {
+      const firstRead = deferred<BoardDetail>()
+      const manualRetry = deferred<BoardDetail>()
+      vi.mocked(boardsApi.getBoard)
+        .mockReturnValueOnce(firstRead.promise)
+        .mockReturnValueOnce(manualRetry.promise)
+      const { api, wrapper } = create()
+      await enterDeniedRecovery(api, firstRead)
+
+      store.currentBoardRequestGeneration = 2
+      const retry = api.refreshPermission()
+      await flushPromises()
+      const retrySignal = vi.mocked(boardsApi.getBoard).mock.calls[1]![1]!.signal!
+
+      // This store read starts after the explicit retry. Its committed payload
+      // is newer evidence and must remain authoritative even if the direct
+      // permission read answers first with the opposite result.
+      store.currentBoardRequestGeneration = 3
+      store.currentBoard = board(newerStorePermission)
+      store.currentBoardPayloadGeneration = 3
+      await flushPromises()
+
+      expect(api.canWrite.value).toBe(newerStorePermission)
+      expect(retrySignal.aborted).toBe(true)
+
+      manualRetry.resolve({ ...board(directPermission), columns: [] } as BoardDetail)
+      await retry
+
+      expect(api.canWrite.value).toBe(newerStorePermission)
+      wrapper.unmount()
+    },
+  )
 })

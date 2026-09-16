@@ -68,6 +68,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   // later retry fails transiently or returns an inconclusive legacy payload.
   let explicitRetrySequence = 0
   let activeExplicitRetry: number | null = null
+  let explicitRetryStartGeneration: number | null = null
   let deferredStorePermission: DeferredStorePermission | null = null
 
   /** The permission this composable's own server read confirmed, scoped to its board. */
@@ -263,11 +264,13 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   async function refreshPermission() {
     const owner = ++explicitRetrySequence
     activeExplicitRetry = owner
+    explicitRetryStartGeneration = boardRequestGeneration.value
     deferredStorePermission = null
     const outcome = await beginPermissionRecovery(false)
     if (activeExplicitRetry !== owner) return
 
     activeExplicitRetry = null
+    explicitRetryStartGeneration = null
     const deferred = deferredStorePermission
     deferredStorePermission = null
     if (outcome === 'transient' && deferred) {
@@ -279,6 +282,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   async function recoverFromPermissionDenied() {
     explicitRetrySequence++
     activeExplicitRetry = null
+    explicitRetryStartGeneration = null
     deferredStorePermission = null
     await beginPermissionRecovery(true)
   }
@@ -289,6 +293,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       cancelRead()
       explicitRetrySequence++
       activeExplicitRetry = null
+      explicitRetryStartGeneration = null
       deferredStorePermission = null
       confirmed.value = null
       failedBoardId.value = null
@@ -319,6 +324,17 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       payloadGeneration,
     }
     if (activeExplicitRetry !== null) {
+      const isNewerThanRetryStart = explicitRetryStartGeneration !== null &&
+        candidate.payloadGeneration !== null &&
+        candidate.payloadGeneration > explicitRetryStartGeneration
+      if (permissionWasRevoked || isNewerThanRetryStart) {
+        // A restrictive transition is safe to consume immediately. A store
+        // request that began after the explicit retry is also newer evidence;
+        // it supersedes the retry, whose direct response is now stale even if
+        // that response arrives first.
+        acceptStorePermission(candidate)
+        return
+      }
       // The store request started before the explicit retry, so its completion
       // cannot abort or overrule that later request. Retain it as fallback for
       // a transient retry failure; a definitive retry result discards it.
