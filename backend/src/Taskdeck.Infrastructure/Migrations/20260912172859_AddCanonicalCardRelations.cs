@@ -23,9 +23,9 @@ namespace Taskdeck.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_CardRelations", x => new { x.BoardId, x.SourceCardId, x.TargetCardId, x.RelationType });
-                    table.CheckConstraint("CK_CardRelations_Endpoints", "SourceCardId <> TargetCardId");
-                    table.CheckConstraint("CK_CardRelations_Kind", "RelationType IN ('relates-to', 'blocks', 'duplicates', 'spawned-from')");
-                    table.CheckConstraint("CK_CardRelations_SymmetricOrder", "RelationType <> 'relates-to' OR SourceCardId < TargetCardId");
+                    table.CheckConstraint("CK_CardRelations_Endpoints", "\"SourceCardId\" <> \"TargetCardId\"");
+                    table.CheckConstraint("CK_CardRelations_Kind", "\"RelationType\" IN ('relates-to', 'blocks', 'duplicates', 'spawned-from')");
+                    table.CheckConstraint("CK_CardRelations_SymmetricOrder", "\"RelationType\" <> 'relates-to' OR \"SourceCardId\" < \"TargetCardId\"");
                     table.ForeignKey(
                         name: "FK_CardRelations_BoardDependencies_BoardId",
                         column: x => x.BoardId,
