@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,9 @@ namespace Taskdeck.Infrastructure.Persistence;
 /// <para>
 /// <b>Atomicity.</b> The snapshot is written to a <c>.tmp</c> sibling and moved into place only
 /// after it is complete and its WAL has been checkpointed away, so a crashed or failed backup
-/// can never leave a truncated file under a name that looks like a usable backup.
+/// can never leave a truncated file under a name that looks like a usable backup. Strictly named
+/// staging files older than one day are pruned after the next successful snapshot, including
+/// their SQLite sidecars; younger files are left alone because another process may still own them.
 /// </para>
 /// <para>
 /// <b>Retention (#1839).</b> Snapshots are named
@@ -49,9 +52,9 @@ namespace Taskdeck.Infrastructure.Persistence;
 /// <para>
 /// <b>Fail-closed.</b> Any failure to produce the snapshot throws
 /// <see cref="PreMigrationBackupException"/>, which propagates out of startup and prevents the
-/// migration. Retention pruning is deliberately NOT fail-closed: the fresh backup already
-/// exists, and refusing to start because a stale backup could not be deleted would trade a real
-/// protection for a cosmetic one. Pruning failures are logged as warnings, never swallowed
+/// migration. Retention and orphan pruning are deliberately NOT fail-closed: the fresh backup
+/// already exists, and refusing to start because a stale file could not be deleted would trade a
+/// real protection for a cosmetic one. Pruning failures are logged as warnings, never swallowed
 /// silently.
 /// </para>
 /// </remarks>
@@ -65,6 +68,8 @@ internal static class SqlitePreMigrationBackup
 
     internal const string FileExtension = ".db";
 
+    private const string TemporaryExtension = ".tmp";
+
     /// <summary>
     /// Sortable, filename-safe UTC timestamp. Millisecond precision, and fixed width so it never
     /// changes the ordinal ordering of the file names. It is descriptive only: retention orders
@@ -73,9 +78,16 @@ internal static class SqlitePreMigrationBackup
     private const string TimestampFormat = "yyyyMMdd'T'HHmmssfff'Z'";
 
     /// <summary>
+    /// Minimum age before a strictly named staging snapshot may be treated as crash debris.
+    /// This intentionally exceeds an ordinary backup by orders of magnitude so another process's
+    /// live staging file is not reclaimed merely because two Taskdeck hosts start together.
+    /// </summary>
+    private static readonly TimeSpan OrphanedTemporarySnapshotMinimumAge = TimeSpan.FromDays(1);
+
+    /// <summary>
     /// Width of the monotonic sequence suffix. Six digits keep the common case aligned; the
-    /// pattern accepts more, and ordering parses the digits as a number rather than comparing
-    /// them as text, so overflowing the width is a cosmetic event and not an ordering bug.
+    /// pattern accepts more, and ordering uses <see cref="BigInteger"/> so every sequence that can
+    /// fit in a filesystem entry remains orderable and eligible for retention.
     /// </summary>
     private const string SequenceFormat = "D6";
 
@@ -84,7 +96,14 @@ internal static class SqlitePreMigrationBackup
     /// sequence suffix. Every sequenced snapshot was necessarily written by newer code and is
     /// therefore newer, so legacy files sort oldest and age out first. See <see cref="Prune"/>.
     /// </summary>
-    private const long LegacySequence = -1;
+    private static readonly BigInteger LegacySequence = BigInteger.MinusOne;
+
+    /// <summary>
+    /// Snapshot names use ordinal identity. On a case-sensitive filesystem two case-distinct
+    /// names are separate entries and must not suppress one another; on a case-insensitive
+    /// filesystem they cannot coexist in the first place.
+    /// </summary>
+    private static readonly StringComparer SnapshotFileNameComparer = StringComparer.Ordinal;
 
     /// <summary>
     /// Busy timeout executed as <c>PRAGMA busy_timeout</c> on the SOURCE connection — the live
@@ -144,7 +163,7 @@ internal static class SqlitePreMigrationBackup
                 ex);
         }
 
-        var temporaryPath = destinationPath + ".tmp";
+        var temporaryPath = destinationPath + TemporaryExtension;
 
         try
         {
@@ -165,6 +184,9 @@ internal static class SqlitePreMigrationBackup
             destinationPath,
             databaseFilePath);
 
+        // Cleanup only after the protective snapshot exists. A cleanup failure is therefore a
+        // capacity warning, never a reason to discard the successfully created recovery point.
+        PruneOrphanedTemporarySnapshots(directory, key, legacyKey, DateTime.UtcNow, logger);
         Prune(directory, key, legacyKey, settings.RetainCount, logger);
 
         return destinationPath;
@@ -248,12 +270,12 @@ internal static class SqlitePreMigrationBackup
     {
         var timestamp = DateTimeOffset.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
 
-        var sequence = 1L;
+        var sequence = BigInteger.One;
         foreach (var existing in EnumerateSnapshots(directory, key, legacyKey))
         {
             if (existing.Sequence >= sequence)
             {
-                sequence = existing.Sequence + 1;
+                sequence = existing.Sequence + BigInteger.One;
             }
         }
 
@@ -261,16 +283,16 @@ internal static class SqlitePreMigrationBackup
         {
             var candidate = Path.Combine(directory, BuildFileName(key, timestamp, sequence));
 
-            if (!File.Exists(candidate) && !File.Exists(candidate + ".tmp"))
+            if (!File.Exists(candidate) && !File.Exists(candidate + TemporaryExtension))
             {
                 return candidate;
             }
 
-            sequence++;
+            sequence += BigInteger.One;
         }
     }
 
-    private static string BuildFileName(string key, string timestamp, long sequence) =>
+    private static string BuildFileName(string key, string timestamp, BigInteger sequence) =>
         key
         + FileNameMarker
         + timestamp
@@ -279,22 +301,78 @@ internal static class SqlitePreMigrationBackup
         + FileExtension;
 
     /// <summary>A managed snapshot file, with the two fields retention orders by.</summary>
-    private readonly record struct Snapshot(string Path, string FileName, long Sequence, string Timestamp);
+    private readonly record struct Snapshot(string Path, string FileName, BigInteger Sequence, string Timestamp);
 
     /// <summary>
     /// Matches the current naming scheme for one database: full file name, marker, timestamp,
-    /// sequence.
+    /// sequence. ASCII digits are explicit: .NET's <c>\d</c> also accepts Unicode decimal digits,
+    /// which this helper never emits and must therefore never treat as a managed deletion target.
     /// </summary>
     private static Regex CurrentNamePattern(string key) => new(
-        "^" + Regex.Escape(key + FileNameMarker) + @"(\d{8}T\d{9}Z)-(\d{6,})" + Regex.Escape(FileExtension) + "$",
+        "^" + Regex.Escape(key + FileNameMarker) + @"([0-9]{8}T[0-9]{9}Z)-([0-9]{6,})" + Regex.Escape(FileExtension) + "$",
         RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Matches the pre-#1839 naming scheme: file name stem, marker, timestamp, no sequence.
     /// </summary>
     private static Regex LegacyNamePattern(string legacyKey) => new(
-        "^" + Regex.Escape(legacyKey + FileNameMarker) + @"(\d{8}T\d{9}Z)" + Regex.Escape(FileExtension) + "$",
+        "^" + Regex.Escape(legacyKey + FileNameMarker) + @"([0-9]{8}T[0-9]{9}Z)" + Regex.Escape(FileExtension) + "$",
         RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A regex match is only the lexical first gate. Managed names must round-trip through the
+    /// exact formatter used by <see cref="BuildFileName"/> so cleanup never claims an impossible
+    /// date, a zero sequence, or a differently padded number that Taskdeck could not create.
+    /// </summary>
+    private static bool TryParseCurrentSnapshotFileName(
+        Regex pattern,
+        string fileName,
+        out BigInteger sequence,
+        out string timestamp)
+    {
+        var match = pattern.Match(fileName);
+        timestamp = match.Success ? match.Groups[1].Value : string.Empty;
+        sequence = BigInteger.Zero;
+
+        if (!match.Success
+            || !IsCanonicalTimestamp(timestamp)
+            || !BigInteger.TryParse(
+                match.Groups[2].ValueSpan,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out sequence)
+            || sequence < BigInteger.One)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            sequence.ToString(SequenceFormat, CultureInfo.InvariantCulture),
+            match.Groups[2].Value,
+            StringComparison.Ordinal);
+    }
+
+    private static bool TryParseLegacySnapshotFileName(
+        Regex pattern,
+        string fileName,
+        out string timestamp)
+    {
+        var match = pattern.Match(fileName);
+        timestamp = match.Success ? match.Groups[1].Value : string.Empty;
+        return match.Success && IsCanonicalTimestamp(timestamp);
+    }
+
+    private static bool IsCanonicalTimestamp(string timestamp) =>
+        DateTimeOffset.TryParseExact(
+            timestamp,
+            TimestampFormat,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var parsed)
+        && string.Equals(
+            parsed.ToString(TimestampFormat, CultureInfo.InvariantCulture),
+            timestamp,
+            StringComparison.Ordinal);
 
     /// <summary>
     /// Finds every managed snapshot for one database in <paramref name="directory"/>, in BOTH the
@@ -336,7 +414,9 @@ internal static class SqlitePreMigrationBackup
 
         // The two globs cannot overlap (one prefix is a proper extension of the other), but a
         // file system that reports a name twice must not produce a duplicate prune candidate.
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Ordinal identity matters on Linux: a malformed case variant must not hide the correctly
+        // cased managed file merely because it was enumerated first.
+        var seen = new HashSet<string>(SnapshotFileNameComparer);
         var snapshots = new List<Snapshot>();
 
         foreach (var glob in globs)
@@ -349,27 +429,19 @@ internal static class SqlitePreMigrationBackup
                     continue;
                 }
 
-                var match = currentPattern.Match(fileName);
-                if (match.Success)
+                if (TryParseCurrentSnapshotFileName(
+                        currentPattern,
+                        fileName,
+                        out var sequence,
+                        out var timestamp))
                 {
-                    // An unparseable sequence means we cannot order the file, and a file we
-                    // cannot order is a file we must not delete.
-                    if (long.TryParse(
-                            match.Groups[2].ValueSpan,
-                            NumberStyles.None,
-                            CultureInfo.InvariantCulture,
-                            out var sequence))
-                    {
-                        snapshots.Add(new Snapshot(path, fileName, sequence, match.Groups[1].Value));
-                    }
-
+                    snapshots.Add(new Snapshot(path, fileName, sequence, timestamp));
                     continue;
                 }
 
-                match = legacyPattern.Match(fileName);
-                if (match.Success)
+                if (TryParseLegacySnapshotFileName(legacyPattern, fileName, out timestamp))
                 {
-                    snapshots.Add(new Snapshot(path, fileName, LegacySequence, match.Groups[1].Value));
+                    snapshots.Add(new Snapshot(path, fileName, LegacySequence, timestamp));
                 }
             }
         }
@@ -490,6 +562,133 @@ internal static class SqlitePreMigrationBackup
                     stale,
                     ex.GetType().Name);
             }
+        }
+    }
+
+    /// <summary>
+    /// Removes crash-old staging files that match this database's strict current or legacy
+    /// snapshot shape. The staging file and either SQLite sidecar are treated as one liveness
+    /// unit: the newest last-write time wins, so an active WAL is never reclaimed because the
+    /// main staging file itself has been quiet. A surviving sidecar can rediscover its canonical
+    /// staging set after a previous partial cleanup, and the marker is deleted last so any
+    /// sidecar failure remains discoverable on the next migration.
+    /// </summary>
+    private static void PruneOrphanedTemporarySnapshots(
+        string directory,
+        string key,
+        string legacyKey,
+        DateTime nowUtc,
+        ILogger? logger)
+    {
+        var currentPattern = CurrentNamePattern(key);
+        var legacyPattern = LegacyNamePattern(legacyKey);
+        var cutoffUtc = nowUtc.Subtract(OrphanedTemporarySnapshotMinimumAge);
+
+        var prefixes = new List<string> { key };
+        if (!string.Equals(key, legacyKey, StringComparison.Ordinal))
+        {
+            prefixes.Add(legacyKey);
+        }
+
+        var globs = new List<string>();
+        foreach (var prefix in prefixes)
+        {
+            var temporaryGlob = prefix + FileNameMarker + "*" + FileExtension + TemporaryExtension;
+            globs.Add(temporaryGlob);
+            globs.Add(temporaryGlob + "-wal");
+            globs.Add(temporaryGlob + "-shm");
+        }
+
+        var seen = new HashSet<string>(SnapshotFileNameComparer);
+
+        try
+        {
+            foreach (var glob in globs)
+            {
+                foreach (var candidatePath in Directory.EnumerateFiles(directory, glob))
+                {
+                    var candidateFileName = Path.GetFileName(candidatePath);
+                    var temporaryFileName = candidateFileName.EndsWith("-wal", StringComparison.Ordinal)
+                        ? candidateFileName[..^"-wal".Length]
+                        : candidateFileName.EndsWith("-shm", StringComparison.Ordinal)
+                            ? candidateFileName[..^"-shm".Length]
+                            : candidateFileName;
+
+                    if (!temporaryFileName.EndsWith(TemporaryExtension, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var snapshotFileName = temporaryFileName[..^TemporaryExtension.Length];
+                    if (!TryParseCurrentSnapshotFileName(currentPattern, snapshotFileName, out _, out _)
+                        && !TryParseLegacySnapshotFileName(legacyPattern, snapshotFileName, out _))
+                    {
+                        continue;
+                    }
+
+                    if (!seen.Add(temporaryFileName))
+                    {
+                        continue;
+                    }
+
+                    var temporaryPath = Path.Combine(directory, temporaryFileName);
+                    var artifacts = new[]
+                    {
+                        temporaryPath + "-wal",
+                        temporaryPath + "-shm",
+                        temporaryPath,
+                    };
+
+                    try
+                    {
+                        var latestWriteUtc = DateTime.MinValue;
+                        foreach (var artifact in artifacts)
+                        {
+                            if (File.Exists(artifact))
+                            {
+                                var lastWriteUtc = File.GetLastWriteTimeUtc(artifact);
+                                if (lastWriteUtc > latestWriteUtc)
+                                {
+                                    latestWriteUtc = lastWriteUtc;
+                                }
+                            }
+                        }
+
+                        if (latestWriteUtc > cutoffUtc)
+                        {
+                            continue;
+                        }
+
+                        foreach (var artifact in artifacts)
+                        {
+                            DeleteIfExists(artifact);
+                        }
+
+                        logger?.LogDebug(
+                            "Pruned orphaned pre-migration backup staging file '{TemporaryPath}' older than {MinimumAge}.",
+                            temporaryPath,
+                            OrphanedTemporarySnapshotMinimumAge);
+                    }
+                    catch (Exception ex) when (IsFileSystemFailure(ex))
+                    {
+                        logger?.LogWarning(
+                            ex,
+                            "Could not inspect or prune orphaned pre-migration backup staging file " +
+                            "'{TemporaryPath}' ({Reason}); it will be retried on the next migration.",
+                            temporaryPath,
+                            ex.GetType().Name);
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (IsFileSystemFailure(ex))
+        {
+            logger?.LogWarning(
+                ex,
+                "Pre-migration backup cleanup could not enumerate orphaned staging files in " +
+                "'{BackupDirectory}' ({Reason}); the new backup was written and startup will continue.",
+                directory,
+                ex.GetType().Name);
         }
     }
 
