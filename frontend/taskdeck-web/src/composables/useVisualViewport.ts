@@ -13,10 +13,10 @@ import { logWarn } from '../utils/errorReporting'
  * `visualViewport.height` keeps those actions on screen.
  *
  * Browser pinch zoom also changes those measurements, but it is not a keyboard
- * contraction. While `visualViewport.scale` is anything other than 1, browser
- * zoom or an inactive viewport owns the geometry and this composable exposes
- * the caller's normal fallback instead. Returning to scale 1 resumes
- * visual-viewport geometry on the next event.
+ * contraction. While `visualViewport.scale` is above 1, browser zoom owns the
+ * geometry, so this composable freezes the last trusted scale-one measurement
+ * when one exists and otherwise exposes the caller's normal fallback. Returning
+ * to scale 1 resumes visual-viewport geometry on the next event.
  *
  * Two custom properties are emitted, namespaced by `prefix`:
  *   `${prefix}-visual-viewport-height`
@@ -43,11 +43,11 @@ export interface UseVisualViewportOptions {
 }
 
 export interface UseVisualViewportResult {
-  /** True when visual-viewport geometry is present and actively being followed. */
+  /** True when visual-viewport geometry is present, including a frozen zoom state. */
   supported: Ref<boolean>
-  /** Current visual viewport height in CSS pixels (layout height when unsupported or zoomed). */
+  /** Current visual viewport height in CSS pixels (layout height before trusted geometry exists). */
   height: Ref<number>
-  /** Current visual viewport top offset in CSS pixels (0 when unsupported or zoomed). */
+  /** Current visual viewport top offset in CSS pixels (0 before trusted geometry exists). */
   offsetTop: Ref<number>
   /** Bind to an element's `:style`. Empty object under the `'unset'` fallback. */
   style: ComputedRef<Record<string, string>>
@@ -68,6 +68,7 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
 
   let observed: VisualViewport | null = null
   let observingLayoutViewport = false
+  let lastTrustedGeometry: { height: number; offsetTop: number } | null = null
 
   function refresh() {
     if (typeof window === 'undefined') {
@@ -76,12 +77,36 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
     }
 
     const visualViewport = window.visualViewport
-    const followsVisualViewport = Boolean(visualViewport)
-      && (visualViewport?.scale ?? 1) === 1
+    if (!visualViewport) {
+      lastTrustedGeometry = null
+      supported.value = false
+      height.value = window.innerHeight
+      offsetTop.value = 0
+      return
+    }
 
-    supported.value = followsVisualViewport
-    height.value = followsVisualViewport ? visualViewport!.height : window.innerHeight
-    offsetTop.value = followsVisualViewport ? visualViewport!.offsetTop : 0
+    const scale = visualViewport.scale ?? 1
+    if (scale === 1) {
+      lastTrustedGeometry = {
+        height: visualViewport.height,
+        offsetTop: visualViewport.offsetTop,
+      }
+      supported.value = true
+      height.value = lastTrustedGeometry.height
+      offsetTop.value = lastTrustedGeometry.offsetTop
+      return
+    }
+
+    if (scale > 1 && lastTrustedGeometry) {
+      supported.value = true
+      height.value = lastTrustedGeometry.height
+      offsetTop.value = lastTrustedGeometry.offsetTop
+      return
+    }
+
+    supported.value = false
+    height.value = window.innerHeight
+    offsetTop.value = 0
   }
 
   // Read eagerly so the very first render is already bound to the visual

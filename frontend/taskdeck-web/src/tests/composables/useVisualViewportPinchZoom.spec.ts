@@ -82,7 +82,7 @@ describe('useVisualViewport pinch zoom policy', () => {
     document.body.innerHTML = ''
   })
 
-  it('uses layout geometry while scale is above one, then resumes keyboard geometry at scale one', async () => {
+  it('freezes the last trusted scale-one geometry while scale is above one, then resumes updates at scale one', async () => {
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
       writable: true,
@@ -97,15 +97,37 @@ describe('useVisualViewport pinch zoom policy', () => {
     synthetic.set({ height: 260, offsetTop: 310, scale: 2 })
     await nextTick()
 
-    expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('900px')
-    expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('0px')
-    expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('false')
+    expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('500px')
+    expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('80px')
+    expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('true')
 
     synthetic.set({ height: 430, offsetTop: 120, scale: 1 })
     await nextTick()
 
     expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('430px')
     expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('120px')
+    expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('uses the layout fallback when it starts zoomed, then accepts scale-one geometry', async () => {
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: 900,
+    })
+    const synthetic = installSyntheticVisualViewport({ height: 260, offsetTop: 310, scale: 2 })
+    const wrapper = mountHost({ prefix: '--card-modal' })
+
+    expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('900px')
+    expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('0px')
+    expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('false')
+
+    synthetic.set({ height: 500, offsetTop: 80, scale: 1 })
+    await nextTick()
+
+    expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('500px')
+    expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('80px')
     expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('true')
     wrapper.unmount()
   })
@@ -131,7 +153,7 @@ describe('useVisualViewport pinch zoom policy', () => {
     },
   )
 
-  it('restores the CSS fallback for unset callers during pinch zoom', async () => {
+  it('keeps trusted geometry for unset callers during pinch zoom', async () => {
     const synthetic = installSyntheticVisualViewport({ height: 500, offsetTop: 80, scale: 1 })
     const wrapper = mountHost({ prefix: '--td-dialog', fallback: 'unset' })
 
@@ -140,8 +162,8 @@ describe('useVisualViewport pinch zoom policy', () => {
     synthetic.set({ height: 260, offsetTop: 310, scale: 2 })
     await nextTick()
 
-    expect(property(wrapper, '--td-dialog-visual-viewport-height')).toBe('')
-    expect(property(wrapper, '--td-dialog-visual-viewport-offset-top')).toBe('')
+    expect(property(wrapper, '--td-dialog-visual-viewport-height')).toBe('500px')
+    expect(property(wrapper, '--td-dialog-visual-viewport-offset-top')).toBe('80px')
     wrapper.unmount()
   })
 })
