@@ -34,8 +34,19 @@ $script:GhApiValueFlags = @(
 # therefore permitted in exactly these positions and refused in every other argument.
 $script:GhApiFieldFlags = @("-f", "--raw-field", "-F", "--field")
 
-function Parse-GhApiArguments {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments)
+# Common value-owning flags used by the allowlisted read commands. This is used only to keep the
+# browser check from inspecting a value token as if it were an option (for example, --search -wip).
+$script:GhReadValueFlags = @(
+    "--app", "--author", "--assignee", "--base", "--branch", "--jq", "--json", "--label",
+    "--limit", "--mention", "--owner", "--repo", "--search", "--state", "--template", "--user",
+    "--workflow"
+)
+
+function Parse-GhArguments {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$ValueFlags
+    )
 
     $entries = New-Object System.Collections.Generic.List[object]
     $fields = New-Object System.Collections.Generic.List[object]
@@ -68,11 +79,11 @@ function Parse-GhApiArguments {
                 $flagName = $token
             }
         }
-        elseif ($script:GhApiValueFlags -ccontains $token) {
+        elseif ($ValueFlags -ccontains $token) {
             $flagName = $token
         }
 
-        if ($null -ne $flagName -and $script:GhApiValueFlags -ccontains $flagName) {
+        if ($null -ne $flagName -and $ValueFlags -ccontains $flagName) {
             $isField = $script:GhApiFieldFlags -ccontains $flagName
             $isTypedField = $flagName -in @("-F", "--field")
             $valueIndex = -1
@@ -127,11 +138,8 @@ function Parse-GhApiArguments {
         }
 
         if ($token.StartsWith("-", [System.StringComparison]::Ordinal)) {
-            foreach ($shortValueFlag in @("-X", "-f", "-F", "-q", "-t", "-p")) {
-                if ($token.StartsWith($shortValueFlag, [System.StringComparison]::Ordinal) -and $token.Length -gt $shortValueFlag.Length) {
-                    [void]$attachedShortFlags.Add($token)
-                    break
-                }
+            if ($token.Length -gt 2) {
+                [void]$attachedShortFlags.Add($token)
             }
             [void]$entries.Add([pscustomobject]@{
                     Index          = $index
@@ -195,7 +203,7 @@ function Get-GhApiFieldValueIndexes {
     }
 
     $arguments = @($CommandTokens | Select-Object -Skip 2)
-    $parsed = Parse-GhApiArguments -Arguments $arguments
+    $parsed = Parse-GhArguments -Arguments $arguments -ValueFlags $script:GhApiValueFlags
     foreach ($index in $parsed.FieldValueIndexes) {
         [void]$indexes.Add($index + 2)
     }
@@ -618,12 +626,12 @@ function Get-GraphQlQueryText {
 function Assert-GhApiReadCommand {
     param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments)
 
-    $parsed = Parse-GhApiArguments -Arguments $Arguments
+    $parsed = Parse-GhArguments -Arguments $Arguments -ValueFlags $script:GhApiValueFlags
     if ($null -eq $parsed.Endpoint) {
         Deny-InventoryCommand "gh api requires an endpoint"
     }
     if (@($parsed.AttachedShortFlags).Count -gt 0) {
-        Deny-InventoryCommand "gh api attached short options are ambiguous; pass -X, -f, or -F and its value as separate argv"
+        Deny-InventoryCommand "gh api attached short options (including clusters) are ambiguous; pass -X, -H, -f, or -F and its value as separate argv"
     }
     if (@($parsed.MissingValueFlags).Count -gt 0) {
         Deny-InventoryCommand "gh api option '$($parsed.MissingValueFlags[0])' requires a value"
@@ -677,11 +685,14 @@ function Assert-GhReadCommand {
     if ($Arguments.Count -eq 0) {
         Deny-InventoryCommand "gh requires an allowlisted read subcommand"
     }
-    foreach ($argument in $Arguments) {
+    $parsed = Parse-GhArguments -Arguments $Arguments -ValueFlags $script:GhReadValueFlags
+    foreach ($entry in @($parsed.Entries)) {
+        $argument = $entry.Token
         $isClusteredBrowserShort = $argument.StartsWith("-", [System.StringComparison]::Ordinal) -and
             -not $argument.StartsWith("--", [System.StringComparison]::Ordinal) -and
             $argument.Length -gt 1 -and $argument.Substring(1).Contains("w")
-        if ($argument -eq "--web" -or $argument.StartsWith("--web=") -or $isClusteredBrowserShort) {
+        if (($entry.Kind -eq "Option" -or $entry.Kind -eq "ValueOption") -and
+            ($argument -eq "--web" -or $argument.StartsWith("--web=") -or $isClusteredBrowserShort)) {
             Deny-InventoryCommand "--web/-w launches an external interactive surface"
         }
     }
@@ -829,6 +840,7 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Allowed @("gh", "api", "graphql", "-f", 'query=query($owner:String!){repositoryOwner(login:$owner){login}}', "-F", "owner=example")
     Assert-Allowed @("gh", "run", "watch", "123")
     Assert-Allowed @("gh", "pr", "checks", "1", "--watch")
+    Assert-Allowed @("gh", "pr", "list", "--search", "-wip", "--json", "number")
 
     # Values that resemble another option belong to the value-owning flag immediately before them.
     # The validator must not reinterpret a jq expression as a method, typed field, or input path.
@@ -1086,7 +1098,12 @@ function Invoke-ReadOnlyInventorySelfTest {
         @("git", "diff", "-U", "--textconv", "HEAD~1"),
         @("git", "grep", "-e", "--output=result.patch", "--", "src"),
         @("git", "grep", "--no-index", "-e", "secret", "frontend/taskdeck-web/.env.local"),
-        @("git", "worktree", "LIST", "--porcelain")
+        @("git", "worktree", "LIST", "--porcelain"),
+        @("gh", "api", "repos/example/repo/issues", "-iXPOST"),
+        @("gh", "api", "repos/example/repo/issues", "-iXDELETE"),
+        @("gh", "api", "repos/example/repo/issues", "-iF", "foo=@C:\\Windows\\NO_SUCH_FILE"),
+        @("gh", "api", "repos/example/repo/issues", "-qiF", "foo=@C:\\Windows\\NO_SUCH_FILE"),
+        @("gh", "api", "repos/example/repo/issues", "-HHeader:x")
     )) {
         try {
             Invoke-ValidatedInventoryCommand -CommandTokens $rejectedArgv -Launcher $fakeLauncher
