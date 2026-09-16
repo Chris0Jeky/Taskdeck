@@ -108,23 +108,29 @@ private feedback outside the repository.
 
 ### A3. Create the accounts in the safe order
 
-1. The maintainer opens the private URL and registers the first owner account.
-2. Mint exactly one seven-day invite from the private host shell:
+1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning both named accounts.
+2. Before opening the private URL, mint the seven-day first-owner invite from the private host
+   shell as the non-root API user:
 
    ```bash
-   docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api \
+   docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api \
      dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
    ```
 
-3. Send the private URL, invite code, and privacy note through a channel already trusted by both
+3. The maintainer opens the private URL, chooses **Register**, and uses that first-owner invite to
+   create the owner account. Then mint one separate seven-day participant invite with the same
+   non-root CLI command. Keep both generated codes private and use each only for its named account.
+4. Send the private URL, participant invite code, and privacy note through a channel already trusted by both
    people. Do not put the code in the shared feedback note.
-4. The participant registers using the invitee steps below.
-5. Immediately after registration, set `TASKDECK_REGISTRATION_MODE=Closed`, recreate the stack, and
+5. The participant registers using the invitee steps below.
+6. Immediately after registration, set `TASKDECK_REGISTRATION_MODE=Closed`, recreate the stack, and
    run the valid-registration 403 probe specified in section 6 of the Stage 1 runbook. An empty-body
    400 response does not prove registration is closed.
-6. Create a small synthetic board and grant the participant `Editor` access through **Board
-   settings → Access**.
-7. Confirm exactly two users exist before continuing.
+7. Create a small synthetic board and grant the participant `Editor` access through **Workspace →
+   Settings → Access** (`/workspace/settings/access`).
+8. Record the two successful registrations and the valid-registration 403 closure evidence before
+   continuing. `GET /api/users` may support an inventory check, but it does not prove that exactly two
+   users exist.
 
 Do not build or request a richer invite-code UI in this slice. Record invite UX friction as a
 finding against the existing registration surface.
@@ -390,7 +396,7 @@ The runbook is ready for a specific participant only when every applicable box i
 - [ ] Participant received the plain-language privacy note.
 - [ ] Private shared feedback note created; no secrets stored in it.
 - [ ] Hosted path: Stage 1 backup and fresh-volume restore drill passed.
-- [ ] Hosted path: outside identity denied; exactly one invite minted.
+- [ ] Hosted path: outside identity denied; first-owner and participant invites minted separately.
 - [ ] Hosted path: maintainer registered first; participant registered second.
 - [ ] Hosted path: registration changed to `Closed` and the valid 403 probe passed.
 - [ ] Local path: release ZIP checksum verified before execution.
@@ -402,13 +408,16 @@ The runbook is ready for a specific participant only when every applicable box i
 
 ## Verification record required for GH-1325
 
-Document publication alone does not complete GH-1325. Before closing it, attach a redacted record of
-one end-to-end walkthrough using either:
+Document publication alone does not complete GH-1325. A clean-container or clean-VM agent simulation
+may be used as a preflight to check commands and the invitee path, but it cannot close GH-1325 or
+substitute for participant consent. Before closing it, attach a redacted record of a moderated,
+end-to-end walkthrough with:
 
-- the maintainer plus a real named participant under the hosted two-account boundary; or
-- an agent/human clean-container or clean-VM simulation of the hosted invitee path.
+- the maintainer plus a real named participant under the hosted two-account boundary.
 
 The record must identify the exact release/image, prove the backup/restore and registration-closure
 steps where applicable, complete the synthetic capture → Review → Approve → Apply journey, and state
-which instructions were corrected after the walkthrough. Never include personal identities,
-invite codes, secrets, raw private captures, or provider payloads.
+which instructions were corrected after the walkthrough. The maintainer must explicitly accept the
+redacted record and its findings before closing the issue; no agent may infer that acceptance. Keep
+the issue open when a real participant walkthrough or that explicit acceptance is missing. Never
+include personal identities, invite codes, secrets, raw private captures, or provider payloads.

@@ -166,9 +166,17 @@ lines and the exit code in the evidence.
 
 ## 6. Accounts — [human]
 
-1. Open the URL yourself and **register first** (the first registration claims the bootstrap slot).
-2. Mint one invite: `docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7`.
-   Send the code to the collaborator over a channel you already trust; they register.
+1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning both named accounts. Before
+   opening the URL, mint the first-owner invite as the non-root API user:
+
+   ```bash
+   docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api \
+     dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
+   ```
+
+   Open the URL yourself, choose **Register**, and use that invite to create the owner account.
+2. Mint one separate participant invite with the same non-root CLI command. Send that code to the
+   collaborator over a channel you already trust; they register.
 3. **Close registration:** set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
    `up -d` command from step 2 (or the two-file command from step 7 if live providers are already on)
    so the container is recreated, then prove it with a **syntactically valid** throwaway registration
@@ -185,10 +193,12 @@ lines and the exit code in the evidence.
    (`RegistrationPolicyService.RegistrationClosedMessage`). `InviteOnly` answers a different forbidden
    message (`A valid registration invite is required.`) or, with a live invite, succeeds; either means the
    container was not recreated with `Closed`, and the invite can still create a third account.
-4. Share a board: Boards → the board → Settings → Access → grant the collaborator `Editor`.
+4. Share a board: **Workspace → Settings → Access** (`/workspace/settings/access`) → grant the
+   collaborator `Editor`.
 
-Done when: exactly two users exist (`GET /api/users` while logged in), registration is refused,
-and the collaborator can open the shared board.
+Done when: the owner and collaborator registrations both succeeded, the valid-registration closure
+probe returned 403, and the collaborator can open the shared board. `GET /api/users` may support an
+inventory check but does not prove that exactly two users exist.
 
 ## 7. Live LLM provider, ceiling and disclosure — [human], optional
 

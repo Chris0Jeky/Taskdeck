@@ -86,23 +86,24 @@ Render for an always-on host.
 
 ## 4. Accounts
 
-1. Open the public URL yourself and **register first** — the first registration
-   claims the bootstrap slot even in InviteOnly mode.
-
-   **After the collaborator's account exists, close registration** (ADR-0061
-   `access-boundary`: exactly two accounts; InviteOnly only while the second is created):
-   set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
-   `docker compose … up -d` command so the container is recreated with the new value,
-   and verify that a fresh `POST /api/auth/register` is refused. Any invite minted
-   earlier must not be able to create a third account.
-2. Mint an invite code for each additional person:
+1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning the named accounts. Before
+   opening the public URL, mint the first-owner invite as the non-root API user:
 
    ```bash
-   docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api \
+   docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api \
      dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
    ```
 
-3. Send the code to your friend; they open the public URL → Register.
+   Open the URL yourself and **register first** using that invite. Then mint one separate invite for
+   each named collaborator with the same non-root CLI command. Send the participant's code through a
+   trusted channel; they open the public URL → Register.
+
+   **After all named accounts exist, close registration** (ADR-0061 `access-boundary`): set
+   `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the `docker compose … up -d` command
+   so the container is recreated with the new value, and verify that a syntactically valid fresh
+   `POST /api/auth/register` is refused. Any invite minted earlier must not be able to create a
+   further account. Record both successful registration results and the closure 403 in private
+   evidence; an account-list endpoint may support inventory, but it does not prove an exact count.
 
 ## 5. LLM providers, quota, and the egress disclosure
 
@@ -190,7 +191,8 @@ anything real**.
 
 ## 6. Share a board
 
-Boards → create or open a board → Settings → **Access** (`/workspace/settings/access`):
+Workspace → Settings → **Access** (`/workspace/settings/access`):
+create or open a board, then
 grant your friend the `Editor` role. On builds that include PR #1774 (issue
 #1771) the grant field takes their email or username; on older builds it takes
 their user ID, which they can read from `GET /api/users` after logging in.
