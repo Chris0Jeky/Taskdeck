@@ -22,6 +22,7 @@ describe('telemetry consent ownership', () => {
   afterEach(() => {
     vi.clearAllTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     vi.useRealTimers()
   })
 
@@ -38,6 +39,14 @@ describe('telemetry consent ownership', () => {
       reject = fail
     }))
     return () => reject(new Error('offline'))
+  }
+
+  function stubStorageMethod(method: 'getItem' | 'setItem') {
+    const methodMock = vi.fn(() => {
+      throw new Error('storage unavailable')
+    })
+    vi.stubGlobal('localStorage', { [method]: methodMock } as unknown as Storage)
+    return methodMock
   }
 
   it('does not requeue a failed request after withdrawal', async () => {
@@ -93,9 +102,7 @@ describe('telemetry consent ownership', () => {
     const store = await activeStore()
     const toast = useToastStore()
     store.emit('buffered.event')
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
+    const setItem = stubStorageMethod('setItem')
 
     expect(() => store.setConsent(false)).not.toThrow()
 
@@ -118,9 +125,7 @@ describe('telemetry consent ownership', () => {
     const store = useTelemetryStore()
     const toast = useToastStore()
     await store.loadConfig()
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
+    const setItem = stubStorageMethod('setItem')
 
     expect(() => store.setConsent(true)).not.toThrow()
 
@@ -139,9 +144,7 @@ describe('telemetry consent ownership', () => {
 
   it('does not restore consent when storage cannot be read', () => {
     window.localStorage.setItem('taskdeck_telemetry_consent', 'true')
-    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
+    const getItem = stubStorageMethod('getItem')
     const store = useTelemetryStore()
 
     expect(() => store.restoreConsent()).not.toThrow()
