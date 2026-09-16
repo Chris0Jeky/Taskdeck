@@ -213,13 +213,9 @@ public class BoardJsonExportImportRoundTripTests
         AddToPrivateCollection(board, "_columns", column);
         SetupExportMocks(board, owner);
         SetupImportMocks(owner);
-        var dependencies = new Mock<IBoardDependencyRepository>();
-        dependencies.Setup(repository => repository.GetAsync(board.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((BoardDependencies?)null);
-        var service = new BoardJsonExportImportService(
+        var service = new ExportImportService(
             _unitOfWorkMock.Object,
-            new DevelopmentSandboxSettings { Enabled = true },
-            dependencies: dependencies.Object);
+            new DevelopmentSandboxSettings { Enabled = true });
         var imported = new List<Card>();
         _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
             .Callback<Card, CancellationToken>((card, _) => imported.Add(card))

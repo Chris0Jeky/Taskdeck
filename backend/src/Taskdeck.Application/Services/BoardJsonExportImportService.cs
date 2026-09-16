@@ -223,7 +223,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
             var board = new Board(dto.Name, dto.Description, userId);
             IReadOnlyList<CardRelationEdge>? importedRelations = null;
-            if (dto.Relations is not null || dto.Dependencies is not null)
+            if (dto.Relations is { Count: > 0 } || dto.Dependencies is { Count: > 0 })
             {
                 var relationEndpoints = cards
                     .Where(card => card.SourceId is Guid sourceId && cardIds.ContainsKey(sourceId))
