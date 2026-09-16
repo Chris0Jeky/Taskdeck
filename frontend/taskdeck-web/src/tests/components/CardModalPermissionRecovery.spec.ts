@@ -209,6 +209,31 @@ describe('CardModal permission reconciliation', () => {
     wrapper.unmount()
   })
 
+  it('restores focus after retrying type permission from the mounted card modal form', async () => {
+    store.currentBoard = board(undefined)
+    vi.mocked(boardsApi.getBoard)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockResolvedValueOnce(board(true))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels: [] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const refresh = wrapper.get('[data-testid="card-type-permission-refresh"]')
+    ;(refresh.element as HTMLButtonElement).focus()
+    expect(document.activeElement).toBe(refresh.element)
+
+    await refresh.trigger('click')
+    await flushPromises()
+
+    const selector = wrapper.get('#card-work-item-type')
+    expect((selector.element as HTMLSelectElement).disabled).toBe(false)
+    expect(document.activeElement).toBe(selector.element)
+    wrapper.unmount()
+  })
+
   it('reconciles a late PUT403 after readOnly already changed true then false', async () => {
     const { wrapper, save } = await pendingSave()
     store.currentBoard!.canWrite = false
