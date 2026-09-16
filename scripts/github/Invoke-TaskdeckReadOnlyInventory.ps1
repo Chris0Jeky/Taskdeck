@@ -470,7 +470,7 @@ function Get-GraphQlQueryText {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
     $queryText = $null
-    for ($index = 1; $index -lt $Arguments.Count; $index++) {
+    for ($index = 0; $index -lt $Arguments.Count; $index++) {
         $argument = $Arguments[$index]
         if ($argument -in @("-f", "--raw-field", "-F", "--field")) {
             if ($index + 1 -ge $Arguments.Count) {
@@ -508,7 +508,7 @@ function Get-GraphQlQueryText {
 }
 
 function Assert-GhApiReadCommand {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments)
 
     if ($Arguments.Count -eq 0) {
         Deny-InventoryCommand "gh api requires an endpoint"
@@ -540,7 +540,28 @@ function Assert-GhApiReadCommand {
         }
     }
 
-    $endpoint = $Arguments[0]
+    # Locate the endpoint using the same value-flag grammar as the newline carve-out. A value that
+    # looks like an endpoint (or another flag) still belongs to the option that precedes it and
+    # must never be reinterpreted as the endpoint.
+    $endpoint = $null
+    for ($index = 0; $index -lt $Arguments.Count; $index++) {
+        $argument = $Arguments[$index]
+        if ($script:GhApiValueFlags -ccontains $argument) {
+            if ($index + 1 -ge $Arguments.Count) {
+                Deny-InventoryCommand "gh api option '$argument' requires a value"
+            }
+            $index++
+            continue
+        }
+        if ($argument.StartsWith("-", [System.StringComparison]::Ordinal)) {
+            continue
+        }
+        $endpoint = $argument
+        break
+    }
+    if ($null -eq $endpoint) {
+        Deny-InventoryCommand "gh api requires an endpoint"
+    }
     if ($endpoint -ieq "graphql" -and $endpoint -cne "graphql") {
         Deny-InventoryCommand "gh api endpoint 'graphql' must use its exact lowercase token"
     }
@@ -582,7 +603,7 @@ function Assert-GhReadCommand {
         Deny-InventoryCommand "gh requires an allowlisted read subcommand"
     }
     foreach ($argument in $Arguments) {
-        if ($argument -eq "--web" -or $argument.StartsWith("--web=") -or $argument -eq "-w" -or $argument.StartsWith("-w=")) {
+        if ($argument -eq "--web" -or $argument.StartsWith("--web=") -or $argument.StartsWith("-w", [System.StringComparison]::Ordinal)) {
             Deny-InventoryCommand "--web/-w launches an external interactive surface"
         }
     }
@@ -728,6 +749,29 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Allowed @("gh", "api", "repos/example/repo/pulls/1/comments")
     Assert-Allowed @("gh", "api", "--method", "GET", "repos/example/repo/issues", "-f", "state=open")
     Assert-Allowed @("gh", "api", "graphql", "-f", 'query=query($owner:String!){repositoryOwner(login:$owner){login}}', "-F", "owner=example")
+    Assert-Allowed @("gh", "run", "watch", "123")
+    Assert-Allowed @("gh", "pr", "checks", "1", "--watch")
+
+    # Every separate gh api value flag consumes exactly one following argv token, even when that
+    # value resembles a field flag or endpoint. Only genuine field-value positions may contain a
+    # newline; a deceptive consumed value must not shift the later field flag's value position.
+    foreach ($valueFlag in $script:GhApiValueFlags) {
+        foreach ($deceptiveValue in @("-f", "-F", "--field", "repos/example/repo/issues")) {
+            $tokens = @("gh", "api", $valueFlag, $deceptiveValue, "-f", "value=first`nsecond")
+            $fieldValueIndexes = Get-GhApiFieldValueIndexes -CommandTokens $tokens
+            $expectedIndexes = if ($script:GhApiFieldFlags -ccontains $valueFlag) { @(3, 5) } else { @(5) }
+            if ($fieldValueIndexes.Count -ne $expectedIndexes.Count) {
+                throw "gh api value flag '$valueFlag' with value '$deceptiveValue' produced the wrong field-value count."
+            }
+            foreach ($expectedIndex in $expectedIndexes) {
+                if (-not $fieldValueIndexes.Contains($expectedIndex)) {
+                    throw "gh api value flag '$valueFlag' with value '$deceptiveValue' lost field-value index $expectedIndex."
+                }
+            }
+            Assert-NoShellControlTokens -Arguments $tokens
+            $state.Checks++
+        }
+    }
 
     # gh command names are forwarded verbatim, so a case variant must be rejected at the wrapper
     # boundary instead of being validated under a lowercased spelling and launched unchanged.
@@ -736,6 +780,7 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Denied @("gh", "pr", "LIST") "exact lowercase token"
     Assert-Denied @("gh", "api", "GRAPHQL", "-f", "query=query { viewer { login } }") "exact lowercase token"
     Assert-Denied @("gh", "api", "GraphQl", "-f", "query=query { viewer { login } }") "exact lowercase token"
+    Assert-Denied @("gh", "api") "gh api requires an endpoint"
 
     # Argument-content policy: the wrapper launches through argv with no shell, so CR/LF inside the
     # value of a gh api field flag cannot splice a command and a real multi-line GraphQL document
@@ -852,6 +897,10 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Denied @("gh", "api", "--method", "GET", "repos/example/repo/issues", "-Fq=@secret.txt") "attached short options"
     Assert-Denied @("gh", "pr", "view", "1", "--web=true") "interactive surface"
     Assert-Denied @("gh", "pr", "view", "1", "-w") "interactive surface"
+    $attachedBrowserShorthands = @("-wtrue", "-wfalse", "-w1", "-w0", "-w=yes", "-w=false")
+    foreach ($browserFlag in $attachedBrowserShorthands) {
+        Assert-Denied @("gh", "pr", "view", "1", $browserFlag) "interactive surface"
+    }
     Assert-Denied @("powershell", "-Command", "gh pr list") "tool.*not allowed"
     Assert-Denied @("gh", "pr", "list", "&&", "gh", "pr", "comment", "1") "shell control"
 
@@ -890,6 +939,35 @@ function Invoke-ReadOnlyInventorySelfTest {
             continue
         }
         throw "Expected case-variant gh command to be denied: $($caseVariant -join ' ')"
+    }
+
+    $endpointlessDenied = $false
+    try {
+        Invoke-ValidatedInventoryCommand -CommandTokens @("gh", "api") -Launcher $fakeLauncher
+    }
+    catch {
+        if ($state.LaunchCount -ne $launchCountBeforeCaseChecks) {
+            throw "Endpoint-less gh api command reached the launcher."
+        }
+        $endpointlessDenied = $true
+        $state.Checks++
+    }
+    if (-not $endpointlessDenied) {
+        throw "Expected endpoint-less gh api command to be denied."
+    }
+
+    foreach ($browserFlag in $attachedBrowserShorthands) {
+        try {
+            Invoke-ValidatedInventoryCommand -CommandTokens @("gh", "pr", "view", "1", $browserFlag) -Launcher $fakeLauncher
+        }
+        catch {
+            if ($state.LaunchCount -ne $launchCountBeforeCaseChecks) {
+                throw "Attached browser shorthand reached the launcher: $browserFlag"
+            }
+            $state.Checks++
+            continue
+        }
+        throw "Expected attached browser shorthand to be denied: $browserFlag"
     }
 
     # A non-https remote must be refused before any transport process can be spawned.
