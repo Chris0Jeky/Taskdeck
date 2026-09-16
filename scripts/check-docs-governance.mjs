@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 export const CI_POLICY_PATH = 'ci/policy.v1.json'
 export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
+const FORBIDDEN_SCALAR_CONTROL = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/
 
 const requiredDocs = [
   'docs/STATUS.md',
@@ -56,7 +57,9 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
     return { controlPaths: [], errors: [`${policyPath} declares an empty controlPaths array`] }
   }
 
-  const invalid = controlPaths.filter((entry) => typeof entry !== 'string' || entry.trim() === '')
+  const invalid = controlPaths.filter(
+    (entry) => typeof entry !== 'string' || entry.length === 0 || FORBIDDEN_SCALAR_CONTROL.test(entry),
+  )
   if (invalid.length > 0) {
     return {
       controlPaths: [],
@@ -64,7 +67,7 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
     }
   }
 
-  if (controlPaths.some((entry) => entry !== entry.trim())) {
+  if (controlPaths.some((entry) => typeof entry === 'string' && /^\s|\s$/u.test(entry))) {
     return {
       controlPaths: [],
       errors: [`${policyPath} controlPaths must not contain leading or trailing whitespace`],
@@ -81,10 +84,23 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
  * keep internal quotes/brackets literally; only leading indicators select YAML structure. Tags,
  * aliases, anchors, block/flow collections and multiline scalars are deliberately unsupported.
  */
+function trimAsciiWhitespace(value) {
+  return value.replace(/^[ \t]+|[ \t]+$/g, '')
+}
+
+function parsedScalar(value) {
+  return FORBIDDEN_SCALAR_CONTROL.test(value)
+    ? { value: null, error: 'forbidden control character' }
+    : { value, error: null }
+}
+
 function parseFrontMatterScalar(rawValue) {
-  const text = rawValue.trim()
+  const text = trimAsciiWhitespace(rawValue)
   if (text === '') {
     return { value: null, error: 'empty unquoted scalar' }
+  }
+  if (FORBIDDEN_SCALAR_CONTROL.test(text)) {
+    return { value: null, error: 'forbidden control character' }
   }
 
   if (text.startsWith('"')) {
@@ -93,7 +109,7 @@ function parseFrontMatterScalar(rawValue) {
       return { value: null, error: 'unbalanced quote or trailing content' }
     }
     try {
-      return { value: JSON.parse(quoted[1]), error: null }
+      return parsedScalar(JSON.parse(quoted[1]))
     } catch {
       return { value: null, error: 'unsupported double-quoted escape or control character' }
     }
@@ -102,7 +118,7 @@ function parseFrontMatterScalar(rawValue) {
   if (text.startsWith("'")) {
     const quoted = text.match(/^'((?:[^']|'')*)'(?:[ \t]+#.*)?$/)
     return quoted
-      ? { value: quoted[1].replaceAll("''", "'"), error: null }
+      ? parsedScalar(quoted[1].replaceAll("''", "'"))
       : { value: null, error: 'unbalanced quote or trailing content' }
   }
 
@@ -123,7 +139,7 @@ function parseFrontMatterScalar(rawValue) {
     return { value: null, error: 'unsupported nested mapping' }
   }
 
-  return { value, error: null }
+  return parsedScalar(value)
 }
 
 /**
@@ -142,7 +158,7 @@ function validateFrontMatterStructure(lines, rulePath) {
   let reportedOrphanEntry = false
 
   for (const line of lines) {
-    if (line.trim() === '') {
+    if (trimAsciiWhitespace(line) === '') {
       continue
     }
     if (/^[ \t]*\t/.test(line)) {
@@ -181,7 +197,7 @@ function validateFrontMatterStructure(lines, rulePath) {
       continue
     }
 
-    if (/^-(\s|$)/.test(line)) {
+    if (/^-(?:[ \t]|$)/.test(line)) {
       structureErrors.push(
         `${rulePath} front matter has a list entry at column 0 that this check cannot parse (entries must be indented): ${line.trim()}`,
       )
@@ -207,7 +223,7 @@ function validateFrontMatterStructure(lines, rulePath) {
     blockIndent = null
     reportedOrphanEntry = false
 
-    const value = rawValue.trim()
+    const value = trimAsciiWhitespace(rawValue)
     if (value === '' || value.startsWith('#')) {
       blockKey = key
       continue
@@ -250,12 +266,12 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
     return { paths: [], errors: structureErrors }
   }
 
-  const keyIndex = lines.findIndex((line) => /^paths\s*:/.test(line))
+  const keyIndex = lines.findIndex((line) => /^paths[ \t]*:/.test(line))
   if (keyIndex === -1) {
     return { paths: [], errors: [`${rulePath} front matter has no paths: key`] }
   }
 
-  if (!/^paths\s*:\s*(#.*)?$/.test(lines[keyIndex])) {
+  if (!/^paths[ \t]*:[ \t]*(#.*)?$/.test(lines[keyIndex])) {
     return {
       paths: [],
       errors: [`${rulePath} front matter paths: must be a block sequence of "- glob" entries`],
@@ -266,22 +282,22 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
   const errors = []
   for (let index = keyIndex + 1; index < lines.length; index += 1) {
     const line = lines[index]
-    if (line.trim() === '' || /^\s*#/.test(line)) {
+    if (trimAsciiWhitespace(line) === '' || /^[ \t]*#/.test(line)) {
       continue
     }
 
-    if (!/^\s/.test(line)) {
+    if (!/^[ \t]/.test(line)) {
       break
     }
 
-    const itemMatch = line.match(/^\s+-\s+(.*?)\s*$/)
+    const itemMatch = line.match(/^ +-[ \t]+(.*?)[ \t]*$/)
     if (!itemMatch) {
       errors.push(`${rulePath} front matter paths: has an entry this check cannot parse: ${line.trim()}`)
       continue
     }
 
     const { value } = parseFrontMatterScalar(itemMatch[1])
-    if (value === null || value === '' || value !== value.trim() || /[\x00-\x1f\x7f]/.test(value)) {
+    if (value === null || value === '' || /^\s|\s$/u.test(value) || FORBIDDEN_SCALAR_CONTROL.test(value)) {
       errors.push(`${rulePath} front matter paths: has an entry this check cannot parse: ${line.trim()}`)
       continue
     }

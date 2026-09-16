@@ -324,6 +324,39 @@ test('treats internal punctuation in a plain path as text and separated hashes a
   assert.deepEqual(collectControlPathMirrorErrors(policy, rule), [])
 })
 
+for (const [name, whitespace] of [
+  ['NBSP', '\u00a0'],
+  ['EM space', '\u2003'],
+]) {
+  for (const position of ['leading', 'trailing']) {
+    test(`rejects ${name} ${position} whitespace in an unquoted path scalar`, () => {
+      const path = position === 'leading' ? `${whitespace}ci/**` : `ci/**${whitespace}`
+      const rule = `---\npaths:\n  - ${path}\n---\n`
+      const errors = collectControlPathMirrorErrors(JSON.stringify({ controlPaths: ['ci/**'] }), rule)
+      assert.ok(errors.some((error) => /cannot parse/.test(error)), errors.join(' | '))
+    })
+
+    test(`rejects ${name} ${position} whitespace in a quoted path scalar`, () => {
+      const path = position === 'leading' ? `${whitespace}ci/**` : `ci/**${whitespace}`
+      const rule = `---\npaths:\n  - ${JSON.stringify(path)}\n---\n`
+      const errors = collectControlPathMirrorErrors(JSON.stringify({ controlPaths: ['ci/**'] }), rule)
+      assert.ok(errors.some((error) => /cannot parse/.test(error)), errors.join(' | '))
+    })
+  }
+}
+
+for (const lines of [
+  [`description: plain${'\u0000'}scalar`],
+  [`description: 'single${'\u0000'}quoted'`],
+  ['extra:', `  - plain${'\u0000'}scalar`],
+  ['extra:', `  - 'single${'\u0000'}quoted'`],
+]) {
+  test(`rejects a literal NUL in frontmatter scalar: ${JSON.stringify(lines)}`, () => {
+    const errors = collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter(...lines))
+    assert.ok(errors.some((error) => /control|cannot parse/.test(error)), errors.join(' | '))
+  })
+}
+
 for (const scalar of ['""', "''"]) {
   test(`accepts an explicitly quoted empty metadata scalar in a list: ${scalar}`, () => {
     for (const lines of [
