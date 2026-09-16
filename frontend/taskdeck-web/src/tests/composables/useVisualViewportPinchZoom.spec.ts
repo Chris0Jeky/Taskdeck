@@ -110,6 +110,27 @@ describe('useVisualViewport pinch zoom policy', () => {
     wrapper.unmount()
   })
 
+  it.each([0.75, 0])(
+    'uses layout fallback instead of zoomed or inactive geometry at scale %s',
+    async (scale) => {
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        writable: true,
+        value: 900,
+      })
+      const synthetic = installSyntheticVisualViewport({ height: 500, offsetTop: 80, scale: 1 })
+      const wrapper = mountHost({ prefix: '--card-modal' })
+
+      synthetic.set({ height: 260, offsetTop: 310, scale })
+      await nextTick()
+
+      expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('900px')
+      expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('0px')
+      expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('false')
+      wrapper.unmount()
+    },
+  )
+
   it('restores the CSS fallback for unset callers during pinch zoom', async () => {
     const synthetic = installSyntheticVisualViewport({ height: 500, offsetTop: 80, scale: 1 })
     const wrapper = mountHost({ prefix: '--td-dialog', fallback: 'unset' })
