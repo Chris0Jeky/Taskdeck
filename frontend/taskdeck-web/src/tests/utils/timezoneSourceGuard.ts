@@ -18,6 +18,12 @@ function literal(node: ts.Node | undefined): string | null {
  * dynamically computed keys, renamed functions and process.env writes are outside it.
  */
 export function findTimezoneStubs(source: string, fileName = 'test.ts'): TimezoneStub[] {
+  // Every call shape this guard recognizes contains the literal property/identifier text
+  // `stubEnv`. Avoid constructing a full TypeScript AST for the hundreds of test files that
+  // cannot possibly match. The AST remains the authority for the small candidate set, so
+  // comments, prose and fixture strings still cannot create false positives.
+  if (!source.includes('stubEnv')) return []
+
   const kind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind)
   const matches: TimezoneStub[] = []
