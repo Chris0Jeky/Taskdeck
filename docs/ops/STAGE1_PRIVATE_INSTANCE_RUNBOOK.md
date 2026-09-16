@@ -149,7 +149,8 @@ listing; the live volume would show `taskdeck.db`):
 
 ```bash
 docker volume create taskdeck-drill-data
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \n  -v taskdeck-drill-data:/app/data api sh -c 'ls -A /app/data'
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \
+  -v taskdeck-drill-data:/app/data api sh -c 'ls -A /app/data'
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \
   -v taskdeck-drill-data:/app/data \
   -v taskdeck-backups:/backups:ro \
@@ -186,7 +187,8 @@ lines and the exit code in the evidence.
    ```bash
    curl -s -w '
 %{http_code}
-' -X POST https://<url>/api/auth/register -H 'Content-Type: application/json' \n     -d '{"username":"closure-probe","email":"closure-probe@example.invalid","password":"Closure-Probe-Passw0rd!","inviteCode":"<the 6.2 code>"}'
+' -X POST https://<url>/api/auth/register -H 'Content-Type: application/json' \
+     -d '{"username":"closure-probe","email":"closure-probe@example.invalid","password":"Closure-Probe-Passw0rd!","inviteCode":"<the 6.2 code>"}'
    ```
 
    Required: HTTP **403** and the body text `Registration is closed by this Taskdeck instance.`
