@@ -66,6 +66,15 @@ test('an unbalanced inline span cannot mask links beyond a blank line', () => {
   ])
 })
 
+test('an unmatched backtick does not skip later balanced spans', () => {
+  const markdown = 'Before `unmatched ``[hidden](gone.md)`` and [real](real.md)'
+
+  assert.deepEqual(
+    extractLocalTargets(markdown).map(({ pathPart }) => pathPart),
+    ['real.md'],
+  )
+})
+
 test('an unterminated fenced block is masked but reported fail-loud', () => {
   const markdown = ['```md', '[illustrative](not-a-real-link.md)'].join('\n')
   const result = maskCodeWithDiagnostics(markdown)
@@ -125,6 +134,37 @@ test('reference-style definitions contribute their local destinations', () => {
       { pathPart: 'assets/diagram with space.svg', line: 5 },
     ],
   )
+})
+
+test('footnote definitions do not treat prose as a local destination', () => {
+  const markdown = ['A footnote[^1].', '', '[^1]: This is explanatory prose, not a link.'].join('\n')
+
+  assert.deepEqual(extractLocalTargets(markdown), [])
+})
+
+test('reference definitions accept a destination on the continuation line', () => {
+  const markdown = ['[guide][guide-ref]', '', '[guide-ref]:', '  ./guide.md'].join('\n')
+  const deeplyIndented = ['[guide][guide-ref]', '', '[guide-ref]:', '          ./guide.md'].join('\n')
+  const unindented = ['[guide][guide-ref]', '', '[guide-ref]:', './guide.md'].join('\n')
+
+  assert.deepEqual(
+    extractLocalTargets(markdown).map(({ pathPart }) => pathPart),
+    ['./guide.md'],
+  )
+  assert.deepEqual(
+    extractLocalTargets(deeplyIndented).map(({ pathPart }) => pathPart),
+    ['./guide.md'],
+  )
+  assert.deepEqual(
+    extractLocalTargets(unindented).map(({ pathPart }) => pathPart),
+    ['./guide.md'],
+  )
+})
+
+test('HTML comments do not contribute local destinations', () => {
+  const markdown = '<!-- <a href="./gone.md">link</a> <img src="./gone.svg"> -->'
+
+  assert.deepEqual(extractLocalTargets(markdown), [])
 })
 
 test('HTML href and src attributes contribute local destinations', () => {

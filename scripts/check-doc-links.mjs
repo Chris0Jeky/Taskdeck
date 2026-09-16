@@ -42,6 +42,18 @@ function maskRange(buffer, source, start, end) {
   }
 }
 
+function maskHtmlComments(buffer, source) {
+  let cursor = 0
+  while (cursor < source.length) {
+    const start = source.indexOf('<!--', cursor)
+    if (start === -1) break
+    const close = source.indexOf('-->', start + 4)
+    const end = close === -1 ? source.length : close + 3
+    maskRange(buffer, source, start, end)
+    cursor = end
+  }
+}
+
 function backtickRunLength(text, start) {
   let end = start
   while (text[end] === '`') end += 1
@@ -120,6 +132,7 @@ export function maskCodeWithDiagnostics(markdown) {
     })
   }
 
+  maskHtmlComments(buffer, markdown)
   const fenceMasked = buffer.join('')
   let cursor = 0
   while (cursor < fenceMasked.length) {
@@ -155,7 +168,7 @@ export function maskCodeWithDiagnostics(markdown) {
         target: marker,
         reason: 'unbalanced inline code span',
       })
-      cursor = blankLine === -1 ? fenceMasked.length : blankLine + 1
+      cursor = blankLine === -1 ? contentStart : blankLine + 1
       continue
     }
 
@@ -342,26 +355,76 @@ function extractLocalTargetsFromMasked(masked) {
 
   // A reference-style link's path lives in its definition, so validating every
   // local definition covers both links and images without resolving labels.
-  const definitionPattern = /^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(.*)$/gm
+  const definitionPattern = /^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(.*)$/gm
   let definition
   while ((definition = definitionPattern.exec(masked)) !== null) {
-    const target = parseReferenceDestination(definition[1])
-    if (target !== null) push(target, definition.index)
+    let destinationText = definition[1]
+    let destinationIndex = definition.index
+    if (destinationText.trim() === '') {
+      const lineBreak = masked.indexOf('\n', definition.index)
+      if (lineBreak !== -1) {
+        const nextLineStart = lineBreak + 1
+        const nextLineEnd = masked.indexOf('\n', nextLineStart)
+        const continuation = /^[ \t]*(\S.*)$/.exec(
+          masked.slice(nextLineStart, nextLineEnd === -1 ? masked.length : nextLineEnd),
+        )
+        if (continuation) {
+          destinationText = continuation[1]
+          destinationIndex = nextLineStart + continuation[0].indexOf(destinationText)
+        }
+      }
+    }
+    const target = parseReferenceDestination(destinationText)
+    if (target !== null) push(target, destinationIndex)
   }
 
-  const tagPattern = /<(a|img)\b[^>]*>/gi
-  let tag
-  while ((tag = tagPattern.exec(masked)) !== null) {
-    const attributeName = tag[1].toLowerCase() === 'a' ? 'href' : 'src'
+  const findTagEnd = (start) => {
+    let quote = null
+    for (let cursor = start + 1; cursor < masked.length; cursor += 1) {
+      const character = masked[cursor]
+      if (quote) {
+        if (character === quote) quote = null
+      } else if (character === '"' || character === "'") {
+        quote = character
+      } else if (character === '>') {
+        return cursor
+      }
+    }
+    return -1
+  }
+
+  let cursor = 0
+  while (cursor < masked.length) {
+    if (masked[cursor] !== '<') {
+      cursor += 1
+      continue
+    }
+    const end = findTagEnd(cursor)
+    if (end === -1) {
+      cursor += 1
+      continue
+    }
+    const tag = masked.slice(cursor, end + 1)
+    const opening = /^<(a|img)\b/i.exec(tag)
+    if (!opening) {
+      cursor = end + 1
+      continue
+    }
+
+    const attributeName = opening[1].toLowerCase() === 'a' ? 'href' : 'src'
     const attributePattern = new RegExp(
       `\\s${attributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
       'i',
     )
-    const attribute = attributePattern.exec(tag[0])
-    if (!attribute) continue
+    const attribute = attributePattern.exec(tag)
+    if (!attribute) {
+      cursor = end + 1
+      continue
+    }
     const target = attribute[1] ?? attribute[2] ?? attribute[3] ?? ''
     const valueOffset = attribute[0].indexOf(target)
-    push(target, tag.index + attribute.index + Math.max(0, valueOffset))
+    push(target, cursor + attribute.index + Math.max(0, valueOffset))
+    cursor = end + 1
   }
 
   return found
