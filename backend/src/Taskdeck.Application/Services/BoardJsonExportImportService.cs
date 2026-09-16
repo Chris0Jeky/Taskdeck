@@ -194,7 +194,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 if (!sourceNames.TryAdd(source.SourceKey, source.DisplayName) &&
                     !string.Equals(sourceNames[source.SourceKey], source.DisplayName, StringComparison.Ordinal))
                     throw new DomainException(ErrorCodes.ValidationError,
-                        "Each source assignee key must have one consistent display name across the import.");
+                        $"Each source assignee key must have one consistent display name across the import. " +
+                        $"Source key '{source.SourceKey}' has conflicting display names '{sourceNames[source.SourceKey]}' and '{source.DisplayName}'.");
             }
             if (dto.AssigneeMappings is not null && dto.AssigneeMappings.Any(m => !sourceNames.ContainsKey(m.Key) ||
                     m.Value.HasValue && m.Value != userId))
