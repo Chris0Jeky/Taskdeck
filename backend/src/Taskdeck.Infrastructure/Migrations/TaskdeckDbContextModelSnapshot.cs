@@ -1132,11 +1132,11 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.ToTable("CardRelations", null, t =>
                         {
-                            t.HasCheckConstraint("CK_CardRelations_Endpoints", "SourceCardId <> TargetCardId");
+                            t.HasCheckConstraint("CK_CardRelations_Endpoints", "\"SourceCardId\" <> \"TargetCardId\"");
 
-                            t.HasCheckConstraint("CK_CardRelations_Kind", "RelationType IN ('relates-to', 'blocks', 'duplicates', 'spawned-from')");
+                            t.HasCheckConstraint("CK_CardRelations_Kind", "\"RelationType\" IN ('relates-to', 'blocks', 'duplicates', 'spawned-from')");
 
-                            t.HasCheckConstraint("CK_CardRelations_SymmetricOrder", "RelationType <> 'relates-to' OR SourceCardId < TargetCardId");
+                            t.HasCheckConstraint("CK_CardRelations_SymmetricOrder", "\"RelationType\" <> 'relates-to' OR \"SourceCardId\" < \"TargetCardId\"");
                         });
                 });
 
