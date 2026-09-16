@@ -93,7 +93,7 @@ describe('telemetry consent ownership', () => {
     const store = await activeStore()
     const toast = useToastStore()
     store.emit('buffered.event')
-    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
 
@@ -118,7 +118,7 @@ describe('telemetry consent ownership', () => {
     const store = useTelemetryStore()
     const toast = useToastStore()
     await store.loadConfig()
-    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
 
@@ -139,7 +139,7 @@ describe('telemetry consent ownership', () => {
 
   it('does not restore consent when storage cannot be read', () => {
     window.localStorage.setItem('taskdeck_telemetry_consent', 'true')
-    const getItem = vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
     const store = useTelemetryStore()
