@@ -752,6 +752,15 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Allowed @("gh", "run", "watch", "123")
     Assert-Allowed @("gh", "pr", "checks", "1", "--watch")
 
+    # Values that resemble another option belong to the value-owning flag immediately before them.
+    # The validator must not reinterpret a jq expression as a method, typed field, or input path.
+    Assert-Allowed @("gh", "api", "--jq", "--method", "repos/example/repo/issues")
+    Assert-Allowed @("gh", "api", "--jq", "-F", "owner=@secret.txt", "repos/example/repo/issues")
+    Assert-Allowed @("gh", "api", "--jq", "--input", "secret.txt", "repos/example/repo/issues")
+    Assert-Denied @("gh", "api", "repos/example/repo/issues", "--input", "secret.txt") "local file"
+    Assert-Denied @("gh", "api", "repos/example/repo/issues", "--input=secret.txt") "local file"
+    Assert-Denied @("gh", "pr", "view", "1", "-cw") "interactive surface"
+
     # Every separate gh api value flag consumes exactly one following argv token, even when that
     # value resembles a field flag or endpoint. Only genuine field-value positions may contain a
     # newline; a deceptive consumed value must not shift the later field flag's value position.
@@ -759,7 +768,12 @@ function Invoke-ReadOnlyInventorySelfTest {
         foreach ($deceptiveValue in @("-f", "-F", "--field", "repos/example/repo/issues")) {
             $tokens = @("gh", "api", $valueFlag, $deceptiveValue, "-f", "value=first`nsecond")
             $fieldValueIndexes = Get-GhApiFieldValueIndexes -CommandTokens $tokens
-            $expectedIndexes = if ($script:GhApiFieldFlags -ccontains $valueFlag) { @(3, 5) } else { @(5) }
+            if ($script:GhApiFieldFlags -ccontains $valueFlag) {
+                $expectedIndexes = @(3, 5)
+            }
+            else {
+                $expectedIndexes = @(5)
+            }
             if ($fieldValueIndexes.Count -ne $expectedIndexes.Count) {
                 throw "gh api value flag '$valueFlag' with value '$deceptiveValue' produced the wrong field-value count."
             }
