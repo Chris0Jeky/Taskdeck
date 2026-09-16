@@ -127,6 +127,31 @@ public sealed class PreMigrationBackupHardeningTests : IDisposable
             "sidecar discovery must still enforce the helper's strict managed filename contract");
     }
 
+    [Theory]
+    [InlineData("-wal")]
+    [InlineData("-shm")]
+    public void Backup_reserves_recent_sidecar_only_artifact_for_next_sequence(string sidecarSuffix)
+    {
+        CreateStandaloneWalDatabase();
+        Directory.CreateDirectory(_backupDirectory);
+
+        var reservedSidecar = ManagedTemporarySnapshot("20260109T000000000Z", "000001") + sidecarSuffix;
+        File.WriteAllText(reservedSidecar, "recent sidecar-only reservation fixture");
+        File.SetLastWriteTimeUtc(reservedSidecar, DateTime.UtcNow);
+
+        var created = SqlitePreMigrationBackup.Create(
+            _dbPath,
+            new DatabaseBackupSettings { RetainCount = 5 },
+            logger: null);
+
+        Path.GetFileName(created).Should().EndWith(
+            "-000002" + SqlitePreMigrationBackup.FileExtension,
+            "a recent sidecar-only artifact must reserve its canonical sequence");
+        File.Exists(reservedSidecar).Should().BeTrue(
+            "WriteSnapshot must not delete a sidecar belonging to a reserved sequence");
+        File.Exists(created).Should().BeTrue("the protective snapshot must still be written");
+    }
+
     [Fact]
     public void Backup_preserves_stale_noncanonical_staging_names()
     {

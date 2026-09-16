@@ -279,11 +279,25 @@ internal static class SqlitePreMigrationBackup
             }
         }
 
+        // A crashed SQLite backup may leave only a temporary file's WAL or SHM sidecar. Count
+        // that sequence before WriteSnapshot removes the candidate's own sidecars.
+        foreach (var existingSequence in EnumerateTemporarySnapshotSequences(directory, key, legacyKey))
+        {
+            if (existingSequence >= sequence)
+            {
+                sequence = existingSequence + BigInteger.One;
+            }
+        }
+
         while (true)
         {
             var candidate = Path.Combine(directory, BuildFileName(key, timestamp, sequence));
+            var temporaryCandidate = candidate + TemporaryExtension;
 
-            if (!File.Exists(candidate) && !File.Exists(candidate + TemporaryExtension))
+            if (!File.Exists(candidate)
+                && !File.Exists(temporaryCandidate)
+                && !File.Exists(temporaryCandidate + "-wal")
+                && !File.Exists(temporaryCandidate + "-shm"))
             {
                 return candidate;
             }
@@ -461,6 +475,66 @@ internal static class SqlitePreMigrationBackup
         });
 
         return snapshots;
+    }
+
+    private static List<BigInteger> EnumerateTemporarySnapshotSequences(
+        string directory,
+        string key,
+        string legacyKey)
+    {
+        var currentPattern = CurrentNamePattern(key);
+        var prefixes = new List<string> { key };
+        if (!string.Equals(key, legacyKey, StringComparison.Ordinal))
+        {
+            prefixes.Add(legacyKey);
+        }
+
+        var globs = new List<string>();
+        foreach (var prefix in prefixes)
+        {
+            var temporaryGlob = prefix + FileNameMarker + "*" + FileExtension + TemporaryExtension;
+            globs.Add(temporaryGlob);
+            globs.Add(temporaryGlob + "-wal");
+            globs.Add(temporaryGlob + "-shm");
+        }
+
+        var seen = new HashSet<string>(SnapshotFileNameComparer);
+        var sequences = new List<BigInteger>();
+
+        foreach (var glob in globs)
+        {
+            foreach (var path in Directory.EnumerateFiles(directory, glob))
+            {
+                var fileName = Path.GetFileName(path);
+                var temporaryFileName = fileName;
+                if (temporaryFileName.EndsWith("-wal", StringComparison.Ordinal))
+                {
+                    temporaryFileName = temporaryFileName[..(temporaryFileName.Length - "-wal".Length)];
+                }
+                else if (temporaryFileName.EndsWith("-shm", StringComparison.Ordinal))
+                {
+                    temporaryFileName = temporaryFileName[..(temporaryFileName.Length - "-shm".Length)];
+                }
+
+                if (!temporaryFileName.EndsWith(TemporaryExtension, StringComparison.Ordinal)
+                    || !seen.Add(temporaryFileName))
+                {
+                    continue;
+                }
+
+                var snapshotFileName = temporaryFileName[..^TemporaryExtension.Length];
+                if (TryParseCurrentSnapshotFileName(
+                        currentPattern,
+                        snapshotFileName,
+                        out var sequence,
+                        out _))
+                {
+                    sequences.Add(sequence);
+                }
+            }
+        }
+
+        return sequences;
     }
 
     /// <summary>
