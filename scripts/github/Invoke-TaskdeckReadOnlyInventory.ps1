@@ -34,8 +34,157 @@ $script:GhApiValueFlags = @(
 # therefore permitted in exactly these positions and refused in every other argument.
 $script:GhApiFieldFlags = @("-f", "--raw-field", "-F", "--field")
 
+function Parse-GhApiArguments {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments)
+
+    $entries = New-Object System.Collections.Generic.List[object]
+    $fields = New-Object System.Collections.Generic.List[object]
+    $missingValueFlags = New-Object System.Collections.Generic.List[string]
+    $fieldValueIndexes = New-Object System.Collections.Generic.HashSet[int]
+    $ownedValueIndexes = New-Object System.Collections.Generic.HashSet[int]
+    $attachedShortFlags = New-Object System.Collections.Generic.List[string]
+    $endpoint = $null
+    $endpointIndex = -1
+    $method = $null
+    $methodSpecified = $false
+
+    # Walk argv exactly once. Every value-owning flag claims one following token, even when that
+    # token looks like another option. All validators consume this ownership map instead of scanning
+    # the raw argv independently and disagreeing about which token is an endpoint or field.
+    for ($index = 0; $index -lt $Arguments.Count; $index++) {
+        $token = $Arguments[$index]
+        $flagName = $null
+        $value = $null
+        $hasInlineValue = $false
+
+        if ($token.StartsWith("--", [System.StringComparison]::Ordinal)) {
+            $separator = $token.IndexOf("=")
+            if ($separator -ge 0) {
+                $flagName = $token.Substring(0, $separator)
+                $value = $token.Substring($separator + 1)
+                $hasInlineValue = $true
+            }
+            else {
+                $flagName = $token
+            }
+        }
+        elseif ($script:GhApiValueFlags -ccontains $token) {
+            $flagName = $token
+        }
+
+        if ($null -ne $flagName -and $script:GhApiValueFlags -ccontains $flagName) {
+            $isField = $script:GhApiFieldFlags -ccontains $flagName
+            $isTypedField = $flagName -in @("-F", "--field")
+            $valueIndex = -1
+
+            if (-not $hasInlineValue) {
+                if ($index + 1 -lt $Arguments.Count) {
+                    $valueIndex = $index + 1
+                    $value = $Arguments[$valueIndex]
+                    [void]$ownedValueIndexes.Add($valueIndex)
+                }
+                else {
+                    [void]$missingValueFlags.Add($flagName)
+                }
+            }
+
+            [void]$entries.Add([pscustomobject]@{
+                    Index          = $index
+                    Token          = $token
+                    Kind           = "ValueOption"
+                    FlagName       = $flagName
+                    Value          = $value
+                    ValueIndex     = $valueIndex
+                    HasInlineValue = $hasInlineValue
+                    IsField        = $isField
+                    IsTypedField   = $isTypedField
+                })
+
+            if (([bool]$isField -and ([int]$valueIndex -ge 0)) -or ([bool]$isField -and [bool]$hasInlineValue)) {
+                if ($valueIndex -ge 0) {
+                    [void]$fieldValueIndexes.Add($valueIndex)
+                }
+                [void]$fields.Add([pscustomobject]@{
+                        FlagName       = $flagName
+                        Value          = $value
+                        ValueIndex     = $valueIndex
+                        HasInlineValue = $hasInlineValue
+                        IsTypedField   = $isTypedField
+                    })
+            }
+
+            if ($flagName -in @("-X", "--method")) {
+                $methodSpecified = $true
+                if ($valueIndex -ge 0 -or $hasInlineValue) {
+                    $method = $value
+                }
+            }
+
+            if (-not $hasInlineValue -and $valueIndex -ge 0) {
+                $index++
+            }
+            continue
+        }
+
+        if ($token.StartsWith("-", [System.StringComparison]::Ordinal)) {
+            foreach ($shortValueFlag in @("-X", "-f", "-F", "-q", "-t", "-p")) {
+                if ($token.StartsWith($shortValueFlag, [System.StringComparison]::Ordinal) -and $token.Length -gt $shortValueFlag.Length) {
+                    [void]$attachedShortFlags.Add($token)
+                    break
+                }
+            }
+            [void]$entries.Add([pscustomobject]@{
+                    Index          = $index
+                    Token          = $token
+                    Kind           = "Option"
+                    FlagName       = $null
+                    Value          = $null
+                    ValueIndex     = -1
+                    HasInlineValue = $false
+                    IsField        = $false
+                    IsTypedField   = $false
+                })
+            continue
+        }
+
+        if ($null -eq $endpoint) {
+            $endpoint = $token
+            $endpointIndex = $index
+            $kind = "Endpoint"
+        }
+        else {
+            $kind = "Operand"
+        }
+        [void]$entries.Add([pscustomobject]@{
+                Index          = $index
+                Token          = $token
+                Kind           = $kind
+                FlagName       = $null
+                Value          = $null
+                ValueIndex     = -1
+                HasInlineValue = $false
+                IsField        = $false
+                IsTypedField   = $false
+            })
+    }
+
+    return [pscustomobject]@{
+        Entries            = $entries.ToArray()
+        Endpoint           = $endpoint
+        EndpointIndex      = $endpointIndex
+        Method             = $method
+        MethodSpecified    = $methodSpecified
+        Fields             = $fields.ToArray()
+        HasFields          = ($fields.Count -gt 0)
+        MissingValueFlags  = $missingValueFlags.ToArray()
+        FieldValueIndexes  = $fieldValueIndexes
+        OwnedValueIndexes  = $ownedValueIndexes
+        AttachedShortFlags = $attachedShortFlags.ToArray()
+    }
+}
+
 function Get-GhApiFieldValueIndexes {
-    param([Parameter(Mandatory = $true)][string[]]$CommandTokens)
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$CommandTokens)
 
     $indexes = New-Object System.Collections.Generic.HashSet[int]
     if ($CommandTokens.Count -lt 2) {
@@ -45,18 +194,11 @@ function Get-GhApiFieldValueIndexes {
         return ,$indexes
     }
 
-    # Field flags are matched case-sensitively: -f and -F are different gh flags, and the attached
-    # '--field=name=value' spelling is deliberately not covered - the carve-out applies only to a
-    # token that is the field value itself.
-    for ($index = 2; $index -lt $CommandTokens.Count; $index++) {
-        if ($script:GhApiValueFlags -ccontains $CommandTokens[$index]) {
-            if ($script:GhApiFieldFlags -ccontains $CommandTokens[$index] -and $index + 1 -lt $CommandTokens.Count) {
-                [void]$indexes.Add($index + 1)
-            }
-            $index++
-        }
+    $arguments = @($CommandTokens | Select-Object -Skip 2)
+    $parsed = Parse-GhApiArguments -Arguments $arguments
+    foreach ($index in $parsed.FieldValueIndexes) {
+        [void]$indexes.Add($index + 2)
     }
-
     return ,$indexes
 }
 
@@ -444,53 +586,19 @@ function Get-GitLaunchArguments {
     return $launchArguments
 }
 
-function Get-GhApiMethod {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments)
-
-    $method = $null
-    for ($index = 0; $index -lt $Arguments.Count; $index++) {
-        $argument = $Arguments[$index]
-        if ($argument -in @("--method", "-X")) {
-            if ($index + 1 -ge $Arguments.Count) {
-                Deny-InventoryCommand "gh api method flag requires a value"
-            }
-            $method = $Arguments[$index + 1]
-            $index++
-            continue
-        }
-        if ($argument -match "^(?:--method|-X)=(.+)$") {
-            $method = $Matches[1]
-        }
-    }
-
-    return $method
-}
-
 function Get-GraphQlQueryText {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    param([Parameter(Mandatory = $true)][pscustomobject]$Parsed)
 
     $queryText = $null
-    for ($index = 0; $index -lt $Arguments.Count; $index++) {
-        $argument = $Arguments[$index]
-        if ($argument -in @("-f", "--raw-field", "-F", "--field")) {
-            if ($index + 1 -ge $Arguments.Count) {
-                Deny-InventoryCommand "gh api graphql field flag requires a value"
-            }
-            $field = $Arguments[$index + 1]
-            if ($field.StartsWith("query=")) {
-                if ($null -ne $queryText) {
-                    Deny-InventoryCommand "gh api graphql requires exactly one inline query field"
-                }
-                $queryText = $field.Substring("query=".Length)
-            }
-            $index++
-            continue
+    foreach ($field in @($Parsed.Fields)) {
+        if ($null -eq $field.Value) {
+            Deny-InventoryCommand "gh api graphql field flag '$($field.FlagName)' requires a value"
         }
-        if ($argument -match "^(?:-f|--raw-field|-F|--field)=query=(.*)$") {
+        if ($field.Value.StartsWith("query=")) {
             if ($null -ne $queryText) {
                 Deny-InventoryCommand "gh api graphql requires exactly one inline query field"
             }
-            $queryText = $Matches[1]
+            $queryText = $field.Value.Substring("query=".Length)
         }
     }
 
@@ -510,83 +618,50 @@ function Get-GraphQlQueryText {
 function Assert-GhApiReadCommand {
     param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments)
 
-    if ($Arguments.Count -eq 0) {
+    $parsed = Parse-GhApiArguments -Arguments $Arguments
+    if ($null -eq $parsed.Endpoint) {
         Deny-InventoryCommand "gh api requires an endpoint"
     }
+    if (@($parsed.AttachedShortFlags).Count -gt 0) {
+        Deny-InventoryCommand "gh api attached short options are ambiguous; pass -X, -f, or -F and its value as separate argv"
+    }
+    if (@($parsed.MissingValueFlags).Count -gt 0) {
+        Deny-InventoryCommand "gh api option '$($parsed.MissingValueFlags[0])' requires a value"
+    }
 
-    for ($index = 0; $index -lt $Arguments.Count; $index++) {
-        $argument = $Arguments[$index]
-        if ($argument -cmatch "^-(?:X|f|F).+") {
-            Deny-InventoryCommand "gh api attached short options are ambiguous; pass -X, -f, or -F and its value as separate argv"
-        }
-        if ($argument -eq "--input" -or $argument.StartsWith("--input=")) {
-            Deny-InventoryCommand "gh api --input can disclose a local file and is not allowed"
-        }
-        if ($argument -eq "--cache" -or $argument.StartsWith("--cache=")) {
-            Deny-InventoryCommand "gh api --cache writes local state and is not allowed"
-        }
-        if ($argument -in @("-F", "--field")) {
-            if ($index + 1 -ge $Arguments.Count) {
-                Deny-InventoryCommand "gh api typed field flag requires a value"
-            }
-            if ($Arguments[$index + 1] -match "^[^=]+=@") {
-                Deny-InventoryCommand "gh api typed fields cannot read values from local files"
-            }
-            $index++
+    foreach ($entry in @($parsed.Entries)) {
+        if ($entry.Kind -ne "ValueOption") {
             continue
         }
-        if ($argument -match "^(?:-F|--field)=(?:[^=]+)=@") {
+        if ($entry.FlagName -eq "--input") {
+            Deny-InventoryCommand "gh api --input can disclose a local file and is not allowed"
+        }
+        if ($entry.FlagName -eq "--cache") {
+            Deny-InventoryCommand "gh api --cache writes local state and is not allowed"
+        }
+    }
+    foreach ($field in @($parsed.Fields)) {
+        if ($field.IsTypedField -and $field.Value -match "^[^=]+=@") {
             Deny-InventoryCommand "gh api typed fields cannot read values from local files"
         }
     }
 
-    # Locate the endpoint using the same value-flag grammar as the newline carve-out. A value that
-    # looks like an endpoint (or another flag) still belongs to the option that precedes it and
-    # must never be reinterpreted as the endpoint.
-    $endpoint = $null
-    for ($index = 0; $index -lt $Arguments.Count; $index++) {
-        $argument = $Arguments[$index]
-        if ($script:GhApiValueFlags -ccontains $argument) {
-            if ($index + 1 -ge $Arguments.Count) {
-                Deny-InventoryCommand "gh api option '$argument' requires a value"
-            }
-            $index++
-            continue
-        }
-        if ($argument.StartsWith("-", [System.StringComparison]::Ordinal)) {
-            continue
-        }
-        $endpoint = $argument
-        break
-    }
-    if ($null -eq $endpoint) {
-        Deny-InventoryCommand "gh api requires an endpoint"
-    }
+    $endpoint = $parsed.Endpoint
     if ($endpoint -ieq "graphql" -and $endpoint -cne "graphql") {
         Deny-InventoryCommand "gh api endpoint 'graphql' must use its exact lowercase token"
     }
     $isGraphQl = $endpoint -ceq "graphql"
-    $method = Get-GhApiMethod -Arguments $Arguments
+    $method = $parsed.Method
     if ($isGraphQl) {
         if ($null -ne $method -and $method.ToUpperInvariant() -ne "POST") {
             Deny-InventoryCommand "GraphQL inventory uses query-only POST transport"
         }
-        [void](Get-GraphQlQueryText -Arguments $Arguments)
+        [void](Get-GraphQlQueryText -Parsed $parsed)
         return
     }
 
-    $hasFields = $false
-    foreach ($argument in $Arguments) {
-        if ($argument -in @("-f", "--raw-field", "-F", "--field")) {
-            $hasFields = $true
-        }
-        if ($argument -match "^(?:-f|--raw-field|-F|--field)=") {
-            $hasFields = $true
-        }
-    }
-
     if ($null -eq $method) {
-        if ($hasFields) {
+        if ($parsed.HasFields) {
             Deny-InventoryCommand "REST fields change gh api's default to POST; pass --method GET explicitly"
         }
         $method = "GET"
@@ -603,7 +678,10 @@ function Assert-GhReadCommand {
         Deny-InventoryCommand "gh requires an allowlisted read subcommand"
     }
     foreach ($argument in $Arguments) {
-        if ($argument -eq "--web" -or $argument.StartsWith("--web=") -or $argument.StartsWith("-w", [System.StringComparison]::Ordinal)) {
+        $isClusteredBrowserShort = $argument.StartsWith("-", [System.StringComparison]::Ordinal) -and
+            -not $argument.StartsWith("--", [System.StringComparison]::Ordinal) -and
+            $argument.Length -gt 1 -and $argument.Substring(1).Contains("w")
+        if ($argument -eq "--web" -or $argument.StartsWith("--web=") -or $isClusteredBrowserShort) {
             Deny-InventoryCommand "--web/-w launches an external interactive surface"
         }
     }
@@ -755,6 +833,7 @@ function Invoke-ReadOnlyInventorySelfTest {
     # Values that resemble another option belong to the value-owning flag immediately before them.
     # The validator must not reinterpret a jq expression as a method, typed field, or input path.
     Assert-Allowed @("gh", "api", "--jq", "--method", "repos/example/repo/issues")
+    Assert-Allowed @("gh", "api", "--jq", "--method=DELETE", "repos/example/repo/issues")
     Assert-Allowed @("gh", "api", "--jq", "-F", "owner=@secret.txt", "repos/example/repo/issues")
     Assert-Allowed @("gh", "api", "--jq", "--input", "secret.txt", "repos/example/repo/issues")
     Assert-Denied @("gh", "api", "repos/example/repo/issues", "--input", "secret.txt") "local file"
