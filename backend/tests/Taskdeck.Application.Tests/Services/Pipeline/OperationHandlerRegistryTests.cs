@@ -101,6 +101,42 @@ public class OperationHandlerRegistryTests
     }
 
     [Fact]
+    public async Task DeleteCardOperation_UsesAuthenticatedActorForRelationRemoval()
+    {
+        var actorId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Delete with relation audit");
+        var auditLogs = new Mock<IAuditLogRepository>();
+
+        _unitOfWorkMock.Setup(unit => unit.AuditLogs).Returns(auditLogs.Object);
+        _boardRepoMock.Setup(repository => repository.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _cardRepoMock.Setup(repository => repository.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+        _cardRepoMock.Setup(repository => repository.GetHierarchyByBoardIdAsync(board.Id, default))
+            .ReturnsAsync([card]);
+        _cardRepoMock.Setup(repository => repository.StageRelationRemovalAsync(card, actorId, default))
+            .Returns(Task.CompletedTask);
+        _cardRepoMock.Setup(repository => repository.DeleteAsync(card, default)).Returns(Task.CompletedTask);
+        auditLogs.Setup(repository => repository.AddAsync(It.IsAny<AuditLog>(), default))
+            .ReturnsAsync((AuditLog audit, CancellationToken _) => audit);
+
+        var registry = new OperationHandlerRegistry(
+            _unitOfWorkMock.Object,
+            new CardService(_unitOfWorkMock.Object),
+            _boardServiceMock.Object,
+            _columnServiceMock.Object);
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "delete", "card", card.Id.ToString(),
+            JsonSerializer.Serialize(new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt }),
+            "delete-with-applier", null);
+
+        var result = await registry.ExecuteOperationAsync(operation, default, actorId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        _cardRepoMock.Verify(repository => repository.StageRelationRemovalAsync(card, actorId, default), Times.Once);
+    }
+
+    [Fact]
     public async Task ExecuteOperationAsync_ShouldReturnFailure_ForUnsupportedCardAction()
     {
         var operation = new ProposalOperationDto(

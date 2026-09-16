@@ -87,6 +87,42 @@ public class BoardJsonExportImportRoundTripTests
             .Should().BeNull();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(135)]
+    public void EstimatedEffort_UsesV5EnvelopeWithoutRelations(int minutes)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var boardId = Guid.NewGuid();
+        var export = new ExportBoardDto(
+            new BoardDto(boardId, "Estimates", null, false, now, now),
+            [new ColumnDto(Guid.NewGuid(), boardId, "Work", 0, null, 1, now, now)],
+            [new CardDto(Guid.NewGuid(), boardId, Guid.NewGuid(), "Estimated", string.Empty, null, false, null, 0,
+                [], now, now, EstimatedEffortMinutes: minutes)],
+            [], [], now, "exporter");
+
+        var payload = BoardJsonExportImportService.ToPortablePayload(export);
+
+        var envelope = payload.Should().BeOfType<BoardExportEnvelope>().Which;
+        envelope.Version.Should().Be(5);
+        envelope.Payload.Relations.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [Fact]
+    public void EstimatedEffort_UnknownOnlyWithoutRelationsRetainsLegacyPayload()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var boardId = Guid.NewGuid();
+        var export = new ExportBoardDto(
+            new BoardDto(boardId, "Unknown estimates", null, false, now, now),
+            [new ColumnDto(Guid.NewGuid(), boardId, "Work", 0, null, 1, now, now)],
+            [new CardDto(Guid.NewGuid(), boardId, Guid.NewGuid(), "Unknown", string.Empty, null, false, null, 0,
+                [], now, now)],
+            [], [], now, "exporter");
+
+        BoardJsonExportImportService.ToPortablePayload(export).Should().BeSameAs(export);
+    }
+
     [Fact]
     public void TypedRelations_OlderEnvelopeDoesNotAcceptMetadataItCannotRepresent()
     {
@@ -177,18 +213,28 @@ public class BoardJsonExportImportRoundTripTests
         AddToPrivateCollection(board, "_columns", column);
         SetupExportMocks(board, owner);
         SetupImportMocks(owner);
+        var dependencies = new Mock<IBoardDependencyRepository>();
+        dependencies.Setup(repository => repository.GetAsync(board.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((BoardDependencies?)null);
+        var service = new BoardJsonExportImportService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = true },
+            dependencies: dependencies.Object);
         var imported = new List<Card>();
         _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
             .Callback<Card, CancellationToken>((card, _) => imported.Add(card))
             .ReturnsAsync((Card card, CancellationToken _) => card);
 
-        var exported = await _service.ExportBoardToJsonAsync(board.Id, owner.Id);
+        var exported = await service.ExportBoardToJsonAsync(board.Id, owner.Id);
         exported.IsSuccess.Should().BeTrue(exported.ErrorMessage);
         using var json = JsonDocument.Parse(exported.Value);
-        json.RootElement.TryGetProperty("format", out _).Should().BeFalse("estimates are an additive field");
-        foreach (var card in json.RootElement.GetProperty("cards").EnumerateArray())
+        json.RootElement.GetProperty("format").GetString().Should().Be("taskdeck-board");
+        json.RootElement.GetProperty("version").GetInt32().Should().Be(5);
+        var payload = json.RootElement.GetProperty("payload");
+        payload.GetProperty("relations").EnumerateArray().Should().BeEmpty();
+        foreach (var card in payload.GetProperty("cards").EnumerateArray())
             card.TryGetProperty("estimatedEffortMinutes", out _).Should().BeTrue();
-        var result = await _service.ImportBoardFromJsonAsync(exported.Value, owner.Id);
+        var result = await service.ImportBoardFromJsonAsync(exported.Value, owner.Id);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         imported.Should().HaveCount(source.Count);
