@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { findTimezoneStubs, isTimezoneHelperSelfTest } from '../utils/timezoneSourceGuard'
+import timezoneEnvironmentSource from './timezoneEnvironment.spec.ts?raw'
 
 // No node:fs dependency in the Vitest/browser type-check project. Source parsing
 // ignores instrumentation/layout changes; unlike a facade regex, it reads calls.
-const sources = import.meta.glob([
+// Vite deliberately omits the importing module from an eager glob, so include this
+// guard through a query-distinct raw import to ensure the convention also guards itself.
+const discoveredSources = import.meta.glob([
   '../**/*.{ts,tsx,js,mjs}',
+  '!../guards/timezoneEnvironment.spec.ts',
   '../../../tests/**/*.{ts,tsx,js,mjs}',
   '!../../../tests/e2e/**',
   '!../../../tests/visual/**',
@@ -12,6 +16,10 @@ const sources = import.meta.glob([
 ], {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>
+const sources: Record<string, string> = {
+  ...discoveredSources,
+  '../guards/timezoneEnvironment.spec.ts': timezoneEnvironmentSource,
+}
 
 describe('timezone environment convention (#3013)', () => {
   it('scans test sources, including the helper and ordinary component specs', () => {
