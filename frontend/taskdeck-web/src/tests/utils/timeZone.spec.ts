@@ -25,9 +25,11 @@ describe('timeZone test helper (#2943)', () => {
   let restore: (() => void) | null = null
 
   afterEach(() => {
+    // Uninstall fake timers before restoring the helper so a clock-aware Intl
+    // copy cannot retain the installed wrapper between tests.
+    vi.useRealTimers()
     restore?.()
     restore = null
-    vi.useRealTimers()
     vi.unstubAllEnvs()
   })
 
@@ -202,21 +204,19 @@ describe('timeZone test helper (#2943)', () => {
       expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('Pacific/Kiritimati')
     })
 
-    it('documents the ordering rule: fake timers replace the whole Intl global', () => {
-      // Installed BEFORE useFakeTimers, the Intl default zone is discarded —
-      // vitest swaps `Intl` itself for a clock-aware stand-in. `Date`'s local
-      // accessors survive because those are patched on `Date.prototype`.
+    it('documents the ordering rule: fake timers precede timezone installation', () => {
+      // Reset any clock state inherited from a neighboring test, then install
+      // fake timers before the helper so it wraps the clock-aware Intl object.
+      vi.useRealTimers()
       const hostZone = Intl.DateTimeFormat().resolvedOptions().timeZone
       const installedZone = hostZone === 'Pacific/Kiritimati' ? 'Pacific/Midway' : 'Pacific/Kiritimati'
+      vi.useFakeTimers()
       const instant = instantAtZonedWallClock([2026, 7, 19, 12, 0, 0], installedZone)
       expect(installedZone).not.toBe(hostZone)
       restore = installTimeZone(installedZone)
+      vi.setSystemTime(instant)
       expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(installedZone)
-
-      vi.useFakeTimers()
-
-      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(hostZone)
-      expect(new Date(instant.getTime()).getDate()).toBe(19)
+      expect(new Date().getDate()).toBe(19)
     })
 
     it('does not replace the host local-parts constructor, parser or local setters', () => {

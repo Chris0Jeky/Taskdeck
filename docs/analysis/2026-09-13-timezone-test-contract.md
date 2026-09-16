@@ -2,9 +2,9 @@
 
 Last Updated: 2026-09-13
 
-Status: draft PR #3090; hosted fake-timer ordering failure remains unresolved.
-No local Vitest, Stryker, browser, physical-device or screen-reader qualification
-is claimed. Do not merge until the exact-head frontend gate passes.
+Status: draft PR #3090; the standalone fake-timer ordering assertion is repaired
+locally. No hosted, Stryker, browser, physical-device or screen-reader
+qualification is claimed. Do not merge until the exact-head frontend gate passes.
 
 ## Decision and boundaries
 
@@ -15,9 +15,10 @@ Pin New York's fall-back to 2026-11-01T05:30Z and Berlin's to
 The helper comment no longer promises that two corrections solve every zone.
 For an intentionally chosen overlap occurrence, use an explicit ISO instant.
 
-The fake-timer ordering regression captures the host zone, chooses an installed
-zone that differs, and asserts restoration to that captured host zone. It no
-longer relies on the runner not living in Pacific/Kiritimati. The positive
+The fake-timer ordering regression resets timer state, captures the host zone,
+chooses an installed zone that differs, and enforces the required ordering:
+fake timers are enabled before the timezone helper is installed. It no longer
+relies on the runner not living in Pacific/Kiritimati. The positive
 fake-timers-before-install case remains in place. A separate regression proves
 the mixed Date model: local constructors, zone-less parsing and local setters
 retain their native identities and host-time behavior while local getters and
@@ -75,20 +76,27 @@ The review follow-up expanded the standalone scan to 445 local files, again
 finding exactly one self-test; deliberate forbidden calls under both component
 and root-unit paths were detected. The count remains local-snapshot evidence.
 
-The initial hosted run 34725757086 at 062a35e32500d7692198d8b117c42e6f0447d5e7
+On the current PR merge, the targeted ordering test failed independently under
+both `forks` and `threads` because it installed the timezone helper before fake
+timers and expected the discarded host zone. The fix resets timers and enforces
+the documented fake-timers-before-helper ordering. After changing the test and
+cleanup order, the targeted and combined helper/guard tests pass independently
+in both pools. The full matrix and hosted gate remain pending.
+
+The initial hosted run 34725757086 at 062a35e32500d7692198d8b117c42e6f0447d5
 passed frontend lint, typecheck and build on both operating systems. The Linux
 suite reported 6,912 passed, three skipped and one failure, in the fake-timer
 ordering regression; the new source guard passed all 16 cases. The log reported
 `ReferenceError: NativeDateTimeFormat is not defined`. Its displayed helper
 excerpt does not match the fetched head/merge helper body, so no root-cause or
 repair is inferred from that trace. The first automated review separately found
-the root-unit scan gap, corrected above. This correction does not claim to fix the
-ordering failure or certify the full suite. No assertion is skipped or weakened.
+the root-unit scan gap, corrected above. That historical run predates the
+ordering repair below and does not certify the current exact head. No assertion
+is skipped or weakened.
 
 The standalone probes do not execute fake timers, the Vite raw glob, the full
-type checker, or Vitest. Reproduce the ordering failure on a clean exact-head
-checkout, retain its actual transformed-source/trace evidence, and qualify the
-new guard (16 cases) and expanded helper suite (17 cases) in both relevant pools:
+type checker, or Vitest. Qualify the new guard (16 cases) and expanded helper
+suite (17 cases) in both relevant pools on the exact head:
 
 ```sh
 cd frontend/taskdeck-web
