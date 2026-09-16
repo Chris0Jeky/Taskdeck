@@ -2,14 +2,25 @@
 
 Last Updated: 2026-09-12
 
+Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
+Starting a relation proposal still prevents departure while the request is unsettled, but the
+message describes that proposal rather than asking the user to finish an answer or stop recording.
+Existing private-answer, recording and companion-send guards retain their behavior. This reduces
+confusing recovery instructions while keeping relation changes review-first. All 20 focused cases
+pass; final frontend qualification passes 6,911 tests with three existing skips, lint, typecheck and
+production build. The independent review is clean. The candidate includes delivered #3082;
+required hosted qualification remains a gate before merge. Existing human actions are unchanged.
+
 Paper archive/restore settlement (#3060) now reconciles the committed lifecycle and card version
 when the user switches A-to-B-to-A before the request completes. The current matching inspector
 receives that result before the shared pending lock is released, while retaining newer local draft
 edits. Unrelated selections and failed stale requests retain their existing event, permission and
 focus guards. Seven focused ownership cases pass, including both lifecycle directions, and the
-independent review is clean. The candidate includes recovery integration #3081; final combined
-frontend and hosted qualification are recorded on the delivery PR before merge. The broader #3023
-draft residuals and parked #3057 permission work remain separate.
+independent review is clean. #3082 merged as `2cdc45257` after required run `34722482168`
+passed at `29a3142a9` against main `96f4b7cc2`; combined frontend qualification passes 6,909 tests
+with three existing skips, lint, typecheck and build. The confirmed MEDIUM late-restore form and
+assignment write-version follow-up is tracked in #3083; stale writes are rejected and drafts kept.
+The broader #3023 draft residuals and parked #3057 permission work remain separate.
 
 Typed relations #3066 merged on 2026-09-12 as `160818440`, after required run
 `34718378428` passed at reviewed head `7c66104b3` against main `9a8c14c6b`.
