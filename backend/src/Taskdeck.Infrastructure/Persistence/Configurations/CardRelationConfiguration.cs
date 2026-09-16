@@ -8,9 +8,9 @@ public sealed class CardRelationConfiguration : IEntityTypeConfiguration<CardRel
     {
         builder.ToTable("CardRelations", table =>
         {
-            table.HasCheckConstraint("CK_CardRelations_Kind", "RelationType IN ('relates-to', 'blocks', 'duplicates', 'spawned-from')");
-            table.HasCheckConstraint("CK_CardRelations_Endpoints", "SourceCardId <> TargetCardId");
-            table.HasCheckConstraint("CK_CardRelations_SymmetricOrder", "RelationType <> 'relates-to' OR SourceCardId < TargetCardId");
+            table.HasCheckConstraint("CK_CardRelations_Kind", "\"RelationType\" IN ('relates-to', 'blocks', 'duplicates', 'spawned-from')");
+            table.HasCheckConstraint("CK_CardRelations_Endpoints", "\"SourceCardId\" <> \"TargetCardId\"");
+            table.HasCheckConstraint("CK_CardRelations_SymmetricOrder", "\"RelationType\" <> 'relates-to' OR \"SourceCardId\" < \"TargetCardId\"");
         });
         builder.HasKey(edge => new { edge.BoardId, edge.SourceCardId, edge.TargetCardId, edge.RelationType });
         builder.Property(edge => edge.RelationType).HasMaxLength(20).IsRequired();
