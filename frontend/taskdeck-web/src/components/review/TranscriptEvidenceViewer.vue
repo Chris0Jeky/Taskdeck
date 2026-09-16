@@ -30,7 +30,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const transcript = ref<TranscriptDto | null>(null)
 const loading = ref(false)
@@ -54,6 +54,27 @@ const errorMessage = computed(() => (errorKey.value ? t(errorKey.value) : null))
 
 let requestGeneration = 0
 let abortController: AbortController | null = null
+let announcementTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearErrorAnnouncement() {
+  if (announcementTimer !== null) {
+    clearTimeout(announcementTimer)
+    announcementTimer = null
+  }
+  errorAnnouncement.value = null
+}
+
+function announceError(errorKey: string) {
+  clearErrorAnnouncement()
+  errorAnnouncement.value = t(errorKey)
+  // Keep the alert mounted for one browser turn so assistive technology can
+  // consume the live update, then remove the snapshot from the accessibility
+  // tree. A locale switch clears it immediately instead of exposing stale copy.
+  announcementTimer = setTimeout(() => {
+    announcementTimer = null
+    errorAnnouncement.value = null
+  }, 0)
+}
 
 /**
  * Nudges an offset off the trailing half of a surrogate pair so a highlight can
@@ -100,7 +121,7 @@ async function load() {
 
   loading.value = true
   errorKey.value = null
-  errorAnnouncement.value = null
+  clearErrorAnnouncement()
   transcript.value = null
 
   try {
@@ -112,7 +133,7 @@ async function load() {
     if (controller.signal.aborted) return
     const nextErrorKey = describeErrorKey(error)
     errorKey.value = nextErrorKey
-    errorAnnouncement.value = t(nextErrorKey)
+    announceError(nextErrorKey)
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
@@ -131,9 +152,11 @@ function describeErrorKey(error: unknown): string {
 }
 
 watch(() => props.transcriptId, load, { immediate: true })
+watch(locale, clearErrorAnnouncement, { flush: 'sync' })
 
 onScopeDispose(() => {
   requestGeneration++
+  clearErrorAnnouncement()
   abortController?.abort()
   abortController = null
 })
