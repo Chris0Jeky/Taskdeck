@@ -13,9 +13,10 @@ import { logWarn } from '../utils/errorReporting'
  * `visualViewport.height` keeps those actions on screen.
  *
  * Browser pinch zoom also changes those measurements, but it is not a keyboard
- * contraction. While `visualViewport.scale` is above 1, browser zoom owns
- * navigation and this composable exposes the caller's normal fallback instead.
- * Returning to scale 1 resumes visual-viewport geometry on the next event.
+ * contraction. While `visualViewport.scale` is anything other than 1, browser
+ * zoom or an inactive viewport owns the geometry and this composable exposes
+ * the caller's normal fallback instead. Returning to scale 1 resumes
+ * visual-viewport geometry on the next event.
  *
  * Two custom properties are emitted, namespaced by `prefix`:
  *   `${prefix}-visual-viewport-height`
@@ -76,7 +77,7 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
 
     const visualViewport = window.visualViewport
     const followsVisualViewport = Boolean(visualViewport)
-      && (visualViewport?.scale ?? 1) <= 1
+      && (visualViewport?.scale ?? 1) === 1
 
     supported.value = followsVisualViewport
     height.value = followsVisualViewport ? visualViewport!.height : window.innerHeight
