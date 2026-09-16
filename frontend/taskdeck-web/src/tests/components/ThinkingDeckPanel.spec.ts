@@ -1,5 +1,6 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent } from 'vue'
 import ThinkingDeckPanel from '../../components/thinking/ThinkingDeckPanel.vue'
 import CardDependencies from '../../components/thinking/CardDependencies.vue'
 import CardRelations from '../../components/thinking/CardRelations.vue'
@@ -44,6 +45,28 @@ describe('ThinkingDeckPanel', () => {
     await wrapper.setProps({ cardId: 'unavailable-card' }); await flushPromises()
     expect(wrapper.findComponent(CardDependencies).exists()).toBe(false)
     expect(wrapper.get('[role="alert"]').text()).toContain('Could not load')
+    wrapper.unmount()
+  })
+
+  it('reports relation proposal activity separately from private answer activity', async () => {
+    const wrapper = mount(ThinkingDeckPanel, {
+      props,
+      global: {
+        stubs: {
+          CardDependencies: true,
+          CardRelations: defineComponent({ name: 'CardRelations', emits: ['busy'], template: '<div />' }),
+        },
+      },
+    })
+    await flushPromises()
+    const relations = wrapper.findComponent({ name: 'CardRelations' })
+    relations.vm.$emit('busy', true)
+    await flushPromises()
+    expect(wrapper.emitted('relation-busy')).toEqual([[true]])
+    expect(wrapper.emitted('busy')).toBeUndefined()
+    relations.vm.$emit('busy', false)
+    await flushPromises()
+    expect(wrapper.emitted('relation-busy')).toEqual([[true], [false]])
     wrapper.unmount()
   })
 
