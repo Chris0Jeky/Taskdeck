@@ -128,9 +128,11 @@ private feedback outside the repository.
    400 response does not prove registration is closed.
 7. Create a small synthetic board and grant the participant `Editor` access through **Workspace →
    Settings → Access** (`/workspace/settings/access`).
-8. Record the two successful registrations and the valid-registration 403 closure evidence before
-   continuing. `GET /api/users` may support an inventory check, but it does not prove that exactly two
-   users exist.
+8. Before declaring the two-account boundary, confirm that the database volume is fresh or run an
+   authoritative account inventory that includes existing users. Recording two successful
+   registrations and the valid-registration 403 closure is not enough when an older volume may still
+   contain active accounts. `GET /api/users` may support an inventory check, but it does not prove that
+   exactly two users exist; stop and reconcile any additional identities before continuing.
 
 Do not build or request a richer invite-code UI in this slice. Record invite UX friction as a
 finding against the existing registration surface.
@@ -152,12 +154,13 @@ Replace the bracketed values before sending.
 >
 > 1. Open **Inbox** and select the shared synthetic board.
 > 2. Capture: `Please create a card called family beta check for Friday.`
-> 3. Wait for Taskdeck to produce a proposal. If it cannot, leave the capture in place and tell the
+> 3. Select the capture and choose **Start Triage** (shown as **Ask AI** in Paper mode).
+> 4. Wait for Taskdeck to produce a proposal. If it cannot, leave the capture in place and tell the
 >    maintainer what the screen says; do not keep resubmitting it.
-> 4. Open **Review**. Read the proposed change and its evidence before choosing **Approve**.
-> 5. Return to the board and confirm that approval alone did **not** create the card.
-> 6. In Review, choose **Apply to board**, then confirm **Apply** in the separate dialog.
-> 7. Return to the board and confirm that exactly one `family beta check` card exists.
+> 5. Open **Review**. Read the proposed change and its evidence before choosing **Approve**.
+> 6. Return to the board and confirm that approval alone did **not** create the card.
+> 7. In Review, choose **Apply to board**, then confirm **Apply** in the separate dialog.
+> 8. Return to the board and confirm that exactly one `family beta check` card exists.
 >
 > **Record feedback**
 >
@@ -241,9 +244,10 @@ shared board.
 >
 > 1. Create a blank synthetic board.
 > 2. Open **Inbox** and capture: `Please create a card called local family beta check.`
-> 3. Open **Review**, inspect the proposal, and choose **Approve**.
-> 4. Confirm the board is still unchanged.
-> 5. Choose **Apply to board**, confirm **Apply**, and verify exactly one card appears.
+> 3. Select the capture and choose **Start Triage** (shown as **Ask AI** in Paper mode).
+> 4. Open **Review**, inspect the proposal, and choose **Approve**.
+> 5. Confirm the board is still unchanged.
+> 6. Choose **Apply to board**, confirm **Apply**, and verify exactly one card appears.
 >
 > **Stop and protect the data**
 >
@@ -366,8 +370,12 @@ Friends-and-family observations route through the standing dogfooding lane repre
 ### Normal end of the hosted trial
 
 1. Ask whether the participant wants an available export before removal.
-2. Remove board access and close the participant account through the supported account-deletion
-   path when requested.
+2. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
+   must perform the supported authenticated request from their own session, using their current
+   password and the exact confirmation phrase `DELETE MY ACCOUNT` at `POST /api/account/delete`.
+   Never ask the participant to send a password or token. If they do not perform that request, remove
+   their board access, revoke any unused invite, close registration, and stop the tunnel or other
+   perimeter exposure; record that the account was retained rather than claiming it was deleted.
 3. Take a final encrypted backup only when its retention was disclosed and agreed.
 4. Stop exposure or keep registration `Closed`; do not leave an unused invite active.
 5. Record the exit reason and whether the participant would return after a named change.
