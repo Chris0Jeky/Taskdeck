@@ -8,8 +8,9 @@
 // greater than or equal to break threshold 100" and exits 0. The activation
 // guard would then be green while proving nothing.
 //
-// This script reads the smoke run's JSON report and requires a known, non-zero
-// set of killed mutants from the expected source file.
+// The npm lifecycle removes the previous JSON receipt before Stryker starts.
+// This script therefore requires a newly written report containing a known,
+// non-zero set of killed mutants from the expected source file.
 
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -44,17 +45,15 @@ async function check() {
     fail(`the smoke report at ${reportPath} has no "files" section`)
   }
 
-  // Pin the source file as well as the mutant count. Without this the guard
-  // would accept any report that happens to carry four killed mutants --
-  // including a stale report left behind by an earlier run, since
-  // `reports/mutation/` is gitignored and survives branch switches.
+  // Pin the source file as well as the mutant count. The premutation lifecycle
+  // removes any prior receipt, so this entry can only come from the current run.
   const reportedFiles = Object.keys(files)
   if (!Object.prototype.hasOwnProperty.call(files, EXPECTED_FILE)) {
     fail(
       `the smoke report has no entry for ${EXPECTED_FILE}. ` +
         `It reported: ${reportedFiles.length > 0 ? reportedFiles.join(', ') : '(no files)'}. ` +
         'Either the mutated range in stryker.smoke.config.mjs no longer points at the ' +
-        'board-list deletion expression, or this report is stale -- delete ' +
+        'board-list deletion expression, or Stryker wrote an incomplete report -- delete ' +
         `${reportPath} and re-run the smoke.`,
     )
   }
