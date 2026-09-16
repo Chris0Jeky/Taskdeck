@@ -95,7 +95,6 @@ public sealed class BoardImportAssigneeConflictMessageTests
                 SourceAssignees: [new(SourceKey, ConflictingLabel)])
         ],
         []);
-
     private sealed class Fixture
     {
         public readonly User User = new(
