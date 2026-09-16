@@ -38,6 +38,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const todayLoading = ref(false)
   const todayError = ref<string | null>(null)
   let pendingPreferenceRequests = 0
+  let homeRequestVersion = 0
   let todayRequestVersion = 0
   // ── Preference ordering model (issue #1343) ────────────────────────────────
   // WRITES CONFIRM, NEVER RE-APPLY: updateMode/updateOnboarding apply the
@@ -287,6 +288,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function fetchHomeSummary(): Promise<HomeSummary> {
+    const requestVersion = ++homeRequestVersion
+
     if (isDemoMode) {
       homeLoading.value = true
       homeError.value = null
@@ -311,6 +314,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       homeLoading.value = true
       homeError.value = null
       const summary = await workspaceApi.getHomeSummary()
+      if (homeRequestVersion !== requestVersion) return summary
       homeSummary.value = summary
       const { modeApplied, onboardingApplied } = applySummaryPreferences(summary, guardSnapshot)
       if (modeApplied) {
@@ -324,10 +328,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
       return summary
     } catch (e: unknown) {
-      homeError.value = getErrorMessage(e, "We couldn't load your workspace overview")
+      if (homeRequestVersion === requestVersion) {
+        homeError.value = getErrorMessage(e, "We couldn't load your workspace overview")
+      }
       throw e
     } finally {
-      homeLoading.value = false
+      if (homeRequestVersion === requestVersion) {
+        homeLoading.value = false
+      }
     }
   }
 
@@ -498,6 +506,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function clearHomeSummary() {
     // Invalidate any in-flight badge refresh so its response cannot write back
     // into a summary the caller just cleared.
+    homeRequestVersion += 1
     workloadRequestVersion += 1
     homeSummary.value = null
     homeError.value = null

@@ -172,6 +172,50 @@ describe('workspaceStore residual preference interleavings (#1410)', () => {
     expect(store.onboarding).toEqual(newOnboarding)
   })
 
+  it('drops a pre-logout Home response while the next login fetch is pending', async () => {
+    let resolveOldHome!: (value: { data: HomeSummary }) => void
+    let resolveFreshHome!: (value: { data: HomeSummary }) => void
+    vi.mocked(http.get)
+      .mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => {
+          resolveOldHome = resolve
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => {
+          resolveFreshHome = resolve
+        }),
+      )
+
+    const store = useWorkspaceStore()
+    const oldHomeRequest = store.fetchHomeSummary()
+
+    sessionState.isAuthenticated = false
+    store.resetForLogout()
+    sessionState.isAuthenticated = true
+    const freshSummary = makeHomeSummary({
+      workload: { ...makeHomeSummary().workload, capturesNeedingTriage: 2 },
+    })
+    const freshHomeRequest = store.fetchHomeSummary()
+
+    resolveOldHome({
+      data: makeHomeSummary({
+        workload: { ...makeHomeSummary().workload, capturesNeedingTriage: 1 },
+      }),
+    })
+    await oldHomeRequest
+
+    expect(store.homeSummary).toBeNull()
+    expect(store.homeLoading).toBe(true)
+
+    resolveFreshHome({ data: freshSummary })
+    await freshHomeRequest
+
+    expect(store.homeSummary).toEqual(freshSummary)
+    expect(store.inboxBadgeCount).toBe(2)
+    expect(store.homeLoading).toBe(false)
+  })
+
   it('lets a clean Home summary confirm a dirty mode that already reached the server', async () => {
     vi.mocked(http.put).mockRejectedValueOnce(new Error('response lost after commit'))
     const store = useWorkspaceStore()
