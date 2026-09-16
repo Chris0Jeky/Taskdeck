@@ -629,11 +629,27 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
         // The raw-SQL UPDATE bypasses the EF change tracker. If this context already
         // tracks the entity (e.g. it was materialized by GetOldestProcessingCaptureAsync),
-        // reload it so callers holding the instance observe the persisted claim timestamp.
+        // refresh only the fields owned by the claim. ReloadAsync would silently discard
+        // unrelated pending changes on the tracked request.
         var tracked = _context.LlmRequests.Local.FirstOrDefault(lr => lr.Id == requestId);
         if (tracked != null)
         {
-            await _context.Entry(tracked).ReloadAsync(cancellationToken);
+            var persistedClaim = await _context.LlmRequests
+                .AsNoTracking()
+                .Where(lr => lr.Id == requestId)
+                .Select(lr => new { lr.Status, lr.UpdatedAt })
+                .SingleAsync(cancellationToken);
+
+            var entry = _context.Entry(tracked);
+            var statusProperty = entry.Property(lr => lr.Status);
+            statusProperty.CurrentValue = persistedClaim.Status;
+            statusProperty.OriginalValue = persistedClaim.Status;
+            statusProperty.IsModified = false;
+
+            var updatedAtProperty = entry.Property(lr => lr.UpdatedAt);
+            updatedAtProperty.CurrentValue = persistedClaim.UpdatedAt;
+            updatedAtProperty.OriginalValue = persistedClaim.UpdatedAt;
+            updatedAtProperty.IsModified = false;
         }
 
         return true;
