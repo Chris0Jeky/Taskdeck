@@ -56,6 +56,19 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   const accessUnavailable = ref(false)
   /** The latest board-read request at the start of a denied-write recovery. */
   let recoveryRequestGeneration: number | null = null
+  type PermissionReadOutcome = 'authoritative' | 'transient' | 'superseded' | 'not-started'
+  type DeferredStorePermission = {
+    boardId: string
+    canWrite: boolean
+    payloadGeneration: number | null
+  }
+  // A manual retry starts after any already-running board-store request. While
+  // that retry is pending, an older store response is evidence but cannot own
+  // the decision. Retain the newest eligible payload and use it only when the
+  // later retry fails transiently or returns an inconclusive legacy payload.
+  let explicitRetrySequence = 0
+  let activeExplicitRetry: number | null = null
+  let deferredStorePermission: DeferredStorePermission | null = null
 
   /** The permission this composable's own server read confirmed, scoped to its board. */
   const confirmed = ref<{ boardId: string; canWrite: boolean } | null>(null)
@@ -148,7 +161,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   const readsBlocked = computed(() => permissionRecovery.value &&
     (checking.value || accessUnavailable.value || confirmedPermission.value === null))
 
-  async function read(boardId: string) {
+  async function read(boardId: string): Promise<PermissionReadOutcome> {
     const current = ++generation
     inFlightRequest?.abort()
     const request = new AbortController()
@@ -169,7 +182,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
         timeout: BOARD_REQUEST_TIMEOUT_MS,
         skipRetry: true,
       })
-      if (current !== generation) return
+      if (current !== generation) return 'superseded'
       /*
        * A FRESH payload that still omits the field is not a stale cache — it is a server
        * that predates the field, and the `Board` contract's legacy convention governs it:
@@ -181,18 +194,29 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       if (permissionRecovery.value && board.isArchived !== true && typeof board.canWrite !== 'boolean') {
         confirmed.value = null
         failedBoardId.value = boardId
-      } else {
-        confirmed.value = { boardId, canWrite: board.canWrite !== false && board.isArchived !== true }
+        accessUnavailable.value = false
+        return 'transient'
+      }
+
+      const canWrite = board.canWrite !== false && board.isArchived !== true
+      confirmed.value = { boardId, canWrite }
+      if (permissionRecovery.value && !canWrite) {
+        recoveryRequestGeneration = boardRequestGeneration.value
       }
       accessUnavailable.value = false
+      return 'authoritative'
     } catch (cause) {
       // A failed read grants nothing. The unknown state stands and the caller offers the
       // explicit retry; the server still refuses any write this control should not allow.
-      if (current !== generation) return
+      if (current !== generation) return 'superseded'
       confirmed.value = null
       failedBoardId.value = boardId
       const status = (cause as { response?: { status?: number } })?.response?.status
       accessUnavailable.value = status === 403 || status === 404
+      if (permissionRecovery.value && accessUnavailable.value) {
+        recoveryRequestGeneration = boardRequestGeneration.value
+      }
+      return accessUnavailable.value ? 'authoritative' : 'transient'
     } finally {
       if (current === generation) {
         inFlightBoardId = null
@@ -212,21 +236,60 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   }
   onScopeDispose(cancelRead)
 
+  function acceptStorePermission(candidate: DeferredStorePermission) {
+    if (candidate.boardId !== options.getBoardId()) return
+    // A store payload can retire an older automatic reconciliation read, but
+    // never a later explicit retry: the watcher defers it while that owner lives.
+    cancelRead()
+    confirmed.value = { boardId: candidate.boardId, canWrite: candidate.canWrite }
+    failedBoardId.value = null
+    accessUnavailable.value = false
+  }
+
+  async function beginPermissionRecovery(newDenial: boolean): Promise<PermissionReadOutcome> {
+    if (!options.getIsOpen() || !permissionDecides.value) return 'not-started'
+    // A manual retry remains tied to the refusal it is reconciling. Keep that
+    // boundary so a board-store read begun after the refusal remains fresh
+    // evidence when the retry fails. A newly refused write advances it.
+    permissionRecovery.value = true
+    if (newDenial || recoveryRequestGeneration === null) {
+      recoveryRequestGeneration = boardRequestGeneration.value
+    }
+    confirmed.value = null
+    return read(options.getBoardId())
+  }
+
   /** Explicit recovery from an unknown permission state. */
   async function refreshPermission() {
-    if (!options.getIsOpen() || !permissionDecides.value) return
-    // Invalidate both the loaded payload and our own earlier answer synchronously.
-    // A refusal also supersedes any read started before it, even for the same board.
-    permissionRecovery.value = true
-    recoveryRequestGeneration = boardRequestGeneration.value
-    confirmed.value = null
-    await read(options.getBoardId())
+    const owner = ++explicitRetrySequence
+    activeExplicitRetry = owner
+    deferredStorePermission = null
+    const outcome = await beginPermissionRecovery(false)
+    if (activeExplicitRetry !== owner) return
+
+    activeExplicitRetry = null
+    const deferred = deferredStorePermission
+    deferredStorePermission = null
+    if (outcome === 'transient' && deferred) {
+      acceptStorePermission(deferred)
+    }
+  }
+
+  /** A newly refused write invalidates evidence that predated that refusal. */
+  async function recoverFromPermissionDenied() {
+    explicitRetrySequence++
+    activeExplicitRetry = null
+    deferredStorePermission = null
+    await beginPermissionRecovery(true)
   }
 
   watch(
     [() => options.getIsOpen(), () => options.getBoardId(), () => options.getCardId?.(), () => session.userId],
     ([_open, _board, _card, actor], previous) => {
       cancelRead()
+      explicitRetrySequence++
+      activeExplicitRetry = null
+      deferredStorePermission = null
       confirmed.value = null
       failedBoardId.value = null
       // An account change cannot inherit the previous caller's cached board permission.
@@ -250,12 +313,20 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
     if (!permissionWasRevoked && !hasFreshServerPayload) return
 
-    // Retire any older reconciliation read rather than letting its delayed
-    // answer reverse the newer server payload or restriction.
-    cancelRead()
-    confirmed.value = { boardId: options.getBoardId(), canWrite: value }
-    failedBoardId.value = null
-    accessUnavailable.value = false
+    const candidate: DeferredStorePermission = {
+      boardId: options.getBoardId(),
+      canWrite: value,
+      payloadGeneration,
+    }
+    if (activeExplicitRetry !== null) {
+      // The store request started before the explicit retry, so its completion
+      // cannot abort or overrule that later request. Retain it as fallback for
+      // a transient retry failure; a definitive retry result discards it.
+      deferredStorePermission = candidate
+      return
+    }
+
+    acceptStorePermission(candidate)
   }, { flush: 'sync' })
 
   watch(
@@ -274,5 +345,5 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   )
 
   return { canWrite, canEditType, permissionChecking, permissionUnknown, permissionRecovery,
-    accessUnavailable, readsBlocked, refreshPermission }
+    accessUnavailable, readsBlocked, refreshPermission, recoverFromPermissionDenied }
 }
