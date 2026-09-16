@@ -36,16 +36,19 @@ $script:GhApiFieldFlags = @("-f", "--raw-field", "-F", "--field")
 
 # Common value-owning flags used by the allowlisted read commands. This is used only to keep the
 # browser check from inspecting a value token as if it were an option (for example, --search -wip).
+$script:GhReadAttachedValueFlags = @("-R", "-q", "-t")
 $script:GhReadValueFlags = @(
     "--app", "--author", "--assignee", "--base", "--branch", "--jq", "--json", "--label",
     "--limit", "--mention", "--owner", "--repo", "--search", "--state", "--template", "--user",
     "--workflow"
 )
+$script:GhReadValueFlags += $script:GhReadAttachedValueFlags
 
 function Parse-GhArguments {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$ValueFlags
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$ValueFlags,
+        [AllowEmptyCollection()][string[]]$AttachedValueFlags = @()
     )
 
     $entries = New-Object System.Collections.Generic.List[object]
@@ -81,6 +84,25 @@ function Parse-GhArguments {
         }
         elseif ($ValueFlags -ccontains $token) {
             $flagName = $token
+        }
+        elseif ($token.StartsWith("-", [System.StringComparison]::Ordinal) -and
+            -not $token.StartsWith("--", [System.StringComparison]::Ordinal)) {
+            # gh accepts attached values for short options such as -Rowner/repo. Treat the
+            # suffix as the option's value so browser detection cannot mistake a 'w' in it for
+            # the interactive -w shorthand. API short options are not in this ValueFlags set, so
+            # their attached spellings remain fail-closed through AttachedShortFlags below.
+            foreach ($shortValueFlag in @($AttachedValueFlags | Where-Object {
+                    $_.StartsWith("-", [System.StringComparison]::Ordinal) -and
+                    -not $_.StartsWith("--", [System.StringComparison]::Ordinal)
+                })) {
+                if ($token.StartsWith($shortValueFlag, [System.StringComparison]::Ordinal) -and
+                    $token.Length -gt $shortValueFlag.Length) {
+                    $flagName = $shortValueFlag
+                    $value = $token.Substring($shortValueFlag.Length)
+                    $hasInlineValue = $true
+                    break
+                }
+            }
         }
 
         if ($null -ne $flagName -and $ValueFlags -ccontains $flagName) {
@@ -685,10 +707,14 @@ function Assert-GhReadCommand {
     if ($Arguments.Count -eq 0) {
         Deny-InventoryCommand "gh requires an allowlisted read subcommand"
     }
-    $parsed = Parse-GhArguments -Arguments $Arguments -ValueFlags $script:GhReadValueFlags
+    $parsed = Parse-GhArguments -Arguments $Arguments -ValueFlags $script:GhReadValueFlags `
+        -AttachedValueFlags $script:GhReadAttachedValueFlags
     foreach ($entry in @($parsed.Entries)) {
         $argument = $entry.Token
-        $isClusteredBrowserShort = $argument.StartsWith("-", [System.StringComparison]::Ordinal) -and
+        # ValueOption entries have already established ownership of the token's suffix/value;
+        # inspect only unowned option tokens for the interactive -w shorthand.
+        $isClusteredBrowserShort = $entry.Kind -eq "Option" -and
+            $argument.StartsWith("-", [System.StringComparison]::Ordinal) -and
             -not $argument.StartsWith("--", [System.StringComparison]::Ordinal) -and
             $argument.Length -gt 1 -and $argument.Substring(1).Contains("w")
         if (($entry.Kind -eq "Option" -or $entry.Kind -eq "ValueOption") -and
@@ -841,6 +867,9 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Allowed @("gh", "run", "watch", "123")
     Assert-Allowed @("gh", "pr", "checks", "1", "--watch")
     Assert-Allowed @("gh", "pr", "list", "--search", "-wip", "--json", "number")
+    Assert-Allowed @("gh", "pr", "list", "-Rowner/repo")
+    Assert-Allowed @("gh", "pr", "list", "-q", "-wip")
+    Assert-Allowed @("gh", "pr", "list", "-t", "-wip")
 
     # Values that resemble another option belong to the value-owning flag immediately before them.
     # The validator must not reinterpret a jq expression as a method, typed field, or input path.
