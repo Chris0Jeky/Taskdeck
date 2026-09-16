@@ -61,6 +61,7 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
   const offsetTop = ref(0)
 
   let observed: VisualViewport | null = null
+  let observingLayoutViewport = false
 
   function refresh() {
     if (typeof window === 'undefined') {
@@ -92,13 +93,22 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
   onMounted(() => {
     refresh()
     observed = (typeof window === 'undefined' ? null : window.visualViewport) ?? null
-    observed?.addEventListener('resize', refresh)
-    observed?.addEventListener('scroll', refresh)
+    if (observed) {
+      observed.addEventListener('resize', refresh)
+      observed.addEventListener('scroll', refresh)
+    } else if (fallback === 'layout' && typeof window !== 'undefined') {
+      observingLayoutViewport = true
+      window.addEventListener('resize', refresh)
+    }
   })
 
   onUnmounted(() => {
     observed?.removeEventListener('resize', refresh)
     observed?.removeEventListener('scroll', refresh)
+    if (observingLayoutViewport && typeof window !== 'undefined') {
+      window.removeEventListener('resize', refresh)
+      observingLayoutViewport = false
+    }
     observed = null
   })
 
