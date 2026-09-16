@@ -67,7 +67,7 @@ public sealed class OutboundWebhookDeliveryUtcBoundaryTests
         string scope,
         bool processing)
     {
-        var suffix = Guid.NewGuid().ToString("N");
+        var suffix = Guid.NewGuid().ToString("N")[..12];
         var user = new User(
             $"webhook-{scope}-{suffix}",
             $"webhook-{scope}-{suffix}@example.com",
