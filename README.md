@@ -2,7 +2,7 @@
 
 **A local-first, review-first work operating system for turning context into accountable work.**
 
-Taskdeck takes the messy material work arrives in—notes, transcripts, checklists, emails, files, and agent requests—and turns it into source-linked proposals. You inspect the diff, provenance, side effects, and risk; only an explicit approval and apply step changes the board.
+Taskdeck takes the messy material work arrives in—notes, transcripts, checklists, and agent requests—and turns it into source-linked proposals. You inspect the diff, provenance, side effects, and risk; only an explicit approval and apply step changes the board.
 
 The current product wedge is a dependable capture-to-action loop. The destination is broader: an adaptive project companion where people and agents can understand work, propose changes, coordinate execution, and retain evidence without silently taking authority away from the user.
 
@@ -149,7 +149,7 @@ cd Taskdeck
 scripts/dev-up.sh --seed
 ```
 
-The source-only seeded account is `demo` / `demo123`. Open the frontend URL printed by the launcher and stop the stack with `dev-up -Stop` or `dev-up.sh --stop`; closing the shell is not the documented stop path.
+The source-only seeded account is `demo` / `demo123`. Open the frontend URL printed by the launcher and stop the stack with `.\scripts\dev-up.ps1 -Stop` on Windows or `scripts/dev-up.sh --stop` on macOS/Linux; closing the shell is not the documented stop path.
 
 ## MCP transports
 
