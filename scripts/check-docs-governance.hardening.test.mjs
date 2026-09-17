@@ -45,6 +45,34 @@ test('preserves ordinary visible Unicode in policy and YAML paths', () => {
   })
 })
 
+test('rejects unpaired UTF-16 surrogate escapes in policy and quoted YAML paths', () => {
+  for (const surrogate of [
+    String.fromCharCode(0xd800),
+    String.fromCharCode(0xdbff),
+    String.fromCharCode(0xdc00),
+    String.fromCharCode(0xdfff),
+  ]) {
+    const path = `ci/${surrogate}/**`
+    const policy = parsePolicyControlPaths(JSON.stringify({ controlPaths: [path] }))
+    const rule = parseRuleFrontMatterPaths(ruleWithPath(path, { quoted: true }))
+
+    assert.ok(policy.errors.length > 0, `policy accepted unpaired U+${surrogate.charCodeAt(0).toString(16)}`)
+    assert.ok(rule.errors.length > 0, `rule accepted unpaired U+${surrogate.charCodeAt(0).toString(16)}`)
+  }
+})
+
+test('preserves valid UTF-16 surrogate pairs in policy and quoted YAML paths', () => {
+  const path = `docs/${String.fromCodePoint(0x1f680, 0x1d11e)}/**`
+  assert.deepEqual(parsePolicyControlPaths(JSON.stringify({ controlPaths: [path] })), {
+    controlPaths: [path],
+    errors: [],
+  })
+  assert.deepEqual(parseRuleFrontMatterPaths(ruleWithPath(path, { quoted: true })), {
+    paths: [path],
+    errors: [],
+  })
+})
+
 const implicitNonStrings = [
   '~',
   'null',
