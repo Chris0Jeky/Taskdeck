@@ -110,6 +110,30 @@ describe('useVisualViewport pinch zoom policy', () => {
     wrapper.unmount()
   })
 
+  it('accepts a keyboard contraction at an unchanged pinch scale', async () => {
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: 900,
+    })
+    const synthetic = installSyntheticVisualViewport({ height: 500, offsetTop: 80, scale: 1 })
+    const wrapper = mountHost({ prefix: '--card-modal' })
+
+    synthetic.set({ height: 260, offsetTop: 310, scale: 2 })
+    await nextTick()
+
+    expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('500px')
+    expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('80px')
+
+    synthetic.set({ height: 220, offsetTop: 350, scale: 2 })
+    await nextTick()
+
+    expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('220px')
+    expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('350px')
+    expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('true')
+    wrapper.unmount()
+  })
+
   it('uses the layout fallback when it starts zoomed, then accepts scale-one geometry', async () => {
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,

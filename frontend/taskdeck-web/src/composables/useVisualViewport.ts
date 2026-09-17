@@ -13,10 +13,11 @@ import { logWarn } from '../utils/errorReporting'
  * `visualViewport.height` keeps those actions on screen.
  *
  * Browser pinch zoom also changes those measurements, but it is not a keyboard
- * contraction. While `visualViewport.scale` is above 1, browser zoom owns the
- * geometry, so this composable freezes the last trusted scale-one measurement
- * when one exists and otherwise exposes the caller's normal fallback. Returning
- * to scale 1 resumes visual-viewport geometry on the next event.
+ * contraction. When entering a scale above 1, browser zoom owns that geometry,
+ * so this composable freezes the last trusted scale-one measurement when one
+ * exists and otherwise exposes the caller's normal fallback. A later event at
+ * the unchanged scale may be a keyboard contraction, so it emits the current
+ * visual-viewport geometry. Returning to scale 1 resumes trusted geometry.
  *
  * Two custom properties are emitted, namespaced by `prefix`:
  *   `${prefix}-visual-viewport-height`
@@ -69,6 +70,7 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
   let observed: VisualViewport | null = null
   let observingLayoutViewport = false
   let lastTrustedGeometry: { height: number; offsetTop: number } | null = null
+  let lastObservedScale: number | null = null
 
   function refresh() {
     if (typeof window === 'undefined') {
@@ -79,6 +81,7 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
     const visualViewport = window.visualViewport
     if (!visualViewport) {
       lastTrustedGeometry = null
+      lastObservedScale = null
       supported.value = false
       height.value = window.innerHeight
       offsetTop.value = 0
@@ -86,6 +89,8 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
     }
 
     const scale = visualViewport.scale ?? 1
+    const scaleChanged = lastObservedScale !== scale
+    lastObservedScale = scale
     if (scale === 1) {
       lastTrustedGeometry = {
         height: visualViewport.height,
@@ -97,10 +102,24 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
       return
     }
 
-    if (scale > 1 && lastTrustedGeometry) {
+    if (scale > 1 && scaleChanged) {
+      if (lastTrustedGeometry) {
+        supported.value = true
+        height.value = lastTrustedGeometry.height
+        offsetTop.value = lastTrustedGeometry.offsetTop
+        return
+      }
+
+      supported.value = false
+      height.value = window.innerHeight
+      offsetTop.value = 0
+      return
+    }
+
+    if (scale > 1) {
       supported.value = true
-      height.value = lastTrustedGeometry.height
-      offsetTop.value = lastTrustedGeometry.offsetTop
+      height.value = visualViewport.height
+      offsetTop.value = visualViewport.offsetTop
       return
     }
 
