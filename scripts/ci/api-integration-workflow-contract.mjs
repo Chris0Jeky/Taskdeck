@@ -20,6 +20,27 @@ function requireAlwaysNonFatal(errors, workflowText, stepName) {
   }
 }
 
+function requireAlwaysConditionallyStrict(errors, workflowText, stepName, role) {
+  const section = stepSection(workflowText, stepName)
+  if (section === null) {
+    errors.push(`Missing API integration evidence step: ${stepName}`)
+    return null
+  }
+  if (!/^        if: always\(\)\s*$/m.test(section)) {
+    errors.push(`${stepName} must run with if: always() after a timed-out test step`)
+  }
+  if (
+    !section.includes(
+      "continue-on-error: ${{ steps.api_integration_tests.outcome != 'success' }}",
+    )
+  ) {
+    errors.push(
+      `API integration ${role} must remain required after a successful test run and non-fatal after timeout`,
+    )
+  }
+  return section
+}
+
 export function validateApiIntegrationWorkflow(
   workflowText,
   workflowPath = '.github/workflows/reusable-api-integration.yml',
@@ -48,15 +69,24 @@ export function validateApiIntegrationWorkflow(
     'Upload API integration test assembly diagnostics',
     'Finalize API integration runner context',
     'Upload API integration runner context',
-    'Summarize API integration timing',
-    'Upload API integration timing summary',
   ]) {
     requireAlwaysNonFatal(errors, workflowText, stepName)
   }
 
-  const timingUpload = stepSection(workflowText, 'Upload API integration timing summary')
-  if (timingUpload !== null && !/^          if-no-files-found: warn\s*$/m.test(timingUpload)) {
-    errors.push('API integration timing upload must tolerate a missing or partial TRX summary')
+  requireAlwaysConditionallyStrict(
+    errors,
+    workflowText,
+    'Summarize API integration timing',
+    'timing summarizer',
+  )
+  const timingUpload = requireAlwaysConditionallyStrict(
+    errors,
+    workflowText,
+    'Upload API integration timing summary',
+    'timing upload',
+  )
+  if (timingUpload !== null && !/^          if-no-files-found: error\s*$/m.test(timingUpload)) {
+    errors.push('API integration timing upload must remain strict after a successful test run')
   }
 
   const failureEvidence = stepSection(workflowText, 'Upload API integration failure evidence')
