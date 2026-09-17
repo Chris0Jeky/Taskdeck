@@ -61,6 +61,58 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task EstimatedEffort_GraphFreeCardApiExportUsesV5AndRoundTripsNullableValuesWithFreshIds()
+    {
+        await EnsureAuthenticatedAsync();
+        var boardResponse = await _client.PostAsJsonAsync("/api/boards",
+            new CreateBoardDto($"Estimate-card-api-{Guid.NewGuid():N}", null));
+        boardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var board = (await boardResponse.Content.ReadFromJsonAsync<BoardDto>())!;
+        var columnResponse = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Work", null, null));
+        columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var column = (await columnResponse.Content.ReadFromJsonAsync<ColumnDto>())!;
+        var estimates = new int?[] { null, 0, 135 };
+        foreach (var (title, estimate) in new[]
+        {
+            ("Unknown estimate", estimates[0]),
+            ("Zero estimate", estimates[1]),
+            ("Positive estimate", estimates[2])
+        })
+        {
+            var cardResponse = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+                new CreateCardDto(board.Id, column.Id, title, null, null, null, EstimatedEffortMinutes: estimate));
+            cardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+        var firstCards = (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!;
+
+        var json = await _client.GetStringAsync($"/api/export/boards/{board.Id}/json");
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("format").GetString().Should().Be("taskdeck-board");
+        document.RootElement.GetProperty("version").GetInt32().Should().Be(5);
+        document.RootElement.GetProperty("payload").GetProperty("relations").EnumerateArray().Should().BeEmpty();
+
+        var secondResponse = await _client.PostAsync("/api/import/boards/json",
+            new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+        secondResponse.EnsureSuccessStatusCode();
+        var secondBoardId = (await secondResponse.Content.ReadFromJsonAsync<ImportResultDto>())!.BoardId!.Value;
+        var secondCards = (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{secondBoardId}/cards"))!;
+
+        foreach (var (title, estimate) in new[]
+        {
+            ("Unknown estimate", estimates[0]),
+            ("Zero estimate", estimates[1]),
+            ("Positive estimate", estimates[2])
+        })
+        {
+            var first = firstCards.Single(stored => stored.Title == title);
+            var second = secondCards.Single(stored => stored.Title == title);
+            second.EstimatedEffortMinutes.Should().Be(estimate);
+            second.Id.Should().NotBe(first.Id);
+        }
+    }
+
+    [Fact]
     public async Task ArchivedCards_RoundTripWithoutRevival_AndKeepFreshImportIds()
     {
         await EnsureAuthenticatedAsync();
