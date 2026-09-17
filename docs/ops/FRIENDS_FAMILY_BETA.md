@@ -370,7 +370,28 @@ Friends-and-family observations route through the standing dogfooding lane repre
 ### Normal end of the hosted trial
 
 1. Ask whether the participant wants an available export before removal.
-2. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
+2. If the participant requests an export, they must run it from their own authenticated session
+   before deletion. The current UI does not provide an account-export control, so use the browser's
+   same-origin DevTools console:
+
+   ~~~javascript
+   const token = localStorage.getItem('taskdeck_token')
+   const response = await fetch('/api/account/export', {
+     headers: { Authorization: 'Bearer ' + token },
+   })
+   const blob = await response.blob()
+   const url = URL.createObjectURL(blob)
+   const link = document.createElement('a')
+   link.href = url
+   link.download = 'taskdeck-account-export.json'
+   link.click()
+   URL.revokeObjectURL(url)
+   ~~~
+
+   Keep the downloaded file private. It is account-scoped and does not include the full shared-board
+   column/card/label/comment tree; do not send it to the maintainer unless the participant explicitly
+   consents to that transfer.
+3. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
    must perform the supported authenticated request from their own session, using their current
    password and the exact confirmation phrase `DELETE MY ACCOUNT` at `POST /api/account/delete`.
    The participant can perform that request from their own authenticated same-origin browser session:
@@ -392,10 +413,14 @@ Friends-and-family observations route through the standing dogfooding lane repre
    their board access, keep registration `Closed` until any unused invite expires (there is no
    invite-revocation operation), and stop the tunnel or other perimeter exposure; record that the
    account was retained rather than claiming it was deleted.
-3. Take a final encrypted backup only when its retention was disclosed and agreed.
-4. Stop exposure or keep registration `Closed`; do not reopen registration while an unused invite is
+   Account deletion is not an unconditional erasure of every stored copy: automation proposals and
+   MFA material can remain under the documented deletion gaps, and the Stage 1 schedule keeps up to
+   12 weekly encrypted off-platform backups (about 90 days). Tell the participant these retention
+   limits before deletion and do not claim that all linked records or backups disappeared.
+4. Take a final encrypted backup only when its retention was disclosed and agreed.
+5. Stop exposure or keep registration `Closed`; do not reopen registration while an unused invite is
    still valid.
-5. Record the exit reason and whether the participant would return after a named change.
+6. Record the exit reason and whether the participant would return after a named change.
 
 ### Normal end of a local Windows trial
 

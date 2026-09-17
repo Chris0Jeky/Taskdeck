@@ -173,7 +173,10 @@ read-only inventory from a trusted host and reconcile every existing row before 
 
 ```bash
 docker run --rm -v taskdeck_taskdeck-db:/data:ro alpine:3 sh -c \
-  'apk add --no-cache sqlite >/dev/null && sqlite3 -header -csv /data/taskdeck.db "SELECT Id, Username, Email, IsActive FROM Users ORDER BY Username;"'
+  'apk add --no-cache sqlite >/dev/null && \
+   sqlite3 -header -csv /data/taskdeck.db "SELECT Id, Username, Email, IsActive FROM Users ORDER BY Username;" && \
+   printf "\\nUnconsumed registration invites\\n" && \
+   sqlite3 -header -csv /data/taskdeck.db "SELECT Id, DisplayPrefix, ExpiresAt, ConsumedAt FROM RegistrationInvites WHERE ConsumedAt IS NULL ORDER BY ExpiresAt;"'
 ```
 
 Record the inventory or the fresh-volume evidence privately; it contains account identifiers and
@@ -181,6 +184,9 @@ must not be committed or pasted into a public issue. Do not treat `GET /api/user
 that endpoint returns only the authenticated caller. If any old active account or other unexpected
 identity is present, stop and reconcile it before minting an invite. Two successful registrations
 and a later registration-closed 403 do not prove that the instance contains exactly two accounts.
+Also reconcile every unconsumed, unexpired registration invite in the second query. There is no
+invite-revocation operation; keep registration `Closed` until any unconsumed invite has expired or
+been consumed, and repeat the inventory after closure if the volume was reused.
 
 1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning both named accounts. Before
    opening the URL, mint the first-owner invite as the non-root API user:
