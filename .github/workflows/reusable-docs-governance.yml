@@ -20,6 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Validate worktree guard expectation contract
+        shell: bash
+        run: bash scripts/worktree_guard.expectation.tests.sh
+
       - name: Validate shell guard export path contract
         shell: bash
         run: bash scripts/worktree_guard.path-flavor.tests.sh
