@@ -28,6 +28,10 @@ jobs:
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
 
+      - name: Exercise read-only inventory wrapper under PowerShell 7
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command git status --short
+
       - name: Validate checkout fingerprint guard
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1
