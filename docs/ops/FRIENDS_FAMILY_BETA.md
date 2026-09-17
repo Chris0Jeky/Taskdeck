@@ -374,10 +374,12 @@ Friends-and-family observations route through the standing dogfooding lane repre
    must perform the supported authenticated request from their own session, using their current
    password and the exact confirmation phrase `DELETE MY ACCOUNT` at `POST /api/account/delete`.
    Never ask the participant to send a password or token. If they do not perform that request, remove
-   their board access, revoke any unused invite, close registration, and stop the tunnel or other
-   perimeter exposure; record that the account was retained rather than claiming it was deleted.
+   their board access, keep registration `Closed` until any unused invite expires (there is no
+   invite-revocation operation), and stop the tunnel or other perimeter exposure; record that the
+   account was retained rather than claiming it was deleted.
 3. Take a final encrypted backup only when its retention was disclosed and agreed.
-4. Stop exposure or keep registration `Closed`; do not leave an unused invite active.
+4. Stop exposure or keep registration `Closed`; do not reopen registration while an unused invite is
+   still valid.
 5. Record the exit reason and whether the participant would return after a named change.
 
 ### Normal end of a local Windows trial
@@ -391,7 +393,9 @@ Windows quick start and do not retain a copy unless they explicitly request reco
 2. Do not retry a potentially committed write until the current state is inspected.
 3. Preserve the exact database, configuration, recovery files, logs, release identity, and time of
    observation without posting them publicly.
-4. Rotate or revoke any exposed invite, provider key, API key, or access-policy credential.
+4. Contain any exposed invite by keeping registration `Closed` until it expires; do not claim that it
+   was revoked because Taskdeck has no invite-revocation operation. Rotate or revoke any exposed
+   provider key, API key, or access-policy credential using its supported mechanism.
 5. Tell the participant plainly what is known, what is uncertain, and what was contained.
 6. Use the private security-reporting path for a security concern; otherwise create a redacted issue
    from synthetic reproduction evidence.
