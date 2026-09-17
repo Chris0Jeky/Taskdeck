@@ -199,17 +199,72 @@ describe('demoHttpAdapter', () => {
     const saved = await demoHttpAdapter(config('put', path, { expectedRevision: initial.data.revision, layers }))
     const promotionPath = `${path}/steps/demo-steps-layer/demo-step/card`
     const request = { expectedRevision: saved.data.revision, columnId: 'demo-board-1-col-2', title: 'Follow-up card' }
+    const beforeCards = await demoHttpAdapter(config('get', '/boards/demo-board-1/cards'))
+    const beforeIds = beforeCards.data.map((card: { id: string }) => card.id)
 
     const promoted = await demoHttpAdapter(config('post', promotionPath, request))
     expect(promoted.data).toMatchObject({ cardId: 'demo-board-1-card-3', revision: 3, schemaVersion: 2, canWrite: true })
-    expect(promoted.data.layers[0].items[0]).toMatchObject({ text: 'Create the follow-up card', completed: false, linkedCardId: expect.any(String) })
+    const linkedCardId = promoted.data.layers[0].items[0].linkedCardId
+    expect(linkedCardId).toEqual(expect.any(String))
+    expect(beforeIds).not.toContain(linkedCardId)
 
     const cards = await demoHttpAdapter(config('get', '/boards/demo-board-1/cards'))
-    const linked = cards.data.find((card: { parentCardId?: string }) => card.parentCardId === 'demo-board-1-card-3')
+    const linked = cards.data.find((card: { id: string }) => card.id === linkedCardId)
     expect(linked).toMatchObject({ title: 'Follow-up card', description: 'Create the follow-up card', columnId: 'demo-board-1-col-2' })
+    expect(linked).not.toHaveProperty('parentCardId')
 
     const replay = await demoHttpAdapter(config('post', promotionPath, { ...request, expectedRevision: 1 }))
     expect(replay.data).toEqual(promoted.data)
+  })
+
+  it('enforces the destination column WIP limit before linking a step', async () => {
+    const path = '/boards/demo-board-1/cards/demo-board-1-card-3/thinking'
+    const initial = await demoHttpAdapter(config('get', path))
+    const layers = [{
+      id: 'demo-steps-layer',
+      kind: 'steps',
+      title: 'Next steps',
+      body: '',
+      items: [1, 2, 3].map((number) => ({
+        id: `demo-step-${number}`,
+        text: `Create follow-up card ${number}`,
+        completed: false,
+        linkedCardId: null,
+      })),
+      selectedOptionId: null,
+    }]
+    const saved = await demoHttpAdapter(config('put', path, { expectedRevision: initial.data.revision, layers }))
+    const promotionPath = (itemId: string) => `${path}/steps/demo-steps-layer/${itemId}/card`
+    const columnId = 'demo-board-1-col-2'
+
+    const first = await demoHttpAdapter(config('post', promotionPath('demo-step-1'), {
+      expectedRevision: saved.data.revision,
+      columnId,
+      title: 'Follow-up card 1',
+    }))
+    const second = await demoHttpAdapter(config('post', promotionPath('demo-step-2'), {
+      expectedRevision: first.data.revision,
+      columnId,
+      title: 'Follow-up card 2',
+    }))
+
+    await expect(demoHttpAdapter(config('post', promotionPath('demo-step-3'), {
+      expectedRevision: second.data.revision,
+      columnId,
+      title: 'Follow-up card 3',
+    }))).rejects.toMatchObject({
+      response: {
+        status: 400,
+        data: {
+          errorCode: 'WipLimitExceeded',
+          message: "Cannot add card, column 'In Progress' has reached its WIP limit of 3",
+        },
+      },
+    })
+
+    const cards = await demoHttpAdapter(config('get', '/boards/demo-board-1/cards'))
+    expect(cards.data.filter((card: { columnId: string }) => card.columnId === columnId)).toHaveLength(3)
+    expect(second.data.layers[0].items[2].linkedCardId).toBeNull()
   })
 
   it('persists the user chat message before the assistant reply', async () => {

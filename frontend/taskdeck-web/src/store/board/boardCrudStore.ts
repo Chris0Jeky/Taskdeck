@@ -6,7 +6,7 @@ import { cardsApi } from '../../api/cardsApi'
 import { labelsApi } from '../../api/labelsApi'
 import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
-import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
+import { buildDemoBoardList } from '../../utils/demoData'
 import { applyBoardCardCounts } from '../../utils/boardCardCounts'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import { initialCardFilters, type BoardState } from './boardState'
@@ -417,13 +417,18 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           state.loading.value = true
           state.error.value = null
         }
-        const demo = buildDemoBoardDetail(id)
+        const [board, cards] = await Promise.all([
+          boardsApi.getBoard(id),
+          cardsApi.getCards(id),
+        ])
         if (!isCommitEligible()) {
           return false
         }
 
-        state.currentBoard.value = demo.board
-        state.currentBoardCards.value = demo.cards
+        applyBoardCardCounts(board, cards)
+        state.currentBoard.value = board
+        state.currentBoardPayloadGeneration.value = requestGeneration
+        state.currentBoardCards.value = cards
         state.currentBoardLabels.value = []
         state.cardCommentsByCardId.value = {}
         if (intent === 'explicit') {

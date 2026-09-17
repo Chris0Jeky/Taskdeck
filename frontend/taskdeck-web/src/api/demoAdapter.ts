@@ -572,9 +572,20 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
       return { status: 400, data: { message: 'A valid destination column and card title are required.' } }
     }
 
+    const columnCards = boardCards(boardId).filter((value) => value.columnId === columnId)
+    if (typeof column.wipLimit === 'number' && columnCards.length >= column.wipLimit) {
+      return {
+        status: 400,
+        data: {
+          errorCode: 'WipLimitExceeded',
+          message: `Cannot add card, column '${column.name}' has reached its WIP limit of ${column.wipLimit}`,
+        },
+      }
+    }
+
     const ts = new Date().toISOString()
     const child: Card = {
-      id: `demo-${boardId}-card-${++demoCardSequence}`,
+      id: `demo-generated-card-${++demoCardSequence}`,
       boardId,
       columnId,
       title,
@@ -582,11 +593,10 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
       dueDate: null,
       isBlocked: false,
       blockReason: null,
-      position: boardCards(boardId).filter((value) => value.columnId === columnId).length,
+      position: columnCards.length > 0 ? Math.max(...columnCards.map((value) => value.position)) + 1 : 0,
       labels: [],
       createdAt: ts,
       updatedAt: ts,
-      parentCardId: card.id,
     }
     boardCards(boardId).push(child)
 
