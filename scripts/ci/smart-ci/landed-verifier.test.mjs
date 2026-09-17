@@ -138,7 +138,7 @@ test('base movement that changes the landed tree requires full requalification',
 test('expired, policy-mismatched and non-authoritative receipts cannot authorize bounded work', () => {
   const verdict = decide([
     makeEvidence({ artifactId: 1, artifactExpired: true }),
-    makeEvidence({ artifactId: 2, digest: sha('a') }),
+    makeEvidence({ artifactId: 2, digest: `sha256:${'a'.repeat(64)}` }),
     makeEvidence({ artifactId: 3, workflowEvent: 'pull_request' }),
     makeEvidence({ artifactId: 4, workflowConclusion: 'failure' }),
     makeEvidence({ artifactId: 5, workflowPath: '.github/workflows/ci-required.yml' }),
