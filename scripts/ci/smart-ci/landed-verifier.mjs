@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // CI-03 (#2327, ADR-0066): decide whether a landed main commit may use the
 // bounded verifier path. This module is deliberately content-free and fail-closed.
-// It consumes already-collected Smart CI receipt evidence; collection and workflow
-// topology remain separate control-plane concerns.
+// It consumes already-collected Smart CI receipt evidence plus trusted landing
+// classification; collection and workflow topology remain separate concerns.
 
 import { execFileSync } from 'node:child_process';
 import {
@@ -49,6 +49,17 @@ function timestamp(value) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function normaliseLanding(landing) {
+  if (!isObject(landing)) return null;
+  if (landing.kind === 'direct-push') {
+    return { kind: 'direct-push', pullRequest: null };
+  }
+  if (landing.kind === 'pull-request' && positiveInteger(landing.pullRequest)) {
+    return { kind: 'pull-request', pullRequest: landing.pullRequest };
+  }
+  return null;
+}
+
 function diagnostic(artifactId, code) {
   return {
     artifactId: positiveInteger(artifactId) ? artifactId : null,
@@ -68,6 +79,9 @@ function evaluateEvidence(evidence, target) {
   const { artifact, workflowRun, receipt } = evidence;
   if (!positiveInteger(artifact.id) || typeof artifact.name !== 'string') return reject(evidence, 'artifact-invalid');
   if (artifact.expired === true) return reject(evidence, 'artifact-expired');
+  if (artifact.expired !== false) return reject(evidence, 'artifact-expiry-unknown');
+  const observedAt = Math.max(timestamp(artifact.updatedAt), timestamp(artifact.createdAt));
+  if (observedAt === 0) return reject(evidence, 'artifact-time-invalid');
 
   if (!isObject(workflowRun) || !positiveInteger(workflowRun.id)) return reject(evidence, 'workflow-run-invalid');
   if (workflowRun.path !== AUTHORITY_WORKFLOW) return reject(evidence, 'workflow-path-mismatch');
@@ -88,6 +102,9 @@ function evaluateEvidence(evidence, target) {
     || receipt.event.repository !== target.repository
     || !positiveInteger(receipt.event.pullRequest)) {
     return reject(evidence, 'receipt-invalid');
+  }
+  if (receipt.event.pullRequest !== target.landing.pullRequest) {
+    return reject(evidence, 'landing-pr-mismatch');
   }
   if (![receipt.baseSha, receipt.headSha, receipt.mergeSha, receipt.mergeTreeSha].every(validSha)) {
     return reject(evidence, 'receipt-invalid');
@@ -118,7 +135,7 @@ function evaluateEvidence(evidence, target) {
   return {
     accepted: true,
     identity,
-    observedAt: Math.max(timestamp(artifact.updatedAt), timestamp(artifact.createdAt)),
+    observedAt,
     artifactId: artifact.id,
     receipt: {
       artifactId: artifact.id,
@@ -145,6 +162,7 @@ function fullVerdict(target, reason, diagnostics = [], candidates = 0) {
     expectedPolicyDigest: validPolicyDigest(target.expectedPolicyDigest)
       ? lower(target.expectedPolicyDigest)
       : null,
+    landing: normaliseLanding(target.landing),
     qualification: 'full',
     reason,
     candidates,
@@ -156,18 +174,27 @@ function fullVerdict(target, reason, diagnostics = [], candidates = 0) {
 /**
  * Decide whether the landed commit may use the bounded verification path.
  *
- * Evidence is authoritative only when the artifact name, producer workflow, event,
- * successful conclusion, receipt identity, current policy digest, and landed tree
- * all agree. Any missing or conflicting fact falls back to full hosted qualification.
+ * Evidence is authoritative only when trusted landing classification identifies a
+ * normal PR merge and the artifact name, producer workflow, event, successful
+ * conclusion, receipt identity, current policy digest, associated PR, and landed
+ * tree all agree. Missing or conflicting facts fall back to full hosted qualification.
  */
 export function decideLandedQualification({
   repository,
   headSha,
   headTreeSha,
   expectedPolicyDigest,
+  landing = null,
   evidence = [],
 }) {
-  const target = { repository, headSha, headTreeSha, expectedPolicyDigest };
+  const normalisedLanding = normaliseLanding(landing);
+  const target = {
+    repository,
+    headSha,
+    headTreeSha,
+    expectedPolicyDigest,
+    landing: normalisedLanding,
+  };
   if (!validRepository(repository)
     || !validSha(headSha)
     || !validSha(headTreeSha)
@@ -175,6 +202,8 @@ export function decideLandedQualification({
     || !Array.isArray(evidence)) {
     return fullVerdict(target, 'verifier-input-invalid');
   }
+  if (!normalisedLanding) return fullVerdict(target, 'landing-unverified');
+  if (normalisedLanding.kind === 'direct-push') return fullVerdict(target, 'direct-push');
 
   const diagnostics = [];
   const accepted = [];
@@ -207,6 +236,7 @@ export function decideLandedQualification({
     headSha: lower(headSha),
     headTreeSha: lower(headTreeSha),
     expectedPolicyDigest: lower(expectedPolicyDigest),
+    landing: normalisedLanding,
     qualification: 'bounded',
     reason: 'qualified-receipt',
     candidates: 1,
@@ -222,6 +252,8 @@ function parseArgs(argv) {
     headTreeSha: null,
     policy: 'ci/policy.v1.json',
     input: null,
+    landingKind: null,
+    landingPr: null,
     out: 'artifacts/landed-verdict.json',
     summary: null,
     githubOutput: process.env.GITHUB_OUTPUT ?? null,
@@ -239,14 +271,30 @@ function parseArgs(argv) {
       case '--head-tree-sha': args.headTreeSha = next(); break;
       case '--policy': args.policy = next(); break;
       case '--input': args.input = next(); break;
+      case '--landing-kind': args.landingKind = next(); break;
+      case '--landing-pr': {
+        const value = Number(next());
+        if (!positiveInteger(value)) throw new Error('--landing-pr must be a positive integer');
+        args.landingPr = value;
+        break;
+      }
       case '--out': args.out = next(); break;
       case '--summary': args.summary = next(); break;
       case '--github-output': args.githubOutput = next(); break;
       case '--help':
-        console.log('usage: landed-verifier.mjs [--repo owner/name] --head-sha <sha> [--head-tree-sha <sha>] --policy <file> --input <evidence.json> [--out <verdict.json>] [--summary <file>] [--github-output <file>]');
+        console.log('usage: landed-verifier.mjs [--repo owner/name] --head-sha <sha> [--head-tree-sha <sha>] --policy <file> --input <evidence.json> --landing-kind pull-request|direct-push [--landing-pr N] [--out <verdict.json>] [--summary <file>] [--github-output <file>]');
         return { ...args, help: true };
       default: throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+  if (args.landingKind !== null && !['pull-request', 'direct-push'].includes(args.landingKind)) {
+    throw new Error('--landing-kind must be pull-request or direct-push');
+  }
+  if (args.landingKind === 'pull-request' && !positiveInteger(args.landingPr)) {
+    throw new Error('--landing-pr is required for pull-request landings');
+  }
+  if (args.landingKind === 'direct-push' && args.landingPr !== null) {
+    throw new Error('--landing-pr must be omitted for direct-push landings');
   }
   return args;
 }
@@ -257,6 +305,7 @@ function renderSummary(verdict) {
     '',
     `- Qualification: **${verdict.qualification}**`,
     `- Reason: \`${verdict.reason}\``,
+    `- Landing: \`${verdict.landing ? verdict.landing.kind : 'unverified'}\`${verdict.landing && verdict.landing.pullRequest ? ` (PR #${verdict.landing.pullRequest})` : ''}`,
     `- Landed commit: \`${verdict.headSha ?? 'invalid'}\``,
     `- Landed tree: \`${verdict.headTreeSha ?? 'invalid'}\``,
     `- Qualified receipt: ${verdict.receipt ? `artifact \`${verdict.receipt.artifactId}\`, PR #${verdict.receipt.pullRequest}` : 'none'}`,
@@ -276,6 +325,8 @@ function appendOutputs(path, verdict) {
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `qualification=${verdict.qualification}\n`);
   appendFileSync(path, `reason=${verdict.reason}\n`);
+  appendFileSync(path, `landing_kind=${verdict.landing ? verdict.landing.kind : ''}\n`);
+  appendFileSync(path, `landing_pr=${verdict.landing && verdict.landing.pullRequest ? verdict.landing.pullRequest : ''}\n`);
   appendFileSync(path, `receipt_artifact_id=${verdict.receipt ? verdict.receipt.artifactId : ''}\n`);
   appendFileSync(path, `receipt_workflow_run_id=${verdict.receipt ? verdict.receipt.workflowRunId : ''}\n`);
 }
@@ -313,11 +364,15 @@ function main() {
     inputDiagnostics.push(diagnostic(null, 'evidence-input-invalid'));
   }
 
+  const landing = args.landingKind === null
+    ? null
+    : { kind: args.landingKind, pullRequest: args.landingPr };
   const verdict = decideLandedQualification({
     repository: args.repo,
     headSha: args.headSha,
     headTreeSha: resolveTreeSha(args.headTreeSha),
     expectedPolicyDigest,
+    landing,
     evidence,
   });
   if (inputDiagnostics.length > 0) {
