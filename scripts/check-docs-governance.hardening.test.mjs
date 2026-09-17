@@ -49,21 +49,25 @@ const implicitNonStrings = [
   '~',
   'null',
   'NULL',
+  'yes',
+  'ON',
   'true',
   'False',
   '0',
   '-42',
   '+42',
   '01',
+  '017',
+  '1:20',
   '1_000',
   '0b1010',
-  '0o17',
+  '0xF__F',
   '0xFF',
   '1.5',
   '.5',
   '5.',
-  '1e3',
-  '-2E-4',
+  '1.0e+3',
+  '1:20.5',
   '.inf',
   '+.Inf',
   '-.INF',
@@ -71,7 +75,21 @@ const implicitNonStrings = [
   '.NaN',
   '2026-09-17',
   '2026-09-17T12:34:56Z',
+  '2026-09-17T12:34:56.',
   '2026-09-17 12:34:56 +01:00',
+]
+
+const implicitStrings = [
+  '0XFF',
+  '+.nAn',
+  '1e1_0',
+  '0o17',
+  '1e3',
+  '-2E-4',
+  '+.5',
+  '.nAn',
+  '09',
+  '2026-09-17T12:34:56z',
 ]
 
 test('rejects unquoted YAML implicit non-string path scalars', () => {
@@ -91,8 +109,9 @@ test('accepts quoted forms of YAML implicit scalars as path strings', () => {
   }
 })
 
-test('does not overmatch ordinary path-like strings', () => {
+test('preserves resolver-string spellings and ordinary path-like strings', () => {
   for (const path of [
+    ...implicitStrings,
     '2026-09-17-notes.md',
     '123/notes.md',
     'true/guide.md',
