@@ -59,14 +59,16 @@ Related safety references:
 
 ### A1. Complete the host preflight
 
-Before contacting the participant, complete sections 1 through 5 of
+Before contacting the participant, complete sections 1 through 5 **and section 8** of
 [`STAGE1_PRIVATE_INSTANCE_RUNBOOK.md`](STAGE1_PRIVATE_INSTANCE_RUNBOOK.md):
 
 1. create the instance secrets and a separate backup key;
 2. start the production Compose stack;
 3. create an encrypted backup;
 4. place the instance behind an identity policy, not a public quick tunnel;
-5. restore the backup into a fresh throwaway volume and record `integrity=ok`.
+5. restore the backup into a fresh throwaway volume and record `integrity=ok`;
+6. install and verify the daily host backup job and weekly off-platform copy/retention schedule,
+   and record both in the private evidence.
 
 The hosted path is **not ready to invite** when any of these are true:
 
@@ -75,6 +77,8 @@ The hosted path is **not ready to invite** when any of these are true:
 - the exact running image identity is not recorded;
 - no encrypted archive exists;
 - the archive has not restored successfully into a fresh volume;
+- the daily host backup job or weekly off-platform copy/retention schedule from section 8 is not
+  installed and recorded;
 - the backup or connector key is stored beside the database or archive;
 - registration is `Open`;
 - demo credentials or demo data are being presented as the participant's workspace.
@@ -108,6 +112,12 @@ private feedback outside the repository.
 
 ### A3. Create the accounts in the safe order
 
+Before step 1, establish the live volume's account baseline. Use a newly created, empty volume for
+this instance, or run the exact read-only account and invite inventory in section 6 of the Stage 1
+runbook when reusing a volume. Record the fresh-volume proof or inventory privately, stop, and
+reconcile every unexpected active account and every unconsumed invite before continuing.
+`GET /api/users` is not this inventory; it returns only the authenticated caller.
+
 1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning both named accounts.
 2. Before opening the private URL, mint the seven-day first-owner invite from the private host
    shell as the non-root API user:
@@ -128,11 +138,10 @@ private feedback outside the repository.
    400 response does not prove registration is closed.
 7. Create a small synthetic board and grant the participant `Editor` access through **Workspace →
    Settings → Access** (`/workspace/settings/access`).
-8. Before declaring the two-account boundary, confirm that the database volume is fresh or run an
-   authoritative account inventory that includes existing users. Recording two successful
-   registrations and the valid-registration 403 closure is not enough when an older volume may still
-   contain active accounts. `GET /api/users` may support an inventory check, but it does not prove that
-   exactly two users exist; stop and reconcile any additional identities before continuing.
+8. If the baseline used a reused volume, repeat the read-only inventory after registration is closed
+   and confirm exactly the two named active accounts and no unexpected unconsumed invite. For a fresh
+   volume, retain the empty-volume proof with the private evidence. Do not claim the two-account
+   boundary from two successful registrations and a 403 alone.
 
 Do not build or request a richer invite-code UI in this slice. Record invite UX friction as a
 finding against the existing registration surface.
@@ -243,7 +252,8 @@ shared board.
 > **Try the review gate**
 >
 > 1. Create a blank synthetic board.
-> 2. Open **Inbox** and capture: `Please create a card called local family beta check.`
+> 2. Open **Inbox** and select the blank synthetic board as the capture destination. Capture:
+>    `Please create a card called local family beta check.`
 > 3. Select the capture and choose **Start Triage** (shown as **Ask AI** in Paper mode).
 > 4. Open **Review**, inspect the proposal, and choose **Approve**.
 > 5. Confirm the board is still unchanged.
@@ -379,6 +389,9 @@ Friends-and-family observations route through the standing dogfooding lane repre
    const response = await fetch('/api/account/export', {
      headers: { Authorization: 'Bearer ' + token },
    })
+   if (!response.ok) {
+     throw new Error(`Export failed with HTTP ${response.status}; no file was downloaded.`)
+   }
    const blob = await response.blob()
    const url = URL.createObjectURL(blob)
    const link = document.createElement('a')
@@ -388,6 +401,9 @@ Friends-and-family observations route through the standing dogfooding lane repre
    URL.revokeObjectURL(url)
    ~~~
 
+   If the request throws or returns a non-2xx response, stop and do not continue to account deletion:
+   no valid export was downloaded. Ask the maintainer to investigate or use the supported recovery
+   path, and only proceed after a valid export exists or the participant explicitly declines one.
    Keep the downloaded file private. It is account-scoped and does not include the full shared-board
    column/card/label/comment tree; do not send it to the maintainer unless the participant explicitly
    consents to that transfer.

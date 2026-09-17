@@ -86,6 +86,14 @@ Render for an always-on host.
 
 ## 4. Accounts
 
+Before minting or consuming an invite, establish the live volume's account baseline. Use a newly
+created, empty volume for this instance, or run the exact read-only account and invite inventory in
+section 6 of `docs/ops/STAGE1_PRIVATE_INSTANCE_RUNBOOK.md` when reusing a volume. Record the
+fresh-volume proof or inventory privately, stop, and reconcile every unexpected active account and
+every unconsumed invite before continuing. `GET /api/users` is not this inventory; it returns only the
+authenticated caller. This standalone guide does not authorize using a reused volume without that
+reconciliation.
+
 1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning the named accounts. Before
    opening the public URL, mint the first-owner invite as the non-root API user:
 
