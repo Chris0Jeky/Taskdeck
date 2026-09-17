@@ -64,7 +64,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         var cardCache = new Dictionary<Guid, Card?>();
         var columnCache = new Dictionary<Guid, Column?>();
         var projectedColumnChanges = await GetProjectedColumnChangesAsync(
-            proposal, cardCache, cancellationToken);
+            proposal, cardCache, columnCache, cancellationToken);
 
         // Check each condition and collect rows
         await CheckStaleDataAsync(proposal, rows, flaggedCardIds, cardCache, cancellationToken);
@@ -157,7 +157,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
     /// <summary>
     /// Warn: target column is at or above WIP limit.
-    /// Checks operations that move or create cards into a column.
+    /// Checks the highest occupancy reached by incoming cards in operation order.
     /// </summary>
     private async Task CheckWipLimitAsync(
         ProposalConflictContext proposal,
@@ -189,7 +189,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             if (!projection.ReceivesCards)
                 continue;
 
-            var projectedCount = column.Cards.Count(card => !card.IsArchived) + projection.Delta;
+            var projectedCount = column.Cards.Count(card => !card.IsArchived) + projection.PeakIncomingDelta;
             if (column.WipLimit.HasValue && projectedCount > column.WipLimit.Value)
             {
                 flaggedColumnIds.Add(columnId);
@@ -389,41 +389,65 @@ public class ProposalConflictDetector : IProposalConflictDetector
     }
 
     /// <summary>
-    /// Projects card count deltas per column for create/move operations.
-    /// Existing cards moved within their current column do not increase projected WIP.
+    /// Projects active card occupancy in execution order, including lifecycle changes.
+    /// Same-column and archived-card moves do not consume or free active capacity.
     /// </summary>
     private async Task<IReadOnlyDictionary<Guid, ColumnProjection>> GetProjectedColumnChangesAsync(
         ProposalConflictContext proposal,
         Dictionary<Guid, Card?> cardCache,
+        Dictionary<Guid, Column?> columnCache,
         CancellationToken cancellationToken)
     {
         var changes = new Dictionary<Guid, ColumnProjection>();
+        var cardStates = new Dictionary<Guid, (Guid ColumnId, bool IsArchived)>();
 
-        foreach (var op in proposal.Operations)
+        foreach (var op in proposal.Operations.OrderBy(operation => operation.Sequence))
         {
-            if (!AddsCardToColumn(op))
+            var action = op.ActionType.ToLowerInvariant();
+            if (action is not ("create" or "move" or "archive-lifecycle" or "restore-lifecycle" or "delete"))
                 continue;
 
-            var targetColumnId = TryGetTargetColumnId(op);
-            if (!targetColumnId.HasValue)
-                continue;
-
-            var sourceColumnId = (Guid?)null;
-            if (op.ActionType.Equals("move", StringComparison.OrdinalIgnoreCase)
-                && op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)
-                && Guid.TryParse(op.TargetId, out var movedCardId))
+            var isCard = op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase);
+            var cardId = isCard ? TryGetCardId(op) : null;
+            (Guid ColumnId, bool IsArchived)? state = null;
+            if (cardId.HasValue && action != "create")
             {
-                var card = await GetOrFetchCardAsync(movedCardId, cardCache, cancellationToken);
-                if (card?.ColumnId == targetColumnId.Value)
-                    continue;
-
-                sourceColumnId = card?.ColumnId;
+                if (cardStates.TryGetValue(cardId.Value, out var projectedState))
+                    state = projectedState;
+                else if (await GetOrFetchCardAsync(cardId.Value, cardCache, cancellationToken) is { } card)
+                    state = (card.ColumnId, card.IsArchived);
             }
 
-            if (sourceColumnId.HasValue)
-                AddColumnProjectionDelta(changes, sourceColumnId.Value, delta: -1, receivesCards: false);
+            if (action is "archive-lifecycle" or "restore-lifecycle" or "delete")
+            {
+                if (!state.HasValue)
+                    continue;
+                var becomesArchived = action != "restore-lifecycle";
+                if (state.Value.IsArchived == becomesArchived)
+                    continue;
+                AddColumnProjectionDelta(changes, state.Value.ColumnId, becomesArchived ? -1 : 1, !becomesArchived);
+                cardStates[cardId!.Value] = (state.Value.ColumnId, becomesArchived);
+                continue;
+            }
+
+            var targetColumnId = TryGetTargetColumnId(op);
+            if (!targetColumnId.HasValue ||
+                (action == "move" && state.HasValue &&
+                 (state.Value.IsArchived || state.Value.ColumnId == targetColumnId.Value)))
+                continue;
+
+            // A rejected move cannot free its source slot for a later operation. Still
+            // retain the attempted destination count so Review names that WIP violation.
+            var targetColumn = await GetOrFetchColumnAsync(targetColumnId.Value, columnCache, cancellationToken);
+            var moveExceedsCapacity = action == "move" && targetColumn?.WipLimit is { } limit &&
+                targetColumn.Cards.Count(card => !card.IsArchived) + changes.GetValueOrDefault(targetColumnId.Value).Delta >= limit;
+
+            if (action == "move" && state.HasValue && !moveExceedsCapacity)
+                AddColumnProjectionDelta(changes, state.Value.ColumnId, delta: -1, receivesCards: false);
 
             AddColumnProjectionDelta(changes, targetColumnId.Value, delta: 1, receivesCards: true);
+            if (isCard && cardId.HasValue && !moveExceedsCapacity)
+                cardStates[cardId.Value] = (targetColumnId.Value, false);
         }
 
         return changes;
@@ -436,9 +460,13 @@ public class ProposalConflictDetector : IProposalConflictDetector
         bool receivesCards)
     {
         var existing = changes.GetValueOrDefault(columnId);
+        var projectedDelta = existing.Delta + delta;
         changes[columnId] = new ColumnProjection(
-            existing.Delta + delta,
-            existing.ReceivesCards || receivesCards);
+            projectedDelta,
+            existing.ReceivesCards || receivesCards,
+            receivesCards
+                ? existing.ReceivesCards ? Math.Max(existing.PeakIncomingDelta, projectedDelta) : projectedDelta
+                : existing.PeakIncomingDelta);
     }
 
     /// <summary>
@@ -488,13 +516,29 @@ public class ProposalConflictDetector : IProposalConflictDetector
         return null;
     }
 
-    private static bool AddsCardToColumn(ProposalOperationDto operation)
+    private static Guid? TryGetCardId(ProposalOperationDto operation)
     {
-        return operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)
-            || operation.ActionType.Equals("move", StringComparison.OrdinalIgnoreCase);
+        if (!operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(operation.Parameters))
+        {
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(operation.Parameters);
+                if (document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty("cardId", out var cardId) &&
+                    cardId.ValueKind == System.Text.Json.JsonValueKind.String &&
+                    Guid.TryParse(cardId.GetString(), out var parameterCardId))
+                    return parameterCardId;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Malformed operations are rejected by the operation contract, not this warning view.
+            }
+        }
+        return Guid.TryParse(operation.TargetId, out var targetCardId) ? targetCardId : null;
     }
 
-    private readonly record struct ColumnProjection(int Delta, bool ReceivesCards);
+    private readonly record struct ColumnProjection(int Delta, bool ReceivesCards, int PeakIncomingDelta);
 
     private static IReadOnlyList<string> GetWebhookEventTypes(ProposalConflictContext proposal)
     {

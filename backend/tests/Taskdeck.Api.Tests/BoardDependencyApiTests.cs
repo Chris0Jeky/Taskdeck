@@ -129,11 +129,14 @@ public sealed class BoardDependencyApiTests(TestWebApplicationFactory factory) :
         {
             var json = await client.GetStringAsync($"/api/export/boards/{board.Id}{suffix}");
             using var document = JsonDocument.Parse(json);
-            document.RootElement.GetProperty("version").GetInt32().Should().Be(2);
+            var envelope = JsonSerializer.Deserialize<BoardExportEnvelope>(json,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+            envelope.Version.Should().Be(5);
+            envelope.Payload.Dependencies.Should().Equal(new CardDependency(a.Id, b.Id));
             // Both legacy readers require a top-level name or board; neither can silently import this file.
             document.RootElement.TryGetProperty("name", out _).Should().BeFalse();
             document.RootElement.TryGetProperty("board", out _).Should().BeFalse();
-            var importedResponse = await client.PostAsJsonAsync("/api/import/boards/json", document.RootElement);
+            var importedResponse = await client.PostAsJsonAsync("/api/import/boards/json", envelope);
             importedResponse.EnsureSuccessStatusCode();
             var imported = (await importedResponse.Content.ReadFromJsonAsync<ImportResultDto>())!;
             var cards = (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{imported.BoardId}/cards"))!;
@@ -174,8 +177,9 @@ public sealed class BoardDependencyApiTests(TestWebApplicationFactory factory) :
         (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(0, []))).StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await client.DeleteAsync($"/api/boards/{board.Id}/cards/{b.Id}")).EnsureSuccessStatusCode();
         (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!.Edges.Should().BeEmpty();
-        var exported = (await client.GetFromJsonAsync<ExportBoardDto>($"/api/export/boards/{board.Id}/json"))!;
-        exported.Dependencies.Should().BeEmpty();
+        var exported = (await client.GetFromJsonAsync<BoardExportEnvelope>($"/api/export/boards/{board.Id}/json"))!;
+        exported.Version.Should().Be(5);
+        exported.Payload.Dependencies.Should().BeEmpty();
         (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(1, [new(a.Id, b.Id)]))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(1, []))).EnsureSuccessStatusCode();
         (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!.Should().HaveCount(1);

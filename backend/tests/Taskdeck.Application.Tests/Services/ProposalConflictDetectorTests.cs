@@ -1120,6 +1120,100 @@ public class ProposalConflictDetectorTests
 
     #endregion
 
+    [Theory]
+    [InlineData(true, true, 1)]
+    [InlineData(true, false, 1)]
+    [InlineData(false, true, 1)]
+    [InlineData(false, false, 1)]
+    [InlineData(false, true, 2)]
+    [InlineData(false, false, 2)]
+    public async Task DetectConflictsAsync_LifecycleThenIncomingCard_ProjectsActiveCapacity(
+        bool archive, bool create, int limit)
+    {
+        var target = new Column(_boardId, "Limited", 0, wipLimit: limit);
+        var source = new Column(_boardId, "Source", 1);
+        var lifecycleCard = new Card(_boardId, target.Id, "Lifecycle");
+        if (!archive) lifecycleCard.Archive();
+        target.AddCard(lifecycleCard);
+        var mover = new Card(_boardId, source.Id, "Mover");
+        source.AddCard(mover);
+        var proposal = CreateProposal(_userId, _boardId, RiskLevel.High);
+        proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 0,
+            archive ? "archive-lifecycle" : "restore-lifecycle", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { cardId = lifecycleCard.Id }),
+            Guid.NewGuid().ToString(), lifecycleCard.Id.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 1, create ? "create" : "move", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { columnId = target.Id, cardId = mover.Id }),
+            Guid.NewGuid().ToString(), create ? null : mover.Id.ToString()));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>())).ReturnsAsync(proposal);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(lifecycleCard.Id, It.IsAny<CancellationToken>())).ReturnsAsync(lifecycleCard);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(mover.Id, It.IsAny<CancellationToken>())).ReturnsAsync(mover);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(source.Id, It.IsAny<CancellationToken>())).ReturnsAsync(source);
+        SetupEmptySecondaryChecks(proposal);
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        var exceeds = !archive && limit == 1;
+        result.Value.Should().Contain(r => r.Key == (exceeds ? "wip-limit" : "capacity")
+            && r.Tone == (exceeds ? ConflictTone.Warn : ConflictTone.Ok)
+            && r.Value.Contains($"({(archive ? 1 : 2)}/{limit})", StringComparison.Ordinal));
+        result.Value.Should().NotContain(r => r.Key == (exceeds ? "capacity" : "wip-limit"));
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_ArchivedOutgoingMove_DoesNotFreeAnActiveSlot()
+    {
+        var target = new Column(_boardId, "Limited", 0, wipLimit: 1);
+        var other = new Column(_boardId, "Other", 1);
+        var active = new Card(_boardId, target.Id, "Active");
+        var archived = new Card(_boardId, target.Id, "Archived");
+        archived.Archive();
+        target.AddCard(active);
+        target.AddCard(archived);
+        var proposal = CreateProposal(_userId, _boardId, RiskLevel.High);
+        proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 0, "move", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { cardId = archived.Id, columnId = other.Id }),
+            Guid.NewGuid().ToString(), archived.Id.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 1, "create", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { columnId = target.Id }), Guid.NewGuid().ToString()));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>())).ReturnsAsync(proposal);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(archived.Id, It.IsAny<CancellationToken>())).ReturnsAsync(archived);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(other.Id, It.IsAny<CancellationToken>())).ReturnsAsync(other);
+        SetupEmptySecondaryChecks(proposal);
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.Value.Should().Contain(r => r.Key == "wip-limit" && r.Value.Contains("(2/1)", StringComparison.Ordinal));
+        result.Value.Should().NotContain(r => r.Key == "capacity");
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_IncomingBeforeArchive_KeepsTheEarlierWipViolation()
+    {
+        var target = new Column(_boardId, "Limited", 0, wipLimit: 1);
+        var occupant = new Card(_boardId, target.Id, "Archive later");
+        target.AddCard(occupant);
+        var proposal = CreateProposal(_userId, _boardId, RiskLevel.High);
+        // Store backwards deliberately; execution order is Sequence.
+        proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 1, "archive-lifecycle", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { cardId = occupant.Id }),
+            Guid.NewGuid().ToString(), occupant.Id.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 0, "create", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { columnId = target.Id }), Guid.NewGuid().ToString()));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>())).ReturnsAsync(proposal);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(occupant.Id, It.IsAny<CancellationToken>())).ReturnsAsync(occupant);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+        SetupEmptySecondaryChecks(proposal);
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.Value.Should().Contain(r => r.Key == "wip-limit" && r.Value.Contains("(2/1)", StringComparison.Ordinal));
+        result.Value.Should().NotContain(r => r.Key == "capacity");
+    }
+
     #region Helpers
 
     private AutomationProposal CreateProposal(

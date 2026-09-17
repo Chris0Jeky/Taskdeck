@@ -45,6 +45,8 @@ export interface Card {
   title: string
   description: string
   dueDate: string | null
+  /** Missing older payloads and null both mean not estimated; zero is explicit. */
+  estimatedEffortMinutes?: number | null
   isBlocked: boolean
   /** Older cached card payloads default to active. */
   isArchived?: boolean
@@ -123,6 +125,7 @@ export interface CreateCardDto {
   title: string
   description?: string | null
   dueDate?: string | null
+  estimatedEffortMinutes?: number | null
   labelIds?: string[] | null
 }
 
@@ -134,6 +137,8 @@ export interface UpdateCardDto {
   description?: string | null
   dueDate?: string | null
   clearDueDate?: boolean
+  estimatedEffortMinutes?: number | null
+  clearEstimatedEffort?: boolean
   isBlocked?: boolean | null
   blockReason?: string | null
   labelIds?: string[] | null

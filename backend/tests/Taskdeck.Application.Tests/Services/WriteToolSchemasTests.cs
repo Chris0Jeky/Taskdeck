@@ -8,10 +8,10 @@ namespace Taskdeck.Application.Tests.Services;
 public class WriteToolSchemasTests
 {
     [Fact]
-    public void GetAll_Returns6Schemas()
+    public void GetAll_Returns8Schemas()
     {
         var schemas = WriteToolSchemas.GetAll();
-        schemas.Count.Should().Be(6);
+        schemas.Count.Should().Be(8);
     }
 
     [Fact]

@@ -1,6 +1,170 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-11
+Last Updated: 2026-09-12
+
+## Relation navigation guidance candidate (2026-09-12, #3077)
+
+Keep the existing navigation lock while a relation proposal request is pending, using a separate
+relation activity signal and proposal-specific guidance. Private-answer, recording and companion
+send protections remain intact. The four-file implementation has a clean independent review and
+20 passing focused cases. Final frontend qualification passes 6,911 tests with three existing skips,
+lint, typecheck and build on delivered #3082. Complete the required hosted gate before delivery;
+the relation graph remains unchanged until an approved proposal is applied.
+
+## Paper archive settlement delivery (2026-09-12, #3060)
+
+The selected-inspector follow-up to delivered #3059 now accepts a successful inactive child's
+committed receipt only when the board and card still match. It updates the replacement action's
+lifecycle/version before releasing pending ownership and preserves a newer returned-card draft.
+Both archive and restore stale-state regressions were reproduced before the fix; seven focused
+cases and independent review pass. #3082 merged as `2cdc45257` after required run `34722482168`
+passed at `29a3142a9` against delivered recovery `96f4b7cc2`. Full frontend qualification passes
+6,909 tests with three existing skips plus lint/typecheck/build. The MEDIUM form/assignment write
+baseline follow-up is tracked in #3083. #3023 and parked #3057 remain separate; existing human
+actions are unchanged.
+
+## Product recovery integration (2026-09-12)
+
+Typed relations #3066 delivered #2092 as `160818440` after its exact-head required gate;
+its issue and PR project items are Done with Priority II and post-merge review is clear.
+Preserve that source and the reviewed commits for #3024, #2935, #3000, #3063 and #3056 in
+one candidate against the delivered base. Runtime merges are automatic; both concurrent
+canonical progress records are retained. The source-blob comparison and bounded integration
+review are clean. Combined frontend qualification passes 6,907 tests with three existing
+skips, lint and typecheck/build. Complete the combined backend and hosted gates before delivery.
+[Qualification record](analysis/2026-09-12-product-recovery-qualification.md) distinguishes source
+results from final integrated proof. Keep permission PR #3072 parked and existing human
+actions and release decisions unchanged.
+
+## Proposal webhook durability candidate (2026-09-12, #3024)
+
+Reuse the existing outbound delivery queue for events already buffered by the proposal executor.
+Prepare delivery rows before the final transaction save, commit them with the proposal effects,
+then publish realtime after commit without enqueueing webhooks again. The existing queue worker
+provides later delivery; no new schema, sweep or worker policy is needed. Preparation failure must
+roll back the proposal. This reduces silent integration gaps while retaining review-first writes.
+
+The implementation, 49 focused Application/Composite API tests, five real SQLite visibility/rollback/
+lost-flush tests and one independent review are complete. Two lifecycle controls fail when durable
+preparation is omitted and pass with the reviewed bytes restored. The complete backend gate now
+passes 9,802 tests with 34 existing skips and no failures. Complete exact-head hosted qualification
+before closing #3024. Broader notification
+producer changes, live HTTP and release qualification remain outside this slice.
+
+The child now includes the parent's corrected chat ID/revision contracts. Only those nine backend
+tool/registration/test files differ from the full-backend checkpoint; their 91 Application and one
+API registry cases pass on the parent. Webhook source and durability tests remain unchanged.
+Qualify the combined head and retarget after parent delivery before merging this child.
+
+## Typed relations candidate (2026-09-12, #2092)
+
+The candidate includes delivered archive recovery #3059 and draft correction #3064 through
+main `9a8c14c6b`. Only the concurrent canonical records needed merge resolution; both records
+are preserved and backend files are unchanged. Qualify the updated main base.
+The combined base passes 61 focused archive/relation tests; the delivered editor blobs match main.
+
+Five independently owned slices now integrate the accepted same-board relation contract: canonical
+storage and migration, proposal semantics, API/MCP/chat producers, board/account portability and
+the shared thinking-deck UI. Existing dependency clients use an adapter over the same revisioned
+store. Typed mutations retain explicit review and caller-observed revisions. There is no new status,
+assignment, hierarchy or delegated-authority behavior. [Contract](product/CARD_RELATIONS.md).
+
+The integrated frontend suite and both real API browser journeys pass. The full backend run found
+four fixture mismatches; their test-only correction passes all 180 tests in the affected classes.
+STATUS preserves the full-run counts and the limits of each follow-up check. Storage and application
+reviews are clean, including the bounded graph-preview and deferred-publication fixes. Exact-head
+hosted qualification remains required. This section supersedes the historical Pending note below;
+the candidate remains unmerged and existing human-action and release decisions are unchanged.
+
+The bounded hosted follow-up corrects the dependency journey's expected v5 export envelope
+(one real browser journey passes) and replaces account-wide tracked relation retention with
+authorized, no-tracking export pages (20 focused tests pass; independent review clean). The
+delivered estimate merge `54e4c0a86` is integrated. Qualify this final head against main before
+closing #2092; keep the existing non-snapshot export and physical-device limitations explicit.
+The final LAN compatibility correction reuses the existing UUID fallback for proposal IDs and
+passes a missing-`randomUUID` regression, all four API-wrapper tests, lint and bounded review.
+Keep buffered export admission (#3069) and refresh control state (#3070) as separate follow-ups.
+
+The chat-contract correction resolves active-board short IDs and preserves full UUID formats,
+and registers the authorized graph/revision reader already named by the proposal schema. Causal
+negative controls reproduce both missing contracts; 91 Application cases and one API registry case
+pass after correction. STATUS records the bounded review and compatibility fix. Keep premature
+proposal-create events (#3073) and proposal-delete audit attribution (#3074) outside this correction.
+Requalify the final head before merge; approval and Apply remain explicit.
+
+## Archived external-import conflict qualification (2026-09-12, #2935)
+
+Report changed archived dedupe matches as structured conflicts before Apply, preserving skips,
+duplicate ambiguity and all-or-nothing planning. The submitted 13 regression cases are now
+compiled and pass within all 50 focused import tests. Independent review is clean and the full
+backend passes 9,747 tests with 34 existing skips. STATUS and the dedicated analysis note record
+the exact tested source/base and application-only scenario limits. Complete the hosted gate on
+#3068 before delivery; existing human-action and release decisions remain unchanged.
+
+## Archive recovery delivery and remaining draft slice (2026-09-12)
+
+#3059 merged as `44d041ca7` after required hosted run `34714826369` passed at `7135d53a9`,
+closing #3033. Its post-merge review check is clear. #3064 then merged as `9a8c14c6b` after
+required run `34716287296` passed at `13dfde5ca`; its first post-merge review check is also clear.
+#3023 remains a partial repair with recovery-copy and other residuals open, and #3060 separately
+owns selected-snapshot settlement. Existing human-action and release decisions remain unchanged.
+
+## Estimate delivery (2026-09-12)
+
+#3054 merged as `54e4c0a86` after required hosted run `34713059470` passed at reviewed head
+`28c4f49de`. The merge preserves source PRs #3053/#3055 and closes #2093/#3044/#3049/#3062;
+all seven project items are marked Done. The first post-merge review-thread check is clear.
+Requalify the archive and typed-relation children against the delivered base before merging them.
+Existing bounded follow-ups and human release, hosting and device decisions remain separate.
+
+## Estimates and derived rollups (2026-09-12, #2093)
+
+The complete estimate vertical is integrated for qualification: nullable bounded effort minutes,
+shared editor and Paper/Legacy quick-create, version-checked direct and reviewed automation writes,
+chat/MCP coverage, audit/provenance, portability, additive migration/rollback and current-state
+board/column/participant/unassigned totals. Existing User and board-access participation remain
+the identity boundary. Multiple assignees each receive the full card estimate; totals explain this
+overlap and never overwrite parent estimates. There are no persisted aggregates, work logs or
+capacity forecasts. [Contract](product/CARD_ESTIMATES.md).
+
+Five independently owned implementation slices are combined without conflict-resolution edits.
+Focused tests pass, including a real SQLite competing-writer rollback and editor resave regression.
+The full frontend suite and two real-API browser journeys pass. The combined backend exposed
+four architecture inventory/declaration failures, corrected and verified by the affected architecture
+and rollup API suites; STATUS records the original full-run result and exact limits. The final hosted
+gate remains pending, with no estimate merge or release claim. Canonical evidence is in STATUS and
+the delivery PR. The existing human-action file remains unchanged.
+PR #3054 also integrates the reviewed #3053 planning-reference correction and #3055 permission
+payload recovery with merge commits. Backend-less demo totals remain a bounded follow-up (#3056).
+Final qualification also closes the card-create/detail-refresh duplication race and guards
+same-valued estimate proposals against a concurrent card write. Both fixes have failing-before
+regressions and clean bounded reviews; STATUS records their scoped tests and actual browser proof.
+
+## Product recovery integration (2026-09-12)
+
+Merged in #3050 as `9c17a83bf` after exact-head required hosted run `34702720469` passed.
+The six source PRs and nine intended repair issues are confirmed merged/closed; the open
+residuals below remain separate. Source commits and local evidence were preserved before
+finished worktrees were removed.
+
+Preserve the reviewed source commits for card-editor permission and archive focus recovery
+(#3021/#3037/#3042, PR #3048), assignment revoke notification identities (#2979, PR #3047),
+ordered proposal capacity and precise card effects (#3012/#3020/#3031), and asynchronous
+extraction gate tests (#2993, PR #3046). The integration branch qualifies these disjoint changes
+against main after the approved retained-merge-ref fix (#2987). Per-head test evidence and limits
+are in STATUS; final hosted qualification belongs to the integration PR.
+
+The assignment/import record correction (#3036, PR #3043) and inert private-hosting compatibility
+files (PR #2914) travel with this delivery. Hosting activation, provisioning and release acceptance
+remain separate. The #3033 A-to-B-to-A pending-write follow-on now keeps ownership above the
+keyed child in the real editor. Its bounded host fix passes 151 focused tests, lint/typecheck/build
+and independent review; the earlier full frontend run preceded that fix. Merge #3054 first and
+requalify the retargeted child. Keep MEDIUM settled-state refresh #3060, broader editor #3023 and
+reliable delivery #3024 open.
+The #3044 planning-reference cleanup and #3049
+same-valued permission-payload recovery are reviewed and integrated into #3054 for final hosted CI.
+The existing human actions in OUTSTANDING_TASKS remain unchanged, including CI-control decisions
+for #2931/#2838, private-instance settings and real-device/screen-reader qualification.
 
 ## Product trust reconciliation (2026-09-11)
 
@@ -9,20 +173,22 @@ Main `02abedfe9` includes true archive/restore (#2932), Task/Epic/Spike (#2949),
 Apply recovery (#2942/#2948). The overhaul/reminder train below is delivered; its earlier
 imperative and pending-delivery paragraphs are historical execution notes.
 
-Assignments #2240 are parked in PR #2977 on HIGH #2981, pending-save/discard truth. Existing
-PRs #2955/#2959/#2961 remain unmerged at this snapshot; #2930 retains its delayed-pin announcement
-residual. Finish those delivery contracts before adding competing writers.
+Assignments #2240 and explicit importer-or-unassigned mapping are delivered in PR #2977
+(merge `15ee8065a`, 2026-09-11); HIGH #2981 is closed. This 2026-09-12 correction (#3036)
+reconciles the earlier parked snapshot against live merge state and current code. The separate
+permission-recovery and assignment-webhook repairs are in the integration above; #2093's
+effort estimate and rollups are implemented and undergoing the qualification recorded above.
 
 The maintainer has selected explicit assignee import mapping and effort minutes with hours/minutes
-display. #2093 is Next behind the shared assignment paths; #2092 remains Pending with a contract
+display. #2093 is Now with the shared assignment paths available; #2092 remains Pending with a contract
 to migrate the existing dependency graph. Both #2240 and #2093 are now v0.4, superseding the
-old v0.3 assignment exception and unanswered-fork/unit notes below. No estimate or typed-link
-implementation is claimed. The scalar estimate has no intrinsic assignment dependency; path
+old v0.3 assignment exception and unanswered-fork/unit notes below. Typed-link implementation
+remains separate. The scalar estimate has no intrinsic assignment dependency; path
 ownership and per-participant totals explain the chosen order.
 
 See the [delivery, risk and architecture assessment](analysis/2026-09-11-product-trust-reconciliation.md)
-and [capability catalogue](product/FEATURE_CAPABILITIES.md). STATUS/readiness remain leased by
-#2947, TESTING_GUIDE by #2931, and UPGRADING by #2977; exact correction packets are recorded there.
+and [capability catalogue](product/FEATURE_CAPABILITIES.md). TESTING_GUIDE remains owned by open PR #2931; the earlier
+STATUS/readiness and assignment delivery leases have completed.
 No new release, hosted, stage-4/5 or delegated-authority approval is inferred.
 
 ## Earlier September 10 execution notes

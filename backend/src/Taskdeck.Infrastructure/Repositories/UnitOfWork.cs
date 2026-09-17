@@ -189,10 +189,17 @@ public class UnitOfWork : IUnitOfWork
             }
             catch (DbUpdateException ex) when (
                 ex.InnerException is SqliteException { SqliteExtendedErrorCode: 1555 or 2067 } &&
-                ex.Entries.Any(entry => entry.Entity is BoardDependencies && entry.State == EntityState.Added))
+                ex.Entries.Any(entry => entry.Entity is BoardDependencies or CardRelation && entry.State == EntityState.Added))
             {
                 throw new DomainException(ErrorCodes.Conflict,
-                    "Dependencies changed while updating the card. Refresh and retry your action.", ex);
+                    "Relations changed while updating the card. Refresh and retry your action.", ex);
+            }
+            catch (DbUpdateException ex) when (
+                ex.InnerException is SqliteException { SqliteExtendedErrorCode: 787 } &&
+                ex.Entries.Any(entry => entry.Entity is CardRelation))
+            {
+                throw new DomainException(ErrorCodes.Conflict,
+                    "A relation endpoint changed. Refresh and retry your action.", ex);
             }
             catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
             {

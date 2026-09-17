@@ -212,6 +212,19 @@ public sealed class ExternalImportService : IExternalImportService
                     continue;
                 }
 
+                // Archived matches still own their dedupe key. Describe the domain refusal during
+                // planning, before any row in the batch can write; unchanged archives remain skips.
+                if (existingCard.IsArchived)
+                {
+                    conflicts.Add(new ExternalImportConflictDto(
+                        "ArchivedExistingMatch",
+                        $"$.rows[{candidate.SourceRowNumber}]",
+                        $"Cannot update or move archived card '{existingCard.Title}' matched by dedupe key '{candidate.DedupeKey}'. Restore the card explicitly or remove this row before applying import.",
+                        ExistingValue: BuildCardReference([existingCard]),
+                        IncomingValue: candidate.DedupeKey));
+                    continue;
+                }
+
                 plannedUpserts.Add(new PlannedUpsert(existingCard, candidate));
                 rowsUpdated++;
                 continue;

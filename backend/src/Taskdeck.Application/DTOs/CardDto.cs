@@ -18,7 +18,8 @@ public record CardDto(
     bool IsArchived = false,
     string WorkItemType = "Task",
     Guid? ParentCardId = null,
-    IReadOnlyList<CardAssignmentDto>? Assignments = null
+    IReadOnlyList<CardAssignmentDto>? Assignments = null,
+    int? EstimatedEffortMinutes = null
 );
 
 public record CardAssignmentDto(Guid UserId, string DisplayName, DateTimeOffset AssignedAt, Guid AssignedByUserId);
@@ -38,7 +39,8 @@ public record CreateCardDto(
     DateTimeOffset? DueDate,
     List<Guid>? LabelIds,
     string? WorkItemType = null,
-    Guid? ParentCardId = null
+    Guid? ParentCardId = null,
+    int? EstimatedEffortMinutes = null
 );
 
 public record UpdateCardDto(
@@ -52,7 +54,9 @@ public record UpdateCardDto(
     bool ClearDueDate = false,
     string? WorkItemType = null,
     Guid? ParentCardId = null,
-    bool ClearParent = false
+    bool ClearParent = false,
+    int? EstimatedEffortMinutes = null,
+    bool ClearEstimatedEffort = false
 );
 
 public record MoveCardDto(

@@ -926,6 +926,58 @@ public class CardServiceTests
         card2.Position.Should().Be(2); // Pushed to 2
     }
 
+    [Theory]
+    [InlineData(3)]   // #3025: the append index a sparse column (positions 0 and 2) used to produce
+    [InlineData(99)]  // and any other overshoot from a caller that computed it from stored positions
+    public async Task MoveCardAsync_ShouldAppendToEnd_WhenTargetPositionOvershootsTheTargetColumn(int requestedPosition)
+    {
+        // #3025 regression: the target column's stored positions are non-contiguous (0 and 2 after
+        // the middle card was deleted), so a caller that derives the append index from max(Position)
+        // asks for index 3 on a two-card list. That used to reach List.Insert past the end and throw
+        // ArgumentOutOfRangeException - uncaught here, so a proposal apply rolled the batch back.
+        // Overshoot now clamps to the end, matching ColumnService.ReorderColumnAsync's idiom, and
+        // the whole target column is renumbered contiguously as it always was.
+        var board = TestDataBuilder.CreateBoard();
+        var sourceColumn = TestDataBuilder.CreateColumn(board.Id, "To Do", 0);
+        var targetColumn = TestDataBuilder.CreateColumn(board.Id, "Doing", 1);
+        var first = TestDataBuilder.CreateCard(board.Id, targetColumn.Id, "First", position: 0);
+        var third = TestDataBuilder.CreateCard(board.Id, targetColumn.Id, "Third", position: 2);
+        var mover = TestDataBuilder.CreateCard(board.Id, sourceColumn.Id, "Mover", position: 0);
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(targetColumn.Id, default))
+            .ReturnsAsync(new List<Card> { first, third });
+
+        var result = await _service.MoveCardAsync(mover.Id, new MoveCardDto(targetColumn.Id, requestedPosition));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mover.ColumnId.Should().Be(targetColumn.Id);
+        first.Position.Should().Be(0);
+        third.Position.Should().Be(1);
+        mover.Position.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task MoveCardAsync_ShouldReturnValidationError_WhenTargetPositionIsNegative()
+    {
+        // The negative guard lives in Card.SetPosition and is surfaced as a Result, not an
+        // exception. Pinned alongside the #3025 clamp so the clamp is never widened to negatives.
+        var board = TestDataBuilder.CreateBoard();
+        var targetColumn = TestDataBuilder.CreateColumn(board.Id, "Doing", 1);
+        var mover = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Mover", position: 0);
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+
+        var result = await _service.MoveCardAsync(mover.Id, new MoveCardDto(targetColumn.Id, -1));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
     [Fact]
     public async Task MoveCardAsync_ShouldReturnNotFound_WhenCardDoesNotExist()
     {

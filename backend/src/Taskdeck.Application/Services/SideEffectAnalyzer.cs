@@ -13,13 +13,24 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
 {
-    // Action types that actively mutate cards. "archive-lifecycle"/"restore-lifecycle" are the
-    // review-first card lifecycle actions: applying one flips the card's archived state, so the
-    // Cards row must disclose a board mutation rather than reporting "No board mutations".
-    private static readonly HashSet<string> CardMutatingActions = new(StringComparer.OrdinalIgnoreCase)
+    // Keep a stable display order and name the actual effect: legacy "archive" blocks a card;
+    // only the lifecycle actions change its archived state. Move aliases share one disclosure.
+    private static readonly (string Action, string Verb)[] CardMutationVerbs =
     {
-        "create", "move", "archive", "update", "delete", "bulk_move",
-        "archive-lifecycle", "restore-lifecycle"
+        ("create", "creates"),
+        ("move", "moves"),
+        ("bulk_move", "moves"),
+        ("archive", "blocks"),
+        ("update", "updates"),
+        ("delete", "deletes"),
+        ("archive-lifecycle", "archives"),
+        ("restore-lifecycle", "restores")
+    };
+
+    private static readonly (string Action, string Verb)[] RelationMutationVerbs =
+    {
+        ("add-relation", "adds typed links"),
+        ("remove-relation", "removes typed links")
     };
 
     private readonly IUnitOfWork _unitOfWork;
@@ -91,9 +102,22 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         IReadOnlyList<ProposalOperationDto> operations,
         bool hasActiveWebhooks)
     {
-        var hasCardMutation = operations.Any(op =>
-            CardMutatingActions.Contains(op.ActionType) &&
-            string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase));
+        var cardActions = operations
+            .Where(op => string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase))
+            .Select(op => op.ActionType)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var cardVerbs = CardMutationVerbs
+            .Where(entry => cardActions.Contains(entry.Action))
+            .Select(entry => entry.Verb)
+            .Distinct()
+            .ToList();
+        var relationVerbs = RelationMutationVerbs
+            .Where(entry => cardActions.Contains(entry.Action))
+            .Select(entry => entry.Verb)
+            .Distinct()
+            .ToList();
+        var hasCardMutation = cardVerbs.Count > 0 || relationVerbs.Count > 0;
+        var cardMutationSummary = DescribeCardMutations(cardVerbs.Concat(relationVerbs).ToList());
         var hasColumnMutation = operations.Any(op =>
             string.Equals(op.TargetType, "column", StringComparison.OrdinalIgnoreCase));
         var hasBoardMutation = hasCardMutation || hasColumnMutation;
@@ -105,9 +129,9 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
                 "Cards",
                 hasBoardMutation
                     ? hasCardMutation && hasColumnMutation
-                        ? "Creates, moves, or archives cards and adds columns on the board"
+                        ? $"{cardMutationSummary} and adds columns on the board"
                         : hasCardMutation
-                            ? "Creates, moves, or archives cards on the board"
+                            ? $"{cardMutationSummary} on the board"
                             : "Adds columns to the board (no direct card mutations)"
                     : "No board mutations",
                 hasBoardMutation ? SideEffectTone.Active : SideEffectTone.Passive),
@@ -132,6 +156,30 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
             new("Calendar", "Calendar integration not yet available", SideEffectTone.Passive)
         };
     }
+
+    private static string DescribeCardMutations(IReadOnlyList<string> verbs)
+    {
+        if (verbs.Count == 0)
+            return string.Empty;
+
+        var cardVerbs = verbs.Where(verb => !verb.EndsWith("typed links", StringComparison.Ordinal)).ToList();
+        var relationVerbs = verbs.Where(verb => verb.EndsWith("typed links", StringComparison.Ordinal)).ToList();
+        var descriptions = new List<string>();
+        if (cardVerbs.Count > 0)
+            descriptions.Add($"{SentenceCase(JoinVerbs(cardVerbs))} cards");
+        if (relationVerbs.Count > 0)
+            descriptions.Add($"{SentenceCase(JoinVerbs(relationVerbs))}");
+        return string.Join(" and ", descriptions);
+    }
+
+    private static string JoinVerbs(IReadOnlyList<string> verbs) => verbs.Count switch
+    {
+        1 => verbs[0],
+        2 => string.Join(" and ", verbs),
+        _ => $"{string.Join(", ", verbs.Take(verbs.Count - 1))}, and {verbs[^1]}"
+    };
+
+    private static string SentenceCase(string value) => $"{char.ToUpperInvariant(value[0])}{value[1..]}";
 
     internal static Reversibility ComputeApplyRiskPosture(
         IReadOnlyList<AutomationProposalOperation> operations,

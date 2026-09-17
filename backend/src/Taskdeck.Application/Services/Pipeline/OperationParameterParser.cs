@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services.Pipeline;
 
@@ -9,6 +11,25 @@ namespace Taskdeck.Application.Services.Pipeline;
 /// </summary>
 public static class OperationParameterParser
 {
+    public static bool TryGetEstimatedEffortMinutes(JsonElement parameters, out int? value, out string error)
+    {
+        value = null;
+        error = string.Empty;
+        if (!parameters.TryGetProperty("estimatedEffortMinutes", out var property) || property.ValueKind == JsonValueKind.Null)
+            return true;
+
+        if (!TryGetRequiredInt32(parameters, "estimatedEffortMinutes", out var minutes, out error))
+            return false;
+        if (minutes < 0 || minutes > Card.MaxEstimatedEffortMinutes)
+        {
+            error = $"Parameter 'estimatedEffortMinutes' must be between 0 and {Card.MaxEstimatedEffortMinutes} whole minutes";
+            return false;
+        }
+
+        value = minutes;
+        return true;
+    }
+
     public static bool TryGetWorkItemType(JsonElement parameters, out string? workItemType, out string error)
     {
         workItemType = null;
@@ -142,6 +163,43 @@ public static class OperationParameterParser
         }
 
         return true;
+    }
+
+    public static bool TryGetRelationOperationParameters(
+        JsonElement parameters,
+        out CardRelationOperationParameters relation,
+        out string error)
+    {
+        relation = default;
+        error = string.Empty;
+
+        if (!TryGetRequiredGuid(parameters, "boardId", out var boardId, out error) ||
+            !TryGetRequiredGuid(parameters, "cardId", out var cardId, out error) ||
+            !TryGetRequiredGuid(parameters, "relatedCardId", out var relatedCardId, out error) ||
+            !TryGetRequiredString(parameters, "relationType", out var relationType, out error))
+            return false;
+
+        if (!parameters.TryGetProperty("expectedRevision", out var revisionProperty) ||
+            revisionProperty.ValueKind != JsonValueKind.Number ||
+            !revisionProperty.TryGetInt64(out var expectedRevision) || expectedRevision < 0)
+        {
+            error = "Parameter 'expectedRevision' must be a non-negative integer";
+            return false;
+        }
+
+        try
+        {
+            relation = new CardRelationOperationParameters(
+                boardId,
+                CardRelationRules.Normalize(new CardRelationEdge(cardId, relatedCardId, relationType)),
+                expectedRevision);
+            return true;
+        }
+        catch (DomainException exception)
+        {
+            error = exception.Message;
+            return false;
+        }
     }
 
     public static bool TryGetGuidFromParameters(JsonElement parameters, string parameterName, out Guid value)
@@ -300,3 +358,8 @@ public static class OperationParameterParser
         return true;
     }
 }
+
+public readonly record struct CardRelationOperationParameters(
+    Guid BoardId,
+    CardRelationEdge Relation,
+    long ExpectedRevision);

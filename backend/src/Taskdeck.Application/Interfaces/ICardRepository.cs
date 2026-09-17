@@ -4,6 +4,15 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface ICardRepository : IRepository<Card>
 {
+    Task StageRelationEndpointGuardAsync(Guid cardId, CancellationToken cancellationToken = default);
+    Task StageRelationRemovalAsync(Card card, Guid? actorUserId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Atomically verifies the persisted card version without changing it.
+    /// Returns false when the card is missing or its version is stale.
+    /// </summary>
+    Task<bool> TryGuardVersionAsync(Guid id, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default);
+    /// <summary>Fresh active board cards and assignments for derived estimates; no persisted totals.</summary>
+    Task<IReadOnlyList<Card>> GetForEstimateRollupsAsync(Guid boardId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Card>> GetHierarchyByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);
     Task StageDependencyProjectionInvalidationAsync(Guid boardId, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetArchivedByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);

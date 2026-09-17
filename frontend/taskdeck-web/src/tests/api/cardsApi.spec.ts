@@ -64,6 +64,12 @@ describe('cardsApi', () => {
   })
 
   describe('createCard', () => {
+    it('passes an explicit zero estimate and preserves an unknown response', async () => {
+      vi.mocked(http.post).mockResolvedValue({ data: { id: 'card-1', estimatedEffortMinutes: null } })
+      const result = await cardsApi.createCard('board-1', { columnId: 'col-1', title: 'Zero', estimatedEffortMinutes: 0 })
+      expect(http.post).toHaveBeenCalledWith('/boards/board-1/cards', { columnId: 'col-1', title: 'Zero', estimatedEffortMinutes: 0 })
+      expect(result.estimatedEffortMinutes).toBeNull()
+    })
     it('should create a card with the provided data', async () => {
       const newCard = { id: 'card-1', title: 'New Card' }
       vi.mocked(http.post).mockResolvedValue({ data: newCard })
@@ -77,6 +83,13 @@ describe('cardsApi', () => {
   })
 
   describe('updateCard', () => {
+    it('passes explicit estimate clearing and its concurrency token unchanged', async () => {
+      vi.mocked(http.patch).mockResolvedValue({ data: { id: 'card-1', estimatedEffortMinutes: null } })
+      const update = { clearEstimatedEffort: true, expectedUpdatedAt: 'loaded-v1' }
+      await cardsApi.updateCard('board-1', 'card-1', update)
+      expect(http.patch).toHaveBeenCalledWith('/boards/board-1/cards/card-1', update)
+      expect(vi.mocked(http.patch).mock.calls[0]![1]).not.toHaveProperty('estimatedEffortMinutes')
+    })
     it('should update a card with partial data', async () => {
       const updatedCard = { id: 'card-1', title: 'Updated Card' }
       vi.mocked(http.patch).mockResolvedValue({ data: updatedCard })

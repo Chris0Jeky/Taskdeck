@@ -148,37 +148,39 @@ public class BoardAccessService : IBoardAccessService
             if (!result.IsSuccess) { await _unitOfWork.RollbackTransactionAsync(); return result; }
             await _unitOfWork.CommitTransactionAsync();
             if (_assignments is not null)
-                await _assignments.NotifyAsync(boardId, Guid.Empty);
+                foreach (var cardId in result.Value)
+                    await _assignments.NotifyAsync(boardId, cardId);
             return result;
         }
         catch { await _unitOfWork.RollbackTransactionAsync(); throw; }
     }
 
-    private async Task<Result> StageRevokeAccessAsync(Guid boardId, Guid accessId, Guid revokedBy)
+    private async Task<Result<IReadOnlyList<Guid>>> StageRevokeAccessAsync(Guid boardId, Guid accessId, Guid revokedBy)
     {
         var access = await _unitOfWork.BoardAccesses.GetByIdAsync(accessId);
         if (access == null || access.BoardId != boardId)
-            return Result.Failure(ErrorCodes.NotFound, $"Board access with ID {accessId} not found");
+            return Result.Failure<IReadOnlyList<Guid>>(ErrorCodes.NotFound, $"Board access with ID {accessId} not found");
 
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
         if (board == null)
-            return Result.Failure(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+            return Result.Failure<IReadOnlyList<Guid>>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
         var revokingUser = await _unitOfWork.Users.GetByIdAsync(revokedBy);
         if (revokingUser == null)
-            return Result.Failure(ErrorCodes.NotFound, $"Revoking user with ID {revokedBy} not found");
+            return Result.Failure<IReadOnlyList<Guid>>(ErrorCodes.NotFound, $"Revoking user with ID {revokedBy} not found");
 
         var canManage = await EnsureCanManageBoardAccessAsync(board, revokedBy);
         if (!canManage.IsSuccess)
-            return Result.Failure(canManage.ErrorCode, canManage.ErrorMessage);
+            return Result.Failure<IReadOnlyList<Guid>>(canManage.ErrorCode, canManage.ErrorMessage);
 
+        IReadOnlyList<Card> detachedCards = [];
         if (board.OwnerId != access.UserId && _assignments is not null)
-            await _assignments.StageDetachAsync(access.UserId, boardId, revokedBy, "access-revoked");
+            detachedCards = await _assignments.StageDetachAsync(access.UserId, boardId, revokedBy, "access-revoked");
         board.RecordHierarchyMutation();
         await _unitOfWork.BoardAccesses.DeleteAsync(access);
         await _unitOfWork.SaveChangesAsync();
 
-        return Result.Success();
+        return Result.Success<IReadOnlyList<Guid>>(detachedCards.Select(card => card.Id).ToArray());
     }
 
     public async Task<Result<IEnumerable<BoardAccessDto>>> GetBoardAccessListAsync(Guid boardId)

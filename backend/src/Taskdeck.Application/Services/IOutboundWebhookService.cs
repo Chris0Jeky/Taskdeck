@@ -30,4 +30,8 @@ public interface IOutboundWebhookService
     Task<Result> EnqueueBoardMutationAsync(
         BoardRealtimeEvent mutation,
         CancellationToken cancellationToken = default);
+
+    Task<Result> StageBoardMutationAsync(
+        BoardRealtimeEvent mutation,
+        CancellationToken cancellationToken = default);
 }

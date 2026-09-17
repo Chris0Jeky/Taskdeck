@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { cardsApi } from '../../api/cardsApi'
-import { useBoardStore } from '../../store/boardStore'
 import type { Card } from '../../types/board'
-const props = defineProps<{ card: Card; disabled?: boolean }>()
+/**
+ * `canWrite` is the host's server-authoritative board write permission for the caller
+ * (#3028). This field used to derive it from the loaded board payload itself, which read an
+ * omitted optional `canWrite` as "no" and left an authorized writer holding a legacy payload
+ * with a disabled selector. The host resolves that question once for the whole card editor
+ * (`useCardTypePermission`) and every gate in it now answers from the same read; it is
+ * required rather than optional so no host can silently fall back to the inference that was
+ * the defect.
+ */
+const props = defineProps<{ card: Card; canWrite: boolean; readsBlocked?: boolean; disabled?: boolean }>()
 const model = defineModel<string | null>({ required: true })
-const boardStore = useBoardStore()
 const cards = ref<Card[]>([])
 const loading = ref(false)
 /**
@@ -20,13 +27,16 @@ const loading = ref(false)
  * signal, so it keeps the generic copy.
  */
 const loadError = ref<'permission' | 'transient' | null>(null)
-const allowed = computed(() => boardStore.currentBoard?.id === props.card.boardId && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived)
 let generation = 0
-watch(() => props.card.id, async () => {
+watch([() => props.card.boardId, () => props.card.id, () => props.readsBlocked], async () => {
   const request = ++generation
   cards.value = []
   loading.value = true
   loadError.value = null
+  if (props.readsBlocked) {
+    loading.value = false
+    return
+  }
   try {
     const result = await cardsApi.getCards(props.card.boardId)
     // Every write below is gated on this request still being the newest one, so
@@ -40,14 +50,15 @@ watch(() => props.card.id, async () => {
     }
   }
   finally { if (request === generation) loading.value = false }
-}, { immediate: true })
+}, { immediate: true, flush: 'sync' })
+onScopeDispose(() => { generation++ })
 const candidates = computed(() => cards.value.filter(card => card.id !== props.card.id))
 </script>
 <template>
   <div class="my-3 space-y-1">
     <label for="card-parent" class="block text-sm font-medium">Parent card</label>
     <select id="card-parent" v-model="model" class="w-full rounded border border-outline-variant/40 bg-surface px-3 py-2"
-      :disabled="disabled || !allowed || loading || loadError !== null">
+      :disabled="disabled || readsBlocked || !canWrite || loading || loadError !== null">
       <option :value="null">No parent</option>
       <option v-if="model && !candidates.some(card => card.id === model)" :value="model">Current parent ({{ model }})</option>
       <option v-for="candidate in candidates" :key="candidate.id" :value="candidate.id">{{ candidate.title }} ({{ candidate.workItemType ?? 'Task' }})</option>

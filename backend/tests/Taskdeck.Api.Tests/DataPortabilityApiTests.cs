@@ -30,11 +30,14 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(owner, "Card export owner");
         var board = (await owner.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
         var created = await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards",
-            new CreateCardDto(boardId, board.Columns[0].Id, "Export retained card", "Public board evidence", null, null));
+            new CreateCardDto(boardId, board.Columns[0].Id, "Export retained card", "Public board evidence", null, null, EstimatedEffortMinutes: 135));
         var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
         var parentResponse = await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards",
-            new CreateCardDto(boardId, board.Columns[0].Id, "Export parent", null, null, null));
+            new CreateCardDto(boardId, board.Columns[0].Id, "Export parent", null, null, null, EstimatedEffortMinutes: 0));
         var parent = (await parentResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        var unknownResponse = await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, board.Columns[0].Id, "Unknown effort", null, null, null));
+        var unknown = (await unknownResponse.Content.ReadFromJsonAsync<CardDto>())!;
         var assigned = await owner.PatchAsJsonAsync($"/api/boards/{boardId}/cards/{card.Id}",
             new { parentCardId = parent.Id, expectedUpdatedAt = card.UpdatedAt });
         card = (await assigned.Content.ReadFromJsonAsync<CardDto>())!;
@@ -49,6 +52,11 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         exported.GetProperty("isArchived").GetBoolean().Should().BeTrue();
         exported.GetProperty("parentCardId").GetGuid().Should().Be(parent.Id);
         exported.GetProperty("columnId").GetGuid().Should().Be(card.ColumnId);
+        exported.GetProperty("estimatedEffortMinutes").GetInt32().Should().Be(135);
+        bufferedCards.EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == parent.Id)
+            .GetProperty("estimatedEffortMinutes").GetInt32().Should().Be(0);
+        bufferedCards.EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == unknown.Id)
+            .GetProperty("estimatedEffortMinutes").ValueKind.Should().Be(JsonValueKind.Null);
         foreach (var path in new[] { "/api/account/export", "/api/account/export/stream" })
         {
             var other = await outsider.GetFromJsonAsync<JsonElement>(path);
@@ -68,7 +76,7 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
             var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
             var p = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards", new CreateCardDto(boardId, board.Columns[0].Id, "Parent", null, null, null));
             var parent = (await p.Content.ReadFromJsonAsync<CardDto>())!;
-            (await client.PostAsJsonAsync($"/api/boards/{boardId}/cards", new CreateCardDto(boardId, board.Columns[0].Id, "Child", null, null, null, ParentCardId: parent.Id))).EnsureSuccessStatusCode();
+            (await client.PostAsJsonAsync($"/api/boards/{boardId}/cards", new CreateCardDto(boardId, board.Columns[0].Id, "Child", null, null, null, ParentCardId: parent.Id, EstimatedEffortMinutes: 135))).EnsureSuccessStatusCode();
             return boardId;
         }
         await Seed(owner); var retained = await Seed(other);
@@ -76,6 +84,7 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         var cards = (await other.GetFromJsonAsync<List<CardDto>>($"/api/boards/{retained}/cards"))!;
         cards.Should().HaveCount(2);
         cards.Single(card => card.Title == "Child").ParentCardId.Should().Be(cards.Single(card => card.Title == "Parent").Id);
+        cards.Single(card => card.Title == "Child").EstimatedEffortMinutes.Should().Be(135);
     }
 
     public DataPortabilityApiTests(TestWebApplicationFactory factory)

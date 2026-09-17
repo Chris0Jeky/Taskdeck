@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-09-10",
+  "repository": "Chris0Jeky/Taskdeck",
+  "stable_id": "taskdeck",
+  "runtime_class": "private",
+  "public_origin": null,
+  "origin_evidence": "not-configured",
+  "target": "One Render Starter candidate; no provisioning",
+  "source_paths": ["deploy/render.yaml", "docs/platform/CLOUD_DEPLOYMENT_GUIDE.md"],
+  "persistent_state": ["One persistent SQLite volume at /app/data", "Connector encryption key held separately"],
+  "invariants": ["One application instance; no horizontal scaling", "Private named-user access; no public signup or SaaS claim", "Preserve SQLite, MCP, SignalR and the review-first model", "Do not change persistent IDs or secrets during a rename"],
+  "gates": ["Recorded host-selection amendment", "Origin-access and session review", "Consistent backup and real decrypt/restore proof", "Representative 512 MB capacity test", "Owned canonical hostname and budget approval"],
+  "tasks": [
+    {"id": "TD1", "goal": "Reconcile the Render target with ADR-0061 and existing #1772/#1777", "acceptance": "A scoped decision amendment preserves known-user, cost and recovery requirements; no deployment"},
+    {"id": "TD2", "goal": "Prove private origin and recovery behavior", "acceptance": "Missing/forged/expired/wrong-audience Access JWTs fail; reconnect and decryptable restore pass on disposable fixtures"},
+    {"id": "TD3", "goal": "Qualify the 512 MB image and runtime lifecycle", "acceptance": "Record exact image, memory/OOM results and rollback; schedule #1226 before .NET 8 support ends"}
+  ],
+  "activation_authorized": false
+}

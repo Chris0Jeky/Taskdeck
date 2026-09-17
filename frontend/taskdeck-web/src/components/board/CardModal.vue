@@ -45,6 +45,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const router = useRouter()
 const boardStore = useBoardStore()
+// The version-keyed archive child resets its preview/error presentation, but its
+// submitted request must stay owned across card switches in this editor.
+const pendingArchiveRequests = ref(new Set<string>())
 /*
  * #2969. Archive recovery and archive completion were the two close paths that
  * emitted `close` without asking what every other path asks first: is there an
@@ -71,6 +74,17 @@ const pendingArchiveRefresh = ref(false)
 const archiveStateAfterChange = ref<boolean | null>(null)
 const archiveCompletedWithDraft = ref(false)
 const cardIsArchived = computed(() => archiveStateAfterChange.value ?? props.card.isArchived === true)
+// The editor deliberately retains its form prop while a user has a draft. The
+// archive action still needs the latest lifecycle version after a keyed child
+// completed while this editor was showing another card, or its next Restore
+// would repeat the old expectedUpdatedAt token.
+const committedArchiveCard = ref<Card | null>(null)
+const archiveActionCard = computed(() => committedArchiveCard.value ?? props.card)
+// A draft may settle after the lifecycle request that made it unsaveable. The
+// notice follows that draft, but the lifecycle receipt still belongs to the
+// pre-change prop version for this mounted editor. Keep that control frozen
+// until reopening supplies an authoritative card/version snapshot (#3023).
+const showArchiveDraftNotice = computed(() => archiveCompletedWithDraft.value && hasUnsavedChanges.value)
 // What is actually possible from this state: the card is archived, so nothing
 // can be saved on it; the archive control cannot restore it either, because
 // restoring is a lifecycle change and this editor still holds unsaved work.
@@ -81,6 +95,18 @@ const archiveDraftNotice = computed(() => cardIsArchived.value
 function forgetArchiveCompletion() {
   archiveCompletedWithDraft.value = false
   archiveStateAfterChange.value = null
+  committedArchiveCard.value = null
+}
+
+function acceptInactiveArchiveCommit(committed: Card) {
+  // The old keyed action can only reconcile its own committed receipt. A
+  // different selection (including the same card on another board) remains
+  // entirely untouched, preserving its draft, permission and focus state.
+  if (committed.boardId !== props.card.boardId || committed.id !== props.card.id) return
+
+  committedArchiveCard.value = committed
+  archiveStateAfterChange.value = committed.isArchived === true
+  if (hasUnsavedChanges.value) archiveCompletedWithDraft.value = true
 }
 
 /*
@@ -152,19 +178,62 @@ function acceptAssignments(saved: Card, previousVersion?: string) {
 }
 
 /*
- * #2952. The work-item type gate asks the server for the caller's board write
- * permission when the loaded board payload does not state it, instead of reading
- * an omitted optional field as "no". Viewer, archived board and archived card stay
- * read-only exactly as before, and the write itself remains server-authoritative.
+ * #2952, #3028. The editor's write gates ask the server for the caller's board write
+ * permission when the loaded board payload does not state it, instead of reading an
+ * omitted optional field as "no". ONE read answers all four — the type selector, the
+ * parent selector, the archive/restore control and the assignment field — because they
+ * ask the same question of the same board, and because an editor that enables one of
+ * them and disables the other three on the same payload is the defect itself. Viewer,
+ * archived board and archived card stay read-only exactly as before, no ownership is
+ * inferred on the client, and every write remains server-authoritative regardless.
  */
-const { canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown, refreshPermission: refreshTypePermission } =
+const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown,
+  permissionRecovery, accessUnavailable, readsBlocked, refreshPermission: refreshTypePermission,
+  recoverFromPermissionDenied } =
   useCardTypePermission({
     getBoardId: () => props.card.boardId,
+    getCardId: () => props.card.id,
     getIsOpen: () => props.isOpen,
     getCardIsArchived: () => cardIsArchived.value,
   })
+const editorWritesBlocked = computed(() => permissionRecovery.value && !boardCanWrite.value)
 
 const dialogRef = ref<HTMLElement | null>(null)
+const permissionRecoveryRefresh = ref<HTMLButtonElement | null>(null)
+const permissionRetryOwnedFocus = ref(false)
+
+watch(
+  () => [typePermissionChecking.value, typePermissionUnknown.value, boardCanWrite.value, permissionRecovery.value] as const,
+  async ([checking, , canWrite, recovering], [wasChecking]) => {
+    if (checking && !wasChecking) {
+      const activeTestId = document.activeElement instanceof HTMLElement
+        ? document.activeElement.dataset.testid
+        : null
+      permissionRetryOwnedFocus.value = activeTestId === 'card-type-permission-refresh'
+        || activeTestId === 'card-permission-refresh'
+      return
+    }
+
+    if (checking || !wasChecking || !permissionRetryOwnedFocus.value || !recovering) return
+
+    const activeElement = document.activeElement
+    const activeTestId = activeElement instanceof HTMLElement ? activeElement.dataset.testid : null
+    const shouldRestoreFocus = activeElement === document.body || activeElement === null
+      || activeTestId === 'card-type-permission-refresh'
+      || activeTestId === 'card-permission-refresh'
+    permissionRetryOwnedFocus.value = false
+
+    await nextTick()
+    if (!permissionRecovery.value) return
+    if (!canWrite) {
+      permissionRecoveryRefresh.value?.focus()
+      return
+    }
+    if (!shouldRestoreFocus) return
+    dialogRef.value?.querySelector<HTMLElement>('#card-work-item-type')?.focus()
+  },
+)
+
 const showDiscardConfirm = ref(false)
 let previouslyFocusedElement: HTMLElement | null = null
 const isInspector = computed(() => props.presentation === 'inspector')
@@ -331,6 +400,8 @@ const {
   title,
   description,
   dueDate,
+  estimateHours,
+  estimateMinutes,
   isBlocked,
   blockReason,
   selectedLabelIds,
@@ -387,6 +458,7 @@ const {
   getLabels: () => props.labels,
   onUpdated: () => emit('updated'),
   onClose: () => emit('close'),
+  onPermissionDenied: recoverFromPermissionDenied,
 })
 
 watch(hasUnsavedChanges, (dirty) => {
@@ -471,30 +543,47 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
-        <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || cardIsArchived" />
+        <div v-if="permissionRecovery" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
+          <p role="status">
+            <template v-if="typePermissionChecking">Checking current board access. Your unsaved changes are kept.</template>
+            <template v-else-if="accessUnavailable">This board is no longer available to this editor. Your unsaved changes are kept. Ask a board admin to check your access, then refresh permission.</template>
+            <template v-else-if="typePermissionUnknown">Could not confirm current board permission. Editing stays locked. Your unsaved changes are kept; refresh permission to try again.</template>
+            <template v-else-if="!boardCanWrite">This board is read-only for you. Your unsaved changes are kept. Ask a board admin to restore write access, then refresh permission.</template>
+            <template v-else>Board write permission confirmed. Your unsaved changes are kept.</template>
+          </p>
+          <button ref="permissionRecoveryRefresh" type="button" data-testid="card-permission-refresh" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
+        </div>
+        <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :reads-blocked="readsBlocked" :disabled="isSaving || cardIsArchived" />
         <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
-          :read-only="boardStore.currentBoard?.id !== card.boardId || boardStore.currentBoard?.canWrite !== true || !!boardStore.currentBoard?.isArchived || cardIsArchived"
+          :read-only="!boardCanWrite || cardIsArchived"
+          :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
-          @saved="acceptAssignments" />
-        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :disabled="hasUnsavedChanges"
-          @changed="handleArchiveChanged" @refresh="refreshArchiveState" />
-        <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
+          @saved="acceptAssignments" @permission-denied="recoverFromPermissionDenied" />
+        <CardArchiveAction :key="archiveActionCard.updatedAt" :card="archiveActionCard" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges || archiveCompletedWithDraft"
+          :pending-requests="pendingArchiveRequests"
+          :on-inactive-commit="acceptInactiveArchiveCommit"
+          @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="recoverFromPermissionDenied" />
+        <p v-if="showArchiveDraftNotice" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}
         </p>
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
         <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
-        <fieldset :disabled="cardIsArchived || isSaving" class="space-y-4">
+        <fieldset :disabled="cardIsArchived || isSaving || editorWritesBlocked" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
             v-model:work-item-type="workItemType"
             :can-edit-type="canEditType"
+            :permission-recovery="permissionRecovery"
             :type-permission-checking="typePermissionChecking"
             :type-permission-unknown="typePermissionUnknown"
             @refresh-type-permission="refreshTypePermission"
             v-model:description="description"
             v-model:due-date="dueDate"
+            v-model:estimate-hours="estimateHours"
+            v-model:estimate-minutes="estimateMinutes"
+            :can-edit-estimate="canEditType"
             v-model:is-blocked="isBlocked"
             v-model:block-reason="blockReason"
             :formatted-due-date="formattedDueDate"
@@ -538,12 +627,13 @@ useEscapeToClose(
       <p v-if="assignmentSaving" role="status" class="text-sm">Saving assignments… the editor stays open until the server answers.</p>
       <p v-else-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
       <CardModalActions
-          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty"
+          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty && !editorWritesBlocked"
           :is-saving="isSaving"
+          :disabled="editorWritesBlocked"
           :card="card"
-          @save="handleSave"
+          @save="!editorWritesBlocked && handleSave()"
           @close="handleClose"
-        @delete-click="handleDeleteClick"
+        @delete-click="!editorWritesBlocked && handleDeleteClick()"
       />
     </div>
   </div>
@@ -616,9 +706,9 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeleting || !detachPreview || !!deletePreviewError"
+        :disabled="isDeleting || !detachPreview || !!deletePreviewError || editorWritesBlocked"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        @click="handleDeleteConfirm"
+        @click="!editorWritesBlocked && handleDeleteConfirm()"
       >
         {{ isDeleting ? 'Deleting…' : 'Delete' }}
       </button>
@@ -644,10 +734,10 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeletingComment"
+        :disabled="isDeletingComment || editorWritesBlocked"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         data-testid="card-comment-delete-confirm"
-        @click="handleCommentDeleteConfirm"
+        @click="!editorWritesBlocked && handleCommentDeleteConfirm()"
       >
         {{ isDeletingComment ? t('cardModal.commentDelete.deleting') : t('cardModal.commentDelete.confirm') }}
       </button>

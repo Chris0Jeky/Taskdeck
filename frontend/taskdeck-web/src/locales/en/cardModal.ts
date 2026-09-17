@@ -10,8 +10,8 @@ export default {
     task: 'Task',
     epic: 'Epic',
     spike: 'Spike',
-    permissionChecking: 'Checking whether you can change the type on this board…',
-    permissionUnknown: 'The loaded board does not say whether you can change the type.',
+    permissionChecking: 'Checking whether you can edit this board…',
+    permissionUnknown: 'The loaded board does not say whether you can edit it.',
     permissionRefresh: 'Refresh permission',
   },
   commentDelete: {

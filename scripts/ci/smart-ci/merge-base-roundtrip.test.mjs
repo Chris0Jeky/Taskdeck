@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { policyDigest } from './lib/plan.mjs';
 import { normaliseObservation } from './recall-report.mjs';
+import { observeBaseTip, observeMergeRef, resolveMergeRef } from './resolve-merge-ref.mjs';
 
 const repository = 'Chris0Jeky/Taskdeck';
 const policyPath = fileURLToPath(new URL('../../../ci/policy.v1.json', import.meta.url));
@@ -68,6 +69,7 @@ test('resolver, planner, gate receipt, and recall preserve one exact merge-base 
     const treePath = join(artifacts, 'merge-tree-sha.txt');
     const mergeBasePath = join(artifacts, 'merge-base-sha.txt');
     const mergeBaseTipPath = join(artifacts, 'merge-base-tip-sha.txt');
+    const qualificationPath = join(artifacts, 'merge-ref-qualification.txt');
     execFileSync(process.execPath, [
       resolverPath,
       '--pr', '1',
@@ -78,6 +80,7 @@ test('resolver, planner, gate receipt, and recall preserve one exact merge-base 
       '--tree-out', treePath,
       '--merge-base-out', mergeBasePath,
       '--merge-base-tip-out', mergeBaseTipPath,
+      '--qualification-out', qualificationPath,
     ], {
       cwd: checkout,
       env: { ...process.env, GH_TOKEN: 'synthetic-fixture-token' },
@@ -116,6 +119,7 @@ test('resolver, planner, gate receipt, and recall preserve one exact merge-base 
       '--head-actors', 'Chris0Jeky',
       '--changed-files', changedFilesPath,
       '--changed-files-expected', '1',
+      '--merge-ref-qualification', readFileSync(qualificationPath, 'utf8').trim(),
       '--merge-sha', readFileSync(mergePath, 'utf8').trim(),
       '--merge-tree-sha', readFileSync(treePath, 'utf8').trim(),
       '--merge-base-sha', readFileSync(mergeBasePath, 'utf8').trim(),
@@ -141,6 +145,7 @@ test('resolver, planner, gate receipt, and recall preserve one exact merge-base 
       [plan.mergeBaseSha, plan.mergeBaseTipSha, receipt.mergeBaseSha, receipt.mergeBaseTipSha],
       [baseSha, null, baseSha, null],
     );
+    assert.equal(plan.mergeRefQualification, 'qualified');
 
     const mergedAt = '2026-09-01T12:00:00.000Z';
     const raw = {
@@ -172,6 +177,98 @@ test('resolver, planner, gate receipt, and recall preserve one exact merge-base 
     });
     assert.equal(recalled.usable, true, recalled.errors.join(', '));
     assert.equal(recalled.mergeBaseSha, baseSha);
+
+    // Keep GitHub's synthetic merge ref on the old base while the exact named base advances.
+    // The resolver must classify the retained ref without publishing a merge identity, and that
+    // typed state must remain shadow-green while being excluded from recall evidence.
+    git(source, 'branch', 'base-advanced', baseSha);
+    git(source, 'switch', 'base-advanced');
+    writeFileSync(join(source, 'base-update.txt'), 'new base tip\n');
+    git(source, 'add', 'base-update.txt');
+    git(source, 'commit', '-m', 'Advance named base');
+    const liveBaseSha = git(source, 'rev-parse', 'HEAD');
+    git(source, 'push', 'origin', `${liveBaseSha}:refs/heads/main`);
+
+    const staleMergePath = join(artifacts, 'stale-merge-sha.txt');
+    const staleTreePath = join(artifacts, 'stale-merge-tree-sha.txt');
+    const staleBasePath = join(artifacts, 'stale-merge-base-sha.txt');
+    const staleBaseTipPath = join(artifacts, 'stale-merge-base-tip-sha.txt');
+    const staleQualificationPath = join(artifacts, 'stale-merge-ref-qualification.txt');
+    const staleResolution = await resolveMergeRef({
+      expectedBase: baseSha,
+      expectedHead: headSha,
+      mergeOutput: staleMergePath,
+      treeOutput: staleTreePath,
+      mergeBaseOutput: staleBasePath,
+      mergeBaseTipOutput: staleBaseTipPath,
+      qualificationOutput: staleQualificationPath,
+      observe: () => observeMergeRef({ pullRequestNumber: 1, token: 'synthetic-fixture-token', cwd: checkout }),
+      resolveBaseTip: () => observeBaseTip({ baseRef: 'main', token: 'synthetic-fixture-token', cwd: checkout }),
+      verifyBaseAncestor: async (ancestor, descendant) => {
+        try {
+          git(source, 'merge-base', '--is-ancestor', ancestor, descendant);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      sleep: async () => {},
+    });
+    assert.equal(staleResolution.mergeRefQualification, 'stale-base-unqualified');
+    assert.equal(readFileSync(staleQualificationPath, 'utf8').trim(), 'stale-base-unqualified');
+    for (const path of [staleMergePath, staleTreePath, staleBasePath, staleBaseTipPath]) {
+      assert.equal(existsSync(path), false);
+    }
+
+    const stalePlanPath = join(artifacts, 'stale-ci-plan.json');
+    const staleReceiptPath = join(artifacts, 'stale-ci-run.json');
+    execFileSync(process.execPath, [
+      plannerPath,
+      '--policy', policyPath,
+      '--event', eventPath,
+      '--event-name', 'pull_request_target',
+      '--base-sha', baseSha,
+      '--head-actors', 'Chris0Jeky',
+      '--changed-files', changedFilesPath,
+      '--changed-files-expected', '1',
+      '--merge-ref-qualification', readFileSync(staleQualificationPath, 'utf8').trim(),
+      '--out', stalePlanPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [
+      gatePath,
+      '--plan', stalePlanPath,
+      '--policy', policyPath,
+      '--event', eventPath,
+      '--event-name', 'pull_request_target',
+      '--head-actors', 'Chris0Jeky',
+      '--expected-head', headSha,
+      '--expected-base', baseSha,
+      '--plan-job-result', 'success',
+      '--receipt', staleReceiptPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const stalePlan = JSON.parse(readFileSync(stalePlanPath, 'utf8'));
+    const staleReceipt = JSON.parse(readFileSync(staleReceiptPath, 'utf8'));
+    assert.equal(stalePlan.mergeSha, null);
+    assert.equal(stalePlan.mergeTreeSha, null);
+    assert.equal(stalePlan.mergeBaseSha, null);
+    assert.equal(stalePlan.mergeBaseTipSha, null);
+    assert.equal(staleReceipt.ok, true);
+    assert.equal(staleReceipt.wouldFail, true);
+    assert.ok(staleReceipt.failures.some((failure) => failure.code === 'merge-ref-unqualified'));
+
+    const staleRecalled = normaliseObservation({
+      ...raw,
+      plan: stalePlan,
+      planMergeCommit: null,
+    }, policy, {
+      repository,
+      since: '2026-09-01T00:00:00.000Z',
+      until: '2026-09-01T23:59:59.000Z',
+      policyDigest: policyDigest(policyText),
+    });
+    assert.equal(staleRecalled.usable, false);
+    assert.ok(staleRecalled.errors.includes('merge-ref-unqualified'));
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }

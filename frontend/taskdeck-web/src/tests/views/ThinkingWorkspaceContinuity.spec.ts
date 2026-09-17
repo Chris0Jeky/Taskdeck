@@ -31,7 +31,7 @@ vi.mock('../../views/AutomationChatView.vue', () => ({ __esModule: true, default
 async function setup() {
   const wrapper = mount(ThinkingWorkspaceView, { global: { stubs: {
     RouterLink: { template: '<a><slot /></a>' },
-    ThinkingDeckPanel: defineComponent({ name: 'ThinkingDeckPanel', emits: ['dirty-change', 'busy'], template: '<div>Thinking</div>' }),
+    ThinkingDeckPanel: defineComponent({ name: 'ThinkingDeckPanel', emits: ['dirty-change', 'busy', 'relation-busy'], template: '<div>Thinking</div>' }),
     TdDialog: { props: ['open', 'title', 'description'], template: '<section v-if="open" role="dialog"><h2>{{ title }}</h2><p>{{ description }}</p><slot name="footer" /></section>' },
   } } })
   await flushPromises()
@@ -107,6 +107,23 @@ describe('thinking workspace continuity', () => {
     const leaveButton = wrapper.get('[role="dialog"]').findAll('button')[1]!
     expect(leaveButton.attributes('disabled')).toBeDefined()
     thinking.vm.$emit('busy', false); await flushPromises()
+    await leaveButton.trigger('click'); expect(await leaving).toBe(true)
+    wrapper.unmount()
+  })
+  it('holds navigation for a relation proposal without claiming a private answer or recording', async () => {
+    const wrapper = await setup()
+    const thinking = wrapper.findComponent({ name: 'ThinkingDeckPanel' })
+    thinking.vm.$emit('relation-busy', true); await flushPromises()
+    const leaving = navigation.leave!(); await flushPromises()
+    expect(wrapper.text()).toContain('Your relation proposal is still in progress')
+    expect(wrapper.text()).toContain('Wait for the relation proposal to finish before leaving')
+    expect(wrapper.text()).toContain('It will remain review-only until you approve it in Review, then choose Apply.')
+    expect(wrapper.text()).not.toContain('Your private answer is still in progress')
+    expect(wrapper.text()).not.toContain('Stop the recording')
+    const leaveButton = wrapper.get('[role="dialog"]').findAll('button')[1]!
+    expect(leaveButton.attributes('disabled')).toBeDefined()
+    expect(leaveButton.text()).toBe('Wait for proposal…')
+    thinking.vm.$emit('relation-busy', false); await flushPromises()
     await leaveButton.trigger('click'); expect(await leaving).toBe(true)
     wrapper.unmount()
   })

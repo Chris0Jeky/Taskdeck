@@ -52,14 +52,15 @@ public class AutomationExecutorService : IAutomationExecutorService
         ColumnService columnService,
         ILogger<AutomationExecutorService>? logger,
         CardAssignmentService? assignments = null,
-        IBoardRealtimeNotifier? realtimeNotifier = null)
+        IBoardRealtimeNotifier? realtimeNotifier = null,
+        IBoardRelationService? relations = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
         _realtimeNotifier = realtimeNotifier;
         _handlerRegistry = new OperationHandlerRegistry(
-            unitOfWork, cardService, boardService, columnService, assignments);
+            unitOfWork, cardService, boardService, columnService, assignments, relations);
         _auditRecorder = new ExecutionAuditRecorder(unitOfWork);
         _logger = logger;
     }
@@ -395,6 +396,12 @@ public class AutomationExecutorService : IAutomationExecutorService
                     failureReason);
                 return Result.Failure<ProposalExecutionReceipt>(failedResult.ErrorCode, failureReason);
             }
+
+            // Prepare durable webhook deliveries while the operation transaction is still open.
+            // The Applied status save below persists the board writes, audit rows, status, and
+            // prepared Pending deliveries together. Preparation failures must abort all of them.
+            if (deferredNotifications is not null)
+                await deferredNotifications.PrepareAsync(cancellationToken);
 
             // The board marker, operation effects, audit rows, and Applied status share this outer
             // transaction. Do not re-check archived state here: an approved operation may itself

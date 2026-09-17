@@ -175,6 +175,92 @@ describe('cardStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
+    it('adds a created card before board detail has loaded', async () => {
+      const newCard = {
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'New Card',
+      }
+      state.currentBoard.value = null
+      state.currentBoardCards.value = []
+      mockCardsApi.createCard.mockResolvedValueOnce(newCard)
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      await createCard('board-1', { title: 'New Card', columnId: 'col-1' } as any)
+
+      expect(state.currentBoardCards.value).toEqual([newCard])
+      expect(helpers.updateColumnCardCount).toHaveBeenCalledWith('col-1', 1)
+    })
+
+    it('preserves a board-detail card that commits before the create response', async () => {
+      let resolveCreate!: (card: Record<string, unknown>) => void
+      mockCardsApi.createCard.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveCreate = resolve
+      }))
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      const creating = createCard('board-1', {
+        title: 'Created card',
+        columnId: 'col-1',
+      } as any)
+
+      const committedByDetailRead = {
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'Created card with refreshed details',
+        updatedAt: '2024-01-05T00:00:00Z',
+      }
+      state.currentBoardCards.value.push(committedByDetailRead as any)
+      state.currentBoard.value!.columns[0].cardCount = 3
+
+      resolveCreate({
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'Created card',
+      })
+      await creating
+
+      expect(state.currentBoardCards.value).toHaveLength(3)
+      expect(state.currentBoardCards.value.find((card) => card.id === 'card-new')).toEqual(committedByDetailRead)
+      expect(state.currentBoard.value!.columns[0].cardCount).toBe(3)
+      expect(helpers.updateColumnCardCount).not.toHaveBeenCalled()
+    })
+
+    it('does not write a late create response into a board selected after navigation', async () => {
+      let resolveCreate!: (card: Record<string, unknown>) => void
+      mockCardsApi.createCard.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveCreate = resolve
+      }))
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      const creating = createCard('board-1', {
+        title: 'Created card',
+        columnId: 'col-1',
+      } as any)
+
+      state.currentBoard.value = {
+        id: 'board-2',
+        columns: [{ id: 'col-2', name: 'Next', cardCount: 1 }],
+      }
+      const nextBoardCard = { id: 'card-board-2', boardId: 'board-2', columnId: 'col-2' }
+      state.currentBoardCards.value = [nextBoardCard as any]
+
+      resolveCreate({
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'Created card',
+      })
+      await creating
+
+      expect(state.currentBoardCards.value).toEqual([nextBoardCard])
+      expect(state.currentBoard.value!.columns[0].cardCount).toBe(1)
+      expect(helpers.updateColumnCardCount).not.toHaveBeenCalled()
+    })
+
     it('guards demo mutation', async () => {
       helpers.guardDemoMutation.mockImplementation(() => {
         throw new Error('demo')

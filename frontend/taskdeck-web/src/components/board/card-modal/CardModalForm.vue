@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import { nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { CardWorkItemType, Card } from '../../../types/board'
 import { TdDateField } from '../../ui'
+import CardEstimateField from '../CardEstimateField.vue'
 
-defineProps<{
+const props = defineProps<{
   card: Card
   canEditType: boolean
+  canEditEstimate?: boolean
+  permissionRecovery?: boolean
   /** A server read of the caller's board write permission is in flight (#2952). */
   typePermissionChecking?: boolean
   /** The caller's board write permission could not be established; offer recovery (#2952). */
@@ -19,8 +23,34 @@ const workItemType = defineModel<CardWorkItemType>('workItemType', { required: t
 const title = defineModel<string>('title', { required: true })
 const description = defineModel<string>('description', { required: true })
 const dueDate = defineModel<string>('dueDate', { required: true })
+const estimateHours = defineModel<string>('estimateHours', { default: '' })
+const estimateMinutes = defineModel<string>('estimateMinutes', { default: '' })
 const isBlocked = defineModel<boolean>('isBlocked', { required: true })
 const blockReason = defineModel<string>('blockReason', { required: true })
+const workItemTypeSelect = ref<HTMLSelectElement | null>(null)
+const typePermissionRefresh = ref<HTMLButtonElement | null>(null)
+const retryOwnedFocus = ref(false)
+
+watch(
+  () => [props.typePermissionChecking, props.typePermissionUnknown, props.canEditType] as const,
+  async ([checking, unknown, canEdit], [wasChecking, wasUnknown]) => {
+    if (checking && !wasChecking) {
+      retryOwnedFocus.value = document.activeElement === typePermissionRefresh.value
+      return
+    }
+
+    if (checking || unknown || !(wasChecking || wasUnknown)) return
+
+    const activeElement = document.activeElement
+    const shouldRestoreFocus = activeElement === typePermissionRefresh.value
+      || (retryOwnedFocus.value && (activeElement === document.body || activeElement === null))
+    retryOwnedFocus.value = false
+    if (!canEdit || !shouldRestoreFocus) return
+
+    await nextTick()
+    workItemTypeSelect.value?.focus()
+  },
+)
 
 defineEmits<{
   (e: 'clear-due-date'): void
@@ -48,31 +78,39 @@ defineEmits<{
     <label for="card-work-item-type" class="block text-sm font-medium text-on-surface-variant mb-1">
       {{ t('cardModal.workItemType.label') }}
     </label>
-    <select id="card-work-item-type" v-model="workItemType" :disabled="!canEditType"
-      class="w-full rounded-md border border-outline-variant/40 bg-surface-container-high px-3 py-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-70">
+    <select
+      id="card-work-item-type"
+      ref="workItemTypeSelect"
+      v-model="workItemType"
+      :disabled="!canEditType"
+      class="w-full rounded-md border border-outline-variant/40 bg-surface-container-high px-3 py-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-70"
+    >
       <option value="Task">{{ t('cardModal.workItemType.task') }}</option>
       <option value="Epic">{{ t('cardModal.workItemType.epic') }}</option>
       <option value="Spike">{{ t('cardModal.workItemType.spike') }}</option>
     </select>
     <!--
-      An unknown write permission is a state the user can act on, so it says so and offers
-      the read again, instead of leaving a disabled control with no explanation. The message
-      changes around a retry control that STAYS mounted: unmounting the button a keyboard
-      user just activated would drop focus out of the editor's tab cycle.
+      The live region stays mounted so assistive technology can observe permission transitions.
+      The retry control remains mounted while its read is pending; when it owned focus and the
+      read succeeds, focus moves to the newly enabled selector before the recovery controls leave.
     -->
     <div
-      v-if="typePermissionChecking || typePermissionUnknown"
-      class="mt-1 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant"
+      v-if="!permissionRecovery"
+      :class="typePermissionChecking || typePermissionUnknown
+        ? 'mt-1 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant'
+        : 'sr-only'"
     >
-      <span role="status">
+      <span role="status" aria-live="polite" aria-atomic="true">
         <span v-if="typePermissionChecking" data-testid="card-type-permission-checking">
           {{ t('cardModal.workItemType.permissionChecking') }}
         </span>
-        <span v-else data-testid="card-type-permission-unknown">
+        <span v-else-if="typePermissionUnknown" data-testid="card-type-permission-unknown">
           {{ t('cardModal.workItemType.permissionUnknown') }}
         </span>
       </span>
       <button
+        v-if="typePermissionChecking || typePermissionUnknown"
+        ref="typePermissionRefresh"
         type="button"
         data-testid="card-type-permission-refresh"
         :disabled="typePermissionChecking"
@@ -123,6 +161,9 @@ defineEmits<{
       <span v-if="isOverdue" class="font-medium">(Overdue)</span>
     </p>
   </div>
+
+  <!-- Optional estimate -->
+  <CardEstimateField v-model:hours="estimateHours" v-model:minutes="estimateMinutes" :read-only="!canEditEstimate" />
 
   <!-- Blocked Status -->
   <div class="border border-outline-variant/30 rounded-md p-4">

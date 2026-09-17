@@ -371,6 +371,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
   function startBoardFetch(id: string, intent: BoardFetchIntent, backgroundFailureMessage?: string): Promise<boolean> {
     const requestGeneration = ++boardFetchGeneration
+    // Record the request boundary before any response can commit. Permission
+    // recovery uses it to reject a server response that was already in flight
+    // when the write was refused.
+    state.currentBoardRequestGeneration.value = requestGeneration
     activeBoardFetch?.controller.abort()
     const controller = new AbortController()
     const mutationEpoch = helpers.getBoardDetailMutationEpoch(id)
@@ -452,6 +456,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         applyBoardCardCounts(board, cards)
 
         state.currentBoard.value = board
+        // Keep the source marker adjacent to the assignment it proves. Local
+        // board patches (for example a settings save) deliberately do not move
+        // it: they are useful UI state, but cannot re-authorize a refused write.
+        state.currentBoardPayloadGeneration.value = requestGeneration
         state.currentBoardCards.value = cards
         state.currentBoardLabels.value = labels
         state.cardCommentsByCardId.value = {}

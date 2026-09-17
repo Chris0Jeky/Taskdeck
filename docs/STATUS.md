@@ -1,6 +1,276 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-11
+Last Updated: 2026-09-12
+
+Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
+Starting a relation proposal still prevents departure while the request is unsettled, but the
+message describes that proposal rather than asking the user to finish an answer or stop recording.
+Existing private-answer, recording and companion-send guards retain their behavior. This reduces
+confusing recovery instructions while keeping relation changes review-first. All 20 focused cases
+pass; final frontend qualification passes 6,911 tests with three existing skips, lint, typecheck and
+production build. The independent review is clean. The candidate includes delivered #3082;
+required hosted qualification remains a gate before merge. Existing human actions are unchanged.
+
+Paper archive/restore settlement (#3060) now reconciles the committed lifecycle and card version
+when the user switches A-to-B-to-A before the request completes. The current matching inspector
+receives that result before the shared pending lock is released, while retaining newer local draft
+edits. Unrelated selections and failed stale requests retain their existing event, permission and
+focus guards. Seven focused ownership cases pass, including both lifecycle directions, and the
+independent review is clean. #3082 merged as `2cdc45257` after required run `34722482168`
+passed at `29a3142a9` against main `96f4b7cc2`; combined frontend qualification passes 6,909 tests
+with three existing skips, lint, typecheck and build. The confirmed MEDIUM late-restore form and
+assignment write-version follow-up is tracked in #3083; stale writes are rejected and drafts kept.
+The broader #3023 draft residuals and parked #3057 permission work remain separate.
+
+Typed relations #3066 merged on 2026-09-12 as `160818440`, after required run
+`34718378428` passed at reviewed head `7c66104b3` against main `9a8c14c6b`.
+Issue #2092 is closed; its issue and PR project items are Done with Priority II,
+and the first post-merge thread check is clear. The webhook child #3071 now targets
+main; its source branch remains available. The relation candidate records below
+retain historical evidence and are superseded by this delivery record.
+
+The product recovery candidate combines typed relations, transactional proposal webhook
+staging, archived-import conflict planning, deactivation assignment cleanup and two estimate
+recovery fixes. All source commits are preserved, all 94 changed code/test blobs match their
+reviewed owners, and the bounded integration review is clean. Combined frontend qualification
+passes lint, typecheck/build and 6,907 tests with three existing skips. Deactivation's source
+backend passes 9,746 tests with 34 existing skips; the demo omission is confirmed in Chromium.
+The integration PR carries final combined backend and hosted gate results.
+[Current qualification and limits](analysis/2026-09-12-product-recovery-qualification.md)
+supersede the separate candidate gate wording below; the source evidence remains historical.
+Permission PR #3072 stays parked and excluded. All 41 human actions remain unchanged.
+
+Proposal webhook durability (#3024) is implemented on a candidate branch. Events already buffered
+by the proposal executor now prepare filtered `Pending` delivery rows in its existing transaction,
+before the Applied-status save. Delivery rows, subscription trigger timestamps and proposal effects
+commit together or roll back together. Post-commit notification sends only the best-effort realtime
+channel; the existing delivery worker can claim committed webhook rows even if that flush is lost.
+This closes the missing-delivery window without changing review, approval or Apply requirements.
+No new queue schema or retry policy is introduced. Immediate notification producers and the separate
+assignment collector retain their current behavior; this is not an account-wide outbox conversion.
+
+Focused Application tests pass 39 cases and Composite API tests pass 10. Five real SQLite API
+tests pass for first-notification queue visibility, rollback, lost post-commit callback recovery and
+already-applied deduplication. Omitting durable preparation makes both lifecycle controls fail;
+restoring the reviewed executor bytes makes all five pass. Independent source review is clean.
+The complete backend gate passes 9,802 tests across all six projects with 34 existing skips and
+zero failures at `0a65b536b`. The later inherited chat correction changes only its nine tool,
+registration and test files; those changes pass 91 Application cases and one API registry case
+on the parent. Webhook implementation and durability tests are unchanged. Exact-head hosted
+qualification remains required for the combined tree. No actual process-kill, external HTTP
+delivery or release acceptance is claimed.
+
+The typed-relation candidate includes delivered archive recovery #3059 and draft settlement #3064
+through main `9a8c14c6b`. Their required hosted gates passed; #3033 is closed and #3023 retains
+its broader residuals. Integration resolved only concurrent STATUS/MASTERPLAN records, preserving
+both. Backend files are unchanged by this base merge. Requalify against the delivered base.
+All 61 focused archive/relation component and API-wrapper tests pass on the combined base;
+the delivered CardModal and assignment-save test blobs match main exactly.
+
+Chat relation proposals now resolve normal short card IDs within the active board while retaining
+all previously accepted full UUID formats. The registered `get_board_card_relations` chat reader
+returns the authorized graph and exact revision, so chat can supply the observed revision without
+guessing. UUID-only and omitted-registration controls reproduce both defects; restored-source
+checks pass 91 Application cases and the actual API registry case. The narrow review found a
+compact-UUID regression, corrected with exact active-board lookup and add/remove coverage.
+No revision is restamped and typed writes remain proposals. New hosted qualification is required.
+Premature events from preceding proposal creates (#3073) and applier attribution on proposal-delete
+relation audits (#3074) remain separate bounded follow-ups, alongside #3069 and #3070. Canonical
+short-prefix validation (#3076) and relation-specific navigation guidance (#3077) are also tracked.
+
+Typed card relations (#2092) are integrated on the candidate branch for qualification. The shared
+thinking deck exposes same-board relates-to, blocks/depends-on, duplicates and spawned-from
+context with labelled navigation. Typed additions and removals create review proposals; the graph
+changes only at Apply. Relations do not grant access or change status, hierarchy, assignments or
+estimates. Existing direct dependency editing remains compatible through the same canonical store.
+One board revision protects the graph, including empty graphs and archived endpoints. Archive
+retains links; hard deletion removes incident links atomically with an audit receipt. Board JSON
+v5 and authorized buffered/streaming account exports carry the metadata. Upgrade and developer
+rollback behavior, including loss of non-dependency metadata on Down, are documented in
+[the relation contract](product/CARD_RELATIONS.md) and [UPGRADING](../UPGRADING.md).
+
+Focused source proof covers domain rules, legacy dependency compatibility, SQLite migration and
+concurrency, proposal producers, portability and the shared UI. Independent storage and application
+reviews are clean after the bounded graph-preview and deferred-event corrections. The full backend
+run passed 9,779 tests with 34 existing skips and four fixture failures: three old export-shape
+assertions and one preview fixture missing its graph repository. The fixture-only correction passes
+all 180 tests in the three affected classes; the broad run was not repeated after that correction.
+Full frontend qualification passed 6,866 tests with three existing skips, plus lint, typecheck and
+build. The final numeric proposal-enum correction passes 22 focused tests and both real API/SQLite/
+Chromium journeys (27.6 seconds): reviewed add/remove, direction, stale approval rejection, legacy
+dependency preservation, read-only states and 390px layout. The inherited card-create correction
+separately passes 50 store tests and both estimate browser journeys (53.4 seconds).
+After integrating the final estimate no-op version guard, all 36 combined API tests pass across
+relation reads/proposals/persistence and estimate proposals (17 seconds). The repository merge
+retains both relation guards and the independent persisted-card-version guard.
+The controlled executor concurrency failure proves rollback and zero early buffered events; it does not
+simulate an external SQLite writer after the final transaction read. Separate storage tests cover
+actual competing contexts. Generic web draft-admission parity remains #3061; the older-reader
+estimate export boundary remains #3065. Exact-head hosted qualification is still required. No
+relation merge, release or device/screen-reader acceptance is claimed.
+
+The first hosted relation gate exposed an outdated dependency browser assertion expecting export
+version 2. The v5 assertion now passes the full focused dependency/import journey in Chromium
+(49.0 seconds); import, navigation, mobile bounds and accessibility assertions remain intact.
+A confirmed streaming-export memory regression is also corrected: account relations use bounded,
+no-tracking projection pages, with both endpoints constrained to the same authorized board. All
+11 streaming Application tests and nine real SQLite persistence tests pass, including paging,
+archived endpoints, unauthorized/cross-board exclusion and an empty EF tracker. Independent fix
+review is clean. Account exports retain their existing non-snapshot semantics. Both corrections
+require a new hosted gate; the earlier global teardown timeout is not yet declared resolved.
+The estimate parent has merged as `54e4c0a86`; this candidate includes that delivered base.
+Relation proposal IDs now reuse the existing UUID fallback on the documented plain-HTTP LAN
+path. Removing `crypto.randomUUID` reproduces the original pre-request failure; the corrected
+API wrapper passes all four focused tests with distinct valid IDs and unchanged proposal fields.
+The bounded compatibility review and targeted lint pass. This is simulated API-availability
+proof, not a physical-device LAN acceptance. Buffered export limits and refresh control feedback
+remain separate follow-ups #3069 and #3070.
+
+Changed archived external-import matches (#2935) now produce a structured planning conflict
+before Apply starts a transaction. Unchanged archived rows still skip, duplicate-key ambiguity
+still wins, and active rows retain their existing behavior. This avoids an Apply-time surprise
+without silently restoring or replacing archived work. All 50 focused import cases pass,
+including 13 new application regressions. Independent review is clean; the full backend passes
+9,747 tests with 34 existing skips at `dbe21a3e2`. The delivered archive base `9a8c14c6b` changes
+frontend/docs only, and final backend files match that tested tree. Required hosted qualification
+remains on #3068. New SQL/HTTP, competing-writer, browser and human acceptance are not claimed.
+
+Archive request ownership #3059 merged on 2026-09-12 as `44d041ca7` after required hosted run
+`34714826369` passed at reviewed head `7135d53a9`. #3033 is closed and its issue/PR project items
+are Done with Priority IV; the first post-merge check found no unresolved review threads. Pending
+archive/restore requests now retain ownership above the keyed action child when navigating away
+and back. The successful-settlement snapshot follow-up remains #3060.
+
+The delivered #3023 slice hides the kept-draft notice once a pending assignment save makes
+the draft clean and retains the lifecycle version freeze until reopening. Its failing-before
+regression and 108 related component tests pass, with lint, typecheck/build and bounded review
+clean. PR #3064 merged as `9a8c14c6b` after required run `34716287296` passed at `13dfde5ca`;
+the first post-merge review check is clear. Recovery copy and other #3023 residuals remain open.
+
+Estimate delivery #3054 merged on 2026-09-12 as `54e4c0a86`, preserving the source commits from
+#3053 and #3055. Required hosted run `34713059470` passed at reviewed head `28c4f49de`, including
+both operating-system API/frontend lanes and browser smoke. GitHub confirms #2093, #3044, #3049
+and #3062 closed. The first post-merge check found no unresolved review threads on these three
+PRs. The estimate qualification paragraphs below retain their local evidence and historical gates;
+this delivery record supersedes their pending-merge wording. The bounded follow-ups #3056, #3057,
+#3058, #3063 and #3065 and the existing human-action file remain open.
+
+Card estimates and current-state rollups (#2093) are implemented on the integration branch.
+Optional whole-minute estimates display as hours/minutes in shared card details and both Paper
+and Legacy quick-create. Blank means unknown; explicit zero remains known. A successful save
+advances the editor's version and estimate baseline while preserving any newer draft. Existing
+board participants and multiple assignments supply board, column, participant and unassigned
+totals over active cards. Each card counts once in board totals and contributes its full estimate
+to every assignee, with a visible overlap explanation; parent and child estimates stay independent.
+Timestamped totals support explicit refresh after board changes. These are current assignments
+and estimates, not time worked or capacity.
+
+Direct writes, proposal preview/approval/apply and chat/MCP tools carry the nullable estimate;
+intentional changes require the caller's card version. Ordered proposals validate initial versions
+and preserve transaction rollback when a competing writer intervenes. Board import/export and
+both account exports retain estimates; malformed imports fail before writes. The additive migration
+leaves old cards unestimated, and its Down path drops estimate metadata without deleting cards.
+Focused domain, application, API, SQLite migration/rollback and MCP proofs pass. Full combined
+frontend qualification passed 6,856 tests across 440 files with three existing skips, plus typecheck
+and build. Both real-API Chromium journeys passed for Legacy and Paper: null/zero/90-minute
+persistence, clear/resave, exact overlapping participant totals, edit/move/archive followed by
+refresh, Viewer access, 390px layout and Escape focus. One bounded screenshot remeasure settled
+the responsive transition; no runtime defect was found. Physical devices, other browsers and
+screen-reader output were not tested.
+
+The combined backend run passed 9,727 tests with 34 existing skips and exposed four architecture
+failures: the new controller declaration did not match the repository scanner, and the MCP tool
+inventory omitted the new read tool. The final declaration/inventory correction passed all 28
+architecture tests (one existing skip) and four rollup API cases; the broad solution run was not
+repeated after this bounded correction. Core, editor receipt, portability and proposal/rollup
+interaction reviews are clean. Exact-head hosted qualification remains on the delivery PR.
+Hosted frontend lint exposed a static-container Escape handler; the handler now belongs to the
+panel's Refresh button, and lint, production build and all six panel tests pass. The panel remains
+a named region and Escape restores its opener's focus. Backend-less demo rollups are unavailable
+and tracked as the non-blocking #3056; normal server-backed rollups are qualified above.
+Required hosted run `34707276360` passed the backend, Windows API and frontend checks but failed
+two Paper E2E tests during their fixed 40-Tab setup. Local Chromium reproduced both failures and
+recorded the traversal stopping before the first card after the Estimates control was added.
+The tests now enter the card with Tab from its preceding control; their focus-ring and J/Enter
+assertions are unchanged. Both corrected real-API tests pass (17.9 seconds). A new hosted gate
+is required; the failure is not classified as flaky.
+The next browser gate exposed a real card-create/detail-refresh race: the POST continuation could
+append a card already committed by the detail read. Reconciliation now preserves that payload,
+avoids double-counting and isolates a different selected board. A fresh-store regression in the
+first correction was fixed with failing-before evidence; all 50 store tests and both real API
+estimate journeys pass (53.4 seconds), and bounded independent review is clean.
+Same-valued estimate proposals now perform an atomic persisted-version guard before accepting
+a no-op. Two real SQLite competing-writer cases reproduced false HTTP 200/Applied receipts with
+the original branch and pass as HTTP 409 with the guard. All 36 focused service/API/persistence
+tests pass, including unchanged-version, clear-null, ordered-write and planned-create controls;
+independent review is clean and the six reviewed source files match the integrated Git blobs.
+The final hosted gate remains required. Bounded follow-ups retain rollup snapshot consistency
+(#3058), request timeout/recovery (#3063) and older-reader export protection (#3065).
+PR #3054 also preserves the reviewed commits from #3053 (planning/backup references) and #3055
+(same-valued permission recovery). Their source evidence is retained; final combined CI is required.
+[Contract and limits](product/CARD_ESTIMATES.md).
+
+Recovery integration #3050 merged on 2026-09-12 as `9c17a83bf`, preserving source PRs #2914,
+#3043, #3046, #3047, #3048 and #3051. Required hosted run `34702720469` passed at reviewed
+head `05ed5bbad`, including Windows API integration and browser smoke. GitHub confirms the nine
+linked repair issues closed; #3033's partial residual remains open. The post-merge checkpoint
+found no unresolved source or integration review threads. The behavior records below retain
+their original local qualification heads and limitations.
+
+Board import rejects conflicting assignee labels (#2980, PR #3014): the shared import validator now
+requires one consistent display label per source assignee key, so a payload that repeats a key with a
+different - including case-only or whitespace-only different - label fails on preview and on both Apply
+routes before any board, column, card, label or audit row is built, and an explicit "Me" or
+"Unassigned" mapping does not waive it. No trimming, case folding or name-to-identity matching is
+introduced, and the existing bounded-field, missing-mapping, unknown-key and importer-only target rules
+are unchanged. Evidence: 18 new Application tests (eight proven red against the pre-fix validator,
+each rejection asserting no repository Add, no SaveChanges, no commit and one rollback) plus 103
+passing export/import cases. These are mocked-repository application-boundary assertions, not a real
+SQLite proof. Scope: a bounded repair to the board-import
+validator that already guards `POST /api/import/boards/preview`, `POST /api/import/boards` and
+`POST /api/import/boards/json` on main. This repair builds on the delivered #2240 assignment and explicit import-mapping contract;
+its merge-level delivery is reconciled below (#3036).
+
+Card editor permission recovery (#3021/#3037/#3042, PR #3048) extends the shared write gate
+from #3028. A current assignment, card, comment or lifecycle write403 invalidates cached
+permission and starts one cancellable board read with a 10-second bound. A confirmed Writer
+recovers editing in place; Viewer, failed, denied or omitted permission after refusal grants
+nothing, stops dependent assignment/parent reads, and offers explicit retry while retaining
+drafts. Initial stated-permission paths add no reads, and the legacy omitted-field behavior
+for an initially archived card is unchanged. Archive failure after Escape rescues unusable
+native focus without stealing deliberate focus movement or affecting another card; late failed
+writes after mounted card switches produce a generic persistent notice (#3033). The A-to-B-to-A
+pending-write busy-ownership residual is repaired in the reviewed #3033 follow-on below. Qualification: full frontend at
+`8ab19e7ef` passed 6,776 tests with three existing skips; final `8582b7ac3` passed typecheck,
+build, 175 focused tests and three native Chromium focus cases after the bounded write403
+bridge. Real backend permission integration and screen-reader output were not tested.
+The same-valued permission recovery follow-up (#3049) is implemented for qualification. A committed
+board-detail read that began after denial can restore editing even when `canWrite` remains true;
+local object replacement and pre-denial in-flight reads grant nothing. Request/payload generations
+preserve the existing fail-closed and cancellation behavior. Focused specs passed 100 tests; the full
+frontend passed 6,794 with three existing skips across 438 files. Typecheck/build passed before the
+four-line fixture-only repair, which received a clean bounded follow-up review. Final hosted CI and
+live browser permission transitions remain separate qualification evidence.
+
+The #3033 follow-on retains pending archive/restore and preview ownership per board/card in the
+mounted editor, above its version-keyed action child. Returning to A cannot submit its still-pending
+request again, while B remains actionable; settling one request releases only its own card. Six
+deferred component cases and four real CardModal host cases reproduced the previous gaps. Final
+qualification passes 151 focused tests, lint, typecheck and build; the bounded independent fix review
+is clean. Before the host fix, full frontend qualification passed 6,862 tests with three existing skips
+across 440 files. That full run was not repeated for the bounded host fix. The estimate parent's
+keyboard-test correction merges without conflict edits. Final hosted CI remains required after the
+oldest base lands and this child is retargeted. No new browser or screen-reader run is claimed for
+the archive fix; the earlier native focus proof belongs to #3048. Ownership remains editor-instance
+scoped. Separate MEDIUM follow-up #3060 covers successful settlement reconciliation of a returned
+card's stale snapshot; server version checks reject a redundant stale request before mutation.
+
+Assignment revoke notifications (#2979, PR #3047) now publish each detached card's actual ID
+after the access/audit transaction commits, with no notification when assignments are unchanged.
+Five SQLite cases cover active and archived cards, retained owners, board/assignee isolation,
+persisted webhook metadata and save/commit rollback. Full backend at `4c2f60c59` passed 9,564
+tests with 34 existing skips. Live HTTP delivery and skipped PostgreSQL/Docker cases were not
+exercised locally; reliable delivery remains #3024.
 
 Card archive/restore (#2920): explicit, version-checked lifecycle actions preserve card identity,
 placement, labels, block state and history. Active surfaces exclude archived cards; Paper and
@@ -16,10 +286,32 @@ on archive/delete (including archived children), and no reattachment on restore.
 earlier card create and move operations produce, so a restore behind an operation that takes the
 last slot is refused at approve instead of failing mid-apply and rolling back (#2926). Batch
 archive/restore in one proposal stays refused outright by the one-hierarchy-operation rule, so that
-is a WIP question that does not arise. Preview still does not WIP-check create or move themselves
-(#3020), and the Review conflict/capacity projection still omits lifecycle effects (#3012).
+is a WIP question that does not arise. A proposal move into a column whose stored card positions
+are non-contiguous - a deleted middle card, or a sparse import - now applies instead of failing at
+execute and rolling the proposal back: the append position is the column's occupant count, and the
+card move clamps an overshooting insert to the end of the column, so what preview approves is what
+Apply performs (#3025). Ordered proposal validation now checks create and cross-column move
+capacity as well as restore (#3020), releasing capacity for earlier active-card deletion or
+lifecycle archive. Review warnings use the same ordered occupancy model, including lifecycle
+effects, and retain an earlier peak violation even if a later operation reduces the final count
+(#3012). Legacy archive still means Block and releases no slot. Existing producer timing stays
+intact: planner/policy/chat-create reject at creation; direct API/MCP/chat-move proposals retain
+their existing creation contract and are rejected during review validation when over capacity.
 
-Work-model and Review deliveries, verified 2026-09-11 against live GitHub. Merged: Task/Epic/Spike card work-item types (#2949, `7695211a0`), same-board hierarchy (#2965, `86c6f1bdf`), true card archive and restore (#2932, `19dc823c3`), active-card WIP and import counts excluding archived cards (#2951, `02abedfe9`), archived cards excluded from new workspace analysis (#2957, `93ca1cd21`), Inbox captures that keep updating through long triage runs (#2945, `fad49351f`), and Review/Apply legibility (#2942, `e9316fd82`; #2948, `be0e1349f`). Three more landed on 2026-09-11 as their own delivery records: archived-card dependency controls read-only (#2955, `34d1a4c8f`), Inbox status polls ordered with detail refreshes (#2959, `b58c1da4b`), and Review warnings tied to retained rows with truthful recovery (#2961, `401fd648c`). **Assignment #2240 is NOT shipped.** Its PR #2977 is open and parked on HIGH #2981 (an assignment discard can misrepresent an in-flight save); #2240 sits in v0.4 under the 2026-09-06 ruling, so nothing about multiple card assignments or explicit import mapping is delivered. #2930 remains open on its delayed-pin announcement residual. What this paragraph verifies is merge-level: each PR shows a merge commit and the issue state was read live. The per-PR behavioural claims and their test counts were **not** re-run by this pass and remain the authoring lane's record on each PR.
+Review card side effects (#3031, extending #3008) now name only the actual operations in a stable,
+deduplicated order, including updates and deletes. Legacy archive is described as blocking;
+lifecycle archive and restore keep their distinct meanings. Categories, tones and execution
+authority are unchanged. Combined proposal qualification at `a7463be01`: 217 focused Application
+tests and 54 API/MCP cases pass, with 16 disclosure regressions and 14 ordered-capacity failures
+reproduced before their fixes. These changes make the review description and capacity refusal
+match the ordered proposal before Apply.
+
+Extraction gate regression tests (#2993, PR #3046) use asynchronous entry/release signals so the
+test itself no longer blocks worker threads. The cap, no-queue and permit-return assertions remain;
+six focused cases passed five consecutive runs and full backend at `5e3e230ab` passed 9,559 tests
+with 34 existing skips. This is test-harness repair, with no production extraction behavior change.
+
+Work-model and Review deliveries, verified 2026-09-11 against live GitHub. Merged: Task/Epic/Spike card work-item types (#2949, `7695211a0`), same-board hierarchy (#2965, `86c6f1bdf`), true card archive and restore (#2932, `19dc823c3`), active-card WIP and import counts excluding archived cards (#2951, `02abedfe9`), archived cards excluded from new workspace analysis (#2957, `93ca1cd21`), Inbox captures that keep updating through long triage runs (#2945, `fad49351f`), and Review/Apply legibility (#2942, `e9316fd82`; #2948, `be0e1349f`). Three more landed on 2026-09-11 as their own delivery records: archived-card dependency controls read-only (#2955, `34d1a4c8f`), Inbox status polls ordered with detail refreshes (#2959, `b58c1da4b`), and Review warnings tied to retained rows with truthful recovery (#2961, `401fd648c`). **Assignments #2240 and explicit assignee import mapping are delivered** in PR #2977 (merged 2026-09-11 as `15ee8065a`); blocker #2981 is closed. The migration, authorized participant choices, multiple assignments and explicit importer-or-unassigned mapping are on main. The feature remains in v0.4 under the 2026-09-06 ruling. This correction (#3036) verifies the merge and repository contracts, without rerunning the original behavioral qualification. #2930 remains open on its delayed-pin announcement residual. What this paragraph verifies is merge-level: each PR shows a merge commit and the issue state was read live. The per-PR behavioural claims and their test counts were **not** re-run by this pass and remain the authoring lane's record on each PR.
 
 Review retained health (#2915): stale/refused disclosures return when completed filtering, snooze expiry or a hash target reveals retained rows after a failed scope change. Restoring an older disclosure preserves newer warnings; only a successful read clears them. Scope changes retire the prior recovery announcement. Real-Vue regressions cover these transitions and the intentional empty same-scope warning; 197 focused tests and a Chromium journey pass. Browser evidence uses a synthetic list response, with expected missing-detail 404s; real screen-reader output is not verified.
 

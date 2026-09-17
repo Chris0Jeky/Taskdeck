@@ -106,11 +106,9 @@ public sealed class ArtefactExtractionGateTests
         const int cap = 2;
         const int submissions = 8;
         var gate = new ArtefactExtractionGate(new ArtefactStorageSettings { ExtractionMaxConcurrency = cap });
-        using var release = new ManualResetEventSlim(false);
-        using var allEntered = new CountdownEvent(cap);
-        var latched = new LatchedCountingExtractor("application/pdf", release, allEntered);
+        var latched = new LatchedCountingExtractor("application/pdf", cap);
 
-        // A generous budget: the two admitted workers block on the latch and then
+        // A generous budget: the two admitted workers await the release signal and then
         // complete normally (never abandoned), so the outcome is a clean 2 success /
         // 6 rejected split with no queueing.
         var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = 30, ExtractionMaxConcurrency = cap };
@@ -123,13 +121,13 @@ public sealed class ArtefactExtractionGateTests
             .ToArray();
 
         // Exactly cap workers can enter the extractor concurrently; the rest are
-        // rejected immediately. Deterministic: the two that entered block on the latch,
+        // rejected immediately. Deterministic: the two that entered await the release signal,
         // so no permit ever frees to admit a third.
-        allEntered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue("exactly the cap should enter the extractor");
+        await latched.AllEntered.WaitAsync(TimeSpan.FromSeconds(10));
         latched.MaxConcurrent.Should().Be(cap);
         gate.AvailablePermits.Should().Be(0);
 
-        release.Set();
+        latched.Release();
         var all = Task.WhenAll(tasks);
         var completed = await Task.WhenAny(all, Task.Delay(TimeSpan.FromSeconds(15)));
         completed.Should().Be(all, "no deadlock: every submission resolves after release");
@@ -163,19 +161,17 @@ public sealed class ArtefactExtractionGateTests
         var permitReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         gate.PermitReleased += () => permitReleased.TrySetResult();
 
-        using var release = new ManualResetEventSlim(false);
-        using var entered = new CountdownEvent(1);
         // A generous budget so only caller cancellation (never the timeout branch) can end
         // the wait; the latched extractor ignores its token, so the parse must be abandoned.
         var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = 30, ExtractionMaxConcurrency = 1 };
-        var extractor = new LatchedCountingExtractor("application/pdf", release, entered);
+        var extractor = new LatchedCountingExtractor("application/pdf", 1);
         var service = new ArtefactExtractionService(
             _artefacts.Object, _extractions.Object, [extractor], settings, gate: gate);
 
         using var callerCts = new CancellationTokenSource();
         var extraction = service.ExtractAsync(_userId, _artefactId, callerCts.Token);
 
-        entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue("the worker must enter the extractor before we cancel");
+        await extractor.AllEntered.WaitAsync(TimeSpan.FromSeconds(10));
         gate.AvailablePermits.Should().Be(0, "the running worker holds the permit");
 
         callerCts.Cancel();
@@ -185,7 +181,7 @@ public sealed class ArtefactExtractionGateTests
         storeCalls.Should().Be(0, "a caller-cancelled extraction writes no history row");
         gate.AvailablePermits.Should().Be(0, "the abandoned worker still holds the permit until it finishes");
 
-        release.Set();
+        extractor.Release();
         (await Task.WhenAny(permitReleased.Task, Task.Delay(TimeSpan.FromSeconds(10))))
             .Should().Be(permitReleased.Task, "the abandoned worker must release its permit once it finishes");
         gate.AvailablePermits.Should().Be(1, "the permit is returned exactly once after the abandoned worker completes");
@@ -285,33 +281,39 @@ public sealed class ArtefactExtractionGateTests
 
     /// <summary>
     /// Records the peak number of concurrent extractor entries, signals each entry,
-    /// then blocks all entrants on a shared latch — proving the gate admits at most
-    /// the configured cap at once.
+    /// then awaits a shared release signal without blocking pool threads — proving
+    /// the gate admits at most the configured cap at once.
     /// </summary>
     private sealed class LatchedCountingExtractor : IArtefactTextExtractor
     {
         private readonly string _mime;
-        private readonly ManualResetEventSlim _release;
-        private readonly CountdownEvent _entered;
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _allEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly int _expectedEntries;
         private int _current;
         private int _max;
+        private int _entered;
 
-        public LatchedCountingExtractor(string mime, ManualResetEventSlim release, CountdownEvent entered)
+        public LatchedCountingExtractor(string mime, int expectedEntries)
         {
             _mime = mime;
-            _release = release;
-            _entered = entered;
+            _expectedEntries = expectedEntries;
         }
 
         public string ExtractorName => "LatchedCounting";
         public string ExtractorVersion => "1.0";
         public long InputByteLimit => 1024 * 1024;
         public int MaxConcurrent => Volatile.Read(ref _max);
+        public Task AllEntered => _allEntered.Task;
 
         public bool CanExtract(string mimeType)
             => mimeType.StartsWith(_mime, StringComparison.OrdinalIgnoreCase);
 
-        public Task<ArtefactExtractionResult> ExtractAsync(Stream content, CancellationToken cancellationToken = default)
+        public async Task<ArtefactExtractionResult> ExtractAsync(
+            Stream content,
+            CancellationToken cancellationToken = default)
         {
             var now = Interlocked.Increment(ref _current);
             int observed;
@@ -323,10 +325,20 @@ public sealed class ArtefactExtractionGateTests
             }
             while (Interlocked.CompareExchange(ref _max, now, observed) != observed);
 
-            _entered.Signal();
-            _release.Wait(TimeSpan.FromSeconds(30));
-            Interlocked.Decrement(ref _current);
-            return Task.FromResult(new ArtefactExtractionResult("done", [], ExtractorName, ExtractorVersion));
+            if (Interlocked.Increment(ref _entered) == _expectedEntries)
+                _allEntered.TrySetResult();
+
+            try
+            {
+                await _release.Task.ConfigureAwait(false);
+                return new ArtefactExtractionResult("done", [], ExtractorName, ExtractorVersion);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _current);
+            }
         }
+
+        public void Release() => _release.TrySetResult();
     }
 }

@@ -3,18 +3,32 @@ import { boardsApi } from '../api/boardsApi'
 import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import { isDemoMode } from '../utils/demoMode'
 import { useBoardStore } from '../store/boardStore'
+import { useSessionStore } from '../store/sessionStore'
 
 export interface UseCardTypePermissionOptions {
+  getCardId?: () => string
   /** The board the open card belongs to. */
   getBoardId: () => string
   /** Whether the card editor is open; a closed editor asks the server nothing. */
   getIsOpen: () => boolean
-  /** The settled archive state of the open card (`CardModal`'s `cardIsArchived`). */
+  /**
+   * The settled archive state of the open card (`CardModal`'s `cardIsArchived`). It decides
+   * whether an unresolved permission is worth asking for, and whether the type may be edited;
+   * it does not decide `canWrite`, which an archived card's Restore control still needs.
+   */
   getCardIsArchived: () => boolean
 }
 
 /**
- * Server-authoritative write permission for the work-item type control (#2952).
+ * Server-authoritative board write permission for the open card editor (#2952, #3028).
+ *
+ * One read serves every write gate in the editor: the work-item type selector
+ * (`canEditType`), and — through `canWrite` — the parent selector, the archive/restore
+ * control and the assignment field's `readOnly` input. They asked the same question of the
+ * same payload and three of them still read an omitted optional field as "no"; a second,
+ * third and fourth request would answer nothing extra, so the answer is resolved once here
+ * and passed down. The name is kept from its first consumer so the in-flight #3030 slice
+ * keeps its file.
  *
  * The loaded board payload carries `BoardDto.CanWrite`, the server's own answer for
  * the calling user — but the field is optional, and the `Board` contract in
@@ -37,6 +51,25 @@ export interface UseCardTypePermissionOptions {
  */
 export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   const boardStore = useBoardStore()
+  const session = useSessionStore()
+  const permissionRecovery = ref(false)
+  const accessUnavailable = ref(false)
+  /** The latest board-read request at the start of a denied-write recovery. */
+  let recoveryRequestGeneration: number | null = null
+  type PermissionReadOutcome = 'authoritative' | 'transient' | 'superseded' | 'not-started'
+  type DeferredStorePermission = {
+    boardId: string
+    canWrite: boolean
+    payloadGeneration: number | null
+  }
+  // A manual retry starts after any already-running board-store request. While
+  // that retry is pending, an older store response is evidence but cannot own
+  // the decision. Retain the newest eligible payload and use it only when the
+  // later retry fails transiently or returns an inconclusive legacy payload.
+  let explicitRetrySequence = 0
+  let activeExplicitRetry: number | null = null
+  let explicitRetryStartGeneration: number | null = null
+  let deferredStorePermission: DeferredStorePermission | null = null
 
   /** The permission this composable's own server read confirmed, scoped to its board. */
   const confirmed = ref<{ boardId: string; canWrite: boolean } | null>(null)
@@ -69,34 +102,67 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     return board.canWrite
   })
 
+  /*
+   * Board detail reads retain both their request and committed-payload
+   * generations. That makes a later `canWrite: true` evidence when a denied
+   * write is being reconciled, while an optimistic/local object replacement or
+   * a response already in flight at the denial is not.
+   * Older test harnesses and alternate stores that do not carry the marker stay
+   * on the existing explicit-read recovery path.
+   */
+  const boardPayloadGeneration = computed<number | null>(() =>
+    typeof boardStore.currentBoardPayloadGeneration === 'number'
+      ? boardStore.currentBoardPayloadGeneration
+      : null,
+  )
+  const boardRequestGeneration = computed<number | null>(() =>
+    typeof boardStore.currentBoardRequestGeneration === 'number'
+      ? boardStore.currentBoardRequestGeneration
+      : null,
+  )
+
   const confirmedPermission = computed<boolean | null>(() =>
     confirmed.value && confirmed.value.boardId === options.getBoardId() ? confirmed.value.canWrite : null,
   )
 
-  const permission = computed<boolean | null>(() => statedPermission.value ?? confirmedPermission.value)
+  const permission = computed<boolean | null>(() => permissionRecovery.value
+    ? confirmedPermission.value
+    : statedPermission.value ?? confirmedPermission.value)
 
   /*
-   * Permission is only one of the reasons this control can be read-only, and it is the
-   * only one this composable answers. An archived card cannot accept a type change at all,
-   * and demo mode has no server to ask (its board fixtures omit `canWrite` by construction,
-   * so a read would be a request to a backend that is not there) — so neither spends a
-   * request, and neither shows the recovery affordance, which would promise a refresh that
-   * changes nothing.
-   *
-   * A card whose board payload is not the loaded one is a deliberate exclusion rather than
-   * an impossibility: that read COULD be made, but this slice keeps the pre-existing
-   * behaviour for it (#2952 is about the loaded board's missing field) rather than adding a
-   * request to every card opened from a cross-board surface.
+   * Whether this composable answers the permission question for the open card at all.
+   * Demo mode has no server to ask (its board fixtures omit `canWrite` by construction, so
+   * a read would be a request to a backend that is not there), and a card whose board
+   * payload is not the loaded one is a deliberate exclusion rather than an impossibility:
+   * that read COULD be made, but this slice keeps the pre-existing behaviour for it (#2952
+   * is about the loaded board's missing field) rather than adding a request to every card
+   * opened from a cross-board surface. In both cases the gates stay exactly as read-only as
+   * they were before this composable existed.
    */
-  const permissionDecides = computed(() =>
-    !isDemoMode && boardForCard.value !== null && !options.getCardIsArchived(),
-  )
+  const permissionDecides = computed(() => !isDemoMode && boardForCard.value !== null)
 
-  const canEditType = computed(() => permissionDecides.value && permission.value === true)
-  const permissionChecking = computed(() => permissionDecides.value && permission.value === null && checking.value)
-  const permissionUnknown = computed(() => permissionDecides.value && permission.value === null && !checking.value)
+  /*
+   * Whether an unresolved permission is worth a request and a recovery affordance.
+   * An archived card cannot accept an edit, so #2952 spent no request on one and showed no
+   * affordance that would promise a refresh changing nothing; that stands. It is deliberately
+   * NOT part of `canWrite`: restoring an archived card is a write the archive control offers
+   * ON an archived card, so a permission the payload already states must still reach it.
+   * An explicit reconciliation after a denied write also runs for an archived card, so a
+   * refused Restore can recover in place. The initial archived-card path is unchanged.
+   */
+  const readDecides = computed(() => permissionDecides.value &&
+    (permissionRecovery.value || !options.getCardIsArchived()))
 
-  async function read(boardId: string) {
+  /** Board-level write permission: what every write gate in the editor is allowed to assume. */
+  const canWrite = computed(() => permissionDecides.value && permission.value === true)
+  const canEditType = computed(() => canWrite.value && !options.getCardIsArchived())
+  const permissionChecking = computed(() => readDecides.value && permission.value === null && checking.value)
+  const permissionUnknown = computed(() => readDecides.value && permission.value === null && !checking.value)
+  // A refused write never promises read access. A successful Viewer read can confirm it.
+  const readsBlocked = computed(() => permissionRecovery.value &&
+    (checking.value || accessUnavailable.value || confirmedPermission.value === null))
+
+  async function read(boardId: string): Promise<PermissionReadOutcome> {
     const current = ++generation
     inFlightRequest?.abort()
     const request = new AbortController()
@@ -117,19 +183,41 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
         timeout: BOARD_REQUEST_TIMEOUT_MS,
         skipRetry: true,
       })
-      if (current !== generation) return
+      if (current !== generation) return 'superseded'
       /*
        * A FRESH payload that still omits the field is not a stale cache — it is a server
        * that predates the field, and the `Board` contract's legacy convention governs it:
        * only an explicit `false` is read-only. An archived board is read-only whatever the
        * field says.
        */
-      confirmed.value = { boardId, canWrite: board.canWrite !== false && board.isArchived !== true }
-    } catch {
+      // The legacy convention still applies on an initial missing-field read. After a
+      // write403 contradicted it, require an explicit permission before granting again.
+      if (permissionRecovery.value && board.isArchived !== true && typeof board.canWrite !== 'boolean') {
+        confirmed.value = null
+        failedBoardId.value = boardId
+        accessUnavailable.value = false
+        return 'transient'
+      }
+
+      const canWrite = board.canWrite !== false && board.isArchived !== true
+      confirmed.value = { boardId, canWrite }
+      if (permissionRecovery.value && !canWrite) {
+        recoveryRequestGeneration = explicitRetryStartGeneration ?? boardRequestGeneration.value
+      }
+      accessUnavailable.value = false
+      return 'authoritative'
+    } catch (cause) {
       // A failed read grants nothing. The unknown state stands and the caller offers the
       // explicit retry; the server still refuses any write this control should not allow.
-      if (current !== generation) return
+      if (current !== generation) return 'superseded'
+      confirmed.value = null
       failedBoardId.value = boardId
+      const status = (cause as { response?: { status?: number } })?.response?.status
+      accessUnavailable.value = status === 403 || status === 404
+      if (permissionRecovery.value && accessUnavailable.value) {
+        recoveryRequestGeneration = explicitRetryStartGeneration ?? boardRequestGeneration.value
+      }
+      return accessUnavailable.value ? 'authoritative' : 'transient'
     } finally {
       if (current === generation) {
         inFlightBoardId = null
@@ -140,21 +228,126 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   }
 
   // A closed or replaced editor is not waiting for an answer, and must not be given one.
-  onScopeDispose(() => {
+  function cancelRead() {
     generation++
     inFlightRequest?.abort()
     inFlightRequest = null
     inFlightBoardId = null
-  })
+    checking.value = false
+  }
+  onScopeDispose(cancelRead)
+
+  function acceptStorePermission(candidate: DeferredStorePermission) {
+    if (candidate.boardId !== options.getBoardId()) return
+    // A store payload can retire an older automatic reconciliation read, but
+    // never a later explicit retry: the watcher defers it while that owner lives.
+    cancelRead()
+    confirmed.value = { boardId: candidate.boardId, canWrite: candidate.canWrite }
+    failedBoardId.value = null
+    accessUnavailable.value = false
+  }
+
+  async function beginPermissionRecovery(newDenial: boolean): Promise<PermissionReadOutcome> {
+    if (!options.getIsOpen() || !permissionDecides.value) return 'not-started'
+    // A manual retry remains tied to the refusal it is reconciling. Keep that
+    // boundary so a board-store read begun after the refusal remains fresh
+    // evidence when the retry fails. A newly refused write advances it.
+    permissionRecovery.value = true
+    if (newDenial || recoveryRequestGeneration === null) {
+      recoveryRequestGeneration = boardRequestGeneration.value
+    }
+    confirmed.value = null
+    return read(options.getBoardId())
+  }
 
   /** Explicit recovery from an unknown permission state. */
   async function refreshPermission() {
-    if (inFlightBoardId === options.getBoardId()) return
-    await read(options.getBoardId())
+    const owner = ++explicitRetrySequence
+    activeExplicitRetry = owner
+    explicitRetryStartGeneration = boardRequestGeneration.value
+    deferredStorePermission = null
+    const outcome = await beginPermissionRecovery(false)
+    if (activeExplicitRetry !== owner) return
+
+    activeExplicitRetry = null
+    explicitRetryStartGeneration = null
+    const deferred = deferredStorePermission
+    deferredStorePermission = null
+    if (outcome === 'transient' && deferred) {
+      acceptStorePermission(deferred)
+    }
+  }
+
+  /** A newly refused write invalidates evidence that predated that refusal. */
+  async function recoverFromPermissionDenied() {
+    explicitRetrySequence++
+    activeExplicitRetry = null
+    explicitRetryStartGeneration = null
+    deferredStorePermission = null
+    await beginPermissionRecovery(true)
   }
 
   watch(
-    [() => options.getIsOpen(), () => options.getBoardId(), permission, permissionDecides],
+    [() => options.getIsOpen(), () => options.getBoardId(), () => options.getCardId?.(), () => session.userId],
+    ([_open, _board, _card, actor], previous) => {
+      cancelRead()
+      explicitRetrySequence++
+      activeExplicitRetry = null
+      explicitRetryStartGeneration = null
+      deferredStorePermission = null
+      confirmed.value = null
+      failedBoardId.value = null
+      // An account change cannot inherit the previous caller's cached board permission.
+      permissionRecovery.value = actor !== previous[3]
+      recoveryRequestGeneration = null
+      accessUnavailable.value = false
+    },
+    { flush: 'sync' },
+  )
+
+  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
+    if (!permissionRecovery.value || value === null) return
+
+    // A direct false transition is safe to consume immediately: it can only
+    // further restrict the editor. A later true needs the store's committed
+    // server-payload marker, because a local patch must never re-authorize a
+    // write the server just refused.
+    const permissionWasRevoked = value === false && value !== previousValue
+    const hasFreshServerPayload = payloadGeneration !== null &&
+      payloadGeneration !== previousPayloadGeneration &&
+      (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
+    if (!permissionWasRevoked && !hasFreshServerPayload) return
+
+    const candidate: DeferredStorePermission = {
+      boardId: options.getBoardId(),
+      canWrite: value,
+      payloadGeneration,
+    }
+    if (activeExplicitRetry !== null) {
+      const isNewerThanRetryStart = explicitRetryStartGeneration !== null &&
+        candidate.payloadGeneration !== null &&
+        candidate.payloadGeneration > explicitRetryStartGeneration
+      if (permissionWasRevoked || isNewerThanRetryStart) {
+        // A restrictive transition is safe to consume immediately. A store
+        // request that began after the explicit retry is also newer evidence;
+        // it supersedes the retry, whose direct response is now stale even if
+        // that response arrives first.
+        acceptStorePermission(candidate)
+        return
+      }
+      // The store request started before the explicit retry, so its completion
+      // cannot abort or overrule that later request. Retain it as fallback for
+      // a transient retry failure; a definitive retry result discards it.
+      deferredStorePermission = candidate
+      return
+    }
+
+    acceptStorePermission(candidate)
+  }, { flush: 'sync' })
+
+  watch(
+    [() => options.getIsOpen(), () => options.getBoardId(), permission, readDecides,
+      () => options.getCardId?.(), () => session.userId],
     ([isOpen, boardId, currentPermission, decides]) => {
       if (!isOpen || !decides || currentPermission !== null) return
       // One automatic attempt per board: a second failure is the user's to ask for.
@@ -167,5 +360,6 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     { immediate: true },
   )
 
-  return { canEditType, permissionChecking, permissionUnknown, refreshPermission }
+  return { canWrite, canEditType, permissionChecking, permissionUnknown, permissionRecovery,
+    accessUnavailable, readsBlocked, refreshPermission, recoverFromPermissionDenied }
 }
