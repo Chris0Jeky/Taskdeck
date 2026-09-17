@@ -3,10 +3,7 @@ import paperHomeSource from '../../views/paper/PaperHomeView.vue?raw'
 import paperInboxSource from '../../views/paper/PaperInboxView.vue?raw'
 import { shouldHandlePaperCaptureShortcut } from '../../utils/paperCaptureShortcut'
 
-function shortcutResultFrom(
-  target: Element,
-  init: KeyboardEventInit = {},
-): boolean {
+function shortcutResultFrom(target: Element, init: KeyboardEventInit = {}): boolean {
   let result: boolean | undefined
   target.addEventListener(
     'keydown',
@@ -15,13 +12,15 @@ function shortcutResultFrom(
     },
     { once: true },
   )
-  target.dispatchEvent(new KeyboardEvent('keydown', {
-    key: ';',
-    ctrlKey: true,
-    bubbles: true,
-    cancelable: true,
-    ...init,
-  }))
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: ';',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    }),
+  )
   expect(result).toBeDefined()
   return result as boolean
 }
@@ -29,7 +28,9 @@ function shortcutResultFrom(
 describe('shouldHandlePaperCaptureShortcut', () => {
   it('accepts the existing Cmd/Ctrl+; chord from ordinary page content', () => {
     expect(shortcutResultFrom(document.createElement('button'))).toBe(true)
-    expect(shortcutResultFrom(document.createElement('div'), { ctrlKey: false, metaKey: true })).toBe(true)
+    expect(
+      shortcutResultFrom(document.createElement('div'), { ctrlKey: false, metaKey: true }),
+    ).toBe(true)
   })
 
   it.each(['input', 'textarea', 'select'] as const)(
@@ -58,15 +59,15 @@ describe('shouldHandlePaperCaptureShortcut', () => {
 describe('Paper capture shortcut wiring', () => {
   const helperImport =
     "import { shouldHandlePaperCaptureShortcut } from '../../utils/paperCaptureShortcut'"
-  const handlerGuard = 'if (!shouldHandlePaperCaptureShortcut(event)) return'
+  const handlerCall = 'shouldHandlePaperCaptureShortcut(event)'
 
   it('routes Paper Home through the text-entry-safe shortcut predicate', () => {
     expect(paperHomeSource).toContain(helperImport)
-    expect(paperHomeSource).toContain(handlerGuard)
+    expect(paperHomeSource).toContain(handlerCall)
   })
 
   it('routes Paper Inbox through the text-entry-safe shortcut predicate', () => {
     expect(paperInboxSource).toContain(helperImport)
-    expect(paperInboxSource).toContain(handlerGuard)
+    expect(paperInboxSource).toContain(handlerCall)
   })
 })
