@@ -76,9 +76,9 @@ test('the Windows API lane runs the fake-backed profile suite with mandatory Bas
 test('the Bash drill fixture converts Windows paths before prepending its fake command directory', () => {
   assert.match(
     profileHarness,
-    /return "\/\$driveName\/\$\(\$WindowsPath\.Substring\(3\)\.Replace\('\\\\', '\/'\)\)"/,
+    /return "\/\$driveName\/\$\(\$WindowsPath\.Substring\(3\)\.Replace\('\\', '\/'\)\)"/,
   );
-  assert.doesNotMatch(profileHarness, /return \$WindowsPath\.Replace\('\\\\', '\/'\)/);
+  assert.doesNotMatch(profileHarness, /return \$WindowsPath\.Replace\('\\', '\/'\)/);
 });
 
 test('the profile harness clears every fake-Docker scenario variable', () => {
