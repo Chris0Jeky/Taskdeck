@@ -324,55 +324,6 @@ Run-Test 'rethrows a clean-checkout lane exception after removing guard state' {
     }
 }
 
-Run-Test 'classifies deletion of a clean tracked file outside the status baseline' {
-    New-TestRepository {
-        param($repo)
-        $state = Capture-State -Repo $repo
-        try {
-            Remove-Item -LiteralPath (Join-Path $repo 'tracked.txt') -Force
-            $result = Compare-State -Repo $repo -State $state
-            Assert-True ($result.exitCode -eq 2) ('clean tracked deletion did not produce a classified comparison: ' + $result.stderr)
-            $records = @($result.stdout.Trim() | ConvertFrom-Json)
-            Assert-True ($records.Count -eq 1) 'clean tracked deletion emitted an unexpected record count'
-            Assert-True ($records[0].path -eq 'tracked.txt' -and $records[0].classification -eq 'deleted') 'clean tracked deletion emitted the wrong classification'
-        }
-        finally { Cleanup-State -Repo $repo -State $state }
-    }
-}
-
-Run-Test 'rethrows a clean-checkout lane exception after removing guard state' {
-    New-TestRepository {
-        param($repo)
-        $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-        $beforeStates = @(
-            Get-ChildItem -LiteralPath $tempRoot -Filter 'taskdeck-checkout-fingerprint-*.json' -File -ErrorAction SilentlyContinue |
-                ForEach-Object { $_.FullName }
-        )
-        $laneFailure = $null
-        try {
-            & $script:guardedLanePath `
-                -CheckoutPath $repo `
-                -Token 'clean-lane-throw-token' `
-                -FingerprintTool $toolPath `
-                -LaneCommand { throw 'clean lane throw sentinel' }
-        }
-        catch {
-            $laneFailure = $_
-        }
-
-        Assert-True ($null -ne $laneFailure) 'the clean-checkout lane exception was not rethrown'
-        Assert-True ($laneFailure.Exception.Message -match 'clean lane throw sentinel') 'the rethrow discarded the original lane exception'
-        Assert-True ($LASTEXITCODE -eq 1) 'the rethrown lane exception left a successful native exit code'
-
-        $afterStates = @(
-            Get-ChildItem -LiteralPath $tempRoot -Filter 'taskdeck-checkout-fingerprint-*.json' -File -ErrorAction SilentlyContinue |
-                ForEach-Object { $_.FullName }
-        )
-        $newStates = @($afterStates | Where-Object { $beforeStates -notcontains $_ })
-        Assert-True ($newStates.Count -eq 0) ('the clean-checkout lane throw leaked guard state: ' + ($newStates -join ', '))
-    }
-}
-
 Run-Test 'detects creation after capture' {
     New-TestRepository {
         param($repo)
