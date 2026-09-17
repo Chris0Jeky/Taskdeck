@@ -205,6 +205,7 @@ jobs:
                   Set-InventoryProcessEnvironmentVariable -Name $name -Value $restoreValue
               }
           }'''
+          replacement = replacement.replace('\n          "@\n', '\n"@\n')
 
           start = text.index(function_start)
           end = text.index(function_end, start)
