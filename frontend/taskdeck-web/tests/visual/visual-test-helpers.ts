@@ -68,11 +68,6 @@ export async function hideDynamicContent(page: Page): Promise<void> {
     const style = document.createElement('style')
     style.setAttribute('data-visual-test', 'true')
     style.textContent = `
-      /* Deliberate negative control for #1363; revert after hosted proof. */
-      body {
-        transform: translateX(10px) !important;
-      }
-
       /* Hide elements that contain timestamps or relative time (forward-looking) */
       [data-testid="timestamp"],
       [data-testid="relative-time"],
