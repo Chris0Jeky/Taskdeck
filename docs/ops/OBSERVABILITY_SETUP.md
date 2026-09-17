@@ -1,6 +1,6 @@
 # Observability Setup Guide (OBS-02)
 
-Last Updated: 2026-04-09
+Last Updated: 2026-09-15
 Related issue: `#549`
 Depends on: `docs/ops/OBSERVABILITY_BASELINE.md` (OBS-01, #68)
 
@@ -141,9 +141,16 @@ Consent controls:
 - **Analytics script**: injected only when consent is given and server provides a script URL
 
 When consent is revoked:
-- Event buffer is cleared immediately
-- Flush timer is stopped
-- Analytics script is removed from the DOM
+- The event buffer is cleared immediately.
+- The flush timer is stopped.
+- The anonymous session ID is rotated.
+- The consent epoch advances, so an in-flight request from the old consent period cannot requeue its failed batch even if the user opts in again before it settles.
+- The analytics script is removed from the DOM.
+
+Revocation cannot recall data already sent. If the browser refuses the `localStorage` write, the
+privacy-first in-memory choice still applies for the current session and Taskdeck shows a persistent
+warning. The user must treat the saved preference as uncertain because the previous stored value may
+be restored after a reload. The same warning appears when an opt-in works only in memory.
 
 ## API Endpoints
 
