@@ -42,7 +42,7 @@ describe('CardArchiveAction archive-state override recovery (GH-3023)', () => {
     })
   })
 
-  it('explains the stale lifecycle snapshot until an authoritative reopen supplies the card version', async () => {
+  it('directs an archived card through Archived cards before an authoritative reopen', async () => {
     const view = mount(CardArchiveAction, {
       props: {
         card: staleCard,
@@ -55,7 +55,9 @@ describe('CardArchiveAction archive-state override recovery (GH-3023)', () => {
     const frozenRestore = view.get('button')
     expect(frozenRestore.text()).toBe('Restore card')
     expect(frozenRestore.attributes('disabled')).toBeDefined()
-    expect(view.get('[data-testid="card-archive-reopen-required"]').text()).toContain('Close and reopen')
+    const guidance = view.get('[data-testid="card-archive-reopen-required"]').text()
+    expect(guidance).toContain('restore it from Archived cards')
+    expect(guidance).toContain('then reopen it')
     expect(view.text()).not.toContain('Save or discard your changes')
 
     const authoritativeCard = {
@@ -85,6 +87,22 @@ describe('CardArchiveAction archive-state override recovery (GH-3023)', () => {
       undefined,
     )
     expect(view.emitted('changed')).toHaveLength(1)
+  })
+
+  it('uses direct close-and-reopen guidance after a restore commits over a stale archived snapshot', () => {
+    const view = mount(CardArchiveAction, {
+      props: {
+        card: { ...staleCard, isArchived: true, updatedAt: 'v2' },
+        archived: false,
+        disabled: true,
+        canWrite: true,
+      },
+    })
+
+    expect(view.get('button').text()).toBe('Archive card')
+    const guidance = view.get('[data-testid="card-archive-reopen-required"]').text()
+    expect(guidance).toContain('Close and reopen the editor')
+    expect(guidance).not.toContain('Archived cards')
   })
 
   it('keeps ordinary dirty-state guidance when the card snapshot is authoritative', () => {
