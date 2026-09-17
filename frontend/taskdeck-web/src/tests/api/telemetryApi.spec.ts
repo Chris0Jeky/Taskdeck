@@ -25,8 +25,15 @@ describe('telemetryApi', () => {
 
       const result = await telemetryApi.getConfig()
 
-      expect(http.get).toHaveBeenCalledWith('/telemetry/config')
+      expect(http.get).toHaveBeenCalledWith('/telemetry/config', { timeout: 10_000, skipRetry: true })
       expect(result).toEqual(mockConfig)
+    })
+
+    it('propagates a config timeout without another API-layer request', async () => {
+      const error = new Error('request timed out')
+      vi.mocked(http.get).mockRejectedValueOnce(error)
+      await expect(telemetryApi.getConfig()).rejects.toBe(error)
+      expect(http.get).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -56,7 +63,7 @@ describe('telemetryApi', () => {
 
       const result = await telemetryApi.sendEvents(events)
 
-      expect(http.post).toHaveBeenCalledWith('/telemetry/events', { events })
+      expect(http.post).toHaveBeenCalledWith('/telemetry/events', { events }, { timeout: 10_000, skipRetry: true })
       expect(result.recorded).toBe(2)
     })
 
@@ -65,8 +72,15 @@ describe('telemetryApi', () => {
 
       const result = await telemetryApi.sendEvents([])
 
-      expect(http.post).toHaveBeenCalledWith('/telemetry/events', { events: [] })
+      expect(http.post).toHaveBeenCalledWith('/telemetry/events', { events: [] }, { timeout: 10_000, skipRetry: true })
       expect(result.recorded).toBe(0)
+    })
+
+    it('leaves timeout retry ownership with the consent-aware store', async () => {
+      const error = new Error('request timed out')
+      vi.mocked(http.post).mockRejectedValueOnce(error)
+      await expect(telemetryApi.sendEvents([])).rejects.toBe(error)
+      expect(http.post).toHaveBeenCalledTimes(1)
     })
   })
 })
