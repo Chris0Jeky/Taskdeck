@@ -510,6 +510,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     workloadRequestVersion += 1
     homeSummary.value = null
     homeError.value = null
+    homeLoading.value = false
   }
 
   function clearTodaySummary() {

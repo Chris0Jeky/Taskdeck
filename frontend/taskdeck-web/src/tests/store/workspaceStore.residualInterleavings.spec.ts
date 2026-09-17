@@ -192,6 +192,7 @@ describe('workspaceStore residual preference interleavings (#1410)', () => {
 
     sessionState.isAuthenticated = false
     store.resetForLogout()
+    expect(store.homeLoading).toBe(false)
     sessionState.isAuthenticated = true
     const freshSummary = makeHomeSummary({
       workload: { ...makeHomeSummary().workload, capturesNeedingTriage: 2 },
