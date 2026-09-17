@@ -12,6 +12,14 @@ import { logWarn } from '../utils/errorReporting'
  * the keyboard. Binding the overlay to `visualViewport.offsetTop` /
  * `visualViewport.height` keeps those actions on screen.
  *
+ * Browser pinch zoom also changes those measurements, but it is not a keyboard
+ * contraction. When entering a scale above 1, browser zoom owns that geometry,
+ * so this composable freezes the last trusted scale-one measurement when one
+ * exists and otherwise exposes the caller's normal fallback. A later resize
+ * event at the unchanged scale may be a keyboard contraction, so it emits the
+ * current visual-viewport geometry; lifecycle and scroll reads stay frozen.
+ * Returning to scale 1 resumes trusted geometry.
+ *
  * Two custom properties are emitted, namespaced by `prefix`:
  *   `${prefix}-visual-viewport-height`
  *   `${prefix}-visual-viewport-offset-top`
@@ -37,11 +45,11 @@ export interface UseVisualViewportOptions {
 }
 
 export interface UseVisualViewportResult {
-  /** True when `window.visualViewport` is present and being observed. */
+  /** True when visual-viewport geometry is present, including a frozen zoom state. */
   supported: Ref<boolean>
-  /** Current visual viewport height in CSS pixels (layout height when unsupported). */
+  /** Current visual viewport height in CSS pixels (layout height before trusted geometry exists). */
   height: Ref<number>
-  /** Current visual viewport top offset in CSS pixels (0 when unsupported). */
+  /** Current visual viewport top offset in CSS pixels (0 before trusted geometry exists). */
   offsetTop: Ref<number>
   /** Bind to an element's `:style`. Empty object under the `'unset'` fallback. */
   style: ComputedRef<Record<string, string>>
@@ -61,22 +69,81 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
   const offsetTop = ref(0)
 
   let observed: VisualViewport | null = null
+  let observingLayoutViewport = false
+  let observedResizeHandler: EventListener | null = null
+  let observedScrollHandler: EventListener | null = null
+  let layoutResizeHandler: EventListener | null = null
+  let lastTrustedGeometry: { height: number; offsetTop: number } | null = null
+  let lastObservedScale: number | null = null
 
-  function refresh() {
+  type RefreshSource = 'initial' | 'lifecycle' | 'resize' | 'scroll' | 'manual'
+
+  function refresh(source: RefreshSource = 'manual') {
     if (typeof window === 'undefined') {
       supported.value = false
       return
     }
 
     const visualViewport = window.visualViewport
-    supported.value = Boolean(visualViewport)
-    height.value = visualViewport?.height ?? window.innerHeight
-    offsetTop.value = visualViewport?.offsetTop ?? 0
+    if (!visualViewport) {
+      lastTrustedGeometry = null
+      lastObservedScale = null
+      supported.value = false
+      height.value = window.innerHeight
+      offsetTop.value = 0
+      return
+    }
+
+    const scale = visualViewport.scale ?? 1
+    const scaleChanged = lastObservedScale !== scale
+    lastObservedScale = scale
+    if (scale === 1) {
+      lastTrustedGeometry = {
+        height: visualViewport.height,
+        offsetTop: visualViewport.offsetTop,
+      }
+      supported.value = true
+      height.value = lastTrustedGeometry.height
+      offsetTop.value = lastTrustedGeometry.offsetTop
+      return
+    }
+
+    if (scale > 1 && scaleChanged) {
+      if (lastTrustedGeometry) {
+        supported.value = true
+        height.value = lastTrustedGeometry.height
+        offsetTop.value = lastTrustedGeometry.offsetTop
+        return
+      }
+
+      supported.value = false
+      height.value = window.innerHeight
+      offsetTop.value = 0
+      return
+    }
+
+    if (scale > 1 && source === 'resize') {
+      supported.value = true
+      height.value = visualViewport.height
+      offsetTop.value = visualViewport.offsetTop
+      return
+    }
+
+    if (scale > 1 && lastTrustedGeometry) {
+      supported.value = true
+      height.value = lastTrustedGeometry.height
+      offsetTop.value = lastTrustedGeometry.offsetTop
+      return
+    }
+
+    supported.value = false
+    height.value = window.innerHeight
+    offsetTop.value = 0
   }
 
   // Read eagerly so the very first render is already bound to the visual
   // viewport — waiting for onMounted would paint one frame at layout size.
-  refresh()
+  refresh('initial')
 
   const style = computed<Record<string, string>>(() => {
     if (!supported.value && fallback === 'unset') {
@@ -90,16 +157,35 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
   })
 
   onMounted(() => {
-    refresh()
+    refresh('lifecycle')
     observed = (typeof window === 'undefined' ? null : window.visualViewport) ?? null
-    observed?.addEventListener('resize', refresh)
-    observed?.addEventListener('scroll', refresh)
+    if (observed) {
+      observedResizeHandler = () => refresh('resize')
+      observedScrollHandler = () => refresh('scroll')
+      observed.addEventListener('resize', observedResizeHandler)
+      observed.addEventListener('scroll', observedScrollHandler)
+    } else if (fallback === 'layout' && typeof window !== 'undefined') {
+      observingLayoutViewport = true
+      layoutResizeHandler = () => refresh('manual')
+      window.addEventListener('resize', layoutResizeHandler)
+    }
   })
 
   onUnmounted(() => {
-    observed?.removeEventListener('resize', refresh)
-    observed?.removeEventListener('scroll', refresh)
+    if (observed && observedResizeHandler) {
+      observed.removeEventListener('resize', observedResizeHandler)
+    }
+    if (observed && observedScrollHandler) {
+      observed.removeEventListener('scroll', observedScrollHandler)
+    }
+    if (observingLayoutViewport && layoutResizeHandler && typeof window !== 'undefined') {
+      window.removeEventListener('resize', layoutResizeHandler)
+      observingLayoutViewport = false
+    }
     observed = null
+    observedResizeHandler = null
+    observedScrollHandler = null
+    layoutResizeHandler = null
   })
 
   return { supported, height, offsetTop, style, refresh }

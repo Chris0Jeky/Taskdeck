@@ -2196,7 +2196,11 @@ public class AutomationProposalService : IAutomationProposalService
                 ? typeState.WorkItemType : "(new card)";
             description += $"; Work item type: {before} -> {workItemType}";
         }
-        var cardEffects = DescribeCardParameterEffects(operation.Parameters, labelNames);
+        // Only create/update consume replacement labels and due-date fields. Keep the
+        // renderer honest even when invoked without the shared contract preflight.
+        var cardEffects = isCardTarget && appliesWorkItemType
+            ? DescribeCardParameterEffects(operation.Parameters, labelNames)
+            : Array.Empty<string>();
         if (isCardTarget && appliesWorkItemType &&
             OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var estimateParameters, out _) &&
             OperationParameterParser.TryGetEstimatedEffortMinutes(estimateParameters, out var estimate, out _))

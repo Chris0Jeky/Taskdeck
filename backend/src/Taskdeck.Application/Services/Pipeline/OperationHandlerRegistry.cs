@@ -97,7 +97,8 @@ public class OperationHandlerRegistry
             }
             if (targetType == "card")
             {
-                return await ExecuteCardOperationAsync(actionType, operation, cancellationToken, deferredNotifications);
+                return await ExecuteCardOperationAsync(actionType, operation, cancellationToken, actorUserId,
+                    deferredNotifications);
             }
             else if (targetType == "board")
             {
@@ -133,7 +134,8 @@ public class OperationHandlerRegistry
     }
 
     private async Task<Result> ExecuteCardOperationAsync(string actionType, ProposalOperationDto operation,
-        CancellationToken cancellationToken, DeferredBoardRealtimeNotifier? deferredNotifications = null)
+        CancellationToken cancellationToken, Guid? actorUserId,
+        DeferredBoardRealtimeNotifier? deferredNotifications = null)
     {
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
@@ -159,7 +161,7 @@ public class OperationHandlerRegistry
                 return await ArchiveCardAsync(parameters, cancellationToken);
 
             case "delete":
-                return await DeleteCardAsync(parameters, cancellationToken);
+                return await DeleteCardAsync(parameters, actorUserId, cancellationToken);
 
             case "archive-lifecycle":
             case "restore-lifecycle":
@@ -171,13 +173,13 @@ public class OperationHandlerRegistry
         }
     }
 
-    private async Task<Result> DeleteCardAsync(JsonElement parameters, CancellationToken ct)
+    private async Task<Result> DeleteCardAsync(JsonElement parameters, Guid? actorUserId, CancellationToken ct)
     {
         if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
             return Result.Failure(ErrorCodes.ValidationError, error);
         if (!parameters.TryGetProperty("expectedUpdatedAt", out var stamp) || stamp.ValueKind != JsonValueKind.String || !stamp.TryGetDateTimeOffset(out var expected))
             return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt is required");
-        return await _cardService.DeleteCardAsync(cardId, cancellationToken: ct,
+        return await _cardService.DeleteCardAsync(cardId, actorUserId: actorUserId, cancellationToken: ct,
             confirmation: new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")));
     }
 

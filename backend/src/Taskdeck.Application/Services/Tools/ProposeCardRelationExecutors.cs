@@ -132,6 +132,11 @@ public abstract class ProposeCardRelationExecutor : IToolExecutor
         if (Guid.TryParse(reference, out var parsedId))
             return cards.Any(card => card.Id == parsedId) ? parsedId : null;
 
+        // Tools emit exactly eight hex characters. Retain exact full-GUID membership above;
+        // the length check also excludes the shared regex's optional final-newline match.
+        if (reference.Length != 8 || !CardIdPrefixResolver.IsShortIdPrefix(reference))
+            return null;
+
         var matches = cards.Where(card => card.Id.ToString().StartsWith(reference, StringComparison.OrdinalIgnoreCase)).ToList();
         return matches.Count == 1 ? matches[0].Id : null;
     }

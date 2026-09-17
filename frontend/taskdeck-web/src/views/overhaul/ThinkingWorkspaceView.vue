@@ -19,6 +19,7 @@ const companionOpened = ref(false)
 const companionDirty = ref(false)
 const companionSending = ref(false)
 const answerBusy = ref(false)
+const relationBusy = ref(false)
 
 const route = useRoute()
 const boardId = computed(() => String(route.params.boardId ?? ''))
@@ -30,9 +31,9 @@ const dirty = ref(false)
 const loading = ref(true)
 const error = ref<string | null>(null)
 let generation = 0
-const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => dirty.value || companionDirty.value || companionSending.value || answerBusy.value)
+const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => dirty.value || companionDirty.value || companionSending.value || answerBusy.value || relationBusy.value)
 function leave() {
-  if (!companionSending.value && !answerBusy.value) decide(true)
+  if (!companionSending.value && !answerBusy.value && !relationBusy.value) decide(true)
 }
 
 async function load() {
@@ -46,6 +47,7 @@ async function load() {
   companionDirty.value = false
   companionSending.value = false
   answerBusy.value = false
+  relationBusy.value = false
   loading.value = true
   error.value = null
   // Route params clear before the leaving view is unmounted. Invalidate old receipts
@@ -84,7 +86,7 @@ onUnmounted(() => { generation++ })
       <p v-if="route.query.focus === '1'" role="status">FOCUS · One thread at a time. <RouterLink to="/workspace/plan">Return to your plan</RouterLink></p>
       <p v-if="focused">Before you leave, add a shared <strong>thread</strong> below for next time. Save it with the card’s thinking so it is here when you return.</p>
       <header><p class="thinking-workspace__eyebrow">ROOM TO THINK · {{ board?.name }}</p><h1>{{ card.title }}</h1><RouterLink to="/workspace/plan">Choose work for your personal plan</RouterLink><p>Keep possibilities, questions and next steps close to the work. A simple card can stay simple.</p></header>
-      <ThinkingDeckPanel :key="card.id" :board-id="boardId" :card-id="cardId" @dirty-change="dirty = $event" @busy="answerBusy = $event" />
+      <ThinkingDeckPanel :key="card.id" :board-id="boardId" :card-id="cardId" @dirty-change="dirty = $event" @busy="answerBusy = $event" @relation-busy="relationBusy = $event" />
       <section v-if="!isDemoMode && !session.isDemo" aria-label="Card companion">
         <h2>Think it through with your companion</h2>
         <p>Keep this card nearby while you talk. Choose the sources for each turn, then preview proposed changes before opening Review.</p>
@@ -92,7 +94,7 @@ onUnmounted(() => { generation++ })
         <AutomationChatView v-if="companionOpened" :key="card.id" :board-id="boardId" :card-id="cardId" :thinking-dirty="dirty" embedded @dirty-change="companionDirty = $event" @sending-change="companionSending = $event" />
       </section>
     </template>
-    <TdDialog :open="leaveRequested" :title="answerBusy ? 'Your private answer is still in progress' : companionSending ? 'A companion message is still sending' : 'Leave this thinking space?'" :description="answerBusy ? 'Stop the recording or wait for your save receipt before leaving. Closing the browser does not cancel a request already received by the server.' : companionSending ? 'Wait for the send to finish before leaving. Closing the browser does not cancel a message already sent to the server.' : dirty || companionDirty ? 'Your thinking or companion message has unsaved changes. Save or send it before leaving, or discard this draft.' : 'Your message has finished sending. You can leave this thinking space.'" @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" :disabled="companionSending || answerBusy" @click="leave">{{ dirty || companionDirty ? 'Discard draft and leave' : 'Leave thinking space' }}</button></template></TdDialog>
+    <TdDialog :open="leaveRequested" :title="answerBusy ? 'Your private answer is still in progress' : companionSending ? 'A companion message is still sending' : relationBusy ? 'Your relation proposal is still in progress' : 'Leave this thinking space?'" :description="answerBusy ? 'Stop the recording or wait for your save receipt before leaving. Closing the browser does not cancel a request already received by the server.' : companionSending ? 'Wait for the send to finish before leaving. Closing the browser does not cancel a message already sent to the server.' : relationBusy ? 'Wait for the relation proposal to finish before leaving. It will remain review-only until you approve it in Review, then choose Apply.' : dirty || companionDirty ? 'Your thinking or companion message has unsaved changes. Save or send it before leaving, or discard this draft.' : 'Your message has finished sending. You can leave this thinking space.'" @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" :disabled="companionSending || answerBusy || relationBusy" @click="leave">{{ relationBusy ? 'Wait for proposal…' : dirty || companionDirty ? 'Discard draft and leave' : 'Leave thinking space' }}</button></template></TdDialog>
   </div>
 </template>
 
