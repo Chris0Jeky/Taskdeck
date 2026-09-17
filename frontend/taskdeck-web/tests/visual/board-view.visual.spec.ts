@@ -77,6 +77,12 @@ test('board with columns and cards', async ({ page }) => {
   await addCard(page, 'In Progress', 'Implement auth')
   await addCard(page, 'Done', 'Set up CI pipeline')
 
+  const mainContent = page.locator('#td-main-content')
+  await mainContent.evaluate((element) => {
+    element.scrollTop = 0
+    element.scrollLeft = 0
+  })
+  await expect(page.getByRole('heading', { name: 'Visual Test Board' })).toBeVisible()
   await prepareForScreenshot(page)
 
   await expect(page).toHaveScreenshot('board-populated.png')
