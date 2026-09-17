@@ -54,11 +54,9 @@ test('rejects making timeout evidence collection fatal or incomplete', () => {
   assert.match(errorsFor(partialWorkflow), /complete partial-results directory/)
 })
 
-test('rejects timing post-processing that can obscure a missing or partial TRX', () => {
-  const workflow = canonicalWorkflow.replace(
-    '      - name: Summarize API integration timing\n        if: always()\n        continue-on-error: true',
-    '      - name: Summarize API integration timing\n        if: always()',
-  )
+test('rejects timing post-processing that becomes optional after a successful test run', () => {
+  const conditional = "        continue-on-error: ${{ steps.api_integration_tests.outcome != 'success' }}\n"
+  const workflow = canonicalWorkflow.replace(conditional, '        continue-on-error: true\n')
 
-  assert.match(errorsFor(workflow), /timing summarizer must be non-fatal/)
+  assert.match(errorsFor(workflow), /timing summarizer must remain required after a successful test run/)
 })
