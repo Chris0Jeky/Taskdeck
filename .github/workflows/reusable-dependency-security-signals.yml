@@ -106,6 +106,7 @@ jobs:
             --backend-exit-code-file artifacts/dependency-security/backend-vulnerabilities.exitcode \
             --frontend-report artifacts/dependency-security/frontend-audit.json \
             --frontend-exit-code-file artifacts/dependency-security/frontend-audit.exitcode \
+            --allowlist ci/dependency-allowlist.v1.json \
             --policy-doc docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md \
             --summary-title "${{ inputs.summary-title }}" \
             --workflow-context "${{ inputs.workflow-context }}" \
