@@ -81,24 +81,39 @@ class RunnerContextTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "snapshot"):
             context.validate_context(invalid)
 
-    def test_workflow_collects_before_and_after_without_test_behavior_changes(self) -> None:
+    def test_workflow_bounds_hangs_and_preserves_timeout_diagnostics(self) -> None:
         workflow = Path(__file__).parents[2] / ".github" / "workflows" / "reusable-api-integration.yml"
         text = workflow.read_text(encoding="utf-8")
-        command = 'dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"'
+        command = 'dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}" --diag "backend/TestResults/api-integration/${{ matrix.os }}/vstest-diagnostics.log" --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type none'
         self.assertIn(command, text)
         self.assertLess(text.index("Capture API integration runner context"), text.index(command))
         self.assertGreater(text.index("Finalize API integration runner context"), text.index(command))
+
         test_block = text[text.index("- name: Run API integration tests") : text.index("- name: Upload API integration test assembly diagnostics")]
+        self.assertIn("timeout-minutes: 35", test_block)
+        self.assertEqual(text.count("timeout-minutes:"), 1)
+        self.assertIn("--blame-hang-timeout 10m", test_block)
+        self.assertIn("--blame-hang-dump-type none", test_block)
+        self.assertIn("--diag", test_block)
         self.assertIn("TASKDECK_API_TEST_ASSEMBLY_DIAGNOSTICS_PATH", test_block)
         self.assertIn("${{ github.workspace }}/backend/TestResults/api-integration/${{ matrix.os }}/api-test-assembly-diagnostics.json", test_block)
         self.assertEqual(text.count("TASKDECK_API_TEST_ASSEMBLY_DIAGNOSTICS_PATH"), 1)
-        diagnostics_upload = text[text.index("- name: Upload API integration test assembly diagnostics") : text.index("- name: Finalize API integration runner context")]
+
+        diagnostics_upload = text[text.index("- name: Upload API integration test assembly diagnostics") : text.index("- name: Upload API integration timeout diagnostics")]
         self.assertIn("if: always()", diagnostics_upload)
         self.assertIn("continue-on-error: true", diagnostics_upload)
         self.assertIn("api-integration-test-assembly-diagnostics-${{ matrix.os }}", diagnostics_upload)
         self.assertIn("api-test-assembly-diagnostics.json", diagnostics_upload)
         self.assertIn("if-no-files-found: warn", diagnostics_upload)
         self.assertIn("retention-days: 14", diagnostics_upload)
+
+        timeout_upload = text[text.index("- name: Upload API integration timeout diagnostics") : text.index("- name: Finalize API integration runner context")]
+        self.assertIn("if: always()", timeout_upload)
+        self.assertIn("continue-on-error: true", timeout_upload)
+        self.assertIn("vstest-diagnostics.log", timeout_upload)
+        self.assertIn("Sequence*.xml", timeout_upload)
+        self.assertIn("if-no-files-found: warn", timeout_upload)
+
         capture_block = text[text.index("- name: Capture API integration runner context") : text.index("- name: Run API integration tests")]
         self.assertIn("continue-on-error: true", capture_block)
         self.assertIn("if: always()", text[text.index("Finalize API integration runner context") :])
@@ -109,8 +124,20 @@ class RunnerContextTests(unittest.TestCase):
         self.assertIn("if-no-files-found: warn", upload_block)
         self.assertIn("api-integration-runner-context-${{ matrix.os }}", text)
         self.assertIn("retention-days: 14", text)
+
+        timing_summary = text[text.index("- name: Summarize API integration timing") : text.index("- name: Upload API integration timing summary")]
+        self.assertIn("if: always()", timing_summary)
+        self.assertIn("continue-on-error: true", timing_summary)
+        timing_upload = text[text.index("- name: Upload API integration timing summary") : text.index("- name: Upload API integration test results")]
+        self.assertIn("if: always()", timing_upload)
+        self.assertIn("continue-on-error: true", timing_upload)
+        self.assertIn("if-no-files-found: warn", timing_upload)
+        results_upload = text[text.index("- name: Upload API integration test results") :]
+        self.assertIn("steps.api_integration_tests.outcome != 'success'", results_upload)
+        self.assertIn("continue-on-error: true", results_upload)
+
         lowered = text.lower()
-        for forbidden in ("timeout-minutes", "retry", "quarantine", "parallel", "coverage"):
+        for forbidden in ("retry", "quarantine", "parallel", "coverage"):
             self.assertNotIn(forbidden, lowered)
 
 
