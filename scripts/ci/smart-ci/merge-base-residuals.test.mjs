@@ -23,7 +23,7 @@ function writeChangedFiles(root) {
   return path;
 }
 
-test('diagnostic gate receipts clear malformed merge-base bindings without losing the failed verdict', () => {
+test('diagnostic gate receipts clear malformed and semantically invalid merge-base bindings', () => {
   const root = mkdtempSync(join(tmpdir(), 'taskdeck-merge-base-diagnostic-'));
   try {
     const baseSha = sha('1');
@@ -67,12 +67,53 @@ test('diagnostic gate receipts clear malformed merge-base bindings without losin
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
     const validPlan = JSON.parse(readFileSync(validPlanPath, 'utf8'));
-    for (const field of ['mergeBaseSha', 'mergeBaseTipSha']) {
-      const planPath = join(root, `${field}-ci-plan.json`);
-      const receiptPath = join(root, `${field}-ci-run.json`);
-      const malformedPlan = JSON.parse(JSON.stringify(validPlan));
-      malformedPlan[field] = 'not-a-git-sha';
-      writeFileSync(planPath, `${JSON.stringify(malformedPlan, null, 2)}\n`);
+    const cases = [
+      {
+        name: 'malformed-base',
+        mutate(plan) { plan.mergeBaseSha = 'not-a-git-sha'; },
+      },
+      {
+        name: 'malformed-tip',
+        mutate(plan) { plan.mergeBaseTipSha = 'not-a-git-sha'; },
+      },
+      {
+        name: 'null-tip-base-mismatch',
+        mutate(plan) { plan.mergeBaseSha = sha('5'); },
+      },
+      {
+        name: 'moved-base-pair-mismatch',
+        mutate(plan) {
+          plan.mergeBaseSha = sha('5');
+          plan.mergeBaseTipSha = sha('6');
+        },
+      },
+      {
+        name: 'redundant-live-tip',
+        mutate(plan) {
+          plan.mergeBaseSha = baseSha;
+          plan.mergeBaseTipSha = baseSha;
+        },
+      },
+      {
+        name: 'unqualified-plan-carries-identities',
+        mutate(plan) {
+          plan.mergeRefQualification = 'stale-base-unqualified';
+          plan.escalated = true;
+          plan.escalationReasons = [...new Set([...(plan.escalationReasons ?? []), 'merge-ref-unqualified'])];
+        },
+      },
+      {
+        name: 'non-pr-plan-carries-identities',
+        mutate(plan) { plan.event.pullRequest = null; },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const planPath = join(root, `${testCase.name}-ci-plan.json`);
+      const receiptPath = join(root, `${testCase.name}-ci-run.json`);
+      const invalidPlan = JSON.parse(JSON.stringify(validPlan));
+      testCase.mutate(invalidPlan);
+      writeFileSync(planPath, `${JSON.stringify(invalidPlan, null, 2)}\n`);
 
       const gate = spawnSync(process.execPath, [
         gatePath,
@@ -88,13 +129,16 @@ test('diagnostic gate receipts clear malformed merge-base bindings without losin
         '--receipt', receiptPath,
       ], { encoding: 'utf8' });
 
-      assert.equal(gate.status, 1, `${field}: ${gate.stdout}\n${gate.stderr}`);
+      assert.equal(gate.status, 1, `${testCase.name}: ${gate.stdout}\n${gate.stderr}`);
       const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
-      assert.equal(receipt.ok, false, field);
-      assert.equal(receipt.wouldFail, true, field);
-      assert.ok(receipt.failures.some((failure) => failure.code === 'plan-invalid'), field);
-      assert.equal(receipt.mergeBaseSha, null, field);
-      assert.equal(receipt.mergeBaseTipSha, null, field);
+      assert.equal(receipt.ok, false, testCase.name);
+      assert.equal(receipt.wouldFail, true, testCase.name);
+      assert.ok(
+        receipt.failures.some((failure) => ['plan-invalid', 'merge-base-binding-mismatch'].includes(failure.code)),
+        testCase.name,
+      );
+      assert.equal(receipt.mergeBaseSha, null, testCase.name);
+      assert.equal(receipt.mergeBaseTipSha, null, testCase.name);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
