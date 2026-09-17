@@ -185,6 +185,8 @@ describe('CardModal permission reconciliation', () => {
     expect(button(wrapper, 'Delete Card').attributes('disabled')).toBeDefined()
     expect(button(wrapper, 'Clear').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="card-permission-recovery"]').text()).toContain('Checking current board access')
+    expect(wrapper.findAll('[data-testid="card-type-permission-refresh"]')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="card-permission-refresh"]').attributes('disabled')).toBeDefined()
 
     permission.resolve(board(false))
     await flushPromises()
@@ -206,6 +208,54 @@ describe('CardModal permission reconciliation', () => {
     expect((wrapper.get('[aria-label="Card assignments"] input').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.text()).not.toContain('This assignment save was refused')
     expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('restores focus after retrying type permission from the mounted card modal form', async () => {
+    store.currentBoard = board(undefined)
+    vi.mocked(boardsApi.getBoard)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockResolvedValueOnce(board(true))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels: [] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const refresh = wrapper.get('[data-testid="card-type-permission-refresh"]')
+    ;(refresh.element as HTMLButtonElement).focus()
+    expect(document.activeElement).toBe(refresh.element)
+
+    await refresh.trigger('click')
+    await flushPromises()
+
+    const selector = wrapper.get('#card-work-item-type')
+    expect((selector.element as HTMLSelectElement).disabled).toBe(false)
+    expect(document.activeElement).toBe(selector.element)
+    wrapper.unmount()
+  })
+
+  it('moves focus to the outer recovery control when a retry confirms read-only access', async () => {
+    store.currentBoard = board(undefined)
+    vi.mocked(boardsApi.getBoard)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockResolvedValueOnce(board(false))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels: [] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const refresh = wrapper.get('[data-testid="card-type-permission-refresh"]')
+    ;(refresh.element as HTMLButtonElement).focus()
+    await refresh.trigger('click')
+    await flushPromises()
+
+    const recovery = wrapper.get('[data-testid="card-permission-refresh"]')
+    expect(recovery.attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(recovery.element)
     wrapper.unmount()
   })
 
