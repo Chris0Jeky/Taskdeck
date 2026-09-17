@@ -45,10 +45,14 @@ vi.mock('../../../api/labelsApi', () => ({
   labelsApi: mockLabelsApi,
 }))
 
-vi.mock('../../../utils/demoData', () => ({
-  buildDemoBoardList: mockDemoData.buildDemoBoardList,
-  buildDemoBoardDetail: mockDemoData.buildDemoBoardDetail,
-}))
+vi.mock('../../../utils/demoData', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/demoData')>()
+  return {
+    ...actual,
+    buildDemoBoardList: mockDemoData.buildDemoBoardList,
+    buildDemoBoardDetail: mockDemoData.buildDemoBoardDetail,
+  }
+})
 
 import { createBoardCrudActions } from '../../../store/board/boardCrudStore'
 import { initialCardFilters, type CardFilters } from '../../../store/board/boardState'
