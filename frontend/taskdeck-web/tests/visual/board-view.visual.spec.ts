@@ -77,12 +77,15 @@ test('board with columns and cards', async ({ page }) => {
   await addCard(page, 'In Progress', 'Implement auth')
   await addCard(page, 'Done', 'Set up CI pipeline')
 
-  const mainContent = page.locator('#td-main-content')
-  await mainContent.evaluate((element) => {
-    element.scrollTop = 0
-    element.scrollLeft = 0
+  await page.evaluate(() => {
+    window.scrollTo(0, 0)
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+    const element = document.getElementById('td-main-content')
+    element?.scrollTo(0, 0)
   })
-  await expect(page.getByRole('heading', { name: 'Visual Test Board' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Visual Test Board' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Archived cards', exact: true })).toBeInViewport()
   await prepareForScreenshot(page)
 
   await expect(page).toHaveScreenshot('board-populated.png')
