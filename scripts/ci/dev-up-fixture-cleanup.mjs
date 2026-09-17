@@ -68,7 +68,7 @@ function defaultIsProcessAlive(pid) {
   }
 }
 
-async function describeLiveFixtureProcesses(
+export async function describeLiveFixtureProcesses(
   fixture,
   { readText = readOptional, isProcessAlive = defaultIsProcessAlive } = {},
 ) {
