@@ -160,7 +160,7 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
     return ok({ results: [] })
   }
 
-  const proposalMatch = path.match(/^\/automation\/proposals\/([^/]+)(?:\/([^/]+))?$/)
+  const proposalMatch = path.match(/^\/automation\/proposals\/([^/]+)(?:\/(.+))?$/)
   if (proposalMatch) {
     const proposalId = proposalMatch[1] ?? ''
     const action = proposalMatch[2]
@@ -177,6 +177,37 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
       return proposal
         ? ok({ diff: proposal.diffPreview ?? 'No diff in this demo proposal.' })
         : notFound('Proposal not found in demo mode.')
+    }
+    if (action === 'provenance' && method === 'get') {
+      return ok([])
+    }
+    if (action === 'provenance/metadata' && method === 'get') {
+      return ok({ provider: null, model: null, promptVersion: null })
+    }
+    if (action === 'confidence' && method === 'get') {
+      return ok({
+        overall: null,
+        components: [],
+        note: null,
+        threshold: null,
+        meetsThreshold: null,
+        source: 'not-reported',
+      })
+    }
+    if (action === 'side-effects' && method === 'get') {
+      return ok({
+        rows: [],
+        reversibility: { summary: 'Demo apply is in-memory only.', description: 'This static demo does not change a live board.', windowMs: 0 },
+      })
+    }
+    if (action === 'conflicts' && method === 'get') {
+      return ok([])
+    }
+    if (action === 'history' && method === 'get') {
+      return ok([])
+    }
+    if (action === 'similar-past' && method === 'get') {
+      return ok({ decisions: [], applyRate: 0 })
     }
     if (action === 'approve' && method === 'post') {
       return mutateProposal(proposalId, { status: 'Approved', decidedAt: new Date().toISOString(), decidedByUserId: DEMO_USER.id })

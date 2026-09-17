@@ -70,4 +70,15 @@ describe('demoHttpAdapter', () => {
     const board = await demoHttpAdapter(config('get', '/boards/demo-board-1'))
     expect(board.data.canWrite).toBe(true)
   })
+
+  it('returns empty deep-review arrays instead of objects', async () => {
+    const provenance = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}/provenance`))
+    expect(provenance.data).toEqual([])
+
+    const history = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}/history`))
+    expect(history.data).toEqual([])
+
+    const similar = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}/similar-past`))
+    expect(similar.data).toEqual({ decisions: [], applyRate: 0 })
+  })
 })
