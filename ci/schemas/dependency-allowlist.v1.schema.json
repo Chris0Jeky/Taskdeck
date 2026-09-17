@@ -30,6 +30,7 @@
           "advisoryId": {
             "type": "string",
             "minLength": 1,
+            "pattern": "^(?:GHSA-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}|CVE-[0-9]{4}-[0-9]{4,}|NPM-[0-9]+|https://\\S+)$",
             "description": "Canonical GHSA, CVE, NPM source, or HTTPS advisory identifier."
           },
           "reason": {
