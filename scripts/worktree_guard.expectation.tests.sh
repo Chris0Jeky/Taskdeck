@@ -38,17 +38,26 @@ pass() {
     printf '  PASS: %s\n' "$1"
 }
 
+normalize_assertion_output() {
+    printf '%s' "$1" |
+        tr '\r\n\t' '   ' |
+        sed 's/[[:space:]][[:space:]]*/ /g'
+}
+
 assert_setup_error() {
     local name="$1"
     local code="$2"
     local output="$3"
     local expected="$4"
+    local normalized_output
 
     if [ "$code" -ne 2 ]; then
         printf '%s\n' "$output" >&2
         fail "$name must exit 2 for invalid expectations (got $code)"
     fi
-    if ! printf '%s' "$output" | grep -qF -- "$expected"; then
+
+    normalized_output="$(normalize_assertion_output "$output")"
+    if ! printf '%s' "$normalized_output" | grep -qF -- "$expected"; then
         printf '%s\n' "$output" >&2
         fail "$name did not explain the invalid expectations (missing '$expected')"
     fi
