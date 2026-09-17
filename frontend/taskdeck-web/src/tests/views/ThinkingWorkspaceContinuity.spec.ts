@@ -117,6 +117,7 @@ describe('thinking workspace continuity', () => {
     const leaving = navigation.leave!(); await flushPromises()
     expect(wrapper.text()).toContain('Your relation proposal is still in progress')
     expect(wrapper.text()).toContain('Wait for the relation proposal to finish before leaving')
+    expect(wrapper.text()).toContain('It will remain review-only until you approve it in Review, then choose Apply.')
     expect(wrapper.text()).not.toContain('Your private answer is still in progress')
     expect(wrapper.text()).not.toContain('Stop the recording')
     const leaveButton = wrapper.get('[role="dialog"]').findAll('button')[1]!
