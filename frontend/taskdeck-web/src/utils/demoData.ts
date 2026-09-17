@@ -284,6 +284,95 @@ export function buildDemoThinkingDeck(cardId: string): ThinkingDeck {
   }
 }
 
+export function buildDemoSearchResult(query: string): {
+  boards: Array<{ id: string; name: string; description: string | null; isArchived: boolean }>
+  cards: Array<{
+    id: string
+    boardId: string
+    boardName: string
+    columnId: string
+    columnName: string
+    title: string
+    description: string
+  }>
+  totalCardCount: number
+  hasMoreCards: boolean
+  offset: number
+  maxResults: number
+} {
+  const needle = query.trim().toLowerCase()
+  const boards = buildDemoBoardList()
+    .filter((board) => !needle || board.name.toLowerCase().includes(needle) || (board.description ?? '').toLowerCase().includes(needle))
+    .map((board) => ({
+      id: board.id,
+      name: board.name,
+      description: board.description,
+      isArchived: board.isArchived,
+    }))
+  const cards = buildDemoBoardList().flatMap((board) => {
+    const detail = buildDemoBoardDetail(board.id)
+    return detail.cards
+      .filter((card) => !needle || card.title.toLowerCase().includes(needle) || card.description.toLowerCase().includes(needle))
+      .map((card) => {
+        const column = detail.board.columns.find((item) => item.id === card.columnId)
+        return {
+          id: card.id,
+          boardId: board.id,
+          boardName: board.name,
+          columnId: card.columnId,
+          columnName: column?.name ?? 'To Do',
+          title: card.title,
+          description: card.description,
+        }
+      })
+  })
+  return {
+    boards,
+    cards,
+    totalCardCount: cards.length,
+    hasMoreCards: false,
+    offset: 0,
+    maxResults: cards.length,
+  }
+}
+
+export function buildDemoCadence(): {
+  buckets: Array<{ hour: number; eventCount: number }>
+  firstActionAt: string | null
+  peakHour: number | null
+  lastActionAt: string | null
+} {
+  const buckets = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    eventCount: hour === 10 ? 2 : 0,
+  }))
+  return {
+    buckets,
+    firstActionAt: new Date().toISOString(),
+    peakHour: 10,
+    lastActionAt: new Date().toISOString(),
+  }
+}
+
+export function buildDemoStreak(): {
+  days: Array<{ date: string; isSealed: boolean; intensityBucket: number }>
+  currentStreakLength: number
+  longestStreakLength: number
+  dayCount: number
+} {
+  const todayKey = localCalendarDateKey()
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = addCalendarDays(todayKey, index - 6) ?? todayKey
+    return { date, isSealed: index < 6, intensityBucket: index < 6 ? 1 : 0 }
+  })
+  return {
+    days,
+    currentStreakLength: 0,
+    longestStreakLength: 6,
+    dayCount: days.length,
+  }
+}
+
 export function buildDemoChatHealth(): ChatProviderHealth {
   return {
     isAvailable: true,

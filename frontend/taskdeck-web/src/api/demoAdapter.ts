@@ -8,12 +8,16 @@ import {
   buildDemoBoardDetail,
   buildDemoBoardList,
   buildDemoCalendarData,
+  buildDemoCaptureItems,
+  buildDemoCadence,
   buildDemoChatHealth,
   buildDemoChatSessions,
   buildDemoHomeSummary,
   buildDemoParticipants,
   buildDemoProposalPreview,
   buildDemoProposals,
+  buildDemoSearchResult,
+  buildDemoStreak,
   buildDemoThinkingDeck,
   buildDemoTodaySummary,
 } from '../utils/demoData'
@@ -329,6 +333,42 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
     return ok(buildDemoCalendarData(search.get('from') ?? '', search.get('to') ?? ''))
   }
 
+  if (path === '/search' && method === 'get') {
+    return ok(buildDemoSearchResult(search.get('q') ?? ''))
+  }
+
+  if (path === '/today/cadence' && method === 'get') {
+    return ok(buildDemoCadence())
+  }
+
+  if (path === '/today/streak' && method === 'get') {
+    return ok(buildDemoStreak())
+  }
+
+  if (path === '/today/seal' && method === 'get') {
+    return ok({
+      date: search.get('date') ?? '',
+      isSealed: false,
+      sealedAt: null,
+    })
+  }
+
+  if (path === '/today/tomorrow-note' && method === 'get') {
+    return { status: 204, data: null }
+  }
+
+  if (path === '/workspace-insights' && method === 'get') {
+    return ok([])
+  }
+
+  if (path === '/workspace-memory' && method === 'get') {
+    return ok([])
+  }
+
+  if (path === '/capture/items' && method === 'get') {
+    return ok(buildDemoCaptureItems())
+  }
+
   if (path === '/workspace/collaboration' && method === 'get') {
     return ok({ memberCount: 2, hasCollaborators: true })
   }
@@ -407,11 +447,16 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
     return ok(buildDemoBoardDetail(oneBoard[1] ?? '').board)
   }
 
+  const columns = path.match(/^\/boards\/([^/]+)\/columns$/)
+  if (columns && method === 'get') {
+    return ok(buildDemoBoardDetail(columns[1] ?? '').board.columns)
+  }
+
   if (method === 'get') {
-    if (/\/(comments|labels|revisions|notifications|insights|memory)$/i.test(path) || path.endsWith('s')) {
+    if (/\/(comments|labels|revisions|notifications|insights|memory)$/i.test(path)) {
       return ok([])
     }
-    return ok({})
+    return notFound('This resource is not available in demo mode.')
   }
 
   if (method === 'delete') return ok(null, 204)

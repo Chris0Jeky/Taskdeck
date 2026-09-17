@@ -30,7 +30,7 @@ Demo/static mode is on when any of these is true:
 
 Local Vite with `frontend/taskdeck-web/.env` (`VITE_API_BASE_URL=http://localhost:5000/api`) stays live and talks to a real local backend. A later hosted API is live as soon as Pages is rebuilt with a non-loopback `VITE_API_BASE_URL` (and without `VITE_DEMO_MODE`).
 
-In demo mode: login is the "Enter Demo" path, review/chat/card metadata read from in-bundle fixtures, and SignalR is not started. Mutations are view-only or in-memory only; they are not a production backend. Adapter responses follow the live contracts: proposal previews come from the matched in-memory proposal, calendar and thinking payloads keep their arrays, batch approve returns `approvedIds`, and chat POST persists the user turn before the assistant reply.
+In demo mode: login is the "Enter Demo" path, review/chat/card metadata read from in-bundle fixtures, and SignalR is not started. Mutations are view-only or in-memory only; they are not a production backend. Adapter responses follow the live contracts: proposal previews come from the matched in-memory proposal, calendar/thinking/today/search payloads keep their arrays, batch approve returns `approvedIds`, and chat POST persists the user turn before the assistant reply. Unmatched GET paths return 404 instead of `{}`.
 
 ## Quick Start (source-only seeded demo)
 

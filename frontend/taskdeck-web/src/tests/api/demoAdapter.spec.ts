@@ -153,4 +153,35 @@ describe('demoHttpAdapter', () => {
       id: reply.data.id,
     })
   })
+
+  it('returns contract-shaped search and today payloads', async () => {
+    const search = await demoHttpAdapter(config('get', '/search?q=dark'))
+    expect(Array.isArray(search.data.boards)).toBe(true)
+    expect(Array.isArray(search.data.cards)).toBe(true)
+    expect(search.data.cards).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: 'Implement dark mode' }),
+    ]))
+
+    const cadence = await demoHttpAdapter(config('get', '/today/cadence?date=2026-09-17'))
+    expect(Array.isArray(cadence.data.buckets)).toBe(true)
+    expect(cadence.data.buckets).toHaveLength(24)
+
+    const streak = await demoHttpAdapter(config('get', '/today/streak?days=90'))
+    expect(Array.isArray(streak.data.days)).toBe(true)
+
+    const insights = await demoHttpAdapter(config('get', '/workspace-insights?boardId=demo-board-1'))
+    expect(insights.data).toEqual([])
+
+    const memory = await demoHttpAdapter(config('get', '/workspace-memory?boardId=demo-board-1'))
+    expect(memory.data).toEqual([])
+  })
+
+  it('rejects unmatched GET paths instead of returning {}', async () => {
+    await expect(demoHttpAdapter(config('get', '/metrics/boards/demo-board-1'))).rejects.toMatchObject({
+      response: { status: 404, data: { message: 'This resource is not available in demo mode.' } },
+    })
+    await expect(demoHttpAdapter(config('get', '/workspace/mystery'))).rejects.toMatchObject({
+      response: { status: 404 },
+    })
+  })
 })
