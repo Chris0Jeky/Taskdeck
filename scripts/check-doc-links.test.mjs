@@ -6,10 +6,12 @@ import { join } from 'node:path'
 
 import {
   maskCode,
+  maskCodeWithDiagnostics,
   isExternalTarget,
   extractLocalTargets,
   collectMarkdownFiles,
   findBrokenLinks,
+  findMaskingDiagnostics,
   formatBrokenLinks,
   existsCaseExact,
   skippedDirectories,
@@ -54,6 +56,35 @@ test('code spans and fenced blocks are masked, and masking preserves offsets', (
   assert.doesNotMatch(masked, /path\/to\/x\.svg/)
 })
 
+test('an unbalanced inline span cannot mask links beyond a blank line', () => {
+  const markdown = ['Before `unterminated', '', '[real](target.md)'].join('\n')
+  const result = maskCodeWithDiagnostics(markdown)
+
+  assert.match(result.masked, /\[real\]\(target\.md\)/)
+  assert.deepEqual(result.diagnostics, [
+    { line: 1, target: '`', reason: 'unbalanced inline code span' },
+  ])
+})
+
+test('an unmatched backtick does not skip later balanced spans', () => {
+  const markdown = 'Before `unmatched ``[hidden](gone.md)`` and [real](real.md)'
+
+  assert.deepEqual(
+    extractLocalTargets(markdown).map(({ pathPart }) => pathPart),
+    ['real.md'],
+  )
+})
+
+test('an unterminated fenced block is masked but reported fail-loud', () => {
+  const markdown = ['```md', '[illustrative](not-a-real-link.md)'].join('\n')
+  const result = maskCodeWithDiagnostics(markdown)
+
+  assert.doesNotMatch(result.masked, /not-a-real-link/)
+  assert.deepEqual(result.diagnostics, [
+    { line: 1, target: '```', reason: 'unterminated fenced code block' },
+  ])
+})
+
 test('an illustrative link inside backticks is not reported', () => {
   const targets = extractLocalTargets('See `![…](../path/to/context-fabric-lifecycle.svg)` for the shape.')
   assert.deepEqual(targets, [])
@@ -86,6 +117,90 @@ test('image links, angle-bracket targets and titles are all recognised', () => {
   )
 })
 
+test('reference-style definitions contribute their local destinations', () => {
+  const markdown = [
+    '[guide][guide-ref]',
+    '![diagram][diagram-ref]',
+    '',
+    '[guide-ref]: ./guide.md "Guide"',
+    '[diagram-ref]: <assets/diagram with space.svg>',
+    '[external-ref]: https://example.com/guide',
+  ].join('\n')
+
+  assert.deepEqual(
+    extractLocalTargets(markdown).map(({ pathPart, line }) => ({ pathPart, line })),
+    [
+      { pathPart: './guide.md', line: 4 },
+      { pathPart: 'assets/diagram with space.svg', line: 5 },
+    ],
+  )
+})
+
+test('footnote definitions do not treat prose as a local destination', () => {
+  const markdown = ['A footnote[^1].', '', '[^1]: This is explanatory prose, not a link.'].join('\n')
+
+  assert.deepEqual(extractLocalTargets(markdown), [])
+})
+
+test('reference definitions accept a destination on the continuation line', () => {
+  const markdown = ['[guide][guide-ref]', '', '[guide-ref]:', '  ./guide.md'].join('\n')
+  const deeplyIndented = ['[guide][guide-ref]', '', '[guide-ref]:', '          ./guide.md'].join('\n')
+  const unindented = ['[guide][guide-ref]', '', '[guide-ref]:', './guide.md'].join('\n')
+
+  assert.deepEqual(
+    extractLocalTargets(markdown).map(({ pathPart }) => pathPart),
+    ['./guide.md'],
+  )
+  assert.deepEqual(
+    extractLocalTargets(deeplyIndented).map(({ pathPart }) => pathPart),
+    ['./guide.md'],
+  )
+  assert.deepEqual(
+    extractLocalTargets(unindented).map(({ pathPart }) => pathPart),
+    ['./guide.md'],
+  )
+})
+
+test('HTML comments do not contribute local destinations', () => {
+  const markdown = '<!-- <a href="./gone.md">link</a> <img src="./gone.svg"> -->'
+
+  assert.deepEqual(extractLocalTargets(markdown), [])
+})
+
+test('HTML href and src attributes contribute local destinations', () => {
+  const markdown = [
+    '<a class="guide" href="./guide.md">Guide</a>',
+    "<img alt='diagram' src='assets/diagram.svg'>",
+    '<a href="https://example.com">external</a>',
+  ].join('\n')
+
+  assert.deepEqual(
+    extractLocalTargets(markdown).map((target) => target.pathPart),
+    ['./guide.md', 'assets/diagram.svg'],
+  )
+})
+
+test('a linked local image checks both the outer document and inner image', () => {
+  const targets = extractLocalTargets('[![status](assets/status.svg)](docs/status.md)')
+
+  assert.deepEqual(
+    targets.map((target) => target.pathPart).sort(),
+    ['assets/status.svg', 'docs/status.md'],
+  )
+})
+
+test('balanced parentheses in destinations and parenthesized titles are recognised', () => {
+  const markdown = [
+    '[versioned](docs/guide(1).md)',
+    '[titled](docs/other.md (Readable title))',
+  ].join('\n')
+
+  assert.deepEqual(
+    extractLocalTargets(markdown).map((target) => target.pathPart),
+    ['docs/guide(1).md', 'docs/other.md'],
+  )
+})
+
 test('reported line numbers point at the line the link sits on', () => {
   const markdown = ['# Title', '', 'intro', '', '[late](gone.md)'].join('\n')
   const targets = extractLocalTargets(markdown)
@@ -105,6 +220,24 @@ test('a missing target is reported and an existing one is not', () => {
       assert.equal(broken[0].file, 'docs/index.md')
       assert.equal(broken[0].target, './gone.md')
       assert.equal(broken[0].reason, 'missing')
+    },
+  )
+})
+
+test('masking warnings are separate and do not suppress real broken links', () => {
+  withFixture(
+    {
+      'docs/index.md': ['Before `unterminated', '', '[bad](./gone.md)'].join('\n'),
+    },
+    (root) => {
+      assert.deepEqual(
+        findMaskingDiagnostics(root).map(({ line, target, reason }) => ({ line, target, reason })),
+        [{ line: 1, target: '`', reason: 'unbalanced inline code span' }],
+      )
+      assert.deepEqual(
+        findBrokenLinks(root).map(({ line, target, reason }) => ({ line, target, reason })),
+        [{ line: 3, target: './gone.md', reason: 'missing' }],
+      )
     },
   )
 })
@@ -138,7 +271,7 @@ test('a target that escapes the repository is reported as such on every platform
   // on whether the escaped path happens to exist on the machine running the test.
   // The earlier assertion accepted either 'missing' or 'outside the repository'
   // and so pinned nothing: on Windows the fixture resolved to a non-existent
-  // C:\Users\etc and reported 'missing', while on Linux it clamped at / and
+  // C:\\Users\\etc and reported 'missing', while on Linux it clamped at / and
   // reached a real /etc.
   withFixture({ 'docs/index.md': '[escape](../../../../../../etc)\n' }, (root) => {
     const broken = findBrokenLinks(root)
