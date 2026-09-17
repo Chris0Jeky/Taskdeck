@@ -790,6 +790,65 @@ function Resolve-InventoryExecutable {
     return $command.Source
 }
 
+function Set-InventoryProcessEnvironmentVariable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][object]$Value
+    )
+
+    $processValue = $null
+    if ($null -ne $Value) {
+        $processValue = [string]$Value
+    }
+
+    [System.Environment]::SetEnvironmentVariable($Name, $processValue, "Process")
+    if (
+        $null -eq $processValue -or
+        $processValue.Length -gt 0 -or
+        [System.Environment]::GetEnvironmentVariables("Process").Contains($Name)
+    ) {
+        return
+    }
+
+    # Before .NET 9, Environment.SetEnvironmentVariable collapsed an empty string into
+    # deletion. Empty is still a valid process-environment value, so use the native OS
+    # setter only when the managed API demonstrably failed to retain it.
+    if ($null -eq ("TaskdeckInventoryNativeEnvironment" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+
+public static class TaskdeckInventoryNativeEnvironment
+{
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SetEnvironmentVariableW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindows(string name, string value);
+
+    [DllImport("libc", CharSet = CharSet.Ansi, SetLastError = true, EntryPoint = "setenv")]
+    public static extern int SetUnix(string name, string value, int overwrite);
+}
+"@
+    }
+
+    $runningOnWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+    if ($runningOnWindows) {
+        $succeeded = [TaskdeckInventoryNativeEnvironment]::SetWindows($Name, "")
+    }
+    else {
+        $succeeded = [TaskdeckInventoryNativeEnvironment]::SetUnix($Name, "", 1) -eq 0
+    }
+
+    if (-not $succeeded) {
+        $nativeError = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw "Failed to preserve empty process environment variable '$Name' (native error $nativeError)."
+    }
+    if (
+        -not [System.Environment]::GetEnvironmentVariables("Process").Contains($Name) -or
+        [System.Environment]::GetEnvironmentVariable($Name, "Process") -cne ""
+    ) {
+        throw "Native process environment update did not preserve empty variable '$Name'."
+    }
+}
+
 function Set-InventoryEnvironmentVariable {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Saved,
@@ -798,20 +857,25 @@ function Set-InventoryEnvironmentVariable {
     )
 
     if (-not $Saved.ContainsKey($Name)) {
-        $Saved[$Name] = [System.Environment]::GetEnvironmentVariable($Name, "Process")
+        $processEnvironment = [System.Environment]::GetEnvironmentVariables("Process")
+        $Saved[$Name] = [pscustomobject]@{
+  Present = $processEnvironment.Contains($Name)
+  Value = [System.Environment]::GetEnvironmentVariable($Name, "Process")
+        }
     }
-    $processValue = $null
-    if ($null -ne $Value) {
-        $processValue = [string]$Value
-    }
-    [System.Environment]::SetEnvironmentVariable($Name, $processValue, "Process")
+    Set-InventoryProcessEnvironmentVariable -Name $Name -Value $Value
 }
 
 function Restore-InventoryEnvironment {
     param([Parameter(Mandatory = $true)][hashtable]$Saved)
 
     foreach ($name in @($Saved.Keys)) {
-        [System.Environment]::SetEnvironmentVariable($name, $Saved[$name], "Process")
+        $savedVariable = $Saved[$name]
+        $restoreValue = $null
+        if ($savedVariable.Present) {
+  $restoreValue = $savedVariable.Value
+        }
+        Set-InventoryProcessEnvironmentVariable -Name $name -Value $restoreValue
     }
 }
 
@@ -1178,7 +1242,7 @@ function Invoke-ReadOnlyInventorySelfTest {
     $missingEnvironmentProbeName = "TASKDECK_INVENTORY_MISSING_PROBE"
     $emptyEnvironmentProbeName = "TASKDECK_INVENTORY_EMPTY_PROBE"
     foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
-        [System.Environment]::SetEnvironmentVariable($probeName, $null, "Process")
+        Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
     }
 
     try {
@@ -1211,7 +1275,7 @@ function Invoke-ReadOnlyInventorySelfTest {
         }
         $state.Checks++
 
-        [System.Environment]::SetEnvironmentVariable($emptyEnvironmentProbeName, "", "Process")
+        Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
         if (
             -not [System.Environment]::GetEnvironmentVariables("Process").Contains($emptyEnvironmentProbeName) -or
             [System.Environment]::GetEnvironmentVariable($emptyEnvironmentProbeName, "Process") -cne ""
@@ -1235,7 +1299,7 @@ function Invoke-ReadOnlyInventorySelfTest {
     }
     finally {
         foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
-            [System.Environment]::SetEnvironmentVariable($probeName, $null, "Process")
+            Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
         }
     }
 
