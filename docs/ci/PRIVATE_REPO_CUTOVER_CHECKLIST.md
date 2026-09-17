@@ -121,23 +121,27 @@ actions. Never infer a human action from repository state or an issue comment.
 - [ ] PR `#2838` is current-head qualified and passes the ADR-0066/J.3 maintainer gate.
 - [ ] CodeQL is re-enabled in an approved lane or the current scanner posture and residual are recorded.
 
-## H. Nightly and release qualification (CI-10 `#2334`)
+## H. Pre-cutover nightly and release contract (CI-10 `#2334`)
+
+Sections A-I are prerequisites for the visibility change. This section proves that the release
+mechanisms and evidence contract are ready; it does **not** require the real tag, post-cutover runner
+association, exact-tag qualification, or release publication. Those actions occur only in section L.
 
 - [ ] One coordinator owns nightly/quality and emits an honest no-change receipt.
-- [ ] The weekly full sweep covers Linux, Windows, browsers, security, containers, and performance.
+- [ ] The weekly full-sweep contract covers Linux, Windows, browsers, security, containers, and
+  performance, and has public-mode rehearsal evidence.
 - [ ] Mutation remains manual unless ADR-0052 is explicitly amended.
-- [ ] Final-head no-publish rehearsal uses CI-17's trusted Linux-only mode while self-hosted runners are
-  offline. It schedules no private hosted Windows job.
-- [ ] A draft-only publication hold prevents a real-tag workflow from publishing before post-tag
-  evidence is accepted.
-- [ ] The real release tag is created only after final-head evidence and the hold are proven.
-- [ ] Exact-tag Linux/control qualification runs on the approved hosted lanes.
-- [ ] Exact-tag Windows archive and Windows-specific qualification run on the approved isolated,
-  secret-safe release runner after association.
-- [ ] Linux/control and Windows evidence bind the same tag, commit, policy/config, checksums,
-  provenance, and release contract.
+- [ ] CI-17's trusted Linux-only selection and no-publish rehearsal path are implemented and proven in
+  a public-mode dry run without allowing untrusted PR-head code to select or bypass the mode.
+- [ ] A draft-only publication-hold mechanism is implemented and dry-run so a later real-tag workflow
+  cannot publish before post-tag evidence is accepted. The hold is activated and re-verified in L.4.
+- [ ] The workflow contract can route later exact-tag Linux/control qualification to approved hosted
+  lanes and Windows archive qualification to the isolated secret-safe release runner, and fails
+  closed on the wrong runner class or identity.
+- [ ] The release evidence contract binds one tag, commit, policy/config identity, checksums,
+  provenance, and produced assets across runner classes.
 - [ ] SBOM, provenance, digest verification, migration/upgrade, install, backup/restore, MCP proposal
-  flow, and consumer smoke evidence are release-owned.
+  flow, and consumer-smoke evidence have named producers and release-owned acceptance criteria.
 
 ## I. Public-mode rehearsal before cutover (hosted-only, no runner associated)
 
