@@ -188,7 +188,8 @@ function acceptAssignments(saved: Card, previousVersion?: string) {
  * inferred on the client, and every write remains server-authoritative regardless.
  */
 const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown,
-  permissionRecovery, accessUnavailable, readsBlocked, refreshPermission: refreshTypePermission } =
+  permissionRecovery, accessUnavailable, readsBlocked, refreshPermission: refreshTypePermission,
+  recoverFromPermissionDenied } =
   useCardTypePermission({
     getBoardId: () => props.card.boardId,
     getCardId: () => props.card.id,
@@ -457,7 +458,7 @@ const {
   getLabels: () => props.labels,
   onUpdated: () => emit('updated'),
   onClose: () => emit('close'),
-  onPermissionDenied: refreshTypePermission,
+  onPermissionDenied: recoverFromPermissionDenied,
 })
 
 watch(hasUnsavedChanges, (dirty) => {
@@ -557,11 +558,11 @@ useEscapeToClose(
           :read-only="!boardCanWrite || cardIsArchived"
           :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
-          @saved="acceptAssignments" @permission-denied="refreshTypePermission" />
+          @saved="acceptAssignments" @permission-denied="recoverFromPermissionDenied" />
         <CardArchiveAction :key="archiveActionCard.updatedAt" :card="archiveActionCard" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges || archiveCompletedWithDraft"
           :pending-requests="pendingArchiveRequests"
           :on-inactive-commit="acceptInactiveArchiveCommit"
-          @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="refreshTypePermission" />
+          @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="recoverFromPermissionDenied" />
         <p v-if="showArchiveDraftNotice" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}
         </p>
