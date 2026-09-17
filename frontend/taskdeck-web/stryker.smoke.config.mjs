@@ -8,7 +8,7 @@ const config = {
   // board CRUD suite; update the coordinates with that seam if it moves.
   // `scripts/check-mutation-smoke.mjs` fails the command when the range no
   // longer yields mutants, so a moved seam cannot pass silently.
-  mutate: ['src/store/board/boardCrudStore.ts:591:28-591:78'],
+  mutate: ['src/store/board/boardCrudStore.ts:599:28-599:78'],
   // The smoke deliberately drives Vitest through Stryker's command runner
   // rather than `@stryker-mutator/vitest-runner`. With Stryker 10 and the
   // repository's Vitest 5 line the vitest-runner reports "0.00 tests per
