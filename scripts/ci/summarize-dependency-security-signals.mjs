@@ -94,12 +94,26 @@ function createSeverityCounts() {
   }
 }
 
+function readNonNegativeInteger(value, fieldName) {
+  if (value === undefined || value === null) {
+    return 0
+  }
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`frontend audit report has an invalid ${fieldName} vulnerability count`)
+  }
+  return value
+}
+
 function isSupportedAdvisoryId(value) {
-  return SUPPORTED_ADVISORY_ID_PATTERN.test(String(value ?? '').trim())
+  return typeof value === 'string' && SUPPORTED_ADVISORY_ID_PATTERN.test(value.trim())
 }
 
 function normalizeAdvisoryId(value) {
-  const text = String(value ?? '').trim()
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const text = value.trim()
   if (!text) {
     return null
   }
@@ -186,7 +200,8 @@ function validateAllowlistDocument(document, path, today) {
           }
         }
 
-        const rawAdvisoryId = String(rawEntry.advisoryId ?? '').trim()
+        const rawAdvisoryId = rawEntry.advisoryId
+        const advisoryIdText = typeof rawAdvisoryId === 'string' ? rawAdvisoryId.trim() : ''
         const advisoryId = normalizeAdvisoryId(rawAdvisoryId)
         const supportedAdvisoryId = isSupportedAdvisoryId(rawAdvisoryId)
         const reason = String(rawEntry.reason ?? '').trim()
@@ -194,7 +209,10 @@ function validateAllowlistDocument(document, path, today) {
         const expiresOn = String(rawEntry.expiresOn ?? '').trim()
         let entryValid = true
 
-        if (!rawAdvisoryId) {
+        if (typeof rawAdvisoryId !== 'string') {
+          errors.push(`${prefix}.advisoryId must be a string`)
+          entryValid = false
+        } else if (!advisoryIdText) {
           errors.push(`${prefix}.advisoryId must be non-empty`)
           entryValid = false
         } else if (!supportedAdvisoryId || !advisoryId) {
@@ -445,13 +463,15 @@ function summarizeFrontendReport(report, exitCode, activeAllowlist, matchedAdvis
   }
 
   const metadataCounts = report.metadata.vulnerabilities
+  readNonNegativeInteger(metadataCounts.info, 'info')
   const severityCounts = {
-    critical: Number(metadataCounts.critical ?? 0),
-    high: Number(metadataCounts.high ?? 0),
-    moderate: Number(metadataCounts.moderate ?? 0),
-    low: Number(metadataCounts.low ?? 0),
+    critical: readNonNegativeInteger(metadataCounts.critical, 'critical'),
+    high: readNonNegativeInteger(metadataCounts.high, 'high'),
+    moderate: readNonNegativeInteger(metadataCounts.moderate, 'moderate'),
+    low: readNonNegativeInteger(metadataCounts.low, 'low'),
     unknown: 0,
   }
+  const totalCount = readNonNegativeInteger(metadataCounts.total, 'total')
   const vulnerabilities = report.vulnerabilities
   const advisoryCache = new Map()
   let acceptedHighOrCriticalCount = 0
@@ -497,7 +517,7 @@ function summarizeFrontendReport(report, exitCode, activeAllowlist, matchedAdvis
     highOrCriticalCount - acceptedHighOrCriticalCount,
     packageLevelUnresolvedCount,
   )
-  const hasFindings = Number(metadataCounts.total ?? 0) > 0
+  const hasFindings = totalCount > 0
   const structuredError = Boolean(report.error)
   const findingExit = exitCode === 1 && hasFindings && !structuredError
 
