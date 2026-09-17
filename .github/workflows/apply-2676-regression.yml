@@ -10,12 +10,12 @@ permissions:
 
 concurrency:
   group: apply-2676-regression
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   patch:
     if: github.actor != 'github-actions[bot]'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -120,5 +120,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Observe regression failure before implementation
-        shell: powershell
-        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case git-add-failure
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case git-add-failure
