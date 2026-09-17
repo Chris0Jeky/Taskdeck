@@ -1,0 +1,130 @@
+{
+  "artifact": "Taskdeck engineering trajectory checkpoint",
+  "status": "historical_non_authoritative",
+  "baseline": {
+    "date": "2026-08-21",
+    "source_snapshot_sha": "f9d9b84c19514b3d886aa61eb076bf7622e51a26",
+    "live_main_sha_at_reconciliation": "e338566d0f3d1fc65004beb5a29c10778e6e61bc",
+    "source_to_live_delta": "2 documentation-only commits; no executable-code delta",
+    "static": {
+      "repository_files": 2966,
+      "text_lines": 664597,
+      "handwritten_production_lines": 158312,
+      "generated_ef_migration_lines": 81814,
+      "test_lines": 243246,
+      "documentation_lines": 94469,
+      "repository_script_lines": 28865,
+      "test_to_handwritten_production_ratio": 1.536,
+      "csharp_files": 1349,
+      "typescript_files": 599,
+      "vue_files": 168,
+      "markdown_files": 494,
+      "test_files_heuristic": 893,
+      "test_case_declarations_heuristic": 12804,
+      "workflow_files": 33,
+      "workflow_jobs_heuristic": 128,
+      "workflow_steps_heuristic": 323,
+      "adrs": 55,
+      "controllers": 45,
+      "controller_http_attributes": 195,
+      "unique_packages": 88
+    },
+    "github": {
+      "pull_requests_total": 1068,
+      "pull_requests_merged": 992,
+      "pull_requests_open": 0,
+      "pull_requests_closed_unmerged": 76,
+      "standalone_issues_total": 861,
+      "standalone_issues_open": 143,
+      "standalone_issues_closed": 718,
+      "repository_size_kib": 23560,
+      "stars": 0,
+      "forks": 0,
+      "watchers": 0
+    },
+    "effort_sensitivity": {
+      "direct_human_oversight_hours": {
+        "low": 1000,
+        "central": 2100,
+        "high": 3400
+      },
+      "conventional_replacement_hours": {
+        "low": 8000,
+        "central": 12000,
+        "high": 18000
+      },
+      "interpretation": "Sensitivity ranges only; not time records, valuation, or manually typed-code estimates."
+    }
+  },
+  "reconciliation": {
+    "date": "2026-09-13",
+    "main_sha": "2cdc4525766101211fe04787e23bfb46b6aa4011",
+    "main_pr": 3082,
+    "github": {
+      "pull_requests_total": 1791,
+      "pull_requests_merged": 1679,
+      "pull_requests_open": 11,
+      "pull_requests_closed_unmerged": 101,
+      "standalone_issues_total": 1300,
+      "standalone_issues_open": 278,
+      "standalone_issues_closed": 1022,
+      "repository_size_kib": 38798
+    },
+    "delta_from_baseline": {
+      "pull_requests_total": 723,
+      "pull_requests_total_pct": 67.7,
+      "pull_requests_merged": 687,
+      "pull_requests_merged_pct": 69.3,
+      "pull_requests_open": 11,
+      "standalone_issues_total": 439,
+      "standalone_issues_total_pct": 51.0,
+      "standalone_issues_open": 135,
+      "standalone_issues_open_pct": 94.4,
+      "repository_size_kib": 15238,
+      "repository_size_pct": 64.7
+    },
+    "source_revalidation": {
+      "mcp_self_approval_boundary": {
+        "status": "confirmed",
+        "anchor": "backend/src/Taskdeck.Api/Mcp/ProposalTools.cs",
+        "note": "approve_proposal remains intentionally excluded under GP-06"
+      },
+      "review_then_execute_flow": {
+        "status": "confirmed",
+        "anchor": "CLAUDE.md",
+        "note": "explicit approve followed by explicit execute; Preview and Apply use the latest ProposalRevision"
+      },
+      "transcript_llm_triage": {
+        "status": "advanced_since_baseline",
+        "anchor": "backend/src/Taskdeck.Application/Services/LlmCaptureTriageExtractor.cs",
+        "note": "transcript-source captures use an LLM-backed extractor and degrade honestly to deterministic extraction"
+      },
+      "windows_first_run_chain": {
+        "status": "resolved_since_baseline",
+        "issues_closed": [
+          1242,
+          1876,
+          1877
+        ],
+        "release": "v0.1.2 shipped 2026-08-25"
+      },
+      "dogfooding": {
+        "status": "mixed_outcome",
+        "anchor": "docs/dogfooding/LOG.md",
+        "note": "sprint started 2026-08-22; on 2026-08-27 the maintainer judged v0.1.2 insufficient for daily-driver use and re-scoped dogfooding to a standing tracker"
+      },
+      "current_direction": {
+        "status": "expanded",
+        "anchor": "docs/strategy/PRODUCT_DIRECTION.md",
+        "note": "adaptive work operating system / Context Fabric destination; shipped review-first contract remains binding"
+      }
+    }
+  },
+  "interpretation_rules": [
+    "The baseline is a trajectory checkpoint, not current shipped state.",
+    "Current canonical docs and live issues supersede every status or priority statement here.",
+    "Line counts and test declarations are classification-dependent scale indicators.",
+    "PR and issue counts are not direct productivity measures.",
+    "Engineering replacement cost is not market value."
+  ]
+}
