@@ -290,12 +290,21 @@ async function loadAllowlist(path, today) {
 }
 
 function summarizeBackendReport(report, exitCode, activeAllowlist, matchedAdvisories) {
+  if (
+    !report ||
+    typeof report !== 'object' ||
+    Array.isArray(report) ||
+    !Array.isArray(report.projects)
+  ) {
+    throw new Error('backend vulnerability report is missing a projects array')
+  }
+
   const severityCounts = createSeverityCounts()
   const packages = new Map()
   let acceptedHighOrCriticalCount = 0
   let unresolvedHighOrCriticalCount = 0
 
-  for (const project of report?.projects ?? []) {
+  for (const project of report.projects) {
     for (const framework of project.frameworks ?? []) {
       for (const packageSetName of ['topLevelPackages', 'transitivePackages']) {
         for (const pkg of framework[packageSetName] ?? []) {
@@ -421,7 +430,21 @@ function collectFrontendAdvisories(packageName, vulnerabilities, cache, visiting
 }
 
 function summarizeFrontendReport(report, exitCode, activeAllowlist, matchedAdvisories) {
-  const metadataCounts = report?.metadata?.vulnerabilities ?? {}
+  const hasAuditShape =
+    report &&
+    typeof report === 'object' &&
+    !Array.isArray(report) &&
+    report.vulnerabilities &&
+    typeof report.vulnerabilities === 'object' &&
+    !Array.isArray(report.vulnerabilities) &&
+    report.metadata?.vulnerabilities &&
+    typeof report.metadata.vulnerabilities === 'object' &&
+    !Array.isArray(report.metadata.vulnerabilities)
+  if (!hasAuditShape) {
+    throw new Error('frontend audit report is missing npm audit vulnerability metadata')
+  }
+
+  const metadataCounts = report.metadata.vulnerabilities
   const severityCounts = {
     critical: Number(metadataCounts.critical ?? 0),
     high: Number(metadataCounts.high ?? 0),
@@ -429,7 +452,7 @@ function summarizeFrontendReport(report, exitCode, activeAllowlist, matchedAdvis
     low: Number(metadataCounts.low ?? 0),
     unknown: 0,
   }
-  const vulnerabilities = report?.vulnerabilities ?? {}
+  const vulnerabilities = report.vulnerabilities
   const advisoryCache = new Map()
   let acceptedHighOrCriticalCount = 0
   let packageLevelUnresolvedCount = 0
@@ -475,19 +498,12 @@ function summarizeFrontendReport(report, exitCode, activeAllowlist, matchedAdvis
     packageLevelUnresolvedCount,
   )
   const hasFindings = Number(metadataCounts.total ?? 0) > 0
-  const hasAuditShape =
-    report &&
-    typeof report === 'object' &&
-    !Array.isArray(report) &&
-    report.vulnerabilities &&
-    typeof report.vulnerabilities === 'object' &&
-    report.metadata?.vulnerabilities &&
-    typeof report.metadata.vulnerabilities === 'object'
-  const findingExit = exitCode === 1 && hasAuditShape && hasFindings && !report.error
+  const structuredError = Boolean(report.error)
+  const findingExit = exitCode === 1 && hasFindings && !structuredError
 
   return {
     exitCode,
-    scanFailed: exitCode !== 0 && !findingExit,
+    scanFailed: structuredError || (exitCode !== 0 && !findingExit),
     packageCount: packages.length,
     severityCounts,
     packages,
