@@ -119,9 +119,7 @@ describe('CardModal permission retry focus ownership', () => {
     await refresh.trigger('click')
     await nextTick()
     expect(boardsApi.getBoard).toHaveBeenCalledTimes(2)
-    expect((refresh.element as HTMLButtonElement).disabled).toBe(true)
-
-    ;(refresh.element as HTMLButtonElement).blur()
+    expect(wrapper.find('[data-testid="card-type-permission-refresh"]').exists()).toBe(false)
     expect(document.activeElement).toBe(document.body)
 
     ;(mockStore.currentBoard as { canWrite?: boolean }).canWrite = true
