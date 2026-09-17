@@ -1,5 +1,6 @@
 import http from "k6/http";
 import { check, fail, sleep } from "k6";
+import { buildActorAssignments } from "./actor-board-assignments.js";
 
 const baseUrl = __ENV.K6_BASE_URL || "http://127.0.0.1:5000/api";
 const vus = Number(__ENV.K6_VUS || "20");
@@ -190,22 +191,29 @@ function runBoardReadSlice(token, boardId) {
 }
 
 export function setup() {
+  const assignments = buildActorAssignments(vus, userPool);
+  const accountCount = new Set(assignments.map(({ accountIndex }) => accountIndex)).size;
+  const accounts = [];
+
+  for (let accountIndex = 0; accountIndex < accountCount; accountIndex += 1) {
+    accounts.push(registerActor(accountIndex));
+  }
+
   const actors = [];
-  for (let actorIndex = 0; actorIndex < userPool; actorIndex += 1) {
-    const auth = registerActor(actorIndex);
-    const token = auth.token;
-    const board = createBoard(token, actorIndex);
+  for (const assignment of assignments) {
+    const token = accounts[assignment.accountIndex].token;
+    const board = createBoard(token, assignment.boardIndex);
     const boardId = board.id;
 
     const columns = [];
     for (let columnIndex = 0; columnIndex < 3; columnIndex += 1) {
-      columns.push(createColumn(token, boardId, actorIndex, columnIndex));
+      columns.push(createColumn(token, boardId, assignment.boardIndex, columnIndex));
     }
 
     const cards = [];
     for (let cardIndex = 0; cardIndex < 9; cardIndex += 1) {
       const column = columns[cardIndex % columns.length];
-      cards.push(createCard(token, boardId, column.id, actorIndex, cardIndex));
+      cards.push(createCard(token, boardId, column.id, assignment.boardIndex, cardIndex));
     }
 
     actors.push({
