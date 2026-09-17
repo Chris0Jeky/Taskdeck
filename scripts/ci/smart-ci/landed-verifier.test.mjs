@@ -97,6 +97,7 @@ function decide(evidence, overrides = {}) {
     headSha: sha('9'),
     headTreeSha: sha('4'),
     expectedPolicyDigest: currentPolicyDigest,
+    landing: { kind: 'pull-request', pullRequest: 2327 },
     evidence,
     ...overrides,
   });
@@ -110,6 +111,7 @@ test('normal PR merge selects the newest exact authoritative receipt for bounded
 
   assert.equal(verdict.qualification, 'bounded');
   assert.equal(verdict.reason, 'qualified-receipt');
+  assert.deepEqual(verdict.landing, { kind: 'pull-request', pullRequest: 2327 });
   assert.equal(verdict.receipt.artifactId, 102);
   assert.equal(verdict.receipt.workflowRunId, 202);
   assert.equal(verdict.receipt.pullRequest, 2327);
@@ -117,7 +119,26 @@ test('normal PR merge selects the newest exact authoritative receipt for bounded
   assert.equal(verdict.diagnostics.length, 0);
 });
 
-test('direct push with no receipt fails closed to full hosted qualification', () => {
+test('direct push reusing an otherwise-qualified tree still requires full hosted qualification', () => {
+  const verdict = decide([makeEvidence()], {
+    landing: { kind: 'direct-push' },
+  });
+
+  assert.equal(verdict.qualification, 'full');
+  assert.equal(verdict.reason, 'direct-push');
+  assert.equal(verdict.receipt, null);
+  assert.deepEqual(verdict.landing, { kind: 'direct-push', pullRequest: null });
+});
+
+test('missing trusted landing classification fails closed even when a tree receipt exists', () => {
+  const verdict = decide([makeEvidence()], { landing: null });
+
+  assert.equal(verdict.qualification, 'full');
+  assert.equal(verdict.reason, 'landing-unverified');
+  assert.equal(verdict.receipt, null);
+});
+
+test('normal merge with no matching receipt fails closed to full hosted qualification', () => {
   const verdict = decide([]);
 
   assert.equal(verdict.qualification, 'full');
@@ -135,13 +156,16 @@ test('base movement that changes the landed tree requires full requalification',
   assert.ok(verdict.diagnostics.some((entry) => entry.code === 'tree-mismatch'));
 });
 
-test('expired, policy-mismatched and non-authoritative receipts cannot authorize bounded work', () => {
+test('expired, expiry-unknown, policy-mismatched and non-authoritative receipts cannot authorize bounded work', () => {
+  const expiryUnknown = makeEvidence({ artifactId: 2 });
+  delete expiryUnknown.artifact.expired;
   const verdict = decide([
     makeEvidence({ artifactId: 1, artifactExpired: true }),
-    makeEvidence({ artifactId: 2, digest: `sha256:${'a'.repeat(64)}` }),
-    makeEvidence({ artifactId: 3, workflowEvent: 'pull_request' }),
-    makeEvidence({ artifactId: 4, workflowConclusion: 'failure' }),
-    makeEvidence({ artifactId: 5, workflowPath: '.github/workflows/ci-required.yml' }),
+    expiryUnknown,
+    makeEvidence({ artifactId: 3, digest: `sha256:${'a'.repeat(64)}` }),
+    makeEvidence({ artifactId: 4, workflowEvent: 'pull_request' }),
+    makeEvidence({ artifactId: 5, workflowConclusion: 'failure' }),
+    makeEvidence({ artifactId: 6, workflowPath: '.github/workflows/ci-required.yml' }),
   ]);
 
   assert.equal(verdict.qualification, 'full');
@@ -150,6 +174,7 @@ test('expired, policy-mismatched and non-authoritative receipts cannot authorize
     new Set(verdict.diagnostics.map((entry) => entry.code)),
     new Set([
       'artifact-expired',
+      'artifact-expiry-unknown',
       'policy-digest-mismatch',
       'workflow-event-mismatch',
       'workflow-conclusion-mismatch',
@@ -158,15 +183,20 @@ test('expired, policy-mismatched and non-authoritative receipts cannot authorize
   );
 });
 
-test('receipt identity and artifact name must agree', () => {
-  const evidence = makeEvidence({
+test('receipt identity, landing PR and artifact name must agree', () => {
+  const wrongArtifact = makeEvidence({
+    artifactId: 1,
     artifactName: `smart-ci-receipt-999-${sha('2')}`,
   });
+  const wrongLandingPr = makeEvidence({ artifactId: 2, pullRequest: 2328 });
 
-  const verdict = decide([evidence]);
+  const verdict = decide([wrongArtifact, wrongLandingPr]);
 
   assert.equal(verdict.qualification, 'full');
-  assert.ok(verdict.diagnostics.some((entry) => entry.code === 'artifact-name-mismatch'));
+  assert.deepEqual(
+    new Set(verdict.diagnostics.map((entry) => entry.code)),
+    new Set(['artifact-name-mismatch', 'landing-pr-mismatch']),
+  );
 });
 
 test('malformed or would-fail gate receipts require full qualification', () => {
@@ -183,9 +213,9 @@ test('malformed or would-fail gate receipts require full qualification', () => {
   );
 });
 
-test('conflicting exact-tree receipt identities fail closed instead of choosing one', () => {
+test('conflicting exact-tree identities for the associated PR fail closed instead of choosing one', () => {
   const first = makeEvidence({ artifactId: 1, pullRequest: 2327, headSha: sha('2'), mergeSha: sha('3') });
-  const second = makeEvidence({ artifactId: 2, pullRequest: 2328, headSha: sha('5'), mergeSha: sha('6') });
+  const second = makeEvidence({ artifactId: 2, pullRequest: 2327, headSha: sha('5'), mergeSha: sha('6') });
 
   const verdict = decide([first, second]);
 
@@ -195,7 +225,7 @@ test('conflicting exact-tree receipt identities fail closed instead of choosing 
   assert.equal(verdict.candidates, 2);
 });
 
-test('CLI writes a content-free verdict and GitHub outputs', () => {
+test('CLI writes a content-free verdict, landing binding and GitHub outputs', () => {
   const root = mkdtempSync(join(tmpdir(), 'taskdeck-landed-verifier-'));
   try {
     const inputPath = join(root, 'evidence.json');
@@ -210,16 +240,21 @@ test('CLI writes a content-free verdict and GitHub outputs', () => {
       '--head-tree-sha', sha('4'),
       '--policy', policyPath,
       '--input', inputPath,
+      '--landing-kind', 'pull-request',
+      '--landing-pr', '2327',
       '--out', verdictPath,
       '--github-output', outputPath,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
     const verdict = JSON.parse(readFileSync(verdictPath, 'utf8'));
     assert.equal(verdict.qualification, 'bounded');
+    assert.deepEqual(verdict.landing, { kind: 'pull-request', pullRequest: 2327 });
     assert.equal(verdict.receipt.artifactId, 101);
     const outputs = readFileSync(outputPath, 'utf8');
     assert.match(outputs, /^qualification=bounded$/m);
     assert.match(outputs, /^reason=qualified-receipt$/m);
+    assert.match(outputs, /^landing_kind=pull-request$/m);
+    assert.match(outputs, /^landing_pr=2327$/m);
     assert.match(outputs, /^receipt_artifact_id=101$/m);
   } finally {
     rmSync(root, { recursive: true, force: true });
