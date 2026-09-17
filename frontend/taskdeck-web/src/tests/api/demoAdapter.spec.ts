@@ -185,6 +185,33 @@ describe('demoHttpAdapter', () => {
     })
   })
 
+  it('promotes a saved step into an in-memory linked card with live-contract idempotency', async () => {
+    const path = '/boards/demo-board-1/cards/demo-board-1-card-3/thinking'
+    const initial = await demoHttpAdapter(config('get', path))
+    const layers = [{
+      id: 'demo-steps-layer',
+      kind: 'steps',
+      title: 'Next steps',
+      body: '',
+      items: [{ id: 'demo-step', text: 'Create the follow-up card', completed: false, linkedCardId: null }],
+      selectedOptionId: null,
+    }]
+    const saved = await demoHttpAdapter(config('put', path, { expectedRevision: initial.data.revision, layers }))
+    const promotionPath = `${path}/steps/demo-steps-layer/demo-step/card`
+    const request = { expectedRevision: saved.data.revision, columnId: 'demo-board-1-col-2', title: 'Follow-up card' }
+
+    const promoted = await demoHttpAdapter(config('post', promotionPath, request))
+    expect(promoted.data).toMatchObject({ cardId: 'demo-board-1-card-3', revision: 3, schemaVersion: 2, canWrite: true })
+    expect(promoted.data.layers[0].items[0]).toMatchObject({ text: 'Create the follow-up card', completed: false, linkedCardId: expect.any(String) })
+
+    const cards = await demoHttpAdapter(config('get', '/boards/demo-board-1/cards'))
+    const linked = cards.data.find((card: { parentCardId?: string }) => card.parentCardId === 'demo-board-1-card-3')
+    expect(linked).toMatchObject({ title: 'Follow-up card', description: 'Create the follow-up card', columnId: 'demo-board-1-col-2' })
+
+    const replay = await demoHttpAdapter(config('post', promotionPath, { ...request, expectedRevision: 1 }))
+    expect(replay.data).toEqual(promoted.data)
+  })
+
   it('persists the user chat message before the assistant reply', async () => {
     const reply = await demoHttpAdapter(config('post', `/llm/chat/sessions/${DEMO_CHAT_SESSION_ID}/messages`, {
       content: 'Can you split this further?',

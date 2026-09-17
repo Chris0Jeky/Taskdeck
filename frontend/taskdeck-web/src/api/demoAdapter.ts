@@ -74,12 +74,26 @@ let proposals = buildDemoProposals()
 let chatSessions = buildDemoChatSessions()
 let chatSequence = 2
 const thinkingDecks = new Map<string, ThinkingDeck>()
+let demoCardsByBoard = new Map<string, Card[]>()
+let demoCardSequence = 0
+
+function buildDemoCardFixtures(): Map<string, Card[]> {
+  return new Map(buildDemoBoardList().map((board) => [board.id, buildDemoBoardDetail(board.id).cards]))
+}
+
+function resetDemoCards(): void {
+  demoCardsByBoard = buildDemoCardFixtures()
+  demoCardSequence = 0
+}
+
+resetDemoCards()
 
 export function resetDemoHttpFixtures(): void {
   proposals = buildDemoProposals()
   chatSessions = buildDemoChatSessions()
   chatSequence = 2
   thinkingDecks.clear()
+  resetDemoCards()
 }
 
 function findProposal(id: string): Proposal | undefined {
@@ -91,7 +105,12 @@ function findSession(id: string): ChatSession | undefined {
 }
 
 function boardCards(boardId: string): Card[] {
-  return buildDemoBoardDetail(decodeSegment(boardId)).cards
+  const decodedBoardId = decodeSegment(boardId)
+  const existing = demoCardsByBoard.get(decodedBoardId)
+  if (existing) return existing
+  const created = buildDemoBoardDetail(decodedBoardId).cards
+  demoCardsByBoard.set(decodedBoardId, created)
+  return created
 }
 
 function findCard(boardId: string, cardId: string): Card | undefined {
@@ -522,6 +541,72 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
     return ok({ ...card, assignments, updatedAt: ts })
   }
 
+  const thinkingPromotion = path.match(/^\/boards\/([^/]+)\/cards\/([^/]+)\/thinking\/steps\/([^/]+)\/([^/]+)\/card$/)
+  if (thinkingPromotion && method === 'post') {
+    const boardId = decodeSegment(thinkingPromotion[1] ?? '')
+    const cardId = decodeSegment(thinkingPromotion[2] ?? '')
+    const layerId = decodeSegment(thinkingPromotion[3] ?? '')
+    const itemId = decodeSegment(thinkingPromotion[4] ?? '')
+    const card = findCard(boardId, cardId)
+    if (!card) return notFound('Card not found in demo mode.')
+
+    const current = getThinkingDeck(boardId, card)
+    const layer = current.layers.find((value) => value.id === layerId && value.kind === 'steps')
+    const item = layer?.items.find((value) => value.id === itemId)
+    if (!layer || !item) return notFound('Save this thinking step before creating a card.')
+
+    // Match the live endpoint: a repeated click or lost response returns the
+    // existing link even when the caller still has the old revision.
+    if (item.linkedCardId) return ok(cloneValue(current))
+
+    const body = readBody(config)
+    const expectedRevision = body.expectedRevision
+    if (typeof expectedRevision !== 'number' || !Number.isInteger(expectedRevision) || expectedRevision !== current.revision) {
+      return { status: 409, data: { message: 'Thinking changed. Reload before creating this card.' } }
+    }
+    const columnId = typeof body.columnId === 'string' ? body.columnId : ''
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    const columns = buildDemoBoardDetail(boardId).board.columns
+    const column = columns.find((value) => value.id === columnId)
+    if (!column || !title || title.length > 200) {
+      return { status: 400, data: { message: 'A valid destination column and card title are required.' } }
+    }
+
+    const ts = new Date().toISOString()
+    const child: Card = {
+      id: `demo-${boardId}-card-${++demoCardSequence}`,
+      boardId,
+      columnId,
+      title,
+      description: item.text,
+      dueDate: null,
+      isBlocked: false,
+      blockReason: null,
+      position: boardCards(boardId).filter((value) => value.columnId === columnId).length,
+      labels: [],
+      createdAt: ts,
+      updatedAt: ts,
+      parentCardId: card.id,
+    }
+    boardCards(boardId).push(child)
+
+    const updated: ThinkingDeck = {
+      ...current,
+      revision: current.revision + 1,
+      schemaVersion: 2,
+      layers: current.layers.map((value) => value.id !== layerId
+        ? value
+        : {
+            ...value,
+            items: value.items.map((step) => step.id === itemId
+              ? { ...step, linkedCardId: child.id, completed: false }
+              : step),
+          }),
+    }
+    thinkingDecks.set(thinkingDeckKey(boardId, card.id), updated)
+    return ok(cloneValue(updated))
+  }
+
   const thinkingDeck = path.match(/^\/boards\/([^/]+)\/cards\/([^/]+)\/thinking$/)
   if (thinkingDeck) {
     const boardId = decodeSegment(thinkingDeck[1] ?? '')
@@ -553,12 +638,12 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
   const oneCard = path.match(/^\/boards\/([^/]+)\/cards\/([^/]+)$/)
   if (oneCard && method === 'get') {
     const card = findCard(oneCard[1] ?? '', oneCard[2] ?? '')
-    return card ? ok(card) : notFound('Card not found in demo mode.')
+    return card ? ok(cloneValue(card)) : notFound('Card not found in demo mode.')
   }
 
   const boardCardsMatch = path.match(/^\/boards\/([^/]+)\/cards$/)
   if (boardCardsMatch && method === 'get') {
-    return ok(boardCards(boardCardsMatch[1] ?? ''))
+    return ok(cloneValue(boardCards(boardCardsMatch[1] ?? '')))
   }
 
   const oneBoard = path.match(/^\/boards\/([^/]+)$/)
