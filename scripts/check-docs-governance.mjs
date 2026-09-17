@@ -7,7 +7,15 @@ import { fileURLToPath } from 'node:url'
 
 export const CI_POLICY_PATH = 'ci/policy.v1.json'
 export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
-const FORBIDDEN_SCALAR_CONTROL = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/
+const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F]/u
+
+const YAML_NULL_SCALAR = /^(?:~|null)$/i
+const YAML_BOOLEAN_SCALAR = /^(?:true|false)$/i
+const YAML_INTEGER_SCALAR = /^[+-]?(?:0b[01](?:_?[01])*|0o[0-7](?:_?[0-7])*|0x[0-9a-f](?:_?[0-9a-f])*|[0-9](?:_?[0-9])*)$/i
+const YAML_FLOAT_SCALAR = /^[+-]?(?:(?:[0-9](?:_?[0-9])*)?\.[0-9](?:_?[0-9])*(?:e[+-]?[0-9](?:_?[0-9])*)?|[0-9](?:_?[0-9])*\.(?:[0-9](?:_?[0-9])*)?(?:e[+-]?[0-9](?:_?[0-9])*)?|[0-9](?:_?[0-9])*e[+-]?[0-9](?:_?[0-9])*)$/i
+const YAML_NON_FINITE_FLOAT_SCALAR = /^[+-]?\.(?:inf|nan)$/i
+const YAML_DATE_SCALAR = /^\d{4}-\d{2}-\d{2}$/
+const YAML_TIMESTAMP_SCALAR = /^\d{4}-\d{2}-\d{2}(?:[Tt]|[ \t]+)\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:[ \t]*(?:[Zz]|[+-]\d{1,2}(?::?\d{2})?))?$/
 
 const requiredDocs = [
   'docs/STATUS.md',
@@ -63,7 +71,7 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
   if (invalid.length > 0) {
     return {
       controlPaths: [],
-      errors: [`${policyPath} controlPaths must contain only non-empty strings`],
+      errors: [`${policyPath} controlPaths must contain only non-empty strings without control characters`],
     }
   }
 
@@ -88,38 +96,50 @@ function trimAsciiWhitespace(value) {
   return value.replace(/^[ \t]+|[ \t]+$/g, '')
 }
 
-function parsedScalar(value) {
+function parsedScalar(value, quoted) {
   return FORBIDDEN_SCALAR_CONTROL.test(value)
-    ? { value: null, error: 'forbidden control character' }
-    : { value, error: null }
+    ? { value: null, error: 'forbidden control character', quoted }
+    : { value, error: null, quoted }
+}
+
+function isYamlImplicitNonStringScalar(value) {
+  return (
+    YAML_NULL_SCALAR.test(value) ||
+    YAML_BOOLEAN_SCALAR.test(value) ||
+    YAML_INTEGER_SCALAR.test(value) ||
+    YAML_FLOAT_SCALAR.test(value) ||
+    YAML_NON_FINITE_FLOAT_SCALAR.test(value) ||
+    YAML_DATE_SCALAR.test(value) ||
+    YAML_TIMESTAMP_SCALAR.test(value)
+  )
 }
 
 function parseFrontMatterScalar(rawValue) {
   const text = trimAsciiWhitespace(rawValue)
   if (text === '') {
-    return { value: null, error: 'empty unquoted scalar' }
+    return { value: null, error: 'empty unquoted scalar', quoted: false }
   }
   if (FORBIDDEN_SCALAR_CONTROL.test(text)) {
-    return { value: null, error: 'forbidden control character' }
+    return { value: null, error: 'forbidden control character', quoted: false }
   }
 
   if (text.startsWith('"')) {
     const quoted = text.match(/^("(?:[^"\\]|\\.)*")(?:[ \t]+#.*)?$/)
     if (!quoted) {
-      return { value: null, error: 'unbalanced quote or trailing content' }
+      return { value: null, error: 'unbalanced quote or trailing content', quoted: true }
     }
     try {
-      return parsedScalar(JSON.parse(quoted[1]))
+      return parsedScalar(JSON.parse(quoted[1]), true)
     } catch {
-      return { value: null, error: 'unsupported double-quoted escape or control character' }
+      return { value: null, error: 'unsupported double-quoted escape or control character', quoted: true }
     }
   }
 
   if (text.startsWith("'")) {
     const quoted = text.match(/^'((?:[^']|'')*)'(?:[ \t]+#.*)?$/)
     return quoted
-      ? parsedScalar(quoted[1].replaceAll("''", "'"))
-      : { value: null, error: 'unbalanced quote or trailing content' }
+      ? parsedScalar(quoted[1].replaceAll("''", "'"), true)
+      : { value: null, error: 'unbalanced quote or trailing content', quoted: true }
   }
 
   const value = text.replace(/[ \t]+#.*$/, '')
@@ -130,16 +150,17 @@ function parseFrontMatterScalar(rawValue) {
       error: value.endsWith(closer)
         ? 'unsupported flow sequence or mapping'
         : 'unterminated flow sequence or mapping',
+      quoted: false,
     }
   }
   if (/^[!&*|>@`%}\],#]/.test(value) || /^[-?:](?:[ \t]|$)/.test(value)) {
-    return { value: null, error: 'unsupported leading scalar indicator' }
+    return { value: null, error: 'unsupported leading scalar indicator', quoted: false }
   }
   if (/:(?:[ \t]|$)/.test(value)) {
-    return { value: null, error: 'unsupported nested mapping' }
+    return { value: null, error: 'unsupported nested mapping', quoted: false }
   }
 
-  return parsedScalar(value)
+  return parsedScalar(value, false)
 }
 
 /**
@@ -296,8 +317,14 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
       continue
     }
 
-    const { value } = parseFrontMatterScalar(itemMatch[1])
-    if (value === null || value === '' || /^\s|\s$/u.test(value) || FORBIDDEN_SCALAR_CONTROL.test(value)) {
+    const { value, quoted } = parseFrontMatterScalar(itemMatch[1])
+    if (
+      value === null ||
+      value === '' ||
+      /^\s|\s$/u.test(value) ||
+      FORBIDDEN_SCALAR_CONTROL.test(value) ||
+      (!quoted && isYamlImplicitNonStringScalar(value))
+    ) {
       errors.push(`${rulePath} front matter paths: has an entry this check cannot parse: ${line.trim()}`)
       continue
     }
