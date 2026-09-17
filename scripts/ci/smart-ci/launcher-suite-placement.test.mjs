@@ -5,6 +5,7 @@ import { test } from 'node:test'
 const frontendUnitWorkflowUrl = new URL('../../../.github/workflows/reusable-frontend-unit.yml', import.meta.url)
 const policyUrl = new URL('../../../ci/policy.v1.json', import.meta.url)
 const LAUNCHER_STEP_NAME = 'Run source launcher regression suite'
+const LAUNCHER_COMMAND = 'node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs'
 const UNCONDITIONAL_STEP_NAMES = [
   'Run frontend lint', 'Run frontend typecheck', 'Run frontend build', 'Run frontend tests with coverage thresholds',
 ]
@@ -35,14 +36,15 @@ test('source launcher remains Linux-only with the exact command and step budget 
   assert.ok(lines.includes('    runs-on: ubuntu-latest'))
   assert.ok(!lines.some(line => /^ {4}if:/.test(line)))
   const launcher = step(extractSteps(lines), LAUNCHER_STEP_NAME)
-  assert.match(launcher.body, /^ {8}run: node --test --test-concurrency=1 --test-timeout=30000 scripts\/ci\/dev-up\.test\.mjs$/m)
+  assert.match(launcher.body, new RegExp(`^ {8}run: ${LAUNCHER_COMMAND.replaceAll('.', '\\.')}$`, 'm'))
   assert.match(launcher.body, /^ {8}timeout-minutes: 10$/m)
   assert.equal(condition(launcher), "runner.os == 'Linux'")
+  assert.equal(text.split('scripts/ci/dev-up-identity-seam.test.mjs').length - 1, 1)
   assert.equal(text.split('scripts/ci/dev-up.test.mjs').length - 1, 1)
 })
 test('frontend semantics no longer execute launcher tests or wait for launcher results', async () => {
   const lines = extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit')
-  assert.ok(!lines.some(line => /dev-up\.test|^ {4}needs:/.test(line)))
+  assert.ok(!lines.some(line => /dev-up(?:-identity-seam)?\.test|^ {4}needs:/.test(line)))
 })
 test('frontend-unit retains both hosted operating systems', async () => {
   const lines = extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit')
