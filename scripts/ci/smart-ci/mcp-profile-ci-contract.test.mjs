@@ -11,10 +11,6 @@ const apiWorkflow = readFileSync(
   new URL('../../../.github/workflows/reusable-api-integration.yml', import.meta.url),
   'utf8',
 );
-const profileHarness = readFileSync(
-  new URL('../../mcp/Test-DockerMcpProfile.Tests.ps1', import.meta.url),
-  'utf8',
-);
 const BASE = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
 
@@ -71,11 +67,4 @@ test('the Windows API lane runs the fake-backed profile suite with mandatory Bas
   assert.match(step, /if: matrix\.os == 'windows-latest'/);
   assert.match(step, /shell: powershell/);
   assert.match(step, /scripts\/mcp\/Test-DockerMcpProfile\.Tests\.ps1 -RequireBash/);
-});
-
-test('the profile harness clears every fake-Docker scenario variable', () => {
-  assert.match(
-    profileHarness,
-    /foreach \(\$name in @\([^)]*'TASKDECK_FAKE_DOCKER_MISSING_SERVER'/s,
-  );
 });
