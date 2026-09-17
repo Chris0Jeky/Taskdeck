@@ -47,6 +47,7 @@ describe('CardModal permission reconciliation', () => {
     vi.mocked(boardsApi.getBoard).mockResolvedValue(board(true))
     store = reactive({
       currentBoard: board(true), currentBoardCards: [card],
+      currentBoardRequestGeneration: 1, currentBoardPayloadGeneration: 1,
       fetchCardComments: vi.fn().mockResolvedValue([]), fetchCardProvenance: vi.fn().mockResolvedValue(null),
       getCardComments: vi.fn().mockReturnValue([]), setEditingCard: vi.fn(), fetchBoard: vi.fn(), setCardArchived: vi.fn(),
       updateCard: vi.fn(), deleteCard: vi.fn(), createCardComment: vi.fn(),
@@ -185,6 +186,8 @@ describe('CardModal permission reconciliation', () => {
     expect(button(wrapper, 'Delete Card').attributes('disabled')).toBeDefined()
     expect(button(wrapper, 'Clear').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="card-permission-recovery"]').text()).toContain('Checking current board access')
+    expect(wrapper.findAll('[data-testid="card-type-permission-refresh"]')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="card-permission-refresh"]').attributes('disabled')).toBeDefined()
 
     permission.resolve(board(false))
     await flushPromises()
@@ -209,6 +212,54 @@ describe('CardModal permission reconciliation', () => {
     wrapper.unmount()
   })
 
+  it('restores focus after retrying type permission from the mounted card modal form', async () => {
+    store.currentBoard = board(undefined)
+    vi.mocked(boardsApi.getBoard)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockResolvedValueOnce(board(true))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels: [] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const refresh = wrapper.get('[data-testid="card-type-permission-refresh"]')
+    ;(refresh.element as HTMLButtonElement).focus()
+    expect(document.activeElement).toBe(refresh.element)
+
+    await refresh.trigger('click')
+    await flushPromises()
+
+    const selector = wrapper.get('#card-work-item-type')
+    expect((selector.element as HTMLSelectElement).disabled).toBe(false)
+    expect(document.activeElement).toBe(selector.element)
+    wrapper.unmount()
+  })
+
+  it('moves focus to the outer recovery control when a retry confirms read-only access', async () => {
+    store.currentBoard = board(undefined)
+    vi.mocked(boardsApi.getBoard)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockResolvedValueOnce(board(false))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels: [] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const refresh = wrapper.get('[data-testid="card-type-permission-refresh"]')
+    ;(refresh.element as HTMLButtonElement).focus()
+    await refresh.trigger('click')
+    await flushPromises()
+
+    const recovery = wrapper.get('[data-testid="card-permission-refresh"]')
+    expect(recovery.attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(recovery.element)
+    wrapper.unmount()
+  })
+
   it('reconciles a late PUT403 after readOnly already changed true then false', async () => {
     const { wrapper, save } = await pendingSave()
     store.currentBoard!.canWrite = false
@@ -225,6 +276,118 @@ describe('CardModal permission reconciliation', () => {
     await flushPromises()
     expect(wrapper.findComponent(CardAssignmentField).get('fieldset').attributes('disabled')).toBeUndefined()
     expect((wrapper.get('[aria-label="Card assignments"] input').element as HTMLInputElement).checked).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('unlocks from a post-denial board payload after a failed manual retry', async () => {
+    const initialReconciliation = deferred<BoardDetail>()
+    const manualRetry = deferred<BoardDetail>()
+    vi.mocked(store.updateCard).mockRejectedValueOnce({ response: { status: 403 } })
+    vi.mocked(boardsApi.getBoard)
+      .mockReturnValueOnce(initialReconciliation.promise)
+      .mockReturnValueOnce(manualRetry.promise)
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels: [] } })
+    await flushPromises()
+    await wrapper.get('#card-title').setValue('Kept title')
+    await button(wrapper, 'Save Changes').trigger('click')
+    await flushPromises()
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(1)
+
+    initialReconciliation.reject({ response: { status: 500 } })
+    await flushPromises()
+    store.currentBoardRequestGeneration = 2
+
+    await button(wrapper, 'Refresh board permission').trigger('click')
+    await flushPromises()
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(2)
+    manualRetry.reject({ response: { status: 500 } })
+    await flushPromises()
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).not.toBeNull()
+
+    store.currentBoard = board(true)
+    store.currentBoardPayloadGeneration = 2
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).toBeNull()
+    expect(wrapper.findComponent(CardArchiveAction).props('canWrite')).toBe(true)
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Kept title')
+    wrapper.unmount()
+  })
+
+  it.each([403, 404])('keeps the editor locked after a manual retry returns %s', async status => {
+    const initialReconciliation = deferred<BoardDetail>()
+    const manualRetry = deferred<BoardDetail>()
+    vi.mocked(store.updateCard).mockRejectedValueOnce({ response: { status: 403 } })
+    vi.mocked(boardsApi.getBoard)
+      .mockReturnValueOnce(initialReconciliation.promise)
+      .mockReturnValueOnce(manualRetry.promise)
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels: [] } })
+    await flushPromises()
+    await wrapper.get('#card-title').setValue('Kept title')
+    await button(wrapper, 'Save Changes').trigger('click')
+    await flushPromises()
+
+    initialReconciliation.reject({ response: { status: 500 } })
+    await flushPromises()
+    store.currentBoardRequestGeneration = 2
+
+    await button(wrapper, 'Refresh board permission').trigger('click')
+    await flushPromises()
+    manualRetry.reject({ response: { status } })
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).not.toBeNull()
+    expect(wrapper.findComponent(CardAssignmentField).props('readsBlocked')).toBe(true)
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Kept title')
+
+    store.currentBoard = board(true)
+    store.currentBoardPayloadGeneration = 2
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).not.toBeNull()
+    expect(wrapper.findComponent(CardAssignmentField).props('readsBlocked')).toBe(true)
+
+    store.currentBoard = board(true)
+    store.currentBoardPayloadGeneration = 3
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).toBeNull()
+    expect(wrapper.findComponent(CardAssignmentField).props('readsBlocked')).toBe(false)
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Kept title')
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['canWrite false', board(false)],
+    ['archived board', { ...board(true), isArchived: true }],
+  ])('does not accept an older payload after recovery confirms %s', async (_caseName, deniedBoard) => {
+    const reconciliation = deferred<BoardDetail>()
+    vi.mocked(store.updateCard).mockRejectedValueOnce({ response: { status: 403 } })
+    vi.mocked(boardsApi.getBoard).mockReturnValueOnce(reconciliation.promise)
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels: [] } })
+    await flushPromises()
+    await wrapper.get('#card-title').setValue('Kept title')
+    await button(wrapper, 'Save Changes').trigger('click')
+    await flushPromises()
+    store.currentBoardRequestGeneration = 2
+    reconciliation.resolve(deniedBoard)
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).not.toBeNull()
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Kept title')
+
+    store.currentBoard = board(true)
+    store.currentBoardPayloadGeneration = 2
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).not.toBeNull()
+
+    store.currentBoard = board(true)
+    store.currentBoardPayloadGeneration = 3
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').element.closest('fieldset[disabled]')).toBeNull()
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Kept title')
     wrapper.unmount()
   })
 

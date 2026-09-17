@@ -38,6 +38,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const todayLoading = ref(false)
   const todayError = ref<string | null>(null)
   let pendingPreferenceRequests = 0
+  let homeRequestVersion = 0
   let todayRequestVersion = 0
   // ── Preference ordering model (issue #1343) ────────────────────────────────
   // WRITES CONFIRM, NEVER RE-APPLY: updateMode/updateOnboarding apply the
@@ -127,7 +128,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     summary: HomeSummary | TodaySummary,
     snapshot: PreferenceReadSnapshot,
   ): { modeApplied: boolean; onboardingApplied: boolean } {
-    const modeApplied = isModeReadClear(snapshot) && !modeDirty
+    const modeReadClear = isModeReadClear(snapshot)
+    // A summary that began after the failed write and reports the same mode is
+    // an authoritative confirmation that the server committed the local intent
+    // even though the response was lost. Release the dirty guard so later clean
+    // summaries can move the field again.
+    if (modeReadClear && modeDirty && summary.workspaceMode === mode.value) {
+      modeDirty = false
+    }
+
+    const modeApplied = modeReadClear && !modeDirty
     const onboardingApplied = isOnboardingReadClear(snapshot) && !onboardingDirty
 
     if (modeApplied) {
@@ -278,6 +288,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function fetchHomeSummary(): Promise<HomeSummary> {
+    const requestVersion = ++homeRequestVersion
+
     if (isDemoMode) {
       homeLoading.value = true
       homeError.value = null
@@ -302,6 +314,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       homeLoading.value = true
       homeError.value = null
       const summary = await workspaceApi.getHomeSummary()
+      if (homeRequestVersion !== requestVersion) return summary
       homeSummary.value = summary
       const { modeApplied, onboardingApplied } = applySummaryPreferences(summary, guardSnapshot)
       if (modeApplied) {
@@ -315,10 +328,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
       return summary
     } catch (e: unknown) {
-      homeError.value = getErrorMessage(e, "We couldn't load your workspace overview")
+      if (homeRequestVersion === requestVersion) {
+        homeError.value = getErrorMessage(e, "We couldn't load your workspace overview")
+      }
       throw e
     } finally {
-      homeLoading.value = false
+      if (homeRequestVersion === requestVersion) {
+        homeLoading.value = false
+      }
     }
   }
 
@@ -384,7 +401,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const summary = await workspaceApi.getTodaySummary()
       if (requestVersion === todayRequestVersion) {
         todaySummary.value = summary
-        const { onboardingApplied } = applySummaryPreferences(summary, guardSnapshot)
+        const { modeApplied, onboardingApplied } = applySummaryPreferences(summary, guardSnapshot)
+        if (modeApplied) {
+          preferencesHydrated.value = true
+        }
         if (!onboardingApplied && onboarding.value) {
           // Stale-for-onboarding summary: keep the newer known onboarding
           // visible (see Home).
@@ -404,6 +424,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  function shouldAdoptOnboardingWritePayload(
+    action: WorkspaceOnboardingAction,
+    optimisticBase: WorkspaceOnboarding | null,
+  ): boolean {
+    if (!optimisticBase) return true
+
+    // Dismissed onboarding is intentionally deferred by the server: it carries
+    // no steps/current step. Replay is therefore not a plain visibility echo;
+    // its response is the first authoritative payload containing the restored
+    // guide and must replace this placeholder.
+    return (
+      action === 'replay' &&
+      optimisticBase.visibility === 'dismissed' &&
+      !optimisticBase.isComplete &&
+      optimisticBase.currentStepId === null &&
+      optimisticBase.steps.length === 0
+    )
+  }
+
   async function updateOnboarding(action: WorkspaceOnboardingAction): Promise<WorkspaceOnboarding> {
     if (isDemoMode) {
       const next: WorkspaceOnboarding = {
@@ -418,10 +457,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // action requests is applied immediately from the best-known onboarding
     // state; the write response then confirms rather than re-applies. The full
     // server-computed object (steps, timestamps) arrives via the next clean
-    // read (summary/hydrate) once the write has settled.
+    // read (summary/hydrate) once the write has settled, except when replaying
+    // a deferred placeholder whose response is the first complete payload.
     const optimisticBase =
       onboarding.value ?? homeSummary.value?.onboarding ?? todaySummary.value?.onboarding ?? null
     const appliedOptimistic = optimisticBase !== null
+    const adoptAuthoritativePayload = shouldAdoptOnboardingWritePayload(action, optimisticBase)
     if (optimisticBase) {
       syncOnboarding({
         ...optimisticBase,
@@ -438,11 +479,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const nextOnboarding = await workspaceApi.updateOnboarding({ action })
       if (onboardingRequestVersion === requestVersion) {
         onboardingDirty = false
-        if (!appliedOptimistic) {
-          // Bootstrap: no local onboarding existed to patch, so adopt this
-          // action's authoritative result as initial state. Not an echo
-          // overwrite — this is still the latest onboarding write, so no newer
-          // local intent can exist.
+        if (adoptAuthoritativePayload) {
+          // Bootstrap/deferred replay: no complete local payload existed to
+          // preserve, so the latest write's own response is authoritative.
           syncOnboarding(nextOnboarding)
         }
       }
@@ -467,9 +506,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function clearHomeSummary() {
     // Invalidate any in-flight badge refresh so its response cannot write back
     // into a summary the caller just cleared.
+    homeRequestVersion += 1
     workloadRequestVersion += 1
     homeSummary.value = null
     homeError.value = null
+    homeLoading.value = false
   }
 
   function clearTodaySummary() {
@@ -480,6 +521,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function resetForLogout() {
+    // Settlements from the previous actor must be unable to recreate dirty
+    // state after reset. Keep pending counters intact so their finally blocks
+    // still balance loading state, but invalidate both write generations.
+    modeRequestVersion += 1
+    onboardingRequestVersion += 1
     modeDirty = false
     onboardingDirty = false
     preferencesHydrated.value = false
