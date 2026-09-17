@@ -499,6 +499,67 @@ function Test-FsmonitorFixtureCleanupLauncher {
     Assert-NormalizedContains $persistentRemovalFailure.Exception.Message "simulated persistent sharing violation" "The exhausted retry budget discarded the original removal failure."
     Assert-True (Test-Path -LiteralPath $persistentCleanupRoot -PathType Container) "An exhausted removal retry budget must preserve the fixture for diagnosis."
 
+    $successfulStopLauncherPath = Join-Path $ProbeRoot "fake-git-stop-success.ps1"
+    Set-Content -LiteralPath $successfulStopLauncherPath -Encoding Ascii -Value 'exit 0'
+    $successfulStopArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        $successfulStopLauncherPath
+    )
+
+    $retryCleanupRoot = Join-Path $ProbeRoot "cleanup-retry"
+    New-Item -ItemType Directory -Path $retryCleanupRoot | Out-Null
+    Set-Content -LiteralPath (Join-Path $retryCleanupRoot "owned.txt") -Value "owned" -Encoding Ascii
+    $retryState = [pscustomobject]@{ Attempts = 0 }
+    $retryRemovalInvoker = {
+        param([string]$LiteralPath)
+        $retryState.Attempts++
+        if ($retryState.Attempts -lt 3) {
+            throw [System.IO.IOException]::new("simulated transient sharing violation")
+        }
+        Remove-Item -LiteralPath $LiteralPath -Recurse -Force
+    }.GetNewClosure()
+    Invoke-FsmonitorFixtureStopAndRemove `
+        -FixtureRoot $fixtureRoot `
+        -CleanupRoot $retryCleanupRoot `
+        -GitExecutable $powerShellExecutable `
+        -GitExecutablePrefixArguments $successfulStopArguments `
+        -RemovalInvoker $retryRemovalInvoker `
+        -RemovalTimeoutMilliseconds 1000 `
+        -RemovalRetryDelayMilliseconds 1
+    Assert-Equal 3 $retryState.Attempts "Transient fixture removal failures were not retried to success."
+    Assert-True (-not (Test-Path -LiteralPath $retryCleanupRoot)) "The retry probe left its owned cleanup root behind."
+
+    $persistentCleanupRoot = Join-Path $ProbeRoot "cleanup-retry-exhausted"
+    New-Item -ItemType Directory -Path $persistentCleanupRoot | Out-Null
+    Set-Content -LiteralPath (Join-Path $persistentCleanupRoot "owned.txt") -Value "owned" -Encoding Ascii
+    $persistentState = [pscustomobject]@{ Attempts = 0 }
+    $persistentRemovalInvoker = {
+        param([string]$LiteralPath)
+        $persistentState.Attempts++
+        throw [System.IO.IOException]::new("simulated persistent sharing violation")
+    }.GetNewClosure()
+    $persistentRemovalFailure = $null
+    try {
+        Invoke-FsmonitorFixtureStopAndRemove `
+            -FixtureRoot $fixtureRoot `
+            -CleanupRoot $persistentCleanupRoot `
+            -GitExecutable $powerShellExecutable `
+            -GitExecutablePrefixArguments $successfulStopArguments `
+            -RemovalInvoker $persistentRemovalInvoker `
+            -RemovalTimeoutMilliseconds 25 `
+            -RemovalRetryDelayMilliseconds 1
+    }
+    catch {
+        $persistentRemovalFailure = $_
+    }
+    Assert-True ($null -ne $persistentRemovalFailure) "A permanently blocked fixture removal must fail after its retry budget."
+    Assert-True ($persistentState.Attempts -ge 2) "A permanently blocked fixture removal did not retry before failing."
+    Assert-NormalizedContains $persistentRemovalFailure.Exception.Message "simulated persistent sharing violation" "The exhausted retry budget discarded the original removal failure."
+    Assert-True (Test-Path -LiteralPath $persistentCleanupRoot -PathType Container) "An exhausted removal retry budget must preserve the fixture for diagnosis."
+
     $failingCleanupRoot = Join-Path $ProbeRoot "cleanup-stop-failure"
     $failingTracePath = Join-Path $ProbeRoot "stop-failure-trace.txt"
     New-Item -ItemType Directory -Path $failingCleanupRoot | Out-Null
