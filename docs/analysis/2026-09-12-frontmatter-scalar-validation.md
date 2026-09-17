@@ -17,9 +17,11 @@ The control-path mirror is checked by `scripts/check-docs-governance.mjs` withou
 
 Unsupported tags, anchors, aliases, block scalars, flow collections, nested collections, malformed quoting, inconsistent indentation, and trailing content are rejected instead of approximated.
 
-Quoted values are tracked separately from plain values. This distinction is required because a path such as `"null"` is a string, while plain `null` is resolved as a non-string by common YAML schemas. The path consumer rejects whole-scalar plain values that resolve as nulls, booleans, integers, floats, infinities, NaN, dates, or timestamps. Matching is bounded to the complete scalar so ordinary paths such as `2026-09-17-notes.md`, `true/guide.md`, and `123/notes.md` remain valid.
+Quoted values are tracked separately from plain values. This distinction is required because a path such as `"null"` is a string, while plain `null` is resolved as a non-string by common YAML schemas. The path consumer rejects whole-scalar plain values that resolve as nulls, booleans, integers, floats, infinities, NaN, dates, or timestamps. Matching follows the resolver's exact spellings and is bounded to the complete scalar, so resolver strings such as `0XFF`, `+.nAn`, and `1e1_0`, plus ordinary paths such as `2026-09-17-notes.md`, `true/guide.md`, and `123/notes.md`, remain valid.
 
-Every decoded internal control character in the C0, DEL, and C1 ranges is rejected. This applies equally to policy JSON strings, literal YAML characters, and escape sequences decoded from quoted YAML values. Ordinary visible Unicode remains valid. Leading or trailing Unicode whitespace is rejected separately rather than trimmed into an apparently matching control path.
+Every decoded internal control character in the C0, DEL, and C1 ranges is rejected. This applies equally to policy JSON strings, literal YAML characters, and escape sequences decoded from quoted YAML values. Leading or trailing Unicode whitespace is rejected separately rather than trimmed into an apparently matching control path.
+
+Decoded unpaired UTF-16 surrogates are also rejected because a JSON escape can otherwise create a JavaScript string that a YAML loader refuses as invalid Unicode. Valid surrogate pairs and ordinary visible Unicode remain valid.
 
 ## Recovery audit
 
@@ -36,19 +38,22 @@ No workflow, required context, dependency, deployment setting, policy document, 
 
 ## Verification
 
-Focused red/green evidence on Node v22.16.0:
+The implementation was developed regression-first. On test-only head `de09dcbb0bd9032adc87cf9f2e583ef46f52073b`, the focused suite ran 89 tests and failed four, including the stale whitespace diagnostic and resolver under- and overmatch counterexamples. The implementation was then corrected and the surrogate review finding was added as a separate red/green pair.
 
-- against the extracted source implementation, the new suite failed three of six groups:
-  - policy controls accepted U+0009;
-  - decoded quoted-YAML controls accepted U+0009;
-  - plain YAML `~` was accepted as a string path;
-- against the corrected implementation, all six groups pass;
-- the suite exhaustively checks C0, DEL, and C1 code points in policy JSON and decoded quoted YAML;
-- it checks representative null, boolean, numeric, non-finite, date, and timestamp forms;
-- it proves quoted equivalents remain strings;
-- it proves visible Unicode and path-like counterexamples are not overmatched;
-- `node --check scripts/check-docs-governance.mjs` passes.
+Exact-head verification on `b2263bdcdab1b7b01e032c2cfdbd68ba4e9e32ef` produced:
+
+- `node --test scripts/check-docs-governance.test.mjs scripts/check-docs-governance.hardening.test.mjs`: **91 tests, 91 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo**;
+- exhaustive C0, DEL, and C1 rejection in policy JSON and decoded quoted YAML;
+- rejection of first/last high and low unpaired-surrogate boundaries in both policy and quoted YAML, with valid non-BMP pairs preserved;
+- resolver-exact null, boolean, integer, float, non-finite, date, and timestamp coverage, including under- and overmatch counterexamples;
+- quoted implicit-scalar equivalents preserved as strings;
+- visible Unicode and path-like counterexamples preserved;
+- `node --check scripts/check-docs-governance.mjs`: passed;
+- `node scripts/check-docs-governance.mjs`: `Docs governance check passed.`;
+- `node scripts/check-doc-links.mjs`: `Doc link check passed (711 Markdown files, 0 broken relative links).`;
+- `git diff --check`: passed;
+- the exact head and working tree remained unchanged and clean before and after verification.
 
 The current hosted Docs Governance job executes the checker against the repository policy/rule pair but does not yet invoke this Node regression suite. Wiring governance regressions into hosted CI remains separately owned by #3005; this PR does not alter a control-plane workflow to conceal that boundary.
 
-Exact-head hosted CI, a fresh code review, and review of the final changed-file inventory are required before merge. There is no frontend, backend, browser, deployment, or hosted-product claim.
+Because this evidence note is itself a follow-up commit, the final branch head still requires hosted CI, a fresh exact-head code review, and a final changed-file inventory check before merge. There is no frontend, backend, browser, deployment, or hosted-product claim.
