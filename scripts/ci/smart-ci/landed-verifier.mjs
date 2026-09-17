@@ -78,12 +78,14 @@ function evaluateEvidence(evidence, target) {
   if (!isObject(evidence) || !isObject(evidence.artifact)) return reject(evidence, 'evidence-invalid');
   const { artifact, workflowRun, receipt } = evidence;
   if (!positiveInteger(artifact.id) || typeof artifact.name !== 'string') return reject(evidence, 'artifact-invalid');
+  if (!positiveInteger(artifact.workflowRunId)) return reject(evidence, 'artifact-producer-run-unknown');
   if (artifact.expired === true) return reject(evidence, 'artifact-expired');
   if (artifact.expired !== false) return reject(evidence, 'artifact-expiry-unknown');
   const observedAt = Math.max(timestamp(artifact.updatedAt), timestamp(artifact.createdAt));
   if (observedAt === 0) return reject(evidence, 'artifact-time-invalid');
 
   if (!isObject(workflowRun) || !positiveInteger(workflowRun.id)) return reject(evidence, 'workflow-run-invalid');
+  if (artifact.workflowRunId !== workflowRun.id) return reject(evidence, 'artifact-workflow-run-mismatch');
   if (workflowRun.path !== AUTHORITY_WORKFLOW) return reject(evidence, 'workflow-path-mismatch');
   if (workflowRun.event !== AUTHORITY_EVENT) return reject(evidence, 'workflow-event-mismatch');
   if (workflowRun.status !== 'completed' || workflowRun.conclusion !== 'success') {
@@ -175,9 +177,10 @@ function fullVerdict(target, reason, diagnostics = [], candidates = 0) {
  * Decide whether the landed commit may use the bounded verification path.
  *
  * Evidence is authoritative only when trusted landing classification identifies a
- * normal PR merge and the artifact name, producer workflow, event, successful
- * conclusion, receipt identity, current policy digest, associated PR, and landed
- * tree all agree. Missing or conflicting facts fall back to full hosted qualification.
+ * normal PR merge and the artifact's producer run, producer workflow, event,
+ * successful conclusion, receipt identity, current policy digest, associated PR,
+ * and landed tree all agree. Missing or conflicting facts fall back to full hosted
+ * qualification.
  */
 export function decideLandedQualification({
   repository,
