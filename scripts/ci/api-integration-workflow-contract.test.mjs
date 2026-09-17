@@ -45,10 +45,15 @@ test('rejects making timeout evidence collection fatal or incomplete', () => {
     '      - name: Upload API integration failure evidence\n        if: ${{ always() && steps.api_integration_tests.outcome != \'success\' }}\n        continue-on-error: true',
     '      - name: Upload API integration failure evidence\n        if: ${{ always() && steps.api_integration_tests.outcome != \'success\' }}',
   )
-  const partialWorkflow = canonicalWorkflow.replace(
-    '          path: backend/TestResults/api-integration/${{ matrix.os }}/',
-    '          path: backend/TestResults/api-integration/${{ matrix.os }}/*.trx',
-  )
+  const failureEvidenceMarker = '      - name: Upload API integration failure evidence'
+  const failureEvidenceStart = canonicalWorkflow.indexOf(failureEvidenceMarker)
+  assert.notEqual(failureEvidenceStart, -1)
+  const partialWorkflow =
+    canonicalWorkflow.slice(0, failureEvidenceStart) +
+    canonicalWorkflow.slice(failureEvidenceStart).replace(
+      '          path: backend/TestResults/api-integration/${{ matrix.os }}/',
+      '          path: backend/TestResults/api-integration/${{ matrix.os }}/*.trx',
+    )
 
   assert.match(errorsFor(fatalWorkflow), /failure evidence upload must be non-fatal/)
   assert.match(errorsFor(partialWorkflow), /complete partial-results directory/)
