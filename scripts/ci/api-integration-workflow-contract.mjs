@@ -31,11 +31,11 @@ function requireAlwaysConditionallyStrict(errors, workflowText, stepName, role) 
   }
   if (
     !section.includes(
-      "continue-on-error: ${{ steps.api_integration_tests.outcome != 'success' }}",
+      "continue-on-error: ${{ steps.api_integration_tests.outcome == 'failure' }}",
     )
   ) {
     errors.push(
-      `API integration ${role} must remain required after a successful test run and non-fatal after timeout`,
+      `API integration ${role} must remain required after a successful test run and non-fatal only when the test step fails`,
     )
   }
   return section

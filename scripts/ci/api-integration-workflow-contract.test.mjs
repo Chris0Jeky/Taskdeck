@@ -7,7 +7,7 @@ import { validateApiIntegrationWorkflow } from './api-integration-workflow-contr
 const canonicalWorkflow = readFileSync(
   new URL('../../.github/workflows/reusable-api-integration.yml', import.meta.url),
   'utf8',
-)
+).replace(/\r\n/g, '\n')
 
 function errorsFor(workflow) {
   return validateApiIntegrationWorkflow(workflow).join('\n')
@@ -15,6 +15,10 @@ function errorsFor(workflow) {
 
 test('accepts the bounded API integration workflow and timeout evidence contract', () => {
   assert.deepEqual(validateApiIntegrationWorkflow(canonicalWorkflow), [])
+})
+
+test('accepts the canonical workflow when checked out with Windows line endings', () => {
+  assert.deepEqual(validateApiIntegrationWorkflow(canonicalWorkflow.replace(/\n/g, '\r\n')), [])
 })
 
 test('rejects removing the calibrated outer test-step timeout', () => {
@@ -60,8 +64,20 @@ test('rejects making timeout evidence collection fatal or incomplete', () => {
 })
 
 test('rejects timing post-processing that becomes optional after a successful test run', () => {
-  const conditional = "        continue-on-error: ${{ steps.api_integration_tests.outcome != 'success' }}\n"
+  const conditional = "        continue-on-error: ${{ steps.api_integration_tests.outcome == 'failure' }}\n"
   const workflow = canonicalWorkflow.replace(conditional, '        continue-on-error: true\n')
 
   assert.match(errorsFor(workflow), /timing summarizer must remain required after a successful test run/)
+})
+
+test('rejects making timing post-processing non-fatal for skipped or cancelled test steps', () => {
+  const workflow = canonicalWorkflow.replace(
+    "        continue-on-error: ${{ steps.api_integration_tests.outcome == 'failure' }}",
+    "        continue-on-error: ${{ steps.api_integration_tests.outcome != 'success' }}",
+  )
+
+  assert.match(
+    errorsFor(workflow),
+    /timing summarizer must remain required after a successful test run and non-fatal only when the test step fails/,
+  )
 })

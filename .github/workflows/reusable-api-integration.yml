@@ -83,12 +83,12 @@ jobs:
 
       - name: Summarize API integration timing
         if: always()
-        continue-on-error: ${{ steps.api_integration_tests.outcome != 'success' }}
+        continue-on-error: ${{ steps.api_integration_tests.outcome == 'failure' }}
         run: python scripts/ci/summarize_trx_timing.py --trx "backend/TestResults/api-integration/${{ matrix.os }}/api-integration.trx" --output "backend/TestResults/api-integration/${{ matrix.os }}/api-integration-timing.json"
 
       - name: Upload API integration timing summary
         if: always()
-        continue-on-error: ${{ steps.api_integration_tests.outcome != 'success' }}
+        continue-on-error: ${{ steps.api_integration_tests.outcome == 'failure' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: api-integration-timing-${{ matrix.os }}
