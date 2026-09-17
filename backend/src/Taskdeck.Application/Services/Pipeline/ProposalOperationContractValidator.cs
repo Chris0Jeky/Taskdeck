@@ -30,6 +30,14 @@ public static class ProposalOperationContractValidator
         "wipLimit"
     };
 
+    // These fields are consumed only by card create/update handlers. Identity, column,
+    // revision and singular label parameters are deliberately not part of this list.
+    private static readonly string[] CardCreateUpdateParameterNames =
+    [
+        "title", "description", "dueDate", "clearDueDate", "labels", "labelIds",
+        "workItemType", "parentCardId", "clearParent"
+    ];
+
     public static async Task<Result> ValidateAsync(
         IUnitOfWork unitOfWork,
         Guid? proposalBoardId,
@@ -46,6 +54,13 @@ public static class ProposalOperationContractValidator
             return Result.Failure(
                 ErrorCodes.ValidationError,
                 "A typed relation operation cannot be combined with card archive, restore, or delete operations.");
+        }
+        // Do this before hierarchy reads: even null/false parent fields on an unrelated
+        // action are unsupported, not a request to validate or preview a parent change.
+        foreach (var operation in materializedOperations.OrderBy(operation => operation.Sequence))
+        {
+            var supportResult = ValidateCardParameterSupport(operation);
+            if (!supportResult.IsSuccess) return supportResult;
         }
         var hierarchyResult = await ProposalHierarchyValidator.ValidateAsync(unitOfWork, proposalBoardId, materializedOperations, cancellationToken);
         if (!hierarchyResult.IsSuccess) return Result.Failure(hierarchyResult.ErrorCode, hierarchyResult.ErrorMessage);
@@ -152,6 +167,23 @@ public static class ProposalOperationContractValidator
             // board Apply will actually see at that point (#2926, #3020).
             await validationContext.ProjectColumnOccupancyAsync(operation, parameters, cancellationToken);
         }
+
+        return Result.Success();
+    }
+
+    private static Result ValidateCardParameterSupport(ProposalOperationDto operation)
+    {
+        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+            operation.ActionType.ToLowerInvariant() is "create" or "update")
+            return Result.Success();
+
+        if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var error))
+            return Result.Failure(ErrorCodes.ValidationError, error);
+
+        foreach (var name in CardCreateUpdateParameterNames)
+            if (parameters.TryGetProperty(name, out _))
+                return Result.Failure(ErrorCodes.ValidationError,
+                    $"Parameter '{name}' is not supported by card action '{operation.ActionType}'");
 
         return Result.Success();
     }
@@ -358,19 +390,6 @@ public static class ProposalOperationContractValidator
             return Result.Success();
 
         var normalizedAction = operation.ActionType.ToLowerInvariant();
-
-        // Only the create and update card handlers read 'workItemType'
-        // (OperationHandlerRegistry.CreateCardAsync / UpdateCardAsync); move, archive,
-        // the lifecycle verbs, delete, assignment replacement and the label verbs all
-        // ignore it at Apply. Accepting it on those actions let the approval preview
-        // announce a "Work item type: Task -> Epic" transition that Apply never performs,
-        // so reject it here in the shared preview/apply gate instead (#2950 preview == apply).
-        if (normalizedAction is not ("create" or "update") && parameters.TryGetProperty("workItemType", out _))
-        {
-            return Result.Failure(
-                ErrorCodes.ValidationError,
-                $"Parameter 'workItemType' is not supported by card action '{operation.ActionType}'");
-        }
 
         if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) ||
             normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
