@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const nativeContractPath = fileURLToPath(
-  new URL('../../../../tests/load/k6/actor-board-assignments.test.mjs', import.meta.url),
+const nativeContractPath = resolve(
+  process.cwd(),
+  '../../tests/load/k6/actor-board-assignments.test.mjs',
 )
 
 describe('k6 actor assignment contract', () => {
