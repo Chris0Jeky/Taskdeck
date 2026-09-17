@@ -430,13 +430,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   ): boolean {
     if (!optimisticBase) return true
 
-    // Dismissed onboarding is intentionally deferred by the server: it carries
-    // no steps/current step. Replay is therefore not a plain visibility echo;
-    // its response is the first authoritative payload containing the restored
-    // guide and must replace this placeholder.
+    // Deferred onboarding carries no steps/current step. An optimistic replay
+    // changes its visibility to active before the request settles, so retries
+    // and overlapping replay clicks must identify the placeholder by shape,
+    // not by its now-mutable visibility. Populated guides remain confirm-only.
     return (
       action === 'replay' &&
-      optimisticBase.visibility === 'dismissed' &&
       !optimisticBase.isComplete &&
       optimisticBase.currentStepId === null &&
       optimisticBase.steps.length === 0
