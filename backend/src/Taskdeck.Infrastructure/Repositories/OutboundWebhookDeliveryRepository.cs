@@ -22,13 +22,19 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
         var boundedLimit = NormalizeLimit(limit);
         if (_context.Database.IsSqlite())
         {
+            // SQLite persists DateTimeOffset values as offset-bearing TEXT. Lexical comparison is
+            // correct only when both operands use the same offset, so normalize the query bound to
+            // the UTC representation used by Taskdeck's persisted delivery timestamps. Keep the
+            // provider-native LINQ path below unchanged: relational providers with temporal types
+            // compare instants rather than serialized text.
+            var normalizedNow = now.ToUniversalTime();
             return await _context.OutboundWebhookDeliveries
                 .FromSqlInterpolated(
                     $"""
                     SELECT d.*
                     FROM OutboundWebhookDeliveries AS d
                     WHERE d.Status = {(int)WebhookDeliveryStatus.Pending}
-                      AND d.NextAttemptAt <= {now}
+                      AND d.NextAttemptAt <= {normalizedNow}
                     ORDER BY d.NextAttemptAt ASC, d.CreatedAt ASC
                     LIMIT {boundedLimit}
                     """)
@@ -82,6 +88,9 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
         var boundedLimit = NormalizeLimit(limit);
         if (_context.Database.IsSqlite())
         {
+            // See GetDuePendingAsync: the raw SQLite predicate compares serialized TEXT, so the
+            // caller's equivalent non-UTC representation must be canonicalized before binding.
+            var normalizedStaleBefore = staleBefore.ToUniversalTime();
             return await _context.OutboundWebhookDeliveries
                 .FromSqlInterpolated(
                     $"""
@@ -89,7 +98,7 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
                     FROM OutboundWebhookDeliveries AS d
                     WHERE d.Status = {(int)WebhookDeliveryStatus.Processing}
                       AND d.LastAttemptAt IS NOT NULL
-                      AND d.LastAttemptAt <= {staleBefore}
+                      AND d.LastAttemptAt <= {normalizedStaleBefore}
                     ORDER BY d.LastAttemptAt ASC
                     LIMIT {boundedLimit}
                     """)

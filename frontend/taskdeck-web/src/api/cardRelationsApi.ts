@@ -39,7 +39,7 @@ async function createProposal(
   const { data } = await http.post<Proposal>(proposalRoute, {
     sourceType: 2, // ProposalSourceType.Manual in the numeric HTTP contract.
     summary: relationSummary(actionType, input.relationType),
-    riskLevel: 0, // RiskLevel.Low in the numeric HTTP contract.
+    riskLevel: 1, // RiskLevel.Medium, matching the MCP and chat relation producers.
     correlationId: createSourceUploadId(),
     boardId: input.boardId,
     operations: [makeOperation(actionType, input)],
