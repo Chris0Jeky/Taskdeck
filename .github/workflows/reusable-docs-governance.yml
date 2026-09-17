@@ -75,8 +75,8 @@ jobs:
 
       - name: Validate docs governance invariants
         run: |
-          node --test scripts/check-docs-governance.test.mjs
-          node --test scripts/check-doc-links.test.mjs
+          node --test scripts/check-docs-governance*.test.mjs
+          node --test scripts/check-doc-links*.test.mjs
           node scripts/check-docs-governance.mjs
 
       - name: Validate golden principles invariants
