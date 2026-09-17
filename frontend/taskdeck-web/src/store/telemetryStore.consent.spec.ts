@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useTelemetryStore } from './telemetryStore'
+import { useToastStore } from './toastStore'
 
 const api = vi.hoisted(() => ({ getConfig: vi.fn(), sendEvents: vi.fn() }))
 vi.mock('../api/telemetryApi', () => ({ telemetryApi: api }))
@@ -21,6 +22,7 @@ describe('telemetry consent ownership', () => {
   afterEach(() => {
     vi.clearAllTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     vi.useRealTimers()
   })
 
@@ -37,6 +39,14 @@ describe('telemetry consent ownership', () => {
       reject = fail
     }))
     return () => reject(new Error('offline'))
+  }
+
+  function stubStorageMethod(method: 'getItem' | 'setItem') {
+    const methodMock = vi.fn(() => {
+      throw new Error('storage unavailable')
+    })
+    vi.stubGlobal('localStorage', { [method]: methodMock } as unknown as Storage)
+    return methodMock
   }
 
   it('does not requeue a failed request after withdrawal', async () => {
@@ -74,24 +84,72 @@ describe('telemetry consent ownership', () => {
     expect(store.eventBuffer.map((event) => event.event)).toEqual(['retry.event'])
   })
 
-  it('revokes and stops the timer even when persistence fails', async () => {
+  it('drops a failed batch when server telemetry becomes inactive in flight', async () => {
     const store = await activeStore()
+    const reject = pendingSend()
+    store.emit('config-loss.event')
+    const flushing = store.flush()
+    store.serverConfig = null
+    reject()
+    await flushing
+
+    expect(store.consentGiven).toBe(true)
+    expect(store.isActive).toBe(false)
+    expect(store.eventBuffer).toHaveLength(0)
+  })
+
+  it('revokes and warns even when the disabled preference cannot be persisted', async () => {
+    const store = await activeStore()
+    const toast = useToastStore()
     store.emit('buffered.event')
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
+    const setItem = stubStorageMethod('setItem')
+
     expect(() => store.setConsent(false)).not.toThrow()
+
+    expect(setItem).toHaveBeenCalledWith('taskdeck_telemetry_consent', 'false')
     expect(store.eventBuffer).toHaveLength(0)
     expect(store.isActive).toBe(false)
     expect(vi.getTimerCount()).toBe(0)
+    expect(toast.toasts).toHaveLength(1)
+    expect(toast.toasts[0]).toMatchObject({
+      type: 'warning',
+      duration: 0,
+      title: 'Telemetry preference not saved',
+      label: 'warning',
+      message:
+        'Telemetry is disabled for this session, but that choice could not be saved. It may be enabled again after reload.',
+    })
+  })
+
+  it('warns that an unpersisted opt-in applies only to the current session', async () => {
+    const store = useTelemetryStore()
+    const toast = useToastStore()
+    await store.loadConfig()
+    const setItem = stubStorageMethod('setItem')
+
+    expect(() => store.setConsent(true)).not.toThrow()
+
+    expect(setItem).toHaveBeenCalledWith('taskdeck_telemetry_consent', 'true')
+    expect(store.isActive).toBe(true)
+    expect(toast.toasts).toHaveLength(1)
+    expect(toast.toasts[0]).toMatchObject({
+      type: 'warning',
+      duration: 0,
+      title: 'Telemetry preference not saved',
+      label: 'warning',
+      message:
+        'Telemetry is enabled for this session, but that choice could not be saved. It may be disabled after reload.',
+    })
   })
 
   it('does not restore consent when storage cannot be read', () => {
+    window.localStorage.setItem('taskdeck_telemetry_consent', 'true')
+    const getItem = stubStorageMethod('getItem')
     const store = useTelemetryStore()
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
+
     expect(() => store.restoreConsent()).not.toThrow()
+
+    expect(getItem).toHaveBeenCalledWith('taskdeck_telemetry_consent')
     expect(store.consentGiven).toBe(false)
   })
 })

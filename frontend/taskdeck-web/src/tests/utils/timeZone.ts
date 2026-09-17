@@ -127,9 +127,12 @@ const WALL_CLOCK_FIELDS: Array<[keyof ZonedParts, number, number]> = [
 /**
  * The UTC instant at which `timeZone` shows `wall`.
  *
- * Two passes: guess with a zero offset, correct with the offset in force at the
- * guess, then re-check — enough for every real zone, including DST edges, since
- * offsets move by at most a couple of hours.
+ * Two offset corrections from a UTC-shaped initial guess, followed by an exact
+ * wall-clock round-trip check. This is a fixture helper, not a general timezone
+ * disambiguation API: an overlap selects whichever occurrence those corrections
+ * reach, not a universal "earlier" or "later" policy. The pinned fall-back fixtures
+ * select the earlier New York occurrence and the later Berlin occurrence. To name
+ * a particular occurrence elsewhere, supply an explicit ISO instant with offset.
  *
  * Throws rather than returning a silently shifted instant when the wall clock
  * is not one this zone ever shows. Two ways that happens, both caught:
