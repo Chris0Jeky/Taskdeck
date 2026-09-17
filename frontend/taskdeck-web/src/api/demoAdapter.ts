@@ -2,7 +2,7 @@ import { AxiosError, AxiosHeaders, type AxiosAdapter, type AxiosResponse, type I
 import type { Card } from '../types/board'
 import type { ChatMessage, ChatSession } from '../types/chat'
 import type { Proposal } from '../types/automation'
-import { DEMO_USER } from '../utils/demoMode'
+import { DEMO_USER } from '../utils/demoIdentity'
 import {
   DEMO_PROPOSAL_ID,
   buildDemoBoardDetail,

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
 import { demoHttpAdapter, resetDemoHttpFixtures } from '../../api/demoAdapter'
 import { DEMO_PROPOSAL_ID, DEMO_CHAT_SESSION_ID } from '../../utils/demoData'
-import { DEMO_USER } from '../../utils/demoMode'
+import { DEMO_USER } from '../../utils/demoIdentity'
 import { LOCAL_DEV_API_BASE_URL } from '../../utils/apiBaseUrl'
 
 function config(method: string, url: string, data?: unknown): InternalAxiosRequestConfig {

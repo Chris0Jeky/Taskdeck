@@ -12,7 +12,7 @@ import {
   calendarDateKeyToMidnightUtc,
   localCalendarDateKey,
 } from './dueDates'
-import { DEMO_TEAMMATE, DEMO_USER } from './demoMode'
+import { DEMO_TEAMMATE, DEMO_USER } from './demoIdentity'
 
 export const DEMO_PROPOSAL_ID = 'demo-proposal-1'
 export const DEMO_CHAT_SESSION_ID = 'demo-chat-session-1'

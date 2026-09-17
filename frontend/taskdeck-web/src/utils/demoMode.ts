@@ -15,6 +15,8 @@
 
 import { shouldUseDemoMode } from './apiBaseUrl'
 
+export { DEMO_TEAMMATE, DEMO_USER } from './demoIdentity'
+
 const DEMO_SESSION_KEY = 'taskdeck_demo'
 
 export const isDemoMode: boolean = shouldUseDemoMode()
@@ -37,16 +39,3 @@ export class DemoModeError extends Error {
     this.name = 'DemoModeError'
   }
 }
-
-export const DEMO_USER = {
-  id: 'demo-user-0000-0000-000000000000',
-  username: 'demo',
-  email: 'demo@taskdeck.local',
-  defaultRole: 0,
-} as const
-
-export const DEMO_TEAMMATE = {
-  id: 'demo-user-1111-1111-111111111111',
-  username: 'alex',
-  displayName: 'Alex Rivera',
-} as const
