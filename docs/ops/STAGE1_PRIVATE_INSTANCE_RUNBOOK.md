@@ -167,6 +167,21 @@ lines and the exit code in the evidence.
 
 ## 6. Accounts — [human]
 
+Before provisioning either account, establish the live volume's account baseline. Use a newly
+created, empty `taskdeck_taskdeck-db` volume for this instance, or, when reusing a volume, run a
+read-only inventory from a trusted host and reconcile every existing row before continuing:
+
+```bash
+docker run --rm -v taskdeck_taskdeck-db:/data alpine:3 sh -c \
+  'apk add --no-cache sqlite >/dev/null && sqlite3 -header -csv /data/taskdeck.db "SELECT Id, Username, Email, IsActive FROM Users ORDER BY Username;"'
+```
+
+Record the inventory or the fresh-volume evidence privately; it contains account identifiers and
+must not be committed or pasted into a public issue. Do not treat `GET /api/users` as this inventory:
+that endpoint returns only the authenticated caller. If any old active account or other unexpected
+identity is present, stop and reconcile it before minting an invite. Two successful registrations
+and a later registration-closed 403 do not prove that the instance contains exactly two accounts.
+
 1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning both named accounts. Before
    opening the URL, mint the first-owner invite as the non-root API user:
 
@@ -198,9 +213,10 @@ lines and the exit code in the evidence.
 4. Share a board: **Workspace → Settings → Access** (`/workspace/settings/access`) → grant the
    collaborator `Editor`.
 
-Done when: the owner and collaborator registrations both succeeded, the valid-registration closure
-probe returned 403, and the collaborator can open the shared board. `GET /api/users` may support an
-inventory check but does not prove that exactly two users exist.
+Done when: the pre-registration freshness or authoritative-inventory gate passed, the owner and
+collaborator registrations both succeeded, the valid-registration closure probe returned 403, and
+the collaborator can open the shared board. `GET /api/users` is not an account inventory because it
+returns only the authenticated caller.
 
 ## 7. Live LLM provider, ceiling and disclosure — [human], optional
 
