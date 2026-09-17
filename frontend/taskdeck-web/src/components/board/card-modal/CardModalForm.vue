@@ -9,6 +9,7 @@ const props = defineProps<{
   card: Card
   canEditType: boolean
   canEditEstimate?: boolean
+  permissionRecovery?: boolean
   /** A server read of the caller's board write permission is in flight (#2952). */
   typePermissionChecking?: boolean
   /** The caller's board write permission could not be established; offer recovery (#2952). */
@@ -94,6 +95,7 @@ defineEmits<{
       read succeeds, focus moves to the newly enabled selector before the recovery controls leave.
     -->
     <div
+      v-if="!permissionRecovery"
       :class="typePermissionChecking || typePermissionUnknown
         ? 'mt-1 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant'
         : 'sr-only'"

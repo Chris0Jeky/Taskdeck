@@ -198,6 +198,41 @@ const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermission
 const editorWritesBlocked = computed(() => permissionRecovery.value && !boardCanWrite.value)
 
 const dialogRef = ref<HTMLElement | null>(null)
+const permissionRecoveryRefresh = ref<HTMLButtonElement | null>(null)
+const permissionRetryOwnedFocus = ref(false)
+
+watch(
+  () => [typePermissionChecking.value, typePermissionUnknown.value, boardCanWrite.value, permissionRecovery.value] as const,
+  async ([checking, , canWrite, recovering], [wasChecking]) => {
+    if (checking && !wasChecking) {
+      const activeTestId = document.activeElement instanceof HTMLElement
+        ? document.activeElement.dataset.testid
+        : null
+      permissionRetryOwnedFocus.value = activeTestId === 'card-type-permission-refresh'
+        || activeTestId === 'card-permission-refresh'
+      return
+    }
+
+    if (checking || !wasChecking || !permissionRetryOwnedFocus.value || !recovering) return
+
+    const activeElement = document.activeElement
+    const activeTestId = activeElement instanceof HTMLElement ? activeElement.dataset.testid : null
+    const shouldRestoreFocus = activeElement === document.body || activeElement === null
+      || activeTestId === 'card-type-permission-refresh'
+      || activeTestId === 'card-permission-refresh'
+    permissionRetryOwnedFocus.value = false
+
+    await nextTick()
+    if (!permissionRecovery.value) return
+    if (!canWrite) {
+      permissionRecoveryRefresh.value?.focus()
+      return
+    }
+    if (!shouldRestoreFocus) return
+    dialogRef.value?.querySelector<HTMLElement>('#card-work-item-type')?.focus()
+  },
+)
+
 const showDiscardConfirm = ref(false)
 let previouslyFocusedElement: HTMLElement | null = null
 const isInspector = computed(() => props.presentation === 'inspector')
@@ -507,7 +542,7 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
-        <div v-if="permissionRecovery && !typePermissionChecking && !typePermissionUnknown" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
+        <div v-if="permissionRecovery" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
           <p role="status">
             <template v-if="typePermissionChecking">Checking current board access. Your unsaved changes are kept.</template>
             <template v-else-if="accessUnavailable">This board is no longer available to this editor. Your unsaved changes are kept. Ask a board admin to check your access, then refresh permission.</template>
@@ -515,7 +550,7 @@ useEscapeToClose(
             <template v-else-if="!boardCanWrite">This board is read-only for you. Your unsaved changes are kept. Ask a board admin to restore write access, then refresh permission.</template>
             <template v-else>Board write permission confirmed. Your unsaved changes are kept.</template>
           </p>
-          <button type="button" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
+          <button ref="permissionRecoveryRefresh" type="button" data-testid="card-permission-refresh" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
         </div>
         <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :reads-blocked="readsBlocked" :disabled="isSaving || cardIsArchived" />
         <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
@@ -539,6 +574,7 @@ useEscapeToClose(
             v-model:title="title"
             v-model:work-item-type="workItemType"
             :can-edit-type="canEditType"
+            :permission-recovery="permissionRecovery"
             :type-permission-checking="typePermissionChecking"
             :type-permission-unknown="typePermissionUnknown"
             @refresh-type-permission="refreshTypePermission"

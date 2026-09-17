@@ -184,9 +184,9 @@ describe('CardModal permission reconciliation', () => {
     expect(button(wrapper, 'Save Changes').attributes('disabled')).toBeDefined()
     expect(button(wrapper, 'Delete Card').attributes('disabled')).toBeDefined()
     expect(button(wrapper, 'Clear').attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('[data-testid="card-permission-recovery"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="card-type-permission-refresh"]')).toHaveLength(1)
-    expect(wrapper.find('[data-testid="card-type-permission-checking"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="card-permission-recovery"]').text()).toContain('Checking current board access')
+    expect(wrapper.findAll('[data-testid="card-type-permission-refresh"]')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="card-permission-refresh"]').attributes('disabled')).toBeDefined()
 
     permission.resolve(board(false))
     await flushPromises()
@@ -236,6 +236,29 @@ describe('CardModal permission reconciliation', () => {
     wrapper.unmount()
   })
 
+  it('moves focus to the outer recovery control when a retry confirms read-only access', async () => {
+    store.currentBoard = board(undefined)
+    vi.mocked(boardsApi.getBoard)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockResolvedValueOnce(board(false))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels: [] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const refresh = wrapper.get('[data-testid="card-type-permission-refresh"]')
+    ;(refresh.element as HTMLButtonElement).focus()
+    await refresh.trigger('click')
+    await flushPromises()
+
+    const recovery = wrapper.get('[data-testid="card-permission-refresh"]')
+    expect(recovery.attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(recovery.element)
+    wrapper.unmount()
+  })
+
   it('reconciles a late PUT403 after readOnly already changed true then false', async () => {
     const { wrapper, save } = await pendingSave()
     store.currentBoard!.canWrite = false
@@ -272,7 +295,7 @@ describe('CardModal permission reconciliation', () => {
     expect(cardsApi.getParticipants).toHaveBeenCalledTimes(reads)
     await button(wrapper, 'Cancel assignment changes').trigger('click')
     expect((wrapper.get('[aria-label="Card assignments"] input').element as HTMLInputElement).checked).toBe(false)
-    await button(wrapper, 'Refresh permission').trigger('click')
+    await button(wrapper, 'Refresh board permission').trigger('click')
     await flushPromises()
     expect(field.props('readOnly')).toBe(false)
     wrapper.unmount()
