@@ -142,6 +142,58 @@ describe('telemetry consent ownership', () => {
     })
   })
 
+  it('replaces the prior persistence warning without removing unrelated toasts', () => {
+    const store = useTelemetryStore()
+    const toast = useToastStore()
+    const unrelatedToastId = toast.info('Background sync is delayed', 0)
+    const setItem = stubStorageMethod('setItem')
+
+    store.setConsent(true)
+    const firstWarning = toast.toasts.find(
+      (candidate) => candidate.title === 'Telemetry preference not saved',
+    )
+    expect(firstWarning?.message).toContain('Telemetry is enabled for this session')
+
+    store.setConsent(false)
+
+    expect(setItem).toHaveBeenNthCalledWith(1, 'taskdeck_telemetry_consent', 'true')
+    expect(setItem).toHaveBeenNthCalledWith(2, 'taskdeck_telemetry_consent', 'false')
+    const persistenceWarnings = toast.toasts.filter(
+      (candidate) => candidate.title === 'Telemetry preference not saved',
+    )
+    expect(persistenceWarnings).toHaveLength(1)
+    expect(persistenceWarnings[0]?.id).not.toBe(firstWarning?.id)
+    expect(persistenceWarnings[0]?.message).toBe(
+      'Telemetry is disabled for this session, but that choice could not be saved. It may be enabled again after reload.',
+    )
+    expect(toast.toasts.some((candidate) => candidate.id === unrelatedToastId)).toBe(true)
+  })
+
+  it('clears the persistence warning after a later successful consent write', () => {
+    const store = useTelemetryStore()
+    const toast = useToastStore()
+    const setItem = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('storage unavailable')
+      })
+      .mockImplementationOnce(() => undefined)
+    vi.stubGlobal('localStorage', { setItem } as unknown as Storage)
+
+    store.setConsent(true)
+    expect(
+      toast.toasts.filter((candidate) => candidate.title === 'Telemetry preference not saved'),
+    ).toHaveLength(1)
+
+    store.setConsent(false)
+
+    expect(store.consentGiven).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(
+      toast.toasts.filter((candidate) => candidate.title === 'Telemetry preference not saved'),
+    ).toHaveLength(0)
+  })
+
   it('does not restore consent when storage cannot be read', () => {
     window.localStorage.setItem('taskdeck_telemetry_consent', 'true')
     const getItem = stubStorageMethod('getItem')
