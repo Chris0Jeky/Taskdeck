@@ -83,7 +83,7 @@ test('the Bash drill fixture converts Windows paths before prepending its fake c
 
 test('the profile harness clears every fake-Docker scenario variable', () => {
   const cleanup = profileHarness.match(
-    /foreach \(\$name in @\([\s\S]*?\)\) \{\n\s+Remove-Item -Path "Env:\$name"/,
+    /foreach \(\$name in @\([\s\S]*?\)\) \{\r?\n\s+Remove-Item -Path "Env:\$name"/,
   )?.[0];
 
   assert.ok(cleanup, 'profile harness must contain the fake-Docker environment cleanup loop');
