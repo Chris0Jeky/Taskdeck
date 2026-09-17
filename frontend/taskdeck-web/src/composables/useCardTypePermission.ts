@@ -42,9 +42,10 @@ export interface UseCardTypePermissionOptions {
  * the permission, read the board back from the server once and gate on what that read
  * says. Client-derived ownership is never consulted — `permissionsStore.canEdit` reads
  * `BoardAccess` rows, which board owners do not have — and the write itself stays
- * server-authoritative regardless of what this control offers. When the read fails,
- * the state stays unknown and the caller offers an explicit "Refresh permission"
- * recovery instead of a silently disabled control.
+ * server-authoritative regardless of what this control offers. A transient read failure
+ * stays unknown and offers an explicit "Refresh permission" recovery; a 403 instead enters
+ * the editor's existing access-loss recovery because the server has authoritatively denied
+ * this caller.
  *
  * A payload that already states the permission costs no request at all, which is every
  * board loaded from the current server.
@@ -207,13 +208,15 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       accessUnavailable.value = false
       return 'authoritative'
     } catch (cause) {
-      // A failed read grants nothing. The unknown state stands and the caller offers the
-      // explicit retry; the server still refuses any write this control should not allow.
       if (current !== generation) return 'superseded'
       confirmed.value = null
       failedBoardId.value = boardId
       const status = (cause as { response?: { status?: number } })?.response?.status
       accessUnavailable.value = status === 403 || status === 404
+      // A 403 is permission evidence, not an unknown transport failure. Route an
+      // automatic legacy-payload probe into the same draft-preserving recovery UI
+      // used after a refused write; existing explicit retries are already in it.
+      if (status === 403) permissionRecovery.value = true
       if (permissionRecovery.value && accessUnavailable.value) {
         recoveryRequestGeneration = explicitRetryStartGeneration ?? boardRequestGeneration.value
       }
