@@ -4,6 +4,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+const SUPPORTED_ADVISORY_ID_PATTERN =
+  /^(?:GHSA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}|CVE-\d{4}-\d{4,}|NPM-\d+|https:\/\/\S+)$/i
+
 function parseArgs(argv) {
   const args = new Map()
   for (let index = 0; index < argv.length; index += 1) {
@@ -91,6 +94,10 @@ function createSeverityCounts() {
   }
 }
 
+function isSupportedAdvisoryId(value) {
+  return SUPPORTED_ADVISORY_ID_PATTERN.test(String(value ?? '').trim())
+}
+
 function normalizeAdvisoryId(value) {
   const text = String(value ?? '').trim()
   if (!text) {
@@ -115,7 +122,7 @@ function normalizeAdvisoryId(value) {
     return text
   }
 
-  return text.toUpperCase()
+  return null
 }
 
 function advisoryIdFromNpmVia(via) {
@@ -179,14 +186,19 @@ function validateAllowlistDocument(document, path, today) {
           }
         }
 
-        const advisoryId = normalizeAdvisoryId(rawEntry.advisoryId)
+        const rawAdvisoryId = String(rawEntry.advisoryId ?? '').trim()
+        const advisoryId = normalizeAdvisoryId(rawAdvisoryId)
+        const supportedAdvisoryId = isSupportedAdvisoryId(rawAdvisoryId)
         const reason = String(rawEntry.reason ?? '').trim()
         const owner = String(rawEntry.owner ?? '').trim()
         const expiresOn = String(rawEntry.expiresOn ?? '').trim()
         let entryValid = true
 
-        if (!advisoryId) {
+        if (!rawAdvisoryId) {
           errors.push(`${prefix}.advisoryId must be non-empty`)
+          entryValid = false
+        } else if (!supportedAdvisoryId || !advisoryId) {
+          errors.push(`${prefix}.advisoryId must be a supported advisory identifier`)
           entryValid = false
         } else if (seenIds.has(advisoryId)) {
           errors.push(`${prefix}.advisoryId duplicates ${advisoryId}`)
@@ -205,7 +217,7 @@ function validateAllowlistDocument(document, path, today) {
           entryValid = false
         }
 
-        if (advisoryId) {
+        if (supportedAdvisoryId && advisoryId) {
           seenIds.add(advisoryId)
         }
         if (entryValid) {
