@@ -11,6 +11,10 @@ const apiWorkflow = readFileSync(
   new URL('../../../.github/workflows/reusable-api-integration.yml', import.meta.url),
   'utf8',
 );
+const profileHarness = readFileSync(
+  new URL('../../mcp/Test-DockerMcpProfile.Tests.ps1', import.meta.url),
+  'utf8',
+);
 const BASE = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
 
@@ -67,4 +71,24 @@ test('the Windows API lane runs the fake-backed profile suite with mandatory Bas
   assert.match(step, /if: matrix\.os == 'windows-latest'/);
   assert.match(step, /shell: powershell/);
   assert.match(step, /scripts\/mcp\/Test-DockerMcpProfile\.Tests\.ps1 -RequireBash/);
+});
+
+test('the Bash drill fixture converts Windows paths before prepending its fake command directory', () => {
+  assert.match(
+    profileHarness,
+    /return "\/\$driveName\/\$\(\$WindowsPath\.Substring\(3\)\.Replace\('\\\\', '\/'\)\)"/,
+  );
+  assert.doesNotMatch(profileHarness, /return \$WindowsPath\.Replace\('\\\\', '\/'\)/);
+});
+
+test('the profile harness clears every fake-Docker scenario variable', () => {
+  const cleanup = profileHarness.match(
+    /foreach \(\$name in @\([\s\S]*?\)\) \{\n        Remove-Item -Path "Env:\$name"/,
+  )?.[0];
+
+  assert.ok(cleanup, 'profile harness must contain the fake-Docker environment cleanup loop');
+  assert.match(cleanup, /'TASKDECK_FAKE_DOCKER_SCENARIO'/);
+  assert.match(cleanup, /'TASKDECK_FAKE_DOCKER_MISSING_SERVER'/);
+  assert.match(cleanup, /'TASKDECK_FAKE_DOCKER_STATE'/);
+  assert.match(cleanup, /'TASKDECK_FAKE_DOCKER_LOG'/);
 });
