@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.local/schemas/dependency-allowlist.v1.schema.json",
+  "title": "Taskdeck dependency advisory allowlist v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "entries"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "advisoryId",
+          "reason",
+          "owner",
+          "expiresOn"
+        ],
+        "properties": {
+          "advisoryId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Canonical GHSA, CVE, NPM source, or HTTPS advisory identifier."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
+    }
+  }
+}
