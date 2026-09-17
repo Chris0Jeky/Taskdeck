@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import PaperReviewView from './paper/PaperReviewView.vue'
 import LegacyReviewView from './LegacyReviewView.vue'
@@ -7,6 +8,7 @@ import { usePaperThemeStore } from '../store/paperThemeStore'
 
 const paperTheme = usePaperThemeStore()
 const route = useRoute()
+const { t } = useI18n()
 const reviewSurfaceRef = ref<ComponentPublicInstance | null>(null)
 
 /**
@@ -19,7 +21,9 @@ const reviewSurfaceRef = ref<ComponentPublicInstance | null>(null)
  * Keep this route wrapper as the last resort rather than teaching either skin
  * about the other's layout. The two ticks let their own queue/empty handoff win;
  * only a focus loss all the way to the document receives the stable, named
- * Review landmark. `tabindex="-1"` keeps it out of the ordinary Tab order.
+ * Review landmark. `tabindex="-1"` keeps it out of the ordinary Tab order. The
+ * landmark reuses the localized return-to-Review label because this fallback is
+ * reached only through that action, and the name must follow live locale changes.
  */
 watch(
   () => route.hash,
@@ -45,14 +49,14 @@ watch(
     v-if="paperTheme.isOn"
     ref="reviewSurfaceRef"
     role="region"
-    aria-label="Proposal review"
+    :aria-label="t('review.empty.unavailable.return')"
     tabindex="-1"
   />
   <LegacyReviewView
     v-else
     ref="reviewSurfaceRef"
     role="region"
-    aria-label="Proposal review"
+    :aria-label="t('review.empty.unavailable.return')"
     tabindex="-1"
   />
 </template>
