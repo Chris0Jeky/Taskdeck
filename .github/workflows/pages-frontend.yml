@@ -49,6 +49,7 @@ jobs:
         run: npx vite build --base /Taskdeck/
         env:
           VITE_API_BASE_URL: ''
+          VITE_DEMO_MODE: 'true'
 
       - name: SPA fallback for client-side routing
         run: cp frontend/taskdeck-web/dist/index.html frontend/taskdeck-web/dist/404.html

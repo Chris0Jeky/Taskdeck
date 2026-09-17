@@ -1,5 +1,7 @@
-import type { Board, BoardDetail, Card } from '../types/board'
+import type { Board, BoardDetail, BoardParticipant, Card } from '../types/board'
 import type { CaptureItemSummary } from '../types/capture'
+import type { ChatMessage, ChatProviderHealth, ChatSession } from '../types/chat'
+import type { Proposal, ProposalPreview } from '../types/automation'
 import type {
   HomeSummary,
   TodaySummary,
@@ -10,7 +12,10 @@ import {
   calendarDateKeyToMidnightUtc,
   localCalendarDateKey,
 } from './dueDates'
-import { DEMO_USER } from './demoMode'
+import { DEMO_TEAMMATE, DEMO_USER } from './demoMode'
+
+export const DEMO_PROPOSAL_ID = 'demo-proposal-1'
+export const DEMO_CHAT_SESSION_ID = 'demo-chat-session-1'
 
 export const DEMO_ONBOARDING: WorkspaceOnboarding = {
   visibility: 'active',
@@ -49,6 +54,7 @@ export function buildDemoBoardList(): Board[] {
     name: b.name,
     description: b.description,
     isArchived: false,
+    canWrite: true,
     createdAt: ts,
     updatedAt: ts,
   }))
@@ -63,6 +69,7 @@ export function buildDemoBoardDetail(id: string): { board: BoardDetail; cards: C
     name: match.name,
     description: match.description,
     isArchived: false,
+    canWrite: true,
     createdAt: ts,
     updatedAt: ts,
     columns: [
@@ -72,11 +79,28 @@ export function buildDemoBoardDetail(id: string): { board: BoardDetail; cards: C
     ],
   }
 
+  const card2Due = id === 'demo-board-1' ? demoDueDate(-1) : null
+  const sprintDue = id === 'demo-board-2' ? demoDueDate(0) : null
   const cards: Card[] = [
-    { id: `${id}-card-1`, boardId: id, columnId: `${id}-col-1`, title: 'Set up CI pipeline', description: 'Configure GitHub Actions for build and test.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: ts, updatedAt: ts },
-    { id: `${id}-card-2`, boardId: id, columnId: `${id}-col-1`, title: 'Design landing page', description: 'Create mockups for the new landing page.', dueDate: '2026-03-30T00:00:00Z', isBlocked: false, blockReason: null, position: 1, labels: [], createdAt: ts, updatedAt: ts },
-    { id: `${id}-card-3`, boardId: id, columnId: `${id}-col-2`, title: 'Implement dark mode', description: 'Apply Obsidian & Ember tokens across all views.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: ts, updatedAt: ts },
-    { id: `${id}-card-4`, boardId: id, columnId: `${id}-col-3`, title: 'Write README', description: 'Document setup and usage instructions.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: ts, updatedAt: ts },
+    { id: `${id}-card-1`, boardId: id, columnId: `${id}-col-1`, title: 'Set up CI pipeline', description: 'Configure GitHub Actions for build and test.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], workItemType: 'Task', createdAt: ts, updatedAt: ts },
+    { id: `${id}-card-2`, boardId: id, columnId: `${id}-col-1`, title: 'Design landing page', description: 'Create mockups for the new landing page.', dueDate: card2Due, isBlocked: false, blockReason: null, position: 1, labels: [], workItemType: 'Task', parentCardId: `${id}-card-1`, createdAt: ts, updatedAt: ts },
+    {
+      id: `${id}-card-3`,
+      boardId: id,
+      columnId: `${id}-col-2`,
+      title: 'Implement dark mode',
+      description: 'Apply Obsidian & Ember tokens across all views.',
+      dueDate: sprintDue,
+      isBlocked: false,
+      blockReason: null,
+      position: 0,
+      labels: [],
+      workItemType: 'Task',
+      assignments: [{ userId: DEMO_USER.id, displayName: 'Demo user', assignedAt: ts, assignedByUserId: DEMO_USER.id }],
+      createdAt: ts,
+      updatedAt: ts,
+    },
+    { id: `${id}-card-4`, boardId: id, columnId: `${id}-col-3`, title: 'Write README', description: 'Document setup and usage instructions.', dueDate: sprintDue, isBlocked: false, blockReason: null, position: 0, labels: [], workItemType: 'Task', createdAt: ts, updatedAt: ts },
   ]
 
   return { board, cards }
@@ -109,11 +133,11 @@ export function buildDemoTodaySummary(): TodaySummary {
     onboarding: DEMO_ONBOARDING,
     summary: { capturesNeedingTriage: 3, proposalsPendingReview: 1, overdueCards: 1, dueTodayCards: 2, blockedCards: 0 },
     overdueCards: [
-      { boardId: 'demo-board-1', boardName: 'Product Backlog', cardId: 'demo-card-1', title: 'Fix login redirect loop', dueDate: demoDueDate(-1), blockReason: null, updatedAt: now() },
+      { boardId: 'demo-board-1', boardName: 'Product Backlog', cardId: 'demo-board-1-card-2', title: 'Design landing page', dueDate: demoDueDate(-1), blockReason: null, updatedAt: now() },
     ],
     dueTodayCards: [
-      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-2', title: 'Add dark-mode toggle', dueDate: demoDueDate(0), blockReason: null, updatedAt: now() },
-      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-3', title: 'Write onboarding copy', dueDate: demoDueDate(0), blockReason: null, updatedAt: now() },
+      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-board-2-card-3', title: 'Implement dark mode', dueDate: demoDueDate(0), blockReason: null, updatedAt: now() },
+      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-board-2-card-4', title: 'Write README', dueDate: demoDueDate(0), blockReason: null, updatedAt: now() },
     ],
     blockedCards: [],
     recommendedActions: [
@@ -128,5 +152,131 @@ export function buildDemoCaptureItems(): CaptureItemSummary[] {
     { id: 'demo-cap-1', userId: DEMO_USER.id, boardId: null, status: 'New', source: 'Typed', textExcerpt: 'Investigate slow dashboard load times on large boards', createdAt: ts, processedAt: null },
     { id: 'demo-cap-2', userId: DEMO_USER.id, boardId: 'demo-board-1', status: 'Triaging', source: 'Typed', textExcerpt: 'Add keyboard shortcuts for card navigation', createdAt: ts, processedAt: null },
     { id: 'demo-cap-3', userId: DEMO_USER.id, boardId: null, status: 'New', source: 'Paste', textExcerpt: 'Consider adding a calendar view for due dates', createdAt: ts, processedAt: null },
+  ]
+}
+
+export function buildDemoParticipants(): BoardParticipant[] {
+  return [
+    { userId: DEMO_USER.id, displayName: 'Demo user' },
+    { userId: DEMO_TEAMMATE.id, displayName: DEMO_TEAMMATE.displayName },
+  ]
+}
+
+export function buildDemoProposals(): Proposal[] {
+  const ts = now()
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  return [
+    {
+      id: DEMO_PROPOSAL_ID,
+      sourceType: 'Chat',
+      sourceReferenceId: DEMO_CHAT_SESSION_ID,
+      boardId: 'demo-board-1',
+      requestedByUserId: DEMO_USER.id,
+      status: 'PendingReview',
+      riskLevel: 'Low',
+      summary: 'Split dark mode into three follow-up cards on Product Backlog',
+      diffPreview: '+ Create card "Token audit"\n+ Create card "Sidebar contrast"\n+ Create card "Settings preview"',
+      validationIssues: null,
+      createdAt: ts,
+      updatedAt: ts,
+      expiresAt,
+      decidedAt: null,
+      decidedByUserId: null,
+      appliedAt: null,
+      failureReason: null,
+      correlationId: 'demo-corr-1',
+      operations: [
+        {
+          id: 'demo-op-1',
+          proposalId: DEMO_PROPOSAL_ID,
+          sequence: 0,
+          actionType: 'CreateCard',
+          targetType: 'Card',
+          targetId: null,
+          parameters: '{"title":"Token audit"}',
+          idempotencyKey: 'demo-k-1',
+          expectedVersion: null,
+        },
+      ],
+      presentation: {
+        plainSummary: 'Split dark mode into three follow-up cards on Product Backlog',
+        impactSummary: '1 operation · explicit review · atomic apply',
+        riskCue: 'Low risk · confirm before apply',
+        sourceCue: 'From chat',
+        operationHeadlines: ['Create card "Token audit"'],
+        affectedEntities: [{ entityType: 'Board', entityId: 'demo-board-1', label: 'Product Backlog', changeCount: 1 }],
+      },
+      isExpired: false,
+      deferredUntil: null,
+      approvedRevisionId: null,
+      latestRevisionId: null,
+    },
+  ]
+}
+
+export function buildDemoProposalPreview(proposalId: string): ProposalPreview {
+  const proposal = buildDemoProposals().find((item) => item.id === proposalId) ?? buildDemoProposals()[0]!
+  const ts = now()
+  return {
+    proposalId: proposal.id,
+    boardId: proposal.boardId,
+    status: proposal.status,
+    effectiveRevisionId: null,
+    effectiveRevisionNumber: null,
+    proposalUpdatedAt: proposal.updatedAt,
+    expiresAt: proposal.expiresAt,
+    checkedAt: ts,
+    diff: proposal.diffPreview ?? 'No diff in this demo proposal.',
+  }
+}
+
+export function buildDemoChatHealth(): ChatProviderHealth {
+  return {
+    isAvailable: true,
+    providerName: 'Mock',
+    errorMessage: null,
+    model: 'demo-static',
+    isMock: true,
+    isProbed: true,
+    verificationStatus: 'verified',
+    probeLatencyMs: 1,
+  }
+}
+
+export function buildDemoChatSessions(): ChatSession[] {
+  const ts = now()
+  const messages: ChatMessage[] = [
+    {
+      id: 'demo-chat-msg-1',
+      sessionId: DEMO_CHAT_SESSION_ID,
+      role: 'User',
+      content: 'Split the dark-mode work into smaller cards.',
+      messageType: 'text',
+      proposalId: null,
+      tokenUsage: null,
+      createdAt: ts,
+    },
+    {
+      id: 'demo-chat-msg-2',
+      sessionId: DEMO_CHAT_SESSION_ID,
+      role: 'Assistant',
+      content: 'I drafted one proposal: split dark mode into three follow-up cards. Open Review to decide before anything reaches the board.',
+      messageType: 'proposal-reference',
+      proposalId: DEMO_PROPOSAL_ID,
+      tokenUsage: 42,
+      createdAt: ts,
+    },
+  ]
+  return [
+    {
+      id: DEMO_CHAT_SESSION_ID,
+      userId: DEMO_USER.id,
+      boardId: 'demo-board-1',
+      title: 'Dark mode follow-ups',
+      status: 'Active',
+      createdAt: ts,
+      updatedAt: ts,
+      recentMessages: messages,
+    },
   ]
 }

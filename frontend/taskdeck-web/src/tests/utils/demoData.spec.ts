@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEMO_ONBOARDING,
+  DEMO_PROPOSAL_ID,
   buildDemoBoardList,
   buildDemoBoardDetail,
   buildDemoHomeSummary,
   buildDemoTodaySummary,
   buildDemoCaptureItems,
+  buildDemoParticipants,
+  buildDemoProposals,
 } from '../../utils/demoData'
 import { toCalendarDateKey } from '../../utils/dueDates'
 import { installTimeZone } from './timeZone'
@@ -69,6 +72,7 @@ describe('demoData', () => {
       expect(summary.boards.recentBoards.length).toBeGreaterThan(0)
       expect(summary.recommendedActions.length).toBeGreaterThan(0)
       expect(summary.workload.capturesNeedingTriage).toBeGreaterThan(0)
+      expect(summary.workload.proposalsPendingReview).toBe(1)
     })
   })
 
@@ -83,6 +87,13 @@ describe('demoData', () => {
     it('includes due-today cards', () => {
       const summary = buildDemoTodaySummary()
       expect(summary.dueTodayCards.length).toBeGreaterThan(0)
+    })
+
+    it('uses the same board card ids Home and the board editor share', () => {
+      const summary = buildDemoTodaySummary()
+      const { cards } = buildDemoBoardDetail('demo-board-1')
+      expect(cards.some(card => card.id === summary.overdueCards[0]?.cardId)).toBe(true)
+      expect(summary.overdueCards[0]?.cardId).toBe('demo-board-1-card-2')
     })
 
     it.each([
@@ -113,6 +124,25 @@ describe('demoData', () => {
         expect(['New', 'Triaging', 'Triaged', 'ProposalCreated', 'Converted', 'Ignored', 'Failed']).toContain(item.status)
         expect(['Typed', 'Paste', 'TranscriptPaste', 'Import', 'Voice', 'MeetingIntegration']).toContain(item.source)
       }
+    })
+  })
+
+  describe('buildDemoProposals', () => {
+    it('returns one pending-review proposal matching Home', () => {
+      const home = buildDemoHomeSummary()
+      const proposals = buildDemoProposals()
+      expect(proposals).toHaveLength(home.workload.proposalsPendingReview)
+      expect(proposals[0]?.id).toBe(DEMO_PROPOSAL_ID)
+      expect(proposals[0]?.status).toBe('PendingReview')
+      expect(proposals[0]?.boardId).toBe('demo-board-1')
+    })
+  })
+
+  describe('buildDemoParticipants', () => {
+    it('includes the demo user so the card editor can load assignees', () => {
+      const people = buildDemoParticipants()
+      expect(people.some(person => person.userId.startsWith('demo-user-'))).toBe(true)
+      expect(people.length).toBeGreaterThan(1)
     })
   })
 })

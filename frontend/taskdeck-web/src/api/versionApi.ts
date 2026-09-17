@@ -1,6 +1,7 @@
 import http from './http'
 import type { RetryableRequestConfig } from './httpRetry'
 import { apiRootFrom } from '../utils/apiRoot'
+import { resolveApiBaseUrl } from '../utils/apiBaseUrl'
 
 export { apiRootFrom } from '../utils/apiRoot'
 
@@ -20,7 +21,8 @@ export { apiRootFrom } from '../utils/apiRoot'
  * `/health/live` is anonymous and lives at the server root, *outside* the `/api`
  * prefix carried by `http`'s baseURL, so the request overrides baseURL with the
  * API root — the same derivation `useBoardRealtime.resolveHubUrl()` uses to
- * reach `/hubs/boards`.
+ * reach `/hubs/boards`. Demo/static builds resolve an empty API base instead of
+ * falling through to localhost.
  */
 
 /** Shape of the anonymous `GET /health/live` payload this module consumes. */
@@ -36,7 +38,7 @@ export interface LiveHealthResponse {
  * (`VITE_API_BASE_URL=/api`), which keeps the request same-origin and relative.
  */
 export function resolveApiRoot(): string {
-  return apiRootFrom(import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api')
+  return apiRootFrom(resolveApiBaseUrl())
 }
 
 export const versionApi = {

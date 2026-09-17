@@ -1,14 +1,23 @@
 /**
- * Demo mode activates when the app is deployed without a backend
- * (VITE_API_BASE_URL is empty). In this mode, auth is bypassed
- * and the user can explore the UI with mock data.
+ * Demo mode activates when the app is deployed without a reachable backend.
+ *
+ * Detection (first match wins), implemented in `apiBaseUrl.ts`:
+ * 1. `VITE_DEMO_MODE` is `1` / `true` / `yes` (Pages may set this explicitly).
+ * 2. `VITE_API_BASE_URL` is empty — the GitHub Pages build already does this.
+ * 3. The page is on GitHub Pages / `*.pages.dev` AND the configured API base
+ *    is still loopback (`localhost` / `127.0.0.1`). That covers a Pages
+ *    bundle that accidentally inlined the local-dev default.
+ *
+ * Local Vite with `.env` pointing at `http://localhost:5000/api` stays live.
+ * A later hosted backend on Pages is live as soon as `VITE_API_BASE_URL` is a
+ * non-loopback URL. Auth is bypassed in demo mode; the UI uses mock data.
  */
+
+import { shouldUseDemoMode } from './apiBaseUrl'
 
 const DEMO_SESSION_KEY = 'taskdeck_demo'
 
-const normalizedApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').toString().trim()
-
-export const isDemoMode: boolean = normalizedApiBaseUrl === ''
+export const isDemoMode: boolean = shouldUseDemoMode()
 
 export function isDemoSessionActive(): boolean {
   return isDemoMode && localStorage.getItem(DEMO_SESSION_KEY) === '1'
@@ -34,4 +43,10 @@ export const DEMO_USER = {
   username: 'demo',
   email: 'demo@taskdeck.local',
   defaultRole: 0,
+} as const
+
+export const DEMO_TEAMMATE = {
+  id: 'demo-user-1111-1111-111111111111',
+  username: 'alex',
+  displayName: 'Alex Rivera',
 } as const

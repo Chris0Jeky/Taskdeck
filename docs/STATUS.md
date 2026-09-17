@@ -1,6 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-17
+
+GitHub Pages (`https://chris0jeky.github.io/Taskdeck/`) now runs as a static demo: empty `VITE_API_BASE_URL` plus `VITE_DEMO_MODE=true`, runtime Pages+loopback detection, and an axios demo adapter so review, chat, and card parent/assignee reads never call `localhost:5000`. Home and Review share the same one pending demo proposal. Local Vite with `.env` still uses the real local API. This is not a hosted backend; that remains later work. Detection: `frontend/taskdeck-web/src/utils/apiBaseUrl.ts`. Operator notes: `docs/product/DEMO_PLAYBOOK.md`.
 
 Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
 Starting a relation proposal still prevents departure while the request is unsettled, but the
@@ -1526,7 +1528,7 @@ Direction guardrails (explicit):
   - Sidebar IA reduced to 5 primary items (Today, Inbox, Review, Boards, Search) with Settings in footer; demoted surfaces (Activity, Ops, Archive, Agents, etc.) are accessible via command palette
   - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
   - `Today` (daily agenda), `Integrations` (`/workspace/integrations` connector registry UI), and the `Agents` / `Runs` surfaces (`AgentsView` / `AgentRunsView` / `AgentRunDetailView` at `/workspace/agents`, AGT-03 `#338`) are all shipped; only the **`Knowledge` frontend surface** is still unbuilt — its backend ships (`KnowledgeDocument` + `KnowledgeFtsSearchService`, `#339`) but there is no `KnowledgeView` UI yet
-  - a static frontend-only UI mock now exists at `frontend/taskdeck-web/public/mock/` for lightweight GitHub Pages-style walkthroughs of the current `Home` / `Today` / `Review` / `Inbox` / `Board` feel using local example data only, and GitHub Pages now deploys that folder through a dedicated Actions workflow instead of the old branch-based `main` + `/docs` path
+  - GitHub Pages publishes the Vue SPA (`pages-frontend.yml`) in **static demo mode** (`VITE_API_BASE_URL=''`, `VITE_DEMO_MODE=true`): mock fixtures cover Home, Review, chat, and card editor parent/assignee reads, and the HTTP client never falls through to `localhost:5000`. The older `frontend/taskdeck-web/public/mock/` HTML walkthrough remains in-tree as a lightweight alternative, not the Pages root.
 - Feature slices integrated end to end:
   - workspace home summary shell with server-backed workspace mode persistence
   - workspace `Today` agenda with persisted onboarding state, replay/dismiss controls, and first-use board setup shortcuts
