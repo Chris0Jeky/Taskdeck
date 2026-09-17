@@ -9,6 +9,22 @@ export const CI_POLICY_PATH = 'ci/policy.v1.json'
 export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
 const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F]/u
 
+function hasUnpairedUtf16Surrogate(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index)
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1)
+      if (nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
+        return true
+      }
+      index += 1
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return true
+    }
+  }
+  return false
+}
+
 // These patterns reproduce the default YAML 1.1 implicit resolver spellings exactly. Keep the
 // explicit case variants and resolver-permitted underscores: broad /i matching or conventional
 // number syntax diverges for values such as 0XFF, +.nAn, 1e3, and 0xF__F.
@@ -100,6 +116,13 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
     }
   }
 
+  if (controlPaths.some((entry) => hasUnpairedUtf16Surrogate(entry))) {
+    return {
+      controlPaths: [],
+      errors: [`${policyPath} controlPaths must contain valid Unicode without unpaired UTF-16 surrogates`],
+    }
+  }
+
   return { controlPaths, errors: [] }
 }
 
@@ -115,9 +138,13 @@ function trimAsciiWhitespace(value) {
 }
 
 function parsedScalar(value, quoted) {
-  return FORBIDDEN_SCALAR_CONTROL.test(value)
-    ? { value: null, error: 'forbidden control character', quoted }
-    : { value, error: null, quoted }
+  if (FORBIDDEN_SCALAR_CONTROL.test(value)) {
+    return { value: null, error: 'forbidden control character', quoted }
+  }
+  if (hasUnpairedUtf16Surrogate(value)) {
+    return { value: null, error: 'unpaired UTF-16 surrogate', quoted }
+  }
+  return { value, error: null, quoted }
 }
 
 function isYamlImplicitNonStringScalar(value) {
@@ -341,6 +368,7 @@ export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_P
       value === '' ||
       /^\s|\s$/u.test(value) ||
       FORBIDDEN_SCALAR_CONTROL.test(value) ||
+      hasUnpairedUtf16Surrogate(value) ||
       (!quoted && isYamlImplicitNonStringScalar(value))
     ) {
       errors.push(`${rulePath} front matter paths: has an entry this check cannot parse: ${line.trim()}`)
