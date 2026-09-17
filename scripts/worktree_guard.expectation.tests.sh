@@ -55,6 +55,9 @@ assert_setup_error() {
     pass "$name rejects invalid expectations as a setup error"
 }
 
+assert_setup_error "formatter-wrapped setup error" \
+    2 $'ERROR: cannot be\r\ncombined with -ExpectedBranch' "cannot be combined"
+
 if [ ! -f "$SH_GUARD" ] || [ ! -f "$PS_GUARD" ]; then
     fail "guard scripts were not found beside the contract"
 fi
