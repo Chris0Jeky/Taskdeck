@@ -9,13 +9,26 @@ export const CI_POLICY_PATH = 'ci/policy.v1.json'
 export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
 const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F]/u
 
-const YAML_NULL_SCALAR = /^(?:~|null)$/i
-const YAML_BOOLEAN_SCALAR = /^(?:true|false)$/i
-const YAML_INTEGER_SCALAR = /^[+-]?(?:0b[01](?:_?[01])*|0o[0-7](?:_?[0-7])*|0x[0-9a-f](?:_?[0-9a-f])*|[0-9](?:_?[0-9])*)$/i
-const YAML_FLOAT_SCALAR = /^[+-]?(?:(?:[0-9](?:_?[0-9])*)?\.[0-9](?:_?[0-9])*(?:e[+-]?[0-9](?:_?[0-9])*)?|[0-9](?:_?[0-9])*\.(?:[0-9](?:_?[0-9])*)?(?:e[+-]?[0-9](?:_?[0-9])*)?|[0-9](?:_?[0-9])*e[+-]?[0-9](?:_?[0-9])*)$/i
-const YAML_NON_FINITE_FLOAT_SCALAR = /^[+-]?\.(?:inf|nan)$/i
+// These patterns reproduce the default YAML 1.1 implicit resolver spellings exactly. Keep the
+// explicit case variants and resolver-permitted underscores: broad /i matching or conventional
+// number syntax diverges for values such as 0XFF, +.nAn, 1e3, and 0xF__F.
+const YAML_NULL_SCALAR = /^(?:~|null|Null|NULL)$/
+const YAML_BOOLEAN_SCALAR = /^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/
+const YAML_INTEGER_SCALAR = new RegExp([
+  String.raw`^(?:[-+]?0b[0-1_]+`, // binary
+  String.raw`|[-+]?0[0-7_]+`, // legacy octal
+  String.raw`|[-+]?(?:0|[1-9][0-9_]*)`, // decimal
+  String.raw`|[-+]?0x[0-9a-fA-F_]+`, // hexadecimal
+  String.raw`|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$`, // sexagesimal
+].join(''))
+const YAML_FLOAT_SCALAR = new RegExp([
+  String.raw`^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?`, // decimal, optional exponent
+  String.raw`|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?`, // leading-dot decimal, no sign
+  String.raw`|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*)$`, // sexagesimal
+].join(''))
+const YAML_NON_FINITE_FLOAT_SCALAR = /^(?:[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/
 const YAML_DATE_SCALAR = /^\d{4}-\d{2}-\d{2}$/
-const YAML_TIMESTAMP_SCALAR = /^\d{4}-\d{2}-\d{2}(?:[Tt]|[ \t]+)\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:[ \t]*(?:[Zz]|[+-]\d{1,2}(?::?\d{2})?))?$/
+const YAML_TIMESTAMP_SCALAR = /^\d{4}-\d{1,2}-\d{1,2}(?:[Tt]|[ \t]+)\d{1,2}:\d{2}:\d{2}(?:\.\d*)?(?:[ \t]*(?:Z|[+-]\d{1,2}(?::\d{2})?))?$/
 
 const requiredDocs = [
   'docs/STATUS.md',
@@ -65,9 +78,7 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
     return { controlPaths: [], errors: [`${policyPath} declares an empty controlPaths array`] }
   }
 
-  const invalid = controlPaths.filter(
-    (entry) => typeof entry !== 'string' || entry.length === 0 || FORBIDDEN_SCALAR_CONTROL.test(entry),
-  )
+  const invalid = controlPaths.filter((entry) => typeof entry !== 'string' || entry.length === 0)
   if (invalid.length > 0) {
     return {
       controlPaths: [],
@@ -79,6 +90,13 @@ export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH)
     return {
       controlPaths: [],
       errors: [`${policyPath} controlPaths must not contain leading or trailing whitespace`],
+    }
+  }
+
+  if (controlPaths.some((entry) => FORBIDDEN_SCALAR_CONTROL.test(entry))) {
+    return {
+      controlPaths: [],
+      errors: [`${policyPath} controlPaths must contain only non-empty strings without control characters`],
     }
   }
 
