@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Proposal, ProposalOperation } from '../../types/automation'
+import { formatRecordedOperationActionLabel } from '../../utils/recordedOperationPresentation'
 
 const props = defineProps<{
   proposal: Proposal
@@ -39,18 +40,10 @@ function formatTimestamp(value: string | null): string {
   }
 }
 
-function humanize(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .trim()
-    .toLowerCase()
-}
-
 function fallbackOperation(operation: ProposalOperation | undefined): string {
   if (!operation) return t('review.appliedRecord.value.notRecorded')
-  const action = humanize(operation.actionType ?? '')
-  const target = humanize(operation.targetType ?? '')
+  const action = formatRecordedOperationActionLabel(operation.actionType).toLowerCase()
+  const target = formatRecordedOperationActionLabel(operation.targetType).toLowerCase()
   if (!action && !target) return t('review.appliedRecord.value.notRecorded')
   return [action, target].filter(Boolean).join(' · ')
 }
