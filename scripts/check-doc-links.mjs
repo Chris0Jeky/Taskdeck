@@ -126,6 +126,24 @@ export function existsCaseExact(target, root, directoryCache = new Map()) {
   return true
 }
 
+/** Diagnose case-only mismatches on case-sensitive filesystems; never accept them. */
+function existsCaseFolded(target, root, directoryCache) {
+  let current = root
+  for (const segment of relative(root, target).split(sep)) {
+    const entries = readDirectoryCached(current, directoryCache)
+    if (entries === null) return false
+    let name = segment
+    if (!entries.has(name)) {
+      const matches = [...entries].filter((entry) => entry.toLowerCase() === segment.toLowerCase())
+      // Do not guess between ambiguous names or mistake a missing suffix for a case error.
+      if (matches.length !== 1) return false
+      name = matches[0]
+    }
+    current = join(current, name)
+  }
+  return existsSync(current)
+}
+
 /** Every Markdown file in the working tree, repo-relative, in stable order.
  *
  * This walks the working tree, not `git ls-files`, so an untracked or
@@ -172,10 +190,12 @@ export function resolveTarget(
   // Containment is checked before existence, so an escaping target reports the
   // reason that actually explains it rather than an incidental "missing".
   const inside = relative(root, target)
-  if (inside.startsWith('..') || isAbsolute(inside)) {
+  if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
     return { reason: 'outside the repository' }
   }
-  if (!existsSync(target)) return { reason: 'missing' }
+  if (!existsSync(target)) {
+    return { reason: existsCaseFolded(target, root, directoryCache) ? 'wrong case' : 'missing' }
+  }
   if (!existsCaseExact(target, root, directoryCache)) return { reason: 'wrong case' }
   return null
 }
