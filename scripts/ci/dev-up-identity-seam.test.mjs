@@ -39,7 +39,7 @@ warn() { :; }
 step() { :; }
 
 capture_descendant_records() {
-  printf '%s\\n' '200|child|child-token'
+  printf '%s\\t%s\\t%s\\n' '200' 'child' 'child-token'
 }
 
 process_identity_status() {
