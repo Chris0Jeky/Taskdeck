@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { validateApiIntegrationWorkflow } from '../check-github-ops-governance.mjs'
+import { validateApiIntegrationWorkflow } from './api-integration-workflow-contract.mjs'
 
 const canonicalWorkflow = readFileSync(
   new URL('../../.github/workflows/reusable-api-integration.yml', import.meta.url),
