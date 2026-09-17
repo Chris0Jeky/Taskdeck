@@ -23,6 +23,38 @@ jobs:
           ref: fix/2676-fsmonitor-cleanup-residuals
           fetch-depth: 0
 
+      - name: Remove duplicated retry regression block
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('scripts/git/Test-New-CodexIssueWorktree.ps1')
+          text = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+          start = '    $successfulStopLauncherPath = Join-Path $ProbeRoot "fake-git-stop-success.ps1"\n'
+          end = '    Assert-True (Test-Path -LiteralPath $persistentCleanupRoot -PathType Container) "An exhausted removal retry budget must preserve the fixture for diagnosis."\n'
+          starts = []
+          offset = 0
+          while True:
+              found = text.find(start, offset)
+              if found < 0:
+                  break
+              starts.append(found)
+              offset = found + len(start)
+
+          if len(starts) == 2:
+              duplicate_start = starts[1]
+              duplicate_end = text.find(end, duplicate_start)
+              if duplicate_end < 0:
+                  raise SystemExit('Duplicated retry regression end marker was not found.')
+              duplicate_end += len(end)
+              text = text[:duplicate_start] + text[duplicate_end:]
+          elif len(starts) != 1:
+              raise SystemExit(f'Expected one or two retry regression blocks, found {len(starts)}.')
+
+          if text.count(start) != 1 or text.count(end) != 1:
+              raise SystemExit('Retry regression block was not normalized to exactly one copy.')
+          path.write_text(text, encoding='utf-8', newline='\n')
+
       - name: Add bounded post-stop removal retries
         shell: pwsh
         run: |
