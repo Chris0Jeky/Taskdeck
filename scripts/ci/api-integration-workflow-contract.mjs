@@ -104,8 +104,8 @@ export function validateApiIntegrationWorkflow(
       errors.push('API integration failure evidence upload must be non-fatal')
     }
     if (
-      !failureEvidence.includes(
-        'path: backend/TestResults/api-integration/${{ matrix.os }}/',
+      !/^          path: backend\/TestResults\/api-integration\/\$\{\{ matrix\.os \}\}\/\s*$/m.test(
+        failureEvidence,
       )
     ) {
       errors.push('API integration failure evidence must upload the complete partial-results directory')
