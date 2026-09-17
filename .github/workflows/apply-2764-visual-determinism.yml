@@ -1,0 +1,57 @@
+name: Apply visual determinism slice
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'test/2764-pin-visual-locale-timezone'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Pin visual locale and timezone
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("frontend/taskdeck-web/playwright.visual.config.ts")
+          text = path.read_text(encoding="utf-8")
+          if "timezoneId: 'UTC'" in text:
+              print("Visual locale/timezone patch already applied.")
+              raise SystemExit(0)
+
+          old_doc = " * - Animations disabled via reducedMotion to prevent flaky diffs\n * - Screenshot comparison thresholds tuned for cross-platform tolerance"
+          new_doc = " * - Animations disabled via reducedMotion to prevent flaky diffs\n * - Locale and timezone pinned so browser internationalisation cannot drift\n * - Screenshot comparison thresholds tuned for cross-platform tolerance"
+          old_use = "    // Consistent color scheme\n    colorScheme: 'light',\n    screenshot: 'off',"
+          new_use = "    // Consistent browser internationalisation and color defaults\n    locale: 'en-US',\n    timezoneId: 'UTC',\n    colorScheme: 'light',\n    screenshot: 'off',"
+
+          for old, new in ((old_doc, new_doc), (old_use, new_use)):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one patch target, found {count}: {old!r}")
+              text = text.replace(old, new)
+
+          path.write_text(text, encoding="utf-8", newline="\n")
+
+      - name: Commit deterministic browser defaults
+        shell: bash
+        run: |
+          if git diff --quiet -- frontend/taskdeck-web/playwright.visual.config.ts; then
+            echo "Visual determinism patch already present."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/taskdeck-web/playwright.visual.config.ts
+          git diff --cached --check
+          git commit -m "test(visual): pin locale and timezone"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
