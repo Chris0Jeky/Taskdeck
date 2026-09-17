@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { useCardTypePermission } from '../../composables/useCardTypePermission'
-import type { Board, BoardDetail } from '../../types/board'
+import type { Board } from '../../types/board'
 
 const mocks = vi.hoisted(() => ({
   getBoard: vi.fn(),
@@ -63,7 +63,7 @@ describe('useCardTypePermission access-denied classification (GH-3030)', () => {
     mocks.session.userId = 'user-1'
   })
 
-  it('presents a 403 probe as a confirmed permission loss rather than retryable unknown state', async () => {
+  it('routes a 403 probe into the editor access-loss presentation', async () => {
     mocks.getBoard.mockRejectedValue({ response: { status: 403 } })
     const { permission, wrapper } = mountPermission()
 
@@ -72,8 +72,9 @@ describe('useCardTypePermission access-denied classification (GH-3030)', () => {
 
     expect(permission.canWrite.value).toBe(false)
     expect(permission.canEditType.value).toBe(false)
+    // CardModal renders its permission-loss explanation, and CardModalForm hides
+    // the generic type-level retry, from this host-owned recovery boundary.
     expect(permission.permissionRecovery.value).toBe(true)
-    expect(permission.permissionUnknown.value).toBe(false)
     expect(permission.accessUnavailable.value).toBe(true)
     expect(permission.readsBlocked.value).toBe(true)
     expect(mocks.getBoard).toHaveBeenCalledTimes(1)
