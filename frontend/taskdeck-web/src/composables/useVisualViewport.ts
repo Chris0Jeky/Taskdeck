@@ -15,9 +15,10 @@ import { logWarn } from '../utils/errorReporting'
  * Browser pinch zoom also changes those measurements, but it is not a keyboard
  * contraction. When entering a scale above 1, browser zoom owns that geometry,
  * so this composable freezes the last trusted scale-one measurement when one
- * exists and otherwise exposes the caller's normal fallback. A later event at
- * the unchanged scale may be a keyboard contraction, so it emits the current
- * visual-viewport geometry. Returning to scale 1 resumes trusted geometry.
+ * exists and otherwise exposes the caller's normal fallback. A later resize
+ * event at the unchanged scale may be a keyboard contraction, so it emits the
+ * current visual-viewport geometry; lifecycle and scroll reads stay frozen.
+ * Returning to scale 1 resumes trusted geometry.
  *
  * Two custom properties are emitted, namespaced by `prefix`:
  *   `${prefix}-visual-viewport-height`
@@ -69,10 +70,15 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
 
   let observed: VisualViewport | null = null
   let observingLayoutViewport = false
+  let observedResizeHandler: EventListener | null = null
+  let observedScrollHandler: EventListener | null = null
+  let layoutResizeHandler: EventListener | null = null
   let lastTrustedGeometry: { height: number; offsetTop: number } | null = null
   let lastObservedScale: number | null = null
 
-  function refresh() {
+  type RefreshSource = 'initial' | 'lifecycle' | 'resize' | 'scroll' | 'manual'
+
+  function refresh(source: RefreshSource = 'manual') {
     if (typeof window === 'undefined') {
       supported.value = false
       return
@@ -116,10 +122,17 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
       return
     }
 
-    if (scale > 1) {
+    if (scale > 1 && source === 'resize') {
       supported.value = true
       height.value = visualViewport.height
       offsetTop.value = visualViewport.offsetTop
+      return
+    }
+
+    if (scale > 1 && lastTrustedGeometry) {
+      supported.value = true
+      height.value = lastTrustedGeometry.height
+      offsetTop.value = lastTrustedGeometry.offsetTop
       return
     }
 
@@ -130,7 +143,7 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
 
   // Read eagerly so the very first render is already bound to the visual
   // viewport — waiting for onMounted would paint one frame at layout size.
-  refresh()
+  refresh('initial')
 
   const style = computed<Record<string, string>>(() => {
     if (!supported.value && fallback === 'unset') {
@@ -144,25 +157,35 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
   })
 
   onMounted(() => {
-    refresh()
+    refresh('lifecycle')
     observed = (typeof window === 'undefined' ? null : window.visualViewport) ?? null
     if (observed) {
-      observed.addEventListener('resize', refresh)
-      observed.addEventListener('scroll', refresh)
+      observedResizeHandler = () => refresh('resize')
+      observedScrollHandler = () => refresh('scroll')
+      observed.addEventListener('resize', observedResizeHandler)
+      observed.addEventListener('scroll', observedScrollHandler)
     } else if (fallback === 'layout' && typeof window !== 'undefined') {
       observingLayoutViewport = true
-      window.addEventListener('resize', refresh)
+      layoutResizeHandler = () => refresh('manual')
+      window.addEventListener('resize', layoutResizeHandler)
     }
   })
 
   onUnmounted(() => {
-    observed?.removeEventListener('resize', refresh)
-    observed?.removeEventListener('scroll', refresh)
-    if (observingLayoutViewport && typeof window !== 'undefined') {
-      window.removeEventListener('resize', refresh)
+    if (observed && observedResizeHandler) {
+      observed.removeEventListener('resize', observedResizeHandler)
+    }
+    if (observed && observedScrollHandler) {
+      observed.removeEventListener('scroll', observedScrollHandler)
+    }
+    if (observingLayoutViewport && layoutResizeHandler && typeof window !== 'undefined') {
+      window.removeEventListener('resize', layoutResizeHandler)
       observingLayoutViewport = false
     }
     observed = null
+    observedResizeHandler = null
+    observedScrollHandler = null
+    layoutResizeHandler = null
   })
 
   return { supported, height, offsetTop, style, refresh }

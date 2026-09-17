@@ -22,6 +22,7 @@ function installSyntheticVisualViewport(initial: {
   offsetTop: number
   scale: number
 }) {
+  type EventType = 'resize' | 'scroll'
   const events = new EventTarget()
   let geometry = initial
 
@@ -49,9 +50,9 @@ function installSyntheticVisualViewport(initial: {
   })
 
   return {
-    set(next: typeof initial) {
+    set(next: typeof initial, eventType: EventType = 'resize') {
       geometry = next
-      events.dispatchEvent(new Event('resize'))
+      events.dispatchEvent(new Event(eventType))
     },
   }
 }
@@ -134,7 +135,7 @@ describe('useVisualViewport pinch zoom policy', () => {
     wrapper.unmount()
   })
 
-  it('uses the layout fallback when it starts zoomed, then accepts scale-one geometry', async () => {
+  it('keeps the layout fallback after mount when it starts zoomed', async () => {
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
       writable: true,
@@ -142,12 +143,29 @@ describe('useVisualViewport pinch zoom policy', () => {
     })
     const synthetic = installSyntheticVisualViewport({ height: 260, offsetTop: 310, scale: 2 })
     const wrapper = mountHost({ prefix: '--card-modal' })
+    await nextTick()
 
     expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('900px')
     expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('0px')
     expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('false')
 
     synthetic.set({ height: 500, offsetTop: 80, scale: 1 })
+    await nextTick()
+
+    expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('500px')
+    expect(property(wrapper, '--card-modal-visual-viewport-offset-top')).toBe('80px')
+    expect(wrapper.get('[data-testid="host"]').attributes('data-supported')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('keeps frozen geometry after a same-scale pinch scroll', async () => {
+    const synthetic = installSyntheticVisualViewport({ height: 500, offsetTop: 80, scale: 1 })
+    const wrapper = mountHost({ prefix: '--card-modal' })
+
+    synthetic.set({ height: 260, offsetTop: 310, scale: 2 })
+    await nextTick()
+
+    synthetic.set({ height: 220, offsetTop: 350, scale: 2 }, 'scroll')
     await nextTick()
 
     expect(property(wrapper, '--card-modal-visual-viewport-height')).toBe('500px')
