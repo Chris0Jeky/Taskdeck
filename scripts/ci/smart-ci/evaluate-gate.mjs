@@ -44,23 +44,31 @@ function parseArgs(argv) {
 }
 
 function normaliseMergeBaseBinding(plan) {
-  const normaliseSha = (value) => (typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value)
-    ? value.toLowerCase()
-    : null);
+  const empty = { mergeBaseSha: null, mergeBaseTipSha: null };
+  const validSha = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value);
   if (!plan
+    || !Number.isInteger(plan.event && plan.event.pullRequest)
+    || plan.plannerError
+    || plan.mergeRefQualification !== 'qualified'
     || !Object.hasOwn(plan, 'mergeBaseSha')
-    || !Object.hasOwn(plan, 'mergeBaseTipSha')) {
-    return { mergeBaseSha: null, mergeBaseTipSha: null };
+    || !Object.hasOwn(plan, 'mergeBaseTipSha')
+    || !validSha(plan.baseSha)
+    || !validSha(plan.mergeBaseSha)
+    || !(plan.mergeBaseTipSha === null || validSha(plan.mergeBaseTipSha))) {
+    return empty;
   }
 
-  const mergeBaseSha = normaliseSha(plan.mergeBaseSha);
-  const mergeBaseTipSha = plan.mergeBaseTipSha === null
-    ? null
-    : normaliseSha(plan.mergeBaseTipSha);
-  if (!mergeBaseSha || (plan.mergeBaseTipSha !== null && !mergeBaseTipSha)) {
-    return { mergeBaseSha: null, mergeBaseTipSha: null };
+  if (plan.mergeBaseTipSha === null) {
+    if (plan.mergeBaseSha !== plan.baseSha) return empty;
+  } else if (plan.mergeBaseSha !== plan.mergeBaseTipSha
+    || plan.mergeBaseTipSha === plan.baseSha) {
+    return empty;
   }
-  return { mergeBaseSha, mergeBaseTipSha };
+
+  return {
+    mergeBaseSha: plan.mergeBaseSha.toLowerCase(),
+    mergeBaseTipSha: plan.mergeBaseTipSha === null ? null : plan.mergeBaseTipSha.toLowerCase(),
+  };
 }
 
 function main() {
