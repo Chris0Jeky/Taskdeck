@@ -120,6 +120,37 @@ describe('useCardTypePermission explicit retry ordering', () => {
     },
   )
 
+  it('accepts a newer board payload committed after the manual retry returns denial first', async () => {
+    const firstRead = deferred<BoardDetail>()
+    const manualRetry = deferred<BoardDetail>()
+    vi.mocked(boardsApi.getBoard)
+      .mockReturnValueOnce(firstRead.promise)
+      .mockReturnValueOnce(manualRetry.promise)
+    const { api, wrapper } = create()
+    await enterDeniedRecovery(api, firstRead)
+
+    store.currentBoardRequestGeneration = 2
+    const retry = api.refreshPermission()
+    await flushPromises()
+
+    // The store request begins after the explicit retry, but its payload has
+    // not committed yet when the direct retry returns its denial.
+    store.currentBoardRequestGeneration = 3
+    manualRetry.reject({ response: { status: 403 } })
+    await retry
+
+    expect(api.canWrite.value).toBe(false)
+    expect(api.accessUnavailable.value).toBe(true)
+
+    store.currentBoard = board(true)
+    store.currentBoardPayloadGeneration = 3
+    await flushPromises()
+
+    expect(api.canWrite.value).toBe(true)
+    expect(api.accessUnavailable.value).toBe(false)
+    wrapper.unmount()
+  })
+
   it('uses the deferred board payload after the later manual retry fails transiently', async () => {
     const firstRead = deferred<BoardDetail>()
     const manualRetry = deferred<BoardDetail>()

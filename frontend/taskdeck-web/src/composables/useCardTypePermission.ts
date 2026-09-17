@@ -202,7 +202,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       const canWrite = board.canWrite !== false && board.isArchived !== true
       confirmed.value = { boardId, canWrite }
       if (permissionRecovery.value && !canWrite) {
-        recoveryRequestGeneration = boardRequestGeneration.value
+        recoveryRequestGeneration = explicitRetryStartGeneration ?? boardRequestGeneration.value
       }
       accessUnavailable.value = false
       return 'authoritative'
@@ -215,7 +215,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       const status = (cause as { response?: { status?: number } })?.response?.status
       accessUnavailable.value = status === 403 || status === 404
       if (permissionRecovery.value && accessUnavailable.value) {
-        recoveryRequestGeneration = boardRequestGeneration.value
+        recoveryRequestGeneration = explicitRetryStartGeneration ?? boardRequestGeneration.value
       }
       return accessUnavailable.value ? 'authoritative' : 'transient'
     } finally {
