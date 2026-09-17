@@ -1,68 +1,54 @@
 # Frontmatter scalar validation: issue #3006
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-17
 
-Status: PR candidate, not a claim of merged or hosted-qualified delivery.
+Status: PR candidate. Exact-head hosted qualification and human acceptance remain outstanding.
 
 ## Boundary and design
 
-The control-path mirror is checked by `scripts/check-docs-governance.mjs` without
-installing dependencies. The checker must not silently accept unreadable rule
-frontmatter, but it is not a general YAML parser. This repair makes that boundary
-explicit: top-level keys, single-line scalars and flat indented scalar lists.
-Unsupported YAML constructs fail with a diagnostic rather than being approximated.
+The control-path mirror is checked by `scripts/check-docs-governance.mjs` without installing a YAML dependency. The checker therefore implements a deliberately narrow, fail-closed subset rather than claiming general YAML conformance:
 
-A quote or bracket inside a plain scalar is text, not the start of a quoted string
-or flow collection. Leading quotes are parsed completely, including YAML doubled
-single quotes and the JSON subset of double-quoted escapes. Separated trailing
-comments are ignored; hashes within plain text remain literal. Other YAML escape
-forms, tags, anchors, aliases, block scalars and flow collections are deliberately
-unsupported. Consult the [YAML 1.2.2 specification](https://yaml.org/spec/1.2.2/),
-sections 7.3 and 8.2, for the broader grammar; this check does not claim conformance
-to that entire grammar or to any particular consumer's schema.
+- top-level keys;
+- single-line scalars;
+- flat indented scalar lists;
+- JSON-compatible double-quoted strings;
+- YAML doubled-single-quote strings;
+- comments and blank lines.
 
-Mapping colons require separation. Tabs in indentation, nested/inconsistently
-indented lists, inline nested mappings/sequences and trailing text after a quoted
-scalar fail closed. Each top-level list can choose its own indentation. Explicitly quoted empty
-metadata strings are accepted in both scalar and list form; missing/unquoted list
-values and empty paths are rejected. Duplicate
-keys are rejected without asserting that every loader resolves them the same way.
-Unquoted alias-like globs such as `**/.npmrc` must be quoted. Decoded path strings
-must be nonempty and free of surrounding whitespace and control characters.
-Policy `controlPaths` entries with surrounding whitespace are rejected rather
-than trimmed into an apparently matching rule.
+Unsupported tags, anchors, aliases, block scalars, flow collections, nested collections, malformed quoting, inconsistent indentation, and trailing content are rejected instead of approximated.
 
-The existing policy and rule files are unchanged. No workflow, CI routing, required
-context, dependency, deployment setting or maintainer decision changes here.
+Quoted values are tracked separately from plain values. This distinction is required because a path such as `"null"` is a string, while plain `null` is resolved as a non-string by common YAML schemas. The path consumer rejects whole-scalar plain values that resolve as nulls, booleans, integers, floats, infinities, NaN, dates, or timestamps. Matching is bounded to the complete scalar so ordinary paths such as `2026-09-17-notes.md`, `true/guide.md`, and `123/notes.md` remain valid.
 
-## Verification and reproducibility
+Every decoded internal control character in the C0, DEL, and C1 ranges is rejected. This applies equally to policy JSON strings, literal YAML characters, and escape sequences decoded from quoted YAML values. Ordinary visible Unicode remains valid. Leading or trailing Unicode whitespace is rejected separately rather than trimmed into an apparently matching control path.
 
-All local executions used Linux and Node v22.16.0, on the uploaded snapshot in an
-isolated linked worktree. Before editing, the two changed script blobs were checked
-against live main `54e4c0a86fb77eabba73b5d21557d6f8720571bd` and matched exactly.
-The worktree snapshot itself is not represented as that complete remote commit.
+## Recovery audit
 
-- Added 45 cases to the existing 26-case governance suite. The initial 39-case
-  addition reproduced **32 passed, 33 failed**, then reached **65 passed**. The
-  first automated review identified quoted-empty metadata lists; six more cases
-  reproduced **69 passed, 2 failed** before that correction. Final focused result:
-  **71 passed, 0 failed**.
-- `node --test scripts/check-*.test.mjs`: **183 passed, 2 failed**. Both failures
-  also reproduce against unchanged source: **138 passed, 2 failed** there.
-  The link-check case expects `wrong case`, but gets `missing` on the local
-  case-sensitive filesystem. An indirectly imported staging-composition test
-  requires Docker, which is not installed (`spawn docker ENOENT`). Neither file
-  was changed. This is not a broad-green claim.
-- `node scripts/check-docs-governance.mjs`, `node scripts/check-doc-links.mjs`,
-  `node scripts/check-github-ops-governance.mjs` and `git diff --check` pass.
+The original PR branch accumulated unrelated history and could no longer provide a reviewable three-file change. The clean replacement was created from current `main` and initially copied the three intended blobs. A second audit found that the source branch did not actually contain the final control-range and implicit-scalar changes claimed in its automation summary. The clean branch was corrected directly rather than carrying that overstatement forward.
 
-Re-run the focused suite using `node --test scripts/check-docs-governance.test.mjs`.
-Exact-head hosted execution on the repository's configured Node version and
-review of the follow-up correction remain outstanding. There is no full frontend/backend/browser claim.
+The current replacement contains:
 
-## Integration
+- `scripts/check-docs-governance.mjs`;
+- the original governance regression suite;
+- `scripts/check-docs-governance.hardening.test.mjs`, which isolates the missing fail-open cases;
+- this evidence note.
 
-This is independent of the active estimate, typed-relation and archive-editor
-stack. Canonical STATUS/MASTERPLAN documents and human acceptance checkboxes remain
-unchanged. Issue #3005 separately owns wiring governance/link-check regression
-suites into the hosted docs job; this PR does not pretend that wiring is complete.
+No workflow, required context, dependency, deployment setting, policy document, or agent-control rule is changed.
+
+## Verification
+
+Focused red/green evidence on Node v22.16.0:
+
+- against the extracted source implementation, the new suite failed three of six groups:
+  - policy controls accepted U+0009;
+  - decoded quoted-YAML controls accepted U+0009;
+  - plain YAML `~` was accepted as a string path;
+- against the corrected implementation, all six groups pass;
+- the suite exhaustively checks C0, DEL, and C1 code points in policy JSON and decoded quoted YAML;
+- it checks representative null, boolean, numeric, non-finite, date, and timestamp forms;
+- it proves quoted equivalents remain strings;
+- it proves visible Unicode and path-like counterexamples are not overmatched;
+- `node --check scripts/check-docs-governance.mjs` passes.
+
+The current hosted Docs Governance job executes the checker against the repository policy/rule pair but does not yet invoke this Node regression suite. Wiring governance regressions into hosted CI remains separately owned by #3005; this PR does not alter a control-plane workflow to conceal that boundary.
+
+Exact-head hosted CI, a fresh code review, and review of the final changed-file inventory are required before merge. There is no frontend, backend, browser, deployment, or hosted-product claim.
