@@ -38,6 +38,11 @@ axios, `@microsoft/signalr` board realtime). Orientation only.
   — which `@stryker-mutator/vitest-runner` forces for its dry run — `process.env.TZ` reads back as
   the requested zone while `Date`/`Intl` silently keep the host zone (#2943). Install fake timers
   *before* `installTimeZone`: `vi.useFakeTimers()` replaces the whole `Intl` global.
+  The helper intentionally leaves local-parts constructors, zone-less parsing and `setX` mutators
+  on the host zone; build fixture instants with `instantAtZonedWallClock` or explicit ISO offsets.
+  Overlap resolution is deterministic but not globally earlier/later (see the helper's contract).
+  `src/tests/guards/timezoneEnvironment.spec.ts` checks literal TZ stubs across test sources, with
+  exactly one scoped exception for the helper's own environment-independence regression.
 
 ## Verify
 - `npm run typecheck`, `npm run build`
