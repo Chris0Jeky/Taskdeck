@@ -26,6 +26,7 @@ function sha(character) {
 function makeEvidence({
   artifactId = 101,
   runId = 201,
+  artifactWorkflowRunId = runId,
   pullRequest = 2327,
   baseSha = sha('1'),
   headSha = sha('2'),
@@ -76,6 +77,7 @@ function makeEvidence({
     artifact: {
       id: artifactId,
       name: artifactName ?? `smart-ci-receipt-${pullRequest}-${headSha}`,
+      workflowRunId: artifactWorkflowRunId,
       expired: artifactExpired,
       createdAt,
       updatedAt,
@@ -154,6 +156,25 @@ test('base movement that changes the landed tree requires full requalification',
   assert.equal(verdict.qualification, 'full');
   assert.equal(verdict.reason, 'no-qualified-receipt');
   assert.ok(verdict.diagnostics.some((entry) => entry.code === 'tree-mismatch'));
+});
+
+test('artifact producer run identity is mandatory and must match the authority run', () => {
+  const missingProducer = makeEvidence({ artifactId: 1 });
+  delete missingProducer.artifact.workflowRunId;
+  const mismatchedProducer = makeEvidence({
+    artifactId: 2,
+    runId: 202,
+    artifactWorkflowRunId: 999,
+  });
+
+  const verdict = decide([missingProducer, mismatchedProducer]);
+
+  assert.equal(verdict.qualification, 'full');
+  assert.equal(verdict.reason, 'no-qualified-receipt');
+  assert.deepEqual(
+    new Set(verdict.diagnostics.map((entry) => entry.code)),
+    new Set(['artifact-producer-run-unknown', 'artifact-workflow-run-mismatch']),
+  );
 });
 
 test('expired, expiry-unknown, policy-mismatched and non-authoritative receipts cannot authorize bounded work', () => {
@@ -250,12 +271,14 @@ test('CLI writes a content-free verdict, landing binding and GitHub outputs', ()
     assert.equal(verdict.qualification, 'bounded');
     assert.deepEqual(verdict.landing, { kind: 'pull-request', pullRequest: 2327 });
     assert.equal(verdict.receipt.artifactId, 101);
+    assert.equal(verdict.receipt.workflowRunId, 201);
     const outputs = readFileSync(outputPath, 'utf8');
     assert.match(outputs, /^qualification=bounded$/m);
     assert.match(outputs, /^reason=qualified-receipt$/m);
     assert.match(outputs, /^landing_kind=pull-request$/m);
     assert.match(outputs, /^landing_pr=2327$/m);
     assert.match(outputs, /^receipt_artifact_id=101$/m);
+    assert.match(outputs, /^receipt_workflow_run_id=201$/m);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
