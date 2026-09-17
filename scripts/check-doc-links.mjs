@@ -3,17 +3,8 @@
 /**
  * Repository-relative Markdown link check.
  *
- * Scope, deliberately narrow: it resolves link and image targets that point at a
- * path inside this repository and reports the ones that do not exist. It does
- * not touch the network, so it never fails on someone else's outage, rate limit
- * or login wall, and it is safe to run in any lane.
- *
- * Anchors (`#section`) are checked only as far as the file half — this does not
- * verify that a heading exists, because heading-slug rules differ between GitHub
- * and every other renderer and a wrong answer here would be worse than none.
- *
- * Seeded by the #2235 v0.3 spring-cleaning link sweep, which #1138 asks to make
- * repeatable rather than one-shot.
+ * The checker resolves local link and image targets without touching the
+ * network. Anchors are intentionally checked only as far as the file half.
  */
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
@@ -37,57 +28,419 @@ export const skippedDirectories = new Set([
   'test-results',
 ])
 
+function lineNumberAt(text, index) {
+  let line = 1
+  for (let cursor = 0; cursor < index; cursor += 1) {
+    if (text[cursor] === '\n') line += 1
+  }
+  return line
+}
+
+function maskRange(buffer, source, start, end) {
+  for (let index = start; index < end; index += 1) {
+    if (source[index] !== '\n') buffer[index] = ' '
+  }
+}
+
+function maskHtmlComments(buffer, source) {
+  let cursor = 0
+  while (cursor < source.length) {
+    const start = source.indexOf('<!--', cursor)
+    if (start === -1) break
+    const close = source.indexOf('-->', start + 4)
+    const end = close === -1 ? source.length : close + 3
+    maskRange(buffer, source, start, end)
+    cursor = end
+  }
+}
+
+function backtickRunLength(text, start) {
+  let end = start
+  while (text[end] === '`') end += 1
+  return end - start
+}
+
+function isEscaped(text, index) {
+  let backslashes = 0
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
+    backslashes += 1
+  }
+  return backslashes % 2 === 1
+}
+
+function firstBlankLineAtOrAfter(text, start) {
+  const pattern = /\n[ \t\r]*\n/g
+  pattern.lastIndex = start
+  return pattern.exec(text)?.index ?? -1
+}
+
 /**
- * Blank out fenced blocks and inline code spans, replacing each character with a
- * space so that every surviving offset still matches the original string.
+ * Mask fenced blocks and balanced inline code while preserving every offset.
  *
- * This is what stops the checker reporting illustrative Markdown as broken. A
- * doc that writes `![…](../path/to/diagram.svg)` inside backticks is showing the
- * reader a shape, not linking anywhere, and an earlier ad-hoc sweep flagged
- * exactly that as a false positive.
+ * A malformed inline span never masks across a blank line. Unterminated spans
+ * and fences still produce diagnostics so a stale delimiter cannot silently
+ * hide a large region from the checker. Diagnostics are warnings rather than
+ * broken-link failures because historical prose may be malformed while every
+ * local target remains valid.
  */
+export function maskCodeWithDiagnostics(markdown) {
+  const buffer = markdown.split('')
+  const diagnostics = []
+  let fence = null
+  let lineStart = 0
+  let line = 1
+
+  while (lineStart < markdown.length) {
+    const newline = markdown.indexOf('\n', lineStart)
+    const lineEnd = newline === -1 ? markdown.length : newline
+    const rawLine = markdown.slice(lineStart, lineEnd)
+    const comparableLine = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    const leftTrimmed = comparableLine.replace(/^[ \t]*/, '')
+
+    if (fence) {
+      maskRange(buffer, markdown, lineStart, lineEnd)
+      const trimmed = comparableLine.trim()
+      if (
+        trimmed.length >= fence.length &&
+        [...trimmed].every((character) => character === fence.character)
+      ) {
+        fence = null
+      }
+    } else {
+      const opening = /^(`{3,}|~{3,})/.exec(leftTrimmed)
+      if (opening) {
+        fence = {
+          character: opening[1][0],
+          length: opening[1].length,
+          line,
+          target: opening[1],
+        }
+        maskRange(buffer, markdown, lineStart, lineEnd)
+      }
+    }
+
+    if (newline === -1) break
+    lineStart = newline + 1
+    line += 1
+  }
+
+  if (fence) {
+    diagnostics.push({
+      line: fence.line,
+      target: fence.target,
+      reason: 'unterminated fenced code block',
+    })
+  }
+
+  maskHtmlComments(buffer, markdown)
+  const fenceMasked = buffer.join('')
+  let cursor = 0
+  while (cursor < fenceMasked.length) {
+    if (fenceMasked[cursor] !== '`' || isEscaped(fenceMasked, cursor)) {
+      cursor += 1
+      continue
+    }
+
+    const runLength = backtickRunLength(fenceMasked, cursor)
+    const marker = '`'.repeat(runLength)
+    const contentStart = cursor + runLength
+    const blankLine = firstBlankLineAtOrAfter(fenceMasked, contentStart)
+    const searchLimit = blankLine === -1 ? fenceMasked.length : blankLine
+    let search = contentStart
+    let closing = -1
+
+    while (search < searchLimit) {
+      const candidate = fenceMasked.indexOf('`', search)
+      if (candidate === -1 || candidate >= searchLimit) break
+      const candidateLength = backtickRunLength(fenceMasked, candidate)
+      // Backslashes are literal inside a code span, so they do not escape the
+      // matching closing delimiter.
+      if (candidateLength === runLength) {
+        closing = candidate
+        break
+      }
+      search = candidate + candidateLength
+    }
+
+    if (closing === -1) {
+      diagnostics.push({
+        line: lineNumberAt(markdown, cursor),
+        target: marker,
+        reason: 'unbalanced inline code span',
+      })
+      cursor = blankLine === -1 ? contentStart : blankLine + 1
+      continue
+    }
+
+    const end = closing + runLength
+    maskRange(buffer, markdown, cursor, end)
+    cursor = end
+  }
+
+  return { masked: buffer.join(''), diagnostics }
+}
+
+/** Backwards-compatible convenience for callers that need only masked text. */
 export function maskCode(markdown) {
-  let masked = markdown.replace(/^([ \t]*)(```+|~~~+)[^\n]*\n[\s\S]*?^[ \t]*\2[^\n]*$/gm, (block) =>
-    block.replace(/[^\n]/g, ' '),
-  )
-  masked = masked.replace(/(`+)(?:(?!\1)[\s\S])*?\1/g, (span) => span.replace(/[^\n]/g, ' '))
-  return masked
+  return maskCodeWithDiagnostics(markdown).masked
 }
 
 /** Targets that name something other than a path in this repository. */
 export function isExternalTarget(target) {
   return (
     target === '' ||
-    /^[a-z][a-z0-9+.-]*:/i.test(target) || // http:, https:, mailto:, tel:, data:, ...
+    /^[a-z][a-z0-9+.-]*:/i.test(target) ||
     target.startsWith('//') ||
     target.startsWith('#')
   )
 }
 
+function findLabelEnd(markdown, start) {
+  let depth = 1
+  for (let index = start + 1; index < markdown.length; index += 1) {
+    if (markdown[index] === '\\') {
+      index += 1
+      continue
+    }
+    if (markdown[index] === '[') depth += 1
+    else if (markdown[index] === ']') {
+      depth -= 1
+      if (depth === 0) return index
+    }
+  }
+  return -1
+}
+
+function skipWhitespace(text, start) {
+  let cursor = start
+  while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1
+  return cursor
+}
+
+function findInlineClosingParen(text, start) {
+  let cursor = skipWhitespace(text, start)
+  if (text[cursor] === ')') return cursor
+
+  if (text[cursor] === '"' || text[cursor] === "'") {
+    const quote = text[cursor]
+    cursor += 1
+    while (cursor < text.length) {
+      if (text[cursor] === '\\') cursor += 2
+      else if (text[cursor] === quote) {
+        cursor = skipWhitespace(text, cursor + 1)
+        return text[cursor] === ')' ? cursor : -1
+      } else cursor += 1
+    }
+    return -1
+  }
+
+  if (text[cursor] === '(') {
+    let depth = 1
+    cursor += 1
+    while (cursor < text.length) {
+      if (text[cursor] === '\\') {
+        cursor += 2
+        continue
+      }
+      if (text[cursor] === '(') depth += 1
+      else if (text[cursor] === ')') {
+        depth -= 1
+        if (depth === 0) {
+          cursor = skipWhitespace(text, cursor + 1)
+          return text[cursor] === ')' ? cursor : -1
+        }
+      }
+      cursor += 1
+    }
+  }
+
+  return -1
+}
+
+function parseInlineDestination(text, openParen) {
+  let cursor = skipWhitespace(text, openParen + 1)
+
+  if (text[cursor] === '<') {
+    const targetStart = cursor + 1
+    cursor = targetStart
+    while (cursor < text.length && text[cursor] !== '>' && text[cursor] !== '\n') {
+      if (text[cursor] === '\\') cursor += 2
+      else cursor += 1
+    }
+    if (text[cursor] !== '>') return null
+    const closing = findInlineClosingParen(text, cursor + 1)
+    if (closing === -1) return null
+    return { target: text.slice(targetStart, cursor), closing }
+  }
+
+  const targetStart = cursor
+  let depth = 0
+  while (cursor < text.length) {
+    if (text[cursor] === '\\') {
+      cursor += 2
+      continue
+    }
+    if (text[cursor] === '(') {
+      depth += 1
+      cursor += 1
+      continue
+    }
+    if (text[cursor] === ')') {
+      if (depth === 0) {
+        return { target: text.slice(targetStart, cursor), closing: cursor }
+      }
+      depth -= 1
+      cursor += 1
+      continue
+    }
+    if (/\s/.test(text[cursor]) && depth === 0) {
+      const closing = findInlineClosingParen(text, cursor)
+      if (closing === -1) return null
+      return { target: text.slice(targetStart, cursor), closing }
+    }
+    cursor += 1
+  }
+  return null
+}
+
+function parseReferenceDestination(text) {
+  let cursor = skipWhitespace(text, 0)
+  if (text[cursor] === '<') {
+    const end = text.indexOf('>', cursor + 1)
+    return end === -1 ? null : text.slice(cursor + 1, end)
+  }
+
+  const start = cursor
+  let depth = 0
+  while (cursor < text.length) {
+    if (text[cursor] === '\\') {
+      cursor += 2
+      continue
+    }
+    if (text[cursor] === '(') depth += 1
+    else if (text[cursor] === ')' && depth > 0) depth -= 1
+    else if (/\s/.test(text[cursor]) && depth === 0) break
+    cursor += 1
+  }
+  return text.slice(start, cursor)
+}
+
+function extractLocalTargetsFromMasked(masked) {
+  const found = []
+  let sequence = 0
+
+  const push = (rawTarget, index) => {
+    let target = rawTarget.trim()
+    target = target.replace(/\\([\\()[\]<> ])/g, '$1')
+    if (isExternalTarget(target)) return
+    const pathPart = target.split('#')[0].split('?')[0]
+    if (pathPart === '') return
+    found.push({ target, pathPart, line: lineNumberAt(masked, index), index, sequence })
+    sequence += 1
+  }
+
+  // Parse inline links instead of using a single regular expression so nested
+  // image labels and balanced parentheses in destinations remain visible.
+  for (let index = 0; index < masked.length; index += 1) {
+    let bracketStart = -1
+    if (masked[index] === '!' && masked[index + 1] === '[') bracketStart = index + 1
+    else if (masked[index] === '[' && masked[index - 1] !== '!') bracketStart = index
+    if (bracketStart === -1) continue
+
+    const labelEnd = findLabelEnd(masked, bracketStart)
+    if (labelEnd === -1 || masked[labelEnd + 1] !== '(') continue
+    const destination = parseInlineDestination(masked, labelEnd + 1)
+    if (destination) push(destination.target, index)
+  }
+
+  // A reference-style link's path lives in its definition, so validating every
+  // local definition covers both links and images without resolving labels.
+  const definitionPattern = /^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(.*)$/gm
+  let definition
+  while ((definition = definitionPattern.exec(masked)) !== null) {
+    let destinationText = definition[1]
+    let destinationIndex = definition.index
+    if (destinationText.trim() === '') {
+      const lineBreak = masked.indexOf('\n', definition.index)
+      if (lineBreak !== -1) {
+        const nextLineStart = lineBreak + 1
+        const nextLineEnd = masked.indexOf('\n', nextLineStart)
+        const continuation = /^[ \t]*(\S.*)$/.exec(
+          masked.slice(nextLineStart, nextLineEnd === -1 ? masked.length : nextLineEnd),
+        )
+        if (continuation) {
+          destinationText = continuation[1]
+          destinationIndex = nextLineStart + continuation[0].indexOf(destinationText)
+        }
+      }
+    }
+    const target = parseReferenceDestination(destinationText)
+    if (target !== null) push(target, destinationIndex)
+  }
+
+  const findTagEnd = (start) => {
+    let quote = null
+    for (let cursor = start + 1; cursor < masked.length; cursor += 1) {
+      const character = masked[cursor]
+      if (quote) {
+        if (character === quote) quote = null
+      } else if (character === '"' || character === "'") {
+        quote = character
+      } else if (character === '>') {
+        return cursor
+      }
+    }
+    return -1
+  }
+
+  let cursor = 0
+  while (cursor < masked.length) {
+    if (masked[cursor] !== '<') {
+      cursor += 1
+      continue
+    }
+    const end = findTagEnd(cursor)
+    if (end === -1) {
+      cursor += 1
+      continue
+    }
+    const tag = masked.slice(cursor, end + 1)
+    const opening = /^<(a|img)\b/i.exec(tag)
+    if (!opening) {
+      cursor = end + 1
+      continue
+    }
+
+    const attributeName = opening[1].toLowerCase() === 'a' ? 'href' : 'src'
+    const attributePattern = new RegExp(
+      `\\s${attributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
+      'i',
+    )
+    const attribute = attributePattern.exec(tag)
+    if (!attribute) {
+      cursor = end + 1
+      continue
+    }
+    const target = attribute[1] ?? attribute[2] ?? attribute[3] ?? ''
+    const valueOffset = attribute[0].indexOf(target)
+    push(target, cursor + attribute.index + Math.max(0, valueOffset))
+    cursor = end + 1
+  }
+
+  return found
+    .sort((left, right) => left.index - right.index || left.sequence - right.sequence)
+    .map(({ target, pathPart, line }) => ({ target, pathPart, line }))
+}
+
 /** Extract every repository-relative link target, with the line it sits on. */
 export function extractLocalTargets(markdown) {
-  const masked = maskCode(markdown)
-  const found = []
-  const pattern = /!?\[(?:[^\][]|\[[^\][]*\])*\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g
-  let match
-  while ((match = pattern.exec(masked)) !== null) {
-    let target = match[1]
-    if (target.startsWith('<') && target.endsWith('>')) target = target.slice(1, -1)
-    if (isExternalTarget(target)) continue
-    const pathPart = target.split('#')[0].split('?')[0]
-    if (pathPart === '') continue
-    const line = masked.slice(0, match.index).split('\n').length
-    found.push({ target, pathPart, line })
-  }
-  return found
+  return extractLocalTargetsFromMasked(maskCode(markdown))
 }
 
 /**
  * Directory listings, cached for one check, used for the case-exact existence
- * check. Keyed by absolute directory path; a directory that cannot be read
- * caches as null so the caller can fall back rather than retry it for every
- * link. The cache belongs to the caller so a long-lived process can run a
- * second check after files have been added or renamed without stale results.
+ * check. An unreadable directory caches as null so the caller can fall back to
+ * existsSync instead of retrying it for every link.
  */
 function readDirectoryCached(directory, directoryCache) {
   if (!directoryCache.has(directory)) {
@@ -100,17 +453,7 @@ function readDirectoryCached(directory, directoryCache) {
   return directoryCache.get(directory)
 }
 
-/**
- * Case-exact existence, because `existsSync` is not.
- *
- * Windows and macOS resolve `docs/status.md` to `docs/STATUS.md`; Linux and
- * GitHub's own file serving do not. Checking with `existsSync` alone therefore
- * passes a link on a developer's machine that returns 404 for every reader —
- * exactly the defect this script exists to catch, missed silently. So each
- * segment is confirmed against its parent's real directory listing.
- *
- * `target` must already be absolute and inside `root`.
- */
+/** Case-exact existence, because Windows and macOS existsSync can be lenient. */
 export function existsCaseExact(target, root, directoryCache = new Map()) {
   if (!existsSync(target)) return false
   const relativePath = relative(root, target)
@@ -118,7 +461,6 @@ export function existsCaseExact(target, root, directoryCache = new Map()) {
   let current = root
   for (const segment of relativePath.split(sep)) {
     const entries = readDirectoryCached(current, directoryCache)
-    // An unreadable directory is not evidence of a bad link; trust existsSync.
     if (entries === null) return true
     if (!entries.has(segment)) return false
     current = join(current, segment)
@@ -158,7 +500,7 @@ export function collectMarkdownFiles(root = repoRoot) {
     try {
       entries = readdirSync(directory, { withFileTypes: true })
     } catch {
-      return // an unreadable directory is not a link defect
+      return
     }
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (skippedDirectories.has(entry.name)) continue
@@ -184,11 +526,8 @@ export function resolveTarget(
   } catch {
     // A target that is not valid percent-encoding is used as written.
   }
-  // A leading "/" in a repository document means repo-root-relative, not filesystem-absolute.
   const base = decoded.startsWith('/') ? join(root, decoded.slice(1)) : join(dirname(sourceFile), decoded)
   const target = resolve(base)
-  // Containment is checked before existence, so an escaping target reports the
-  // reason that actually explains it rather than an incidental "missing".
   const inside = relative(root, target)
   if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
     return { reason: 'outside the repository' }
@@ -200,39 +539,66 @@ export function resolveTarget(
   return null
 }
 
-export function findBrokenLinks(root = repoRoot) {
+/** Scan once so the CLI can report link failures and masking warnings together. */
+export function scanDocumentation(root = repoRoot) {
+  const files = collectMarkdownFiles(root)
   const broken = []
+  const diagnostics = []
   const directoryCache = new Map()
-  for (const file of collectMarkdownFiles(root)) {
+
+  for (const file of files) {
     let contents
     try {
       contents = readFileSync(file, 'utf8')
     } catch {
       continue
     }
-    for (const { target, pathPart, line } of extractLocalTargets(contents)) {
+
+    const result = maskCodeWithDiagnostics(contents)
+    const fileName = relative(root, file).split(sep).join('/')
+    diagnostics.push(...result.diagnostics.map((diagnostic) => ({ file: fileName, ...diagnostic })))
+
+    const fileFindings = []
+    for (const { target, pathPart, line } of extractLocalTargetsFromMasked(result.masked)) {
       const failure = resolveTarget(file, pathPart, root, directoryCache)
       if (failure) {
-        broken.push({
-          file: relative(root, file).split(sep).join('/'),
-          line,
-          target,
-          reason: failure.reason,
-        })
+        fileFindings.push({ file: fileName, line, target, reason: failure.reason })
       }
     }
+    fileFindings.sort((left, right) => left.line - right.line || left.target.localeCompare(right.target))
+    broken.push(...fileFindings)
   }
-  return broken
+
+  return { files, broken, diagnostics }
+}
+
+export function findBrokenLinks(root = repoRoot) {
+  return scanDocumentation(root).broken
+}
+
+export function findMaskingDiagnostics(root = repoRoot) {
+  return scanDocumentation(root).diagnostics
 }
 
 /** Render findings the way both the CLI and the test suite should report them. */
-export function formatBrokenLinks(broken) {
-  return broken.map(({ file, line, target, reason }) => `${file}:${line} -> ${target} (${reason})`)
+export function formatBrokenLinks(findings) {
+  return findings.map(
+    ({ file, line, target, reason }) => `${file}:${line} -> ${target} (${reason})`,
+  )
 }
 
 function main() {
-  const files = collectMarkdownFiles()
-  const broken = findBrokenLinks()
+  const { files, broken, diagnostics } = scanDocumentation()
+
+  if (diagnostics.length > 0) {
+    console.warn('Doc link masking warnings:')
+    for (const line of formatBrokenLinks(diagnostics)) {
+      console.warn(`- ${line}`)
+    }
+    console.warn(
+      `\n${diagnostics.length} malformed code delimiter warning(s); links outside masked spans were still checked.`,
+    )
+  }
 
   if (broken.length > 0) {
     console.error('Doc link check failed:')
@@ -245,7 +611,11 @@ function main() {
     process.exit(1)
   }
 
-  console.log(`Doc link check passed (${files.length} Markdown files, 0 broken relative links).`)
+  console.log(
+    `Doc link check passed (${files.length} Markdown files, 0 broken relative links${
+      diagnostics.length > 0 ? `, ${diagnostics.length} masking warning(s)` : ''
+    }).`,
+  )
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
