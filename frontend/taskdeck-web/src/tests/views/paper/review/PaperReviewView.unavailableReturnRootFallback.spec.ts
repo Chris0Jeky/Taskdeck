@@ -3,7 +3,7 @@ import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
-import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
+import ReviewView from '../../../../views/ReviewView.vue'
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
@@ -127,11 +127,11 @@ async function mountView(initial: Proposal[], followUp: Proposal[]) {
   mocks.getProposals.mockResolvedValue(followUp)
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/workspace/review', name: 'workspace-review', component: PaperReviewView }],
+    routes: [{ path: '/workspace/review', name: 'workspace-review', component: ReviewView }],
   })
   await router.push('/workspace/review')
   await router.isReady()
-  const wrapper = mount(PaperReviewView, {
+  const wrapper = mount(ReviewView, {
     attachTo: document.body,
     global: { plugins: [router] },
   })
@@ -143,6 +143,8 @@ async function mountView(initial: Proposal[], followUp: Proposal[]) {
 describe('Paper Review unavailable-return root fallback (GH-2599)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    localStorage.setItem('td.paper.mode.v2', 'on')
     mocks.sessionState.userId = 'u-1'
     mocks.getBoards.mockResolvedValue([])
     mocks.getColumns.mockResolvedValue([])
@@ -180,6 +182,7 @@ describe('Paper Review unavailable-return root fallback (GH-2599)', () => {
 
   afterEach(() => {
     document.body.innerHTML = ''
+    localStorage.clear()
   })
 
   it('focuses the stable review landmark when a filtered rail and decision receipt remove both ordinary targets', async () => {
