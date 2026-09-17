@@ -61,6 +61,29 @@ test('rejects unpaired UTF-16 surrogate escapes in policy and quoted YAML paths'
   }
 })
 
+test('checks terminal high surrogates at the exported policy and YAML entry points', () => {
+  const highSurrogate = String.fromCharCode(0xd800)
+  const validPair = String.fromCodePoint(0x1f680)
+  const cases = [
+    { name: 'terminal high surrogate', path: `ci/${highSurrogate}`, valid: false },
+    { name: 'valid pair followed by high surrogate', path: `ci/${validPair}${highSurrogate}`, valid: false },
+    { name: 'valid pair', path: `ci/${validPair}`, valid: true },
+  ]
+
+  for (const { name, path, valid } of cases) {
+    const policy = parsePolicyControlPaths(JSON.stringify({ controlPaths: [path] }))
+    const rule = parseRuleFrontMatterPaths(ruleWithPath(path, { quoted: true }))
+
+    if (valid) {
+      assert.deepEqual(policy, { controlPaths: [path], errors: [] }, `${name} policy result`)
+      assert.deepEqual(rule, { paths: [path], errors: [] }, `${name} YAML result`)
+    } else {
+      assert.ok(policy.errors.length > 0, `policy accepted ${name}`)
+      assert.ok(rule.errors.length > 0, `YAML accepted ${name}`)
+    }
+  }
+})
+
 test('preserves valid UTF-16 surrogate pairs in policy and quoted YAML paths', () => {
   const path = `docs/${String.fromCodePoint(0x1f680, 0x1d11e)}/**`
   assert.deepEqual(parsePolicyControlPaths(JSON.stringify({ controlPaths: [path] })), {
