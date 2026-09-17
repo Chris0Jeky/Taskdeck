@@ -81,4 +81,76 @@ describe('demoHttpAdapter', () => {
     const similar = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}/similar-past`))
     expect(similar.data).toEqual({ decisions: [], applyRate: 0 })
   })
+
+  it('builds proposal previews from the matched in-memory proposal', async () => {
+    const approved = await demoHttpAdapter(config('post', `/automation/proposals/${DEMO_PROPOSAL_ID}/approve`))
+    const preview = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}/preview`))
+
+    expect(preview.data).toMatchObject({
+      proposalId: DEMO_PROPOSAL_ID,
+      boardId: 'demo-board-1',
+      status: 'Approved',
+      proposalUpdatedAt: approved.data.updatedAt,
+      effectiveRevisionId: approved.data.approvedRevisionId,
+    })
+    expect(Date.parse(preview.data.proposalUpdatedAt)).toBe(Date.parse(approved.data.updatedAt))
+  })
+
+  it('returns contract-shaped calendar and thinking payloads', async () => {
+    const calendar = await demoHttpAdapter(config('get', '/workspace/calendar?from=2020-01-01T00:00:00.000Z&to=2099-01-01T00:00:00.000Z'))
+    expect(calendar.data).toEqual(expect.objectContaining({
+      from: expect.any(String),
+      to: expect.any(String),
+      totalCards: expect.any(Number),
+    }))
+    expect(Array.isArray(calendar.data.cards)).toBe(true)
+    expect(calendar.data.totalCards).toBe(calendar.data.cards.length)
+    expect(calendar.data.cards.length).toBeGreaterThan(0)
+    expect(calendar.data.cards).toEqual(expect.arrayContaining([
+      expect.objectContaining({ cardId: 'demo-board-1-card-2', boardId: 'demo-board-1' }),
+    ]))
+
+    const thinking = await demoHttpAdapter(config('get', '/boards/demo-board-1/cards/demo-board-1-card-3/thinking'))
+    expect(thinking.data).toEqual({
+      cardId: 'demo-board-1-card-3',
+      revision: 1,
+      schemaVersion: 1,
+      canWrite: true,
+      layers: [],
+    })
+  })
+
+  it('returns approvedIds for batch approve', async () => {
+    const detail = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}`))
+    const response = await demoHttpAdapter(config('post', '/automation/proposals/approve', {
+      proposals: [{
+        id: DEMO_PROPOSAL_ID,
+        expectedProposalUpdatedAt: detail.data.updatedAt,
+        expectedLatestRevisionId: detail.data.latestRevisionId,
+      }],
+    }))
+
+    expect(response.data).toEqual({ approvedIds: [DEMO_PROPOSAL_ID] })
+
+    const after = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}`))
+    expect(after.data.status).toBe('Approved')
+  })
+
+  it('persists the user chat message before the assistant reply', async () => {
+    const reply = await demoHttpAdapter(config('post', `/llm/chat/sessions/${DEMO_CHAT_SESSION_ID}/messages`, {
+      content: 'Can you split this further?',
+    }))
+    expect(reply.data.role).toBe('Assistant')
+
+    const session = await demoHttpAdapter(config('get', `/llm/chat/sessions/${DEMO_CHAT_SESSION_ID}`))
+    const messages = session.data.recentMessages as Array<{ role: string; content: string }>
+    expect(messages[messages.length - 2]).toMatchObject({
+      role: 'User',
+      content: 'Can you split this further?',
+    })
+    expect(messages[messages.length - 1]).toMatchObject({
+      role: 'Assistant',
+      id: reply.data.id,
+    })
+  })
 })

@@ -8,7 +8,10 @@ import {
   buildDemoTodaySummary,
   buildDemoCaptureItems,
   buildDemoParticipants,
+  buildDemoProposalPreview,
   buildDemoProposals,
+  buildDemoCalendarData,
+  buildDemoThinkingDeck,
 } from '../../utils/demoData'
 import { toCalendarDateKey } from '../../utils/dueDates'
 import { installTimeZone } from './timeZone'
@@ -135,6 +138,44 @@ describe('demoData', () => {
       expect(proposals[0]?.id).toBe(DEMO_PROPOSAL_ID)
       expect(proposals[0]?.status).toBe('PendingReview')
       expect(proposals[0]?.boardId).toBe('demo-board-1')
+    })
+  })
+
+  describe('buildDemoProposalPreview', () => {
+    it('uses the supplied in-memory proposal snapshot, not a fresh fixture', () => {
+      const proposal = {
+        ...buildDemoProposals()[0]!,
+        status: 'Approved' as const,
+        updatedAt: '2026-09-17T12:00:00.000Z',
+        approvedRevisionId: 'demo-rev-approved',
+      }
+      const preview = buildDemoProposalPreview(proposal)
+      expect(preview.proposalId).toBe(proposal.id)
+      expect(preview.status).toBe('Approved')
+      expect(preview.proposalUpdatedAt).toBe('2026-09-17T12:00:00.000Z')
+      expect(preview.effectiveRevisionId).toBe('demo-rev-approved')
+    })
+  })
+
+  describe('buildDemoCalendarData', () => {
+    it('returns a CalendarData payload whose cards match Today due items', () => {
+      const data = buildDemoCalendarData('2020-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z')
+      expect(Array.isArray(data.cards)).toBe(true)
+      expect(data.totalCards).toBe(data.cards.length)
+      expect(data.cards.some(card => card.cardId === 'demo-board-1-card-2' && card.isOverdue)).toBe(true)
+    })
+  })
+
+  describe('buildDemoThinkingDeck', () => {
+    it('returns a ThinkingDeck with a layers array', () => {
+      const deck = buildDemoThinkingDeck('demo-board-1-card-3')
+      expect(deck).toEqual({
+        cardId: 'demo-board-1-card-3',
+        revision: 1,
+        schemaVersion: 1,
+        canWrite: true,
+        layers: [],
+      })
     })
   })
 

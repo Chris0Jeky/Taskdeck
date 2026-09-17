@@ -2,7 +2,10 @@ import type { Board, BoardDetail, BoardParticipant, Card } from '../types/board'
 import type { CaptureItemSummary } from '../types/capture'
 import type { ChatMessage, ChatProviderHealth, ChatSession } from '../types/chat'
 import type { Proposal, ProposalPreview } from '../types/automation'
+import type { ThinkingDeck } from '../types/thinking'
 import type {
+  CalendarCard,
+  CalendarData,
   HomeSummary,
   TodaySummary,
   WorkspaceOnboarding,
@@ -11,6 +14,7 @@ import {
   addCalendarDays,
   calendarDateKeyToMidnightUtc,
   localCalendarDateKey,
+  toCalendarDateKey,
 } from './dueDates'
 import { DEMO_TEAMMATE, DEMO_USER } from './demoIdentity'
 
@@ -214,19 +218,69 @@ export function buildDemoProposals(): Proposal[] {
   ]
 }
 
-export function buildDemoProposalPreview(proposalId: string): ProposalPreview {
-  const proposal = buildDemoProposals().find((item) => item.id === proposalId) ?? buildDemoProposals()[0]!
-  const ts = now()
+export function buildDemoProposalPreview(proposal: Proposal): ProposalPreview {
+  const effectiveRevisionId = proposal.status === 'Approved'
+    ? proposal.approvedRevisionId
+    : proposal.latestRevisionId
   return {
     proposalId: proposal.id,
     boardId: proposal.boardId,
     status: proposal.status,
-    effectiveRevisionId: null,
+    effectiveRevisionId,
     effectiveRevisionNumber: null,
     proposalUpdatedAt: proposal.updatedAt,
     expiresAt: proposal.expiresAt,
-    checkedAt: ts,
+    checkedAt: now(),
     diff: proposal.diffPreview ?? 'No diff in this demo proposal.',
+  }
+}
+
+export function buildDemoCalendarData(from: string, to: string): CalendarData {
+  const fromMs = Date.parse(from)
+  const toMs = Date.parse(to)
+  const todayKey = localCalendarDateKey()
+  const cards: CalendarCard[] = []
+
+  for (const board of buildDemoBoardList()) {
+    const detail = buildDemoBoardDetail(board.id)
+    for (const card of detail.cards) {
+      if (!card.dueDate) continue
+      const due = Date.parse(card.dueDate)
+      if (Number.isFinite(fromMs) && due < fromMs) continue
+      if (Number.isFinite(toMs) && due >= toMs) continue
+      const column = detail.board.columns.find((item) => item.id === card.columnId)
+      const dueKey = toCalendarDateKey(card.dueDate)
+      cards.push({
+        cardId: card.id,
+        boardId: board.id,
+        boardName: board.name,
+        columnId: card.columnId,
+        columnName: column?.name ?? 'To Do',
+        title: card.title,
+        dueDate: card.dueDate,
+        isBlocked: card.isBlocked,
+        blockReason: card.blockReason,
+        isOverdue: Boolean(dueKey && dueKey < todayKey),
+        updatedAt: card.updatedAt,
+      })
+    }
+  }
+
+  return {
+    from: from || now(),
+    to: to || now(),
+    totalCards: cards.length,
+    cards,
+  }
+}
+
+export function buildDemoThinkingDeck(cardId: string): ThinkingDeck {
+  return {
+    cardId,
+    revision: 1,
+    schemaVersion: 1,
+    canWrite: true,
+    layers: [],
   }
 }
 

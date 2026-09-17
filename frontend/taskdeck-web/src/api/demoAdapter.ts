@@ -7,12 +7,14 @@ import {
   DEMO_PROPOSAL_ID,
   buildDemoBoardDetail,
   buildDemoBoardList,
+  buildDemoCalendarData,
   buildDemoChatHealth,
   buildDemoChatSessions,
   buildDemoHomeSummary,
   buildDemoParticipants,
   buildDemoProposalPreview,
   buildDemoProposals,
+  buildDemoThinkingDeck,
   buildDemoTodaySummary,
 } from '../utils/demoData'
 
@@ -153,7 +155,18 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
   }
 
   if (path === '/automation/proposals/approve' && method === 'post') {
-    return ok({ results: [] })
+    const body = readBody(config)
+    const selections = Array.isArray(body.proposals) ? body.proposals : []
+    const approvedIds: string[] = []
+    const ts = new Date().toISOString()
+    for (const selection of selections) {
+      if (!selection || typeof selection !== 'object') continue
+      const id = 'id' in selection && typeof selection.id === 'string' ? selection.id : ''
+      if (!id || !findProposal(id)) continue
+      mutateProposal(id, { status: 'Approved', decidedAt: ts, decidedByUserId: DEMO_USER.id })
+      approvedIds.push(id)
+    }
+    return ok({ approvedIds })
   }
 
   if (path === '/automation/proposals/execute' && method === 'post') {
@@ -170,7 +183,7 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
     }
     if (action === 'preview' && method === 'get') {
       const proposal = findProposal(proposalId)
-      return proposal ? ok(buildDemoProposalPreview(proposal.id)) : notFound('Proposal not found in demo mode.')
+      return proposal ? ok(buildDemoProposalPreview(proposal)) : notFound('Proposal not found in demo mode.')
     }
     if (action === 'diff' && method === 'get') {
       const proposal = findProposal(proposalId)
@@ -265,6 +278,16 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
       const body = readBody(config)
       const content = typeof body.content === 'string' ? body.content : ''
       const ts = new Date().toISOString()
+      const user: ChatMessage = {
+        id: `demo-chat-msg-${++chatSequence}`,
+        sessionId: session.id,
+        role: 'User',
+        content,
+        messageType: 'text',
+        proposalId: null,
+        tokenUsage: null,
+        createdAt: ts,
+      }
       const reply: ChatMessage = {
         id: `demo-chat-msg-${++chatSequence}`,
         sessionId: session.id,
@@ -275,12 +298,12 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
         messageType: 'text',
         proposalId: proposals[0]?.id ?? null,
         tokenUsage: 12,
-        createdAt: ts,
+        createdAt: new Date(Date.parse(ts) + 1).toISOString(),
       }
       const updated: ChatSession = {
         ...session,
-        updatedAt: ts,
-        recentMessages: [...session.recentMessages, reply],
+        updatedAt: reply.createdAt,
+        recentMessages: [...session.recentMessages, user, reply],
       }
       chatSessions = chatSessions.map((item) => (item.id === session.id ? updated : item))
       return ok(reply)
@@ -300,6 +323,10 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
 
   if (path === '/workspace/today' && method === 'get') {
     return ok(buildDemoTodaySummary())
+  }
+
+  if (path === '/workspace/calendar' && method === 'get') {
+    return ok(buildDemoCalendarData(search.get('from') ?? '', search.get('to') ?? ''))
   }
 
   if (path === '/workspace/collaboration' && method === 'get') {
@@ -356,6 +383,12 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
       }
     })
     return ok({ ...card, assignments, updatedAt: ts })
+  }
+
+  const thinkingDeck = path.match(/^\/boards\/([^/]+)\/cards\/([^/]+)\/thinking$/)
+  if (thinkingDeck && method === 'get') {
+    const card = findCard(thinkingDeck[1] ?? '', thinkingDeck[2] ?? '')
+    return card ? ok(buildDemoThinkingDeck(card.id)) : notFound('Card not found in demo mode.')
   }
 
   const oneCard = path.match(/^\/boards\/([^/]+)\/cards\/([^/]+)$/)
