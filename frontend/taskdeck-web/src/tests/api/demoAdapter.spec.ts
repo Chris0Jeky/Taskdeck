@@ -66,5 +66,8 @@ describe('demoHttpAdapter', () => {
     expect(people.data).toEqual(expect.arrayContaining([
       expect.objectContaining({ userId: DEMO_USER.id }),
     ]))
+
+    const board = await demoHttpAdapter(config('get', '/boards/demo-board-1'))
+    expect(board.data.canWrite).toBe(true)
   })
 })

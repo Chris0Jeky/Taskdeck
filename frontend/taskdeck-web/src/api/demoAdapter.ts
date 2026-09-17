@@ -9,9 +9,11 @@ import {
   buildDemoBoardList,
   buildDemoChatHealth,
   buildDemoChatSessions,
+  buildDemoHomeSummary,
   buildDemoParticipants,
   buildDemoProposalPreview,
   buildDemoProposals,
+  buildDemoTodaySummary,
 } from '../utils/demoData'
 
 interface DemoHttpResult {
@@ -259,6 +261,29 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
       chatSessions = chatSessions.map((item) => (item.id === session.id ? updated : item))
       return ok(updated)
     }
+  }
+
+  if (path === '/workspace/home' && method === 'get') {
+    return ok(buildDemoHomeSummary())
+  }
+
+  if (path === '/workspace/today' && method === 'get') {
+    return ok(buildDemoTodaySummary())
+  }
+
+  if (path === '/workspace/collaboration' && method === 'get') {
+    return ok({ memberCount: 2, hasCollaborators: true })
+  }
+
+  if (path === '/workspace/preferences' && method === 'get') {
+    const summary = buildDemoHomeSummary()
+    return ok({
+      userId: DEMO_USER.id,
+      workspaceMode: summary.workspaceMode,
+      onboarding: summary.onboarding,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
   }
 
   if (path === '/boards' && method === 'get') {
