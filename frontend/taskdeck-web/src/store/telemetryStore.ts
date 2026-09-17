@@ -5,11 +5,18 @@ import type {
   ClientTelemetryConfig,
   TelemetryEventPayload,
 } from '../api/telemetryApi'
+import { useToastStore } from './toastStore'
 
 const CONSENT_KEY = 'taskdeck_telemetry_consent'
 const FLUSH_INTERVAL_MS = 30_000 // 30 seconds
 const MAX_BUFFER_SIZE = 200
 const DEFAULT_APP_VERSION = '0.0.0-dev'
+const CONSENT_PERSISTENCE_WARNING_TITLE = 'Telemetry preference not saved'
+const DISABLED_CONSENT_PERSISTENCE_WARNING =
+  'Telemetry is disabled for this session, but that choice could not be saved. It may be enabled again after reload.'
+const ENABLED_CONSENT_PERSISTENCE_WARNING =
+  'Telemetry is enabled for this session, but that choice could not be saved. It may be disabled after reload.'
+
 type PrivacyAwareNavigator = Navigator & {
   globalPrivacyControl?: boolean
 }
@@ -53,6 +60,8 @@ function generateSessionId(): string {
 }
 
 export const useTelemetryStore = defineStore('telemetry', () => {
+  const toast = useToastStore()
+
   // ── State ──────────────────────────────────────────────────────────
 
   /** User has explicitly opted in to telemetry */
@@ -145,7 +154,18 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     try {
       localStorage.setItem(CONSENT_KEY, String(value))
     } catch {
-      // The in-memory choice still applies. It may not survive a reload.
+      // Keep the privacy-first in-memory choice, but do not let stale browser
+      // storage silently reverse it after a reload.
+      toast.warning(
+        value
+          ? ENABLED_CONSENT_PERSISTENCE_WARNING
+          : DISABLED_CONSENT_PERSISTENCE_WARNING,
+        0,
+        {
+          title: CONSENT_PERSISTENCE_WARNING_TITLE,
+          label: 'warning',
+        },
+      )
     }
   }
 
