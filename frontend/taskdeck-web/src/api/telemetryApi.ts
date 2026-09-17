@@ -39,14 +39,18 @@ export interface TelemetryBatchResponse {
   message?: string
 }
 
+// Keep background requests shorter than the 30-second flush interval. The store
+// owns consent-aware retries; interceptor retries must not extend this deadline.
+const REQUEST_OPTIONS = { timeout: 10_000, skipRetry: true }
+
 export const telemetryApi = {
   async getConfig(): Promise<ClientTelemetryConfig> {
-    const { data } = await http.get<ClientTelemetryConfig>('/telemetry/config')
+    const { data } = await http.get<ClientTelemetryConfig>('/telemetry/config', REQUEST_OPTIONS)
     return data
   },
 
   async sendEvents(events: TelemetryEventPayload[]): Promise<TelemetryBatchResponse> {
-    const { data } = await http.post<TelemetryBatchResponse>('/telemetry/events', { events })
+    const { data } = await http.post<TelemetryBatchResponse>('/telemetry/events', { events }, REQUEST_OPTIONS)
     return data
   },
 }
