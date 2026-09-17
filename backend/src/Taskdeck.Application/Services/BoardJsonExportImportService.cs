@@ -194,7 +194,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 if (!sourceNames.TryAdd(source.SourceKey, source.DisplayName) &&
                     !string.Equals(sourceNames[source.SourceKey], source.DisplayName, StringComparison.Ordinal))
                     throw new DomainException(ErrorCodes.ValidationError,
-                        "Each source assignee key must have one consistent display name across the import.");
+                        $"Each source assignee key must have one consistent display name across the import. " +
+                        $"Source key '{source.SourceKey}' has conflicting display names '{sourceNames[source.SourceKey]}' and '{source.DisplayName}'.");
             }
             if (dto.AssigneeMappings is not null && dto.AssigneeMappings.Any(m => !sourceNames.ContainsKey(m.Key) ||
                     m.Value.HasValue && m.Value != userId))
@@ -223,7 +224,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
             var board = new Board(dto.Name, dto.Description, userId);
             IReadOnlyList<CardRelationEdge>? importedRelations = null;
-            if (dto.Relations is not null || dto.Dependencies is not null)
+            if (dto.Relations is { Count: > 0 } || dto.Dependencies is { Count: > 0 })
             {
                 var relationEndpoints = cards
                     .Where(card => card.SourceId is Guid sourceId && cardIds.ContainsKey(sourceId))
@@ -558,8 +559,9 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             Relations: exportDto.Relations);
     }
 
-    public static object ToPortablePayload(ExportBoardDto dto) => dto.Relations is not null
-        ? new BoardExportEnvelope("taskdeck-board", 5, dto)
+    public static object ToPortablePayload(ExportBoardDto dto) => dto.Relations is not null ||
+        dto.Cards.Any(card => card.EstimatedEffortMinutes.HasValue)
+        ? new BoardExportEnvelope("taskdeck-board", 5, dto with { Relations = dto.Relations ?? [] })
         : dto.Cards.Any(card => card.Assignments is { Count: > 0 })
         ? new BoardExportEnvelope("taskdeck-board", 4, dto)
         : dto.Cards.Any(card => card.ParentCardId.HasValue)
