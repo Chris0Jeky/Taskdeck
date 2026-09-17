@@ -86,8 +86,6 @@ function resetDemoCards(): void {
   demoCardSequence = 0
 }
 
-resetDemoCards()
-
 export function resetDemoHttpFixtures(): void {
   proposals = buildDemoProposals()
   chatSessions = buildDemoChatSessions()
@@ -105,6 +103,7 @@ function findSession(id: string): ChatSession | undefined {
 }
 
 function boardCards(boardId: string): Card[] {
+  if (demoCardsByBoard.size === 0) resetDemoCards()
   const decodedBoardId = decodeSegment(boardId)
   const existing = demoCardsByBoard.get(decodedBoardId)
   if (existing) return existing
