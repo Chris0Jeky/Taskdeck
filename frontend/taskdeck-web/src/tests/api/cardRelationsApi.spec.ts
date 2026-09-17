@@ -24,7 +24,9 @@ describe('cardRelationsApi', () => {
 
     const [url, request] = vi.mocked(http.post).mock.calls[0] as [string, Record<string, unknown>]
     expect(url).toBe('/automation/proposals')
-    expect(request).toMatchObject({ sourceType: 2, riskLevel: 0, boardId: 'board' })
+    expect(request).toMatchObject({ sourceType: 2, riskLevel: 1, boardId: 'board' })
+    expect(request).not.toHaveProperty('requestedByUserId')
+    expect(request).not.toHaveProperty('provenanceProvider')
     const operations = request.operations as Array<Record<string, unknown>>
     expect(operations).toHaveLength(1)
     const operation = operations[0]
@@ -32,19 +34,27 @@ describe('cardRelationsApi', () => {
     expect(JSON.parse(operation.parameters as string)).toEqual({
       boardId: 'board', cardId: 'a', relatedCardId: 'b', relationType: 'depends-on', expectedRevision: 7,
     })
+    expect(http.post).toHaveBeenCalledTimes(1)
   })
 
-  it('serializes removal as the same one-operation proposal envelope', async () => {
+  it('serializes removal as the same Medium-risk one-operation proposal envelope', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'proposal-2' } })
 
     await cardRelationsApi.removeProposal({
       boardId: 'board', cardId: 'source', relatedCardId: 'target', relationType: 'blocks', expectedRevision: 9,
     })
 
-    const request = vi.mocked(http.post).mock.calls[0][1] as { operations: Array<Record<string, unknown>> }
-    expect(request.operations).toHaveLength(1)
-    expect(request.operations[0].actionType).toBe('remove-relation')
-    expect(JSON.parse(request.operations[0].parameters as string).expectedRevision).toBe(9)
+    const [url, request] = vi.mocked(http.post).mock.calls[0] as [string, Record<string, unknown>]
+    expect(url).toBe('/automation/proposals')
+    expect(request).toMatchObject({ sourceType: 2, riskLevel: 1, boardId: 'board' })
+    expect(request).not.toHaveProperty('requestedByUserId')
+    const operations = request.operations as Array<Record<string, unknown>>
+    expect(operations).toHaveLength(1)
+    expect(operations[0].actionType).toBe('remove-relation')
+    expect(JSON.parse(operations[0].parameters as string)).toEqual({
+      boardId: 'board', cardId: 'source', relatedCardId: 'target', relationType: 'blocks', expectedRevision: 9,
+    })
+    expect(http.post).toHaveBeenCalledTimes(1)
   })
 
   it('uses UUID-compatible IDs when randomUUID is unavailable on a LAN origin', async () => {
@@ -72,7 +82,7 @@ describe('cardRelationsApi', () => {
       })
       expect(requests).toHaveLength(2)
       expect(requests.map(request => request.sourceType)).toEqual([2, 2])
-      expect(requests.map(request => request.riskLevel)).toEqual([0, 0])
+      expect(requests.map(request => request.riskLevel)).toEqual([1, 1])
       for (const request of requests) expect(request.operations).toHaveLength(1)
 
       const correlations = vi.mocked(http.post).mock.calls.map(([, request]) =>
