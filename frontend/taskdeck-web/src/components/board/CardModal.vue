@@ -188,7 +188,8 @@ function acceptAssignments(saved: Card, previousVersion?: string) {
  * inferred on the client, and every write remains server-authoritative regardless.
  */
 const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown,
-  permissionRecovery, accessUnavailable, readsBlocked, refreshPermission: refreshTypePermission } =
+  permissionRecovery, accessUnavailable, readsBlocked, refreshPermission: refreshTypePermission,
+  recoverFromPermissionDenied } =
   useCardTypePermission({
     getBoardId: () => props.card.boardId,
     getCardId: () => props.card.id,
@@ -198,6 +199,41 @@ const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermission
 const editorWritesBlocked = computed(() => permissionRecovery.value && !boardCanWrite.value)
 
 const dialogRef = ref<HTMLElement | null>(null)
+const permissionRecoveryRefresh = ref<HTMLButtonElement | null>(null)
+const permissionRetryOwnedFocus = ref(false)
+
+watch(
+  () => [typePermissionChecking.value, typePermissionUnknown.value, boardCanWrite.value, permissionRecovery.value] as const,
+  async ([checking, , canWrite, recovering], [wasChecking]) => {
+    if (checking && !wasChecking) {
+      const activeTestId = document.activeElement instanceof HTMLElement
+        ? document.activeElement.dataset.testid
+        : null
+      permissionRetryOwnedFocus.value = activeTestId === 'card-type-permission-refresh'
+        || activeTestId === 'card-permission-refresh'
+      return
+    }
+
+    if (checking || !wasChecking || !permissionRetryOwnedFocus.value || !recovering) return
+
+    const activeElement = document.activeElement
+    const activeTestId = activeElement instanceof HTMLElement ? activeElement.dataset.testid : null
+    const shouldRestoreFocus = activeElement === document.body || activeElement === null
+      || activeTestId === 'card-type-permission-refresh'
+      || activeTestId === 'card-permission-refresh'
+    permissionRetryOwnedFocus.value = false
+
+    await nextTick()
+    if (!permissionRecovery.value) return
+    if (!canWrite) {
+      permissionRecoveryRefresh.value?.focus()
+      return
+    }
+    if (!shouldRestoreFocus) return
+    dialogRef.value?.querySelector<HTMLElement>('#card-work-item-type')?.focus()
+  },
+)
+
 const showDiscardConfirm = ref(false)
 let previouslyFocusedElement: HTMLElement | null = null
 const isInspector = computed(() => props.presentation === 'inspector')
@@ -422,7 +458,7 @@ const {
   getLabels: () => props.labels,
   onUpdated: () => emit('updated'),
   onClose: () => emit('close'),
-  onPermissionDenied: refreshTypePermission,
+  onPermissionDenied: recoverFromPermissionDenied,
 })
 
 watch(hasUnsavedChanges, (dirty) => {
@@ -515,18 +551,18 @@ useEscapeToClose(
             <template v-else-if="!boardCanWrite">This board is read-only for you. Your unsaved changes are kept. Ask a board admin to restore write access, then refresh permission.</template>
             <template v-else>Board write permission confirmed. Your unsaved changes are kept.</template>
           </p>
-          <button type="button" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
+          <button ref="permissionRecoveryRefresh" type="button" data-testid="card-permission-refresh" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
         </div>
         <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :reads-blocked="readsBlocked" :disabled="isSaving || cardIsArchived" />
         <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
           :read-only="!boardCanWrite || cardIsArchived"
           :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
-          @saved="acceptAssignments" @permission-denied="refreshTypePermission" />
+          @saved="acceptAssignments" @permission-denied="recoverFromPermissionDenied" />
         <CardArchiveAction :key="archiveActionCard.updatedAt" :card="archiveActionCard" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges || archiveCompletedWithDraft"
           :pending-requests="pendingArchiveRequests"
           :on-inactive-commit="acceptInactiveArchiveCommit"
-          @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="refreshTypePermission" />
+          @changed="handleArchiveChanged" @refresh="refreshArchiveState" @permission-denied="recoverFromPermissionDenied" />
         <p v-if="showArchiveDraftNotice" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}
         </p>
@@ -539,8 +575,9 @@ useEscapeToClose(
             v-model:title="title"
             v-model:work-item-type="workItemType"
             :can-edit-type="canEditType"
-            :type-permission-checking="typePermissionChecking && !permissionRecovery"
-            :type-permission-unknown="typePermissionUnknown && !permissionRecovery"
+            :permission-recovery="permissionRecovery"
+            :type-permission-checking="typePermissionChecking"
+            :type-permission-unknown="typePermissionUnknown"
             @refresh-type-permission="refreshTypePermission"
             v-model:description="description"
             v-model:due-date="dueDate"
