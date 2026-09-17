@@ -34,7 +34,7 @@ export async function registerUserSession(
   request: APIRequestContext,
   scope: string,
 ): Promise<AuthResult> {
-  const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const unique = `${Date.now()}-${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`
   const username = `e2e-${scope}-${unique}`
   const email = `${username}@taskdeck.local`
   const password = 'E2ePassword123!'
