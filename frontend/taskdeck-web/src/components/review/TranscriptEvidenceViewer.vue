@@ -30,7 +30,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const transcript = ref<TranscriptDto | null>(null)
 const loading = ref(false)
@@ -41,6 +41,12 @@ const loading = ref(false)
  * old language (ADR-0054 decision 2, #1857).
  */
 const errorKey = ref<string | null>(null)
+/**
+ * The one-time live-region announcement for a NEW transport failure. Unlike the
+ * visible copy, this intentionally snapshots the active translation: changing
+ * locale is not a new failure and must not re-announce stale state (#1871).
+ */
+const errorAnnouncement = ref<string | null>(null)
 const highlightRef = ref<HTMLElement | null>(null)
 
 /** Derived, so `t()` re-runs on a locale change. */
@@ -48,6 +54,27 @@ const errorMessage = computed(() => (errorKey.value ? t(errorKey.value) : null))
 
 let requestGeneration = 0
 let abortController: AbortController | null = null
+let announcementTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearErrorAnnouncement() {
+  if (announcementTimer !== null) {
+    clearTimeout(announcementTimer)
+    announcementTimer = null
+  }
+  errorAnnouncement.value = null
+}
+
+function announceError(errorKey: string) {
+  clearErrorAnnouncement()
+  errorAnnouncement.value = t(errorKey)
+  // Keep the alert mounted for one browser turn so assistive technology can
+  // consume the live update, then remove the snapshot from the accessibility
+  // tree. A locale switch clears it immediately instead of exposing stale copy.
+  announcementTimer = setTimeout(() => {
+    announcementTimer = null
+    errorAnnouncement.value = null
+  }, 0)
+}
 
 /**
  * Nudges an offset off the trailing half of a surrogate pair so a highlight can
@@ -94,6 +121,7 @@ async function load() {
 
   loading.value = true
   errorKey.value = null
+  clearErrorAnnouncement()
   transcript.value = null
 
   try {
@@ -103,7 +131,9 @@ async function load() {
   } catch (error) {
     if (generation !== requestGeneration) return
     if (controller.signal.aborted) return
-    errorKey.value = describeErrorKey(error)
+    const nextErrorKey = describeErrorKey(error)
+    errorKey.value = nextErrorKey
+    announceError(nextErrorKey)
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
@@ -122,9 +152,11 @@ function describeErrorKey(error: unknown): string {
 }
 
 watch(() => props.transcriptId, load, { immediate: true })
+watch(locale, clearErrorAnnouncement, { flush: 'sync' })
 
 onScopeDispose(() => {
   requestGeneration++
+  clearErrorAnnouncement()
   abortController?.abort()
   abortController = null
 })
@@ -155,10 +187,17 @@ onScopeDispose(() => {
     <p
       v-else-if="errorMessage"
       class="transcript-evidence__status transcript-evidence__status--error"
-      role="alert"
       data-testid="transcript-evidence-error"
     >
       {{ errorMessage }}
+    </p>
+    <p
+      v-if="errorAnnouncement"
+      class="transcript-evidence__announcement"
+      role="alert"
+      data-testid="transcript-evidence-error-announcement"
+    >
+      {{ errorAnnouncement }}
     </p>
     <template v-else-if="transcript">
       <p
@@ -235,6 +274,18 @@ onScopeDispose(() => {
 
 .transcript-evidence__status--error {
   color: var(--td-error, #c00);
+}
+
+.transcript-evidence__announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .transcript-evidence__body {
