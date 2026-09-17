@@ -507,7 +507,7 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
-        <div v-if="permissionRecovery" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
+        <div v-if="permissionRecovery && !typePermissionChecking && !typePermissionUnknown" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
           <p role="status">
             <template v-if="typePermissionChecking">Checking current board access. Your unsaved changes are kept.</template>
             <template v-else-if="accessUnavailable">This board is no longer available to this editor. Your unsaved changes are kept. Ask a board admin to check your access, then refresh permission.</template>
