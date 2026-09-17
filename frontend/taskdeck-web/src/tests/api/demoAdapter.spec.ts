@@ -136,6 +136,55 @@ describe('demoHttpAdapter', () => {
     expect(after.data.status).toBe('Approved')
   })
 
+  it('applies approved proposals through the batch execute receipt', async () => {
+    await demoHttpAdapter(config('post', `/automation/proposals/${DEMO_PROPOSAL_ID}/approve`))
+
+    const response = await demoHttpAdapter(config('post', '/automation/proposals/execute', {
+      proposals: [{ proposalId: DEMO_PROPOSAL_ID, approvedRevisionId: null, idempotencyKey: 'demo-execute-1' }],
+    }))
+
+    expect(response.data).toEqual({
+      results: [{
+        proposalId: DEMO_PROPOSAL_ID,
+        outcome: 'Applied',
+        errorCode: null,
+        errorMessage: null,
+        appliedOperations: 1,
+      }],
+    })
+
+    const applied = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}`))
+    expect(applied.data.status).toBe('Applied')
+
+    const replay = await demoHttpAdapter(config('post', '/automation/proposals/execute', {
+      proposals: [{ proposalId: DEMO_PROPOSAL_ID, approvedRevisionId: null, idempotencyKey: 'demo-execute-1' }],
+    }))
+    expect(replay.data.results[0]).toMatchObject({ proposalId: DEMO_PROPOSAL_ID, outcome: 'Skipped' })
+  })
+
+  it('persists thinking saves and rejects stale revisions', async () => {
+    const path = '/boards/demo-board-1/cards/demo-board-1-card-3/thinking'
+    const initial = await demoHttpAdapter(config('get', path))
+    const layers = [{
+      id: 'demo-layer-1',
+      kind: 'note',
+      title: 'Working note',
+      body: 'Keep the demo edit after refresh.',
+      items: [],
+      selectedOptionId: null,
+    }]
+
+    const saved = await demoHttpAdapter(config('put', path, { expectedRevision: initial.data.revision, layers }))
+    expect(saved.data).toMatchObject({ cardId: 'demo-board-1-card-3', revision: 2, layers })
+
+    const refreshed = await demoHttpAdapter(config('get', path))
+    expect(refreshed.data).toMatchObject({ revision: 2, layers })
+
+    await expect(demoHttpAdapter(config('put', path, { expectedRevision: 1, layers }))).rejects.toMatchObject({
+      response: { status: 409, data: { message: 'Thinking deck changed in demo mode.' } },
+    })
+  })
+
   it('persists the user chat message before the assistant reply', async () => {
     const reply = await demoHttpAdapter(config('post', `/llm/chat/sessions/${DEMO_CHAT_SESSION_ID}/messages`, {
       content: 'Can you split this further?',
@@ -174,6 +223,27 @@ describe('demoHttpAdapter', () => {
 
     const memory = await demoHttpAdapter(config('get', '/workspace-memory?boardId=demo-board-1'))
     expect(memory.data).toEqual([])
+  })
+
+  it('returns arrays for static insight actions and evidence previews', async () => {
+    const source = await demoHttpAdapter(config('get', '/workspace-insights/observation-source?boardId=demo-board-1&cardId=demo-board-1-card-3'))
+    expect(source.data).toEqual({
+      cardId: 'demo-board-1-card-3',
+      title: 'Implement dark mode',
+      text: 'Apply Obsidian & Ember tokens across all views.',
+      fingerprint: 'demo-demo-board-1-card-3',
+      truncated: false,
+    })
+
+    const analyzed = await demoHttpAdapter(config('post', '/workspace-insights/analyze', { boardId: 'demo-board-1' }))
+    expect(analyzed.data).toEqual([])
+
+    const generated = await demoHttpAdapter(config('post', '/workspace-insights/model-analysis', {
+      boardId: 'demo-board-1',
+      cardId: 'demo-board-1-card-3',
+      fingerprint: 'demo-demo-board-1-card-3',
+    }))
+    expect(generated.data).toEqual([])
   })
 
   it('rejects unmatched GET paths instead of returning {}', async () => {

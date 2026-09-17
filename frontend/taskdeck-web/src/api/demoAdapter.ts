@@ -1,7 +1,8 @@
 import { AxiosError, AxiosHeaders, type AxiosAdapter, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import type { Card } from '../types/board'
 import type { ChatMessage, ChatSession } from '../types/chat'
-import type { Proposal } from '../types/automation'
+import type { BatchExecuteProposalResult, Proposal } from '../types/automation'
+import type { ThinkingDeck, ThinkingLayer } from '../types/thinking'
 import { DEMO_USER } from '../utils/demoIdentity'
 import {
   DEMO_PROPOSAL_ID,
@@ -72,11 +73,13 @@ function notFound(message = 'Not found in demo mode.'): DemoHttpResult {
 let proposals = buildDemoProposals()
 let chatSessions = buildDemoChatSessions()
 let chatSequence = 2
+const thinkingDecks = new Map<string, ThinkingDeck>()
 
 export function resetDemoHttpFixtures(): void {
   proposals = buildDemoProposals()
   chatSessions = buildDemoChatSessions()
   chatSequence = 2
+  thinkingDecks.clear()
 }
 
 function findProposal(id: string): Proposal | undefined {
@@ -93,6 +96,23 @@ function boardCards(boardId: string): Card[] {
 
 function findCard(boardId: string, cardId: string): Card | undefined {
   return boardCards(boardId).find((card) => card.id === decodeSegment(cardId))
+}
+
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function thinkingDeckKey(boardId: string, cardId: string): string {
+  return `${decodeSegment(boardId)}\u0000${decodeSegment(cardId)}`
+}
+
+function getThinkingDeck(boardId: string, card: Card): ThinkingDeck {
+  const key = thinkingDeckKey(boardId, card.id)
+  const existing = thinkingDecks.get(key)
+  if (existing) return existing
+  const created = buildDemoThinkingDeck(card.id)
+  thinkingDecks.set(key, created)
+  return created
 }
 
 function mutateProposal(id: string, patch: Partial<Proposal>): DemoHttpResult {
@@ -174,7 +194,71 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
   }
 
   if (path === '/automation/proposals/execute' && method === 'post') {
-    return ok({ results: [] })
+    const body = readBody(config)
+    const selections = Array.isArray(body.proposals) ? body.proposals : []
+    const results = selections.map((selection): BatchExecuteProposalResult => {
+      if (!selection || typeof selection !== 'object') {
+        return {
+          proposalId: '',
+          outcome: 'Failed',
+          errorCode: 'InvalidSelection',
+          errorMessage: 'A proposal selection is required.',
+          appliedOperations: null,
+        }
+      }
+
+      const proposalId = 'proposalId' in selection && typeof selection.proposalId === 'string'
+        ? selection.proposalId
+        : ''
+      if (!proposalId) {
+        return {
+          proposalId: '',
+          outcome: 'Failed',
+          errorCode: 'InvalidSelection',
+          errorMessage: 'A proposal id is required.',
+          appliedOperations: null,
+        }
+      }
+
+      const proposal = findProposal(proposalId)
+      if (!proposal) {
+        return {
+          proposalId,
+          outcome: 'Failed',
+          errorCode: 'ProposalNotFound',
+          errorMessage: 'Proposal not found in demo mode.',
+          appliedOperations: null,
+        }
+      }
+      if (proposal.status === 'Applied') {
+        return {
+          proposalId,
+          outcome: 'Skipped',
+          errorCode: null,
+          errorMessage: null,
+          appliedOperations: null,
+        }
+      }
+      if (proposal.status !== 'Approved') {
+        return {
+          proposalId,
+          outcome: 'Failed',
+          errorCode: 'ProposalNotApproved',
+          errorMessage: 'Only an approved proposal can be applied.',
+          appliedOperations: null,
+        }
+      }
+
+      mutateProposal(proposalId, { status: 'Applied', appliedAt: new Date().toISOString() })
+      return {
+        proposalId,
+        outcome: 'Applied',
+        errorCode: null,
+        errorMessage: null,
+        appliedOperations: proposal.operations.length,
+      }
+    })
+    return ok({ results })
   }
 
   const proposalMatch = path.match(/^\/automation\/proposals\/([^/]+)(?:\/(.+))?$/)
@@ -333,6 +417,19 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
     return ok(buildDemoCalendarData(search.get('from') ?? '', search.get('to') ?? ''))
   }
 
+  if (path === '/workspace-insights/observation-source' && method === 'get') {
+    const boardId = search.get('boardId') ?? ''
+    const cardId = search.get('cardId') ?? ''
+    const card = findCard(boardId, cardId)
+    return card
+      ? ok({ cardId: card.id, title: card.title, text: card.description, fingerprint: `demo-${card.id}`, truncated: false })
+      : notFound('Card not found in demo mode.')
+  }
+
+  if ((path === '/workspace-insights/analyze' || path === '/workspace-insights/model-analysis') && method === 'post') {
+    return ok([])
+  }
+
   if (path === '/search' && method === 'get') {
     return ok(buildDemoSearchResult(search.get('q') ?? ''))
   }
@@ -426,9 +523,31 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
   }
 
   const thinkingDeck = path.match(/^\/boards\/([^/]+)\/cards\/([^/]+)\/thinking$/)
-  if (thinkingDeck && method === 'get') {
-    const card = findCard(thinkingDeck[1] ?? '', thinkingDeck[2] ?? '')
-    return card ? ok(buildDemoThinkingDeck(card.id)) : notFound('Card not found in demo mode.')
+  if (thinkingDeck) {
+    const boardId = decodeSegment(thinkingDeck[1] ?? '')
+    const cardId = decodeSegment(thinkingDeck[2] ?? '')
+    const card = findCard(boardId, cardId)
+    if (!card) return notFound('Card not found in demo mode.')
+
+    const current = getThinkingDeck(boardId, card)
+    if (method === 'get') return ok(cloneValue(current))
+    if (method === 'put') {
+      const body = readBody(config)
+      const expectedRevision = body.expectedRevision
+      if (typeof expectedRevision !== 'number' || !Number.isInteger(expectedRevision) || expectedRevision !== current.revision) {
+        return { status: 409, data: { message: 'Thinking deck changed in demo mode.' } }
+      }
+      if (!Array.isArray(body.layers)) {
+        return { status: 400, data: { message: 'Thinking layers must be an array.' } }
+      }
+      const updated: ThinkingDeck = {
+        ...current,
+        revision: current.revision + 1,
+        layers: cloneValue(body.layers) as ThinkingLayer[],
+      }
+      thinkingDecks.set(thinkingDeckKey(boardId, card.id), updated)
+      return ok(cloneValue(updated))
+    }
   }
 
   const oneCard = path.match(/^\/boards\/([^/]+)\/cards\/([^/]+)$/)
