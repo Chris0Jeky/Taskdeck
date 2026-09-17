@@ -211,13 +211,13 @@ onUnmounted(() => { generation++ })
               <span aria-hidden="true"> → </span>
               <RouterLink :to="cardRoute(relation.targetCardId)">{{ cardLabel(relation.targetCardId) }}</RouterLink>
             </div>
-            <button v-if="canRemove(relation)" type="button" :disabled="saving" :aria-label="`Propose removing ${relationDescription(relation)}`" @click="propose('remove', relation)">Propose removal</button>
+            <button v-if="canRemove(relation)" type="button" :disabled="loading || saving" :aria-label="`Propose removing ${relationDescription(relation)}`" @click="propose('remove', relation)">Propose removal</button>
             <small v-else-if="cardById.get(relation.sourceCardId)?.isArchived || cardById.get(relation.targetCardId)?.isArchived">Archived endpoint · retained for context</small>
           </li>
         </ul>
         <form v-if="canPropose" @submit.prevent="propose('add')">
           <label>Relation type
-            <select v-model="selectedRelationType" aria-label="Relation type" :disabled="saving || boardAtLimit || stale">
+            <select v-model="selectedRelationType" aria-label="Relation type" :disabled="loading || saving || boardAtLimit || stale">
               <option value="relates-to">Relates to</option>
               <option value="blocks">This card blocks</option>
               <option value="depends-on">This card depends on</option>
@@ -226,12 +226,12 @@ onUnmounted(() => { generation++ })
             </select>
           </label>
           <label>Other card
-            <select v-model="selectedCardId" aria-label="Other card" :disabled="saving || boardAtLimit || stale">
+            <select v-model="selectedCardId" aria-label="Other card" :disabled="loading || saving || boardAtLimit || stale">
               <option value="">Choose an active card on this board</option>
               <option v-for="card in availableCards" :key="card.id" :value="card.id">{{ card.title }}</option>
             </select>
           </label>
-          <button type="submit" :disabled="!selectionIsValid || saving || boardAtLimit || stale">{{ saving ? 'Creating proposal…' : 'Propose relation' }}</button>
+          <button type="submit" :disabled="!selectionIsValid || loading || saving || boardAtLimit || stale">{{ saving ? 'Creating proposal…' : 'Propose relation' }}</button>
         </form>
         <p v-if="boardAtLimit" class="hint">This board has reached its 500 relation limit.</p>
         <p v-if="stale" class="hint">Refresh relations to use the current version. No relation has been applied.</p>

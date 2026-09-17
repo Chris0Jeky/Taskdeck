@@ -419,7 +419,7 @@ public class DataExportService : IDataExportService
                 exportCards.Add(card);
             }
             var exportRelations = await LoadRelationsForExportAsync(
-                exportCards, cancellationToken);
+                userId, exportCards, cancellationToken);
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -1255,38 +1255,15 @@ public class DataExportService : IDataExportService
     /// read. A relation is emitted only for one of those complete board scopes, so a shared board
     /// never exposes links from an unrelated board or a private card collection.
     /// </summary>
-    private async Task<IReadOnlyList<UserDataExportCardRelationDto>> LoadRelationsForExportAsync(
+    private Task<IReadOnlyList<UserDataExportCardRelationDto>> LoadRelationsForExportAsync(
+        Guid userId,
         IEnumerable<CardDto> exportedCards,
         CancellationToken cancellationToken)
-        => await LoadRelationsForExportAsync(
+        => BufferedCardRelationExport.ReadAsync(
             exportedCards.GroupBy(card => card.BoardId)
                 .ToDictionary(group => group.Key, group => group.Select(card => card.Id).ToHashSet()),
+            StreamRelationsForExportAsync(userId, cancellationToken),
             cancellationToken);
-
-    private async Task<IReadOnlyList<UserDataExportCardRelationDto>> LoadRelationsForExportAsync(
-        IReadOnlyDictionary<Guid, HashSet<Guid>> exportedCardIdsByBoard,
-        CancellationToken cancellationToken)
-    {
-        if (_dependencies is null)
-            return [];
-
-        var relations = new List<UserDataExportCardRelationDto>();
-        foreach (var (boardId, cardIds) in exportedCardIdsByBoard)
-        {
-            if (boardId == Guid.Empty)
-                continue;
-            cancellationToken.ThrowIfCancellationRequested();
-            var graph = await _dependencies.GetAsync(boardId, cancellationToken);
-            if (graph is null)
-                continue;
-
-            relations.AddRange(graph.ReadRelations()
-                .Where(edge => cardIds.Contains(edge.SourceCardId) && cardIds.Contains(edge.TargetCardId))
-                .Select(edge => new UserDataExportCardRelationDto(
-                    boardId, edge.SourceCardId, edge.TargetCardId, edge.RelationType)));
-        }
-        return relations;
-    }
 
     private async IAsyncEnumerable<UserDataExportCardRelationDto> StreamRelationsForExportAsync(
         Guid userId,
