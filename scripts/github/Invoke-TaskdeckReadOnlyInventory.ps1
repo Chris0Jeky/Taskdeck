@@ -794,13 +794,17 @@ function Set-InventoryEnvironmentVariable {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Saved,
         [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][string]$Value
+        [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][object]$Value
     )
 
     if (-not $Saved.ContainsKey($Name)) {
         $Saved[$Name] = [System.Environment]::GetEnvironmentVariable($Name, "Process")
     }
-    [System.Environment]::SetEnvironmentVariable($Name, $Value, "Process")
+    $processValue = $null
+    if ($null -ne $Value) {
+        $processValue = [string]$Value
+    }
+    [System.Environment]::SetEnvironmentVariable($Name, $processValue, "Process")
 }
 
 function Restore-InventoryEnvironment {
@@ -1170,18 +1174,70 @@ function Invoke-ReadOnlyInventorySelfTest {
     }
     $state.Checks++
 
-    $environmentProbe = @{}
-    [System.Environment]::SetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", "external-helper", "Process")
-    Set-InventoryEnvironmentVariable -Saved $environmentProbe -Name "TASKDECK_INVENTORY_PROBE" -Value $null
-    if ($null -ne [System.Environment]::GetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", "Process")) {
-        throw "Neutralized environment variables must be cleared before the child process starts."
+    $environmentProbeName = "TASKDECK_INVENTORY_PROBE"
+    $missingEnvironmentProbeName = "TASKDECK_INVENTORY_MISSING_PROBE"
+    $emptyEnvironmentProbeName = "TASKDECK_INVENTORY_EMPTY_PROBE"
+    foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
+        [System.Environment]::SetEnvironmentVariable($probeName, $null, "Process")
     }
-    Restore-InventoryEnvironment -Saved $environmentProbe
-    if ([System.Environment]::GetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", "Process") -cne "external-helper") {
-        throw "Neutralized environment variables must be restored afterwards."
+
+    try {
+        $environmentProbe = @{}
+        [System.Environment]::SetEnvironmentVariable($environmentProbeName, "external-helper", "Process")
+        Set-InventoryEnvironmentVariable -Saved $environmentProbe -Name $environmentProbeName -Value $null
+        if ([System.Environment]::GetEnvironmentVariables("Process").Contains($environmentProbeName)) {
+            throw "Neutralized environment variables must be absent before the child process starts."
+        }
+        Restore-InventoryEnvironment -Saved $environmentProbe
+        if (
+            -not [System.Environment]::GetEnvironmentVariables("Process").Contains($environmentProbeName) -or
+            [System.Environment]::GetEnvironmentVariable($environmentProbeName, "Process") -cne "external-helper"
+        ) {
+            throw "Non-empty environment variables must be restored exactly afterwards."
+        }
+        $state.Checks++
+
+        $missingEnvironmentProbe = @{}
+        Set-InventoryEnvironmentVariable -Saved $missingEnvironmentProbe -Name $missingEnvironmentProbeName -Value "temporary"
+        if (
+            -not [System.Environment]::GetEnvironmentVariables("Process").Contains($missingEnvironmentProbeName) -or
+            [System.Environment]::GetEnvironmentVariable($missingEnvironmentProbeName, "Process") -cne "temporary"
+        ) {
+            throw "The environment helper must set a value while preserving a missing original."
+        }
+        Restore-InventoryEnvironment -Saved $missingEnvironmentProbe
+        if ([System.Environment]::GetEnvironmentVariables("Process").Contains($missingEnvironmentProbeName)) {
+            throw "A missing environment variable must remain missing after restore."
+        }
+        $state.Checks++
+
+        [System.Environment]::SetEnvironmentVariable($emptyEnvironmentProbeName, "", "Process")
+        if (
+            -not [System.Environment]::GetEnvironmentVariables("Process").Contains($emptyEnvironmentProbeName) -or
+            [System.Environment]::GetEnvironmentVariable($emptyEnvironmentProbeName, "Process") -cne ""
+        ) {
+            throw "The process environment must retain an explicitly empty probe value."
+        }
+
+        $emptyEnvironmentProbe = @{}
+        Set-InventoryEnvironmentVariable -Saved $emptyEnvironmentProbe -Name $emptyEnvironmentProbeName -Value $null
+        if ([System.Environment]::GetEnvironmentVariables("Process").Contains($emptyEnvironmentProbeName)) {
+            throw "An explicitly empty environment variable must still be removed during neutralization."
+        }
+        Restore-InventoryEnvironment -Saved $emptyEnvironmentProbe
+        if (
+            -not [System.Environment]::GetEnvironmentVariables("Process").Contains($emptyEnvironmentProbeName) -or
+            [System.Environment]::GetEnvironmentVariable($emptyEnvironmentProbeName, "Process") -cne ""
+        ) {
+            throw "An explicitly empty environment variable must be restored as present and empty."
+        }
+        $state.Checks++
     }
-    [System.Environment]::SetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", $null, "Process")
-    $state.Checks++
+    finally {
+        foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
+            [System.Environment]::SetEnvironmentVariable($probeName, $null, "Process")
+        }
+    }
 
     $pathspecLaunch = Get-GitLaunchArguments -Arguments @("diff", "--name-only", "HEAD", "--", "scripts")
     if ($pathspecLaunch -cnotcontains "--") {
