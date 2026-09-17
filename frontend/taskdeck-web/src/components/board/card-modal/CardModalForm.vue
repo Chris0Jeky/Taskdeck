@@ -30,12 +30,23 @@ const blockReason = defineModel<string>('blockReason', { required: true })
 const workItemTypeSelect = ref<HTMLSelectElement | null>(null)
 const typePermissionRefresh = ref<HTMLButtonElement | null>(null)
 const retryOwnedFocus = ref(false)
+type RetryFocusOwner = { boardId: string; cardId: string }
+const retryFocusOwner = ref<RetryFocusOwner | null>(null)
+
+function currentCardIdentity(): RetryFocusOwner {
+  return { boardId: props.card.boardId, cardId: props.card.id }
+}
+
+function isCurrentCard(owner: RetryFocusOwner): boolean {
+  return owner.boardId === props.card.boardId && owner.cardId === props.card.id
+}
 
 watch(
   () => [props.typePermissionChecking, props.typePermissionUnknown, props.canEditType] as const,
   async ([checking, unknown, canEdit], [wasChecking, wasUnknown]) => {
     if (checking && !wasChecking) {
       retryOwnedFocus.value = document.activeElement === typePermissionRefresh.value
+      retryFocusOwner.value = retryOwnedFocus.value ? currentCardIdentity() : null
       return
     }
 
@@ -44,10 +55,17 @@ watch(
     const activeElement = document.activeElement
     const shouldRestoreFocus = activeElement === typePermissionRefresh.value
       || (retryOwnedFocus.value && (activeElement === document.body || activeElement === null))
+    const focusOwner = retryOwnedFocus.value
+      ? retryFocusOwner.value
+      : activeElement === typePermissionRefresh.value
+        ? currentCardIdentity()
+        : null
     retryOwnedFocus.value = false
-    if (!canEdit || !shouldRestoreFocus) return
+    retryFocusOwner.value = null
+    if (!canEdit || !shouldRestoreFocus || !focusOwner || !isCurrentCard(focusOwner)) return
 
     await nextTick()
+    if (!isCurrentCard(focusOwner)) return
     workItemTypeSelect.value?.focus()
   },
 )
