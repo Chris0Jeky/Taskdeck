@@ -172,7 +172,7 @@ created, empty `taskdeck_taskdeck-db` volume for this instance, or, when reusing
 read-only inventory from a trusted host and reconcile every existing row before continuing:
 
 ```bash
-docker run --rm -v taskdeck_taskdeck-db:/data alpine:3 sh -c \
+docker run --rm -v taskdeck_taskdeck-db:/data:ro alpine:3 sh -c \
   'apk add --no-cache sqlite >/dev/null && sqlite3 -header -csv /data/taskdeck.db "SELECT Id, Username, Email, IsActive FROM Users ORDER BY Username;"'
 ```
 

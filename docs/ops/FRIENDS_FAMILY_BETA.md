@@ -373,7 +373,22 @@ Friends-and-family observations route through the standing dogfooding lane repre
 2. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
    must perform the supported authenticated request from their own session, using their current
    password and the exact confirmation phrase `DELETE MY ACCOUNT` at `POST /api/account/delete`.
-   Never ask the participant to send a password or token. If they do not perform that request, remove
+   The participant can perform that request from their own authenticated same-origin browser session:
+
+   ~~~javascript
+   const currentPassword = window.prompt('Enter your current password locally; never share it') ?? ''
+   const token = localStorage.getItem('taskdeck_token')
+   const response = await fetch('/api/account/delete', {
+     method: 'POST',
+     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+     body: JSON.stringify({ currentPassword, confirmationPhrase: 'DELETE MY ACCOUNT' }),
+   })
+   console.log(response.status, await response.text())
+   ~~~
+
+   Run it only in that participant's own session, do not paste the token or password into a shared
+   note, and expect HTTP 200 before signing out. Never ask the participant to send a password or
+   token. If they do not perform that request, remove
    their board access, keep registration `Closed` until any unused invite expires (there is no
    invite-revocation operation), and stop the tunnel or other perimeter exposure; record that the
    account was retained rather than claiming it was deleted.
