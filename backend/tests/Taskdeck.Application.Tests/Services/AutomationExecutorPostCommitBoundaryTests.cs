@@ -142,7 +142,7 @@ public class AutomationExecutorPostCommitBoundaryTests
 
         public void ArrangeApprovedQueueProposal(Guid captureId)
         {
-            var operations = Array.Empty<ProposalOperationDto>();
+            var operations = new List<ProposalOperationDto>();
             var proposal = new ProposalDto(
                 ProposalId,
                 ProposalSourceType.Queue,
