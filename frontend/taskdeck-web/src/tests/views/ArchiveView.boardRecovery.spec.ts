@@ -63,7 +63,16 @@ describe('ArchiveView archived-board recovery', () => {
         },
       ])
 
-    const wrapper = mount(ArchiveView)
+    const wrapper = mount(ArchiveView, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>',
+            props: ['to'],
+          },
+        },
+      },
+    })
     await flushPromises()
 
     const boundedRead = {
