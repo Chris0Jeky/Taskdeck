@@ -1,0 +1,18 @@
+# Project-scoped Grok configuration for Taskdeck.
+# Loaded when the repository is a trusted project. Authority is declared in
+# .agent-harness/tier.json, not here.
+#
+# MCP stays at user scope (~/.grok/config.toml). Do not declare chromeDevTools,
+# openaiDeveloperDocs, context7, github, comfy-local, or MCP_DOCKER here: one
+# gateway per runtime (agent-harness#87). URL-only helpers also live at user scope.
+#
+# Proving-check allow rules load from .claude/settings.json via Claude
+# compatibility. Do not duplicate them here (a second copy would drift).
+# Grok already treats read-only git status/branch/log/diff/show/ls-files and rg
+# as read-only; do not restate those either.
+#
+# No [mcp_servers] on purpose.
+
+[permission]
+# Intentionally empty. Do not add a git-push deny: Taskdeck's live tier allows
+# agent push and merge once proving checks and the review-and-ship gate pass.
