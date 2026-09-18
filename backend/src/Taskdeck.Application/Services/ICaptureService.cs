@@ -20,6 +20,11 @@ public interface ICaptureService
         Guid itemId,
         CancellationToken cancellationToken = default);
 
+    Task<Result<CaptureTriageStatusDto>> GetStatusAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default);
+
     Task<Result<CaptureItemDto>> KeepAsync(
         Guid userId,
         Guid itemId,

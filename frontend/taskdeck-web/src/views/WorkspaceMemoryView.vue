@@ -3,6 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import WorkspaceMemoryExport from '../components/workspace/WorkspaceMemoryExport.vue'
+import WorkspaceMemorySources from '../components/workspace/WorkspaceMemorySources.vue'
+import WorkspaceMemoryPreservation from '../components/workspace/WorkspaceMemoryPreservation.vue'
+import OriginalAudioLibrary from '../components/workspace/OriginalAudioLibrary.vue'
 import { TdSkeleton } from '../components/ui'
 import { useBoardStore } from '../store/boardStore'
 import TdDialog from '../components/ui/TdDialog.vue'
@@ -10,6 +13,8 @@ import { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspac
 import { workspaceInsightsApi } from '../api/workspaceInsights'
 import type { Board } from '../types/board'
 import type { Memory, MemoryStatus } from '../types/workspaceInsights'
+import { getErrorMessage } from '../utils/errorMessage'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const route = useRoute()
 const boardStore = useBoardStore()
@@ -42,13 +47,8 @@ const selectedBoard = computed(() => boards.value.find((board) => board.id === s
 const editorHeading = computed(() => editingId.value ? 'Correct memory' : 'Add a memory')
 
 function queryBoardId(): string | null {
-  const value = route.query.boardId
-  if (Array.isArray(value)) return value[0] ?? null
-  return typeof value === 'string' ? value : null
-}
-
-function errorMessage(value: unknown, fallback: string): string {
-  return value instanceof Error && value.message ? value.message : fallback
+  const value = normalizeBoardIdQueryParam(route.query.boardId)
+  return value || null
 }
 
 function boardHref(boardId: string): string {
@@ -100,7 +100,7 @@ async function loadBoards() {
       ? requested!
       : boards.value[0]?.id ?? ''
   } catch (value: unknown) {
-    boardError.value = errorMessage(value, 'Unable to load your boards.')
+    boardError.value = getErrorMessage(value, 'Unable to load your boards.')
   } finally {
     boardLoading.value = false
   }
@@ -124,7 +124,7 @@ async function loadMemories() {
     }
   } catch (value: unknown) {
     if (generation === memoryRequestGeneration && selectedBoardId.value === boardId) {
-      error.value = errorMessage(value, 'Unable to load workspace memory.')
+      error.value = getErrorMessage(value, 'Unable to load workspace memory.')
     }
   } finally {
     if (generation === memoryRequestGeneration) loading.value = false
@@ -134,6 +134,7 @@ async function loadMemories() {
 const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => editorDirty.value || saving.value)
 
 function openCreate() {
+  if (loading.value || boardLoading.value || boardError.value) return
   editingId.value = null
   formTitle.value = ''
   formText.value = ''
@@ -169,7 +170,7 @@ function requestCloseEditor() {
 async function saveMemory() {
   const title = formTitle.value.trim()
   const text = formText.value.trim()
-  if (!selectedBoardId.value || !title || !text || saving.value) return
+  if (!selectedBoardId.value || loading.value || boardLoading.value || boardError.value || !title || !text || saving.value) return
 
   saving.value = true
   formError.value = null
@@ -196,7 +197,7 @@ async function saveMemory() {
     }
     closeEditor()
   } catch (value: unknown) {
-    formError.value = errorMessage(value, 'Unable to save this memory.')
+    formError.value = getErrorMessage(value, 'Unable to save this memory.')
   } finally {
     saving.value = false
   }
@@ -218,7 +219,7 @@ async function toggleArchived(memory: Memory) {
   } catch (value: unknown) {
     memoryErrors.value = {
       ...memoryErrors.value,
-      [memory.id]: errorMessage(value, 'Unable to update archive status.'),
+      [memory.id]: getErrorMessage(value, 'Unable to update archive status.'),
     }
   } finally {
     setBusy(memory.id, false)
@@ -226,8 +227,8 @@ async function toggleArchived(memory: Memory) {
 }
 
 function retry() {
-  if (selectedBoardId.value) void loadMemories()
-  else void loadBoards()
+  if (boardError.value || !selectedBoardId.value) void loadBoards()
+  else void loadMemories()
 }
 
 onMounted(async () => {
@@ -259,6 +260,8 @@ watch(queryBoardId, () => {
       <div class="paper-memory__hero-mark" aria-hidden="true">▤</div>
     </header>
 
+    <OriginalAudioLibrary />
+
     <section class="paper-memory__panel paper-memory__controls" aria-label="Memory controls">
       <label class="paper-memory__field" for="memory-board-select">
         <span class="paper-memory__label">Board</span>
@@ -272,12 +275,15 @@ watch(queryBoardId, () => {
         <span>Show archived</span>
       </label>
       <span v-if="selectedBoard" class="paper-memory__selected-board">{{ selectedBoard.name }}</span>
-      <PaperHLBtn data-action="new-memory" variant="ember" :disabled="!selectedBoardId || showEditor || saving" @click="openCreate">
+      <PaperHLBtn data-action="new-memory" variant="ember" :disabled="!selectedBoardId || loading || boardLoading || Boolean(boardError) || showEditor || saving" @click="openCreate">
         Add memory
       </PaperHLBtn>
     </section>
 
     <WorkspaceMemoryExport :board-id="selectedBoardId" :disabled="boardLoading || saving" />
+    <WorkspaceMemoryPreservation :key="`${selectedBoardId}-${showArchived}`" :board-id="selectedBoardId" :memories="memories"
+      :disabled="loading || boardLoading || Boolean(boardError) || showEditor || saving || busyMemoryIds.size > 0"
+      @preserved="updated => updated.forEach(replaceMemory)" />
     <p class="paper-memory__trust-note">
       Memories are private to you and linked to this board. Editing or archiving one never changes board cards, columns, or statuses.
     </p>
@@ -393,6 +399,7 @@ watch(queryBoardId, () => {
             </li>
           </ol>
         </details>
+        <WorkspaceMemorySources :memory="memory" />
         <div class="paper-memory__actions">
           <PaperHLBtn data-action="edit-memory" variant="ghost" :disabled="isBusy(memory.id) || showEditor || saving" @click="openEdit(memory)">Correct</PaperHLBtn>
           <PaperHLBtn data-action="toggle-memory-archive" variant="ghost" :disabled="isBusy(memory.id) || showEditor || saving" @click="toggleArchived(memory)">

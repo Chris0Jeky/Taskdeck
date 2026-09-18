@@ -90,6 +90,14 @@ public sealed class ProcessorManifestValidatorTests
     }
 
     [Fact]
+    public void Validate_ShouldRejectIdWithTerminalLineFeed()
+    {
+        var manifest = ParseExample() with { Id = "taskdeck.whisperx\n" };
+
+        ProcessorManifestValidator.Validate(manifest).Errors.Should().Contain(error => error.StartsWith("id:"));
+    }
+
+    [Fact]
     public void Validate_ShouldRejectUnknownAndDuplicateCapabilities()
     {
         var manifest = ParseExample() with { Capabilities = new[] { "audio.transcribe", "board.mutate", "audio.transcribe" } };
@@ -256,6 +264,18 @@ public sealed class ProcessorManifestValidatorTests
         errors.Should().Contain(error => error.Contains("declares no GPU cannot require VRAM"));
         errors.Should().Contain(error => error.Contains("three-letter ISO code"));
         errors.Should().Contain(error => error.Contains("free-local processor cannot declare a unit price"));
+    }
+
+    [Fact]
+    public void Validate_ShouldRejectCurrencyWithTerminalLineFeed()
+    {
+        var manifest = ParseExample() with
+        {
+            CostModel = new ProcessorCostModel(ProcessorCostModelType.ComputeTime, "USD\n", 1.5m)
+        };
+
+        ProcessorManifestValidator.Validate(manifest).Errors
+            .Should().Contain(error => error.Contains("costModel.currency: must be a three-letter ISO code"));
     }
 
     [Fact]

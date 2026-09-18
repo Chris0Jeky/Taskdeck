@@ -38,9 +38,14 @@ public class DirectCrudAuditActorTests
 
     public DirectCrudAuditActorTests()
     {
+
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
+        _columnRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid id, CancellationToken ct) => _columnRepoMock.Object.GetByIdWithCardsAsync(id, ct));
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.AuditLogs).Returns(Mock.Of<IAuditLogRepository>());
+        _cardRepoMock.Setup(r => r.GetHierarchyByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
         _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
 
         _historyServiceMock
@@ -131,7 +136,7 @@ public class DirectCrudAuditActorTests
         var result = await NewCardService().DeleteCardAsync(board.Id, card.Id, actorUserId: ActorId);
 
         result.IsSuccess.Should().BeTrue();
-        VerifyActorStamped("card", card.Id, AuditAction.Deleted, ActorId);
+        Mock.Get(_unitOfWorkMock.Object.AuditLogs).Verify(r => r.AddAsync(It.Is<AuditLog>(log => log.EntityId == card.Id && log.Action == AuditAction.Deleted && log.UserId == ActorId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

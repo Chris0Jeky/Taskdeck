@@ -6,6 +6,7 @@ import type {
   BatchExecuteProposalsResult,
   Proposal,
   ProposalFilters,
+  ProposalPreview,
 } from '../types/automation'
 import { buildQueryString } from '../utils/queryBuilder'
 
@@ -124,6 +125,11 @@ export const automationApi = {
   async getProposalDiff(id: string): Promise<string> {
     const { data } = await http.get<{ diff: string }>(`/automation/proposals/${encodeURIComponent(id)}/diff`)
     return data.diff
+  },
+
+  async getProposalPreview(id: string): Promise<ProposalPreview> {
+    const { data } = await http.get<ProposalPreview>(`/automation/proposals/${encodeURIComponent(id)}/preview`)
+    return data
   },
 
   async dismissProposals(ids: string[]): Promise<{ dismissed: number }> {

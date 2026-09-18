@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "project": "taskdeck",
+  "profile": "local-first-existing-consent",
+  "publicCollectionOrigin": null,
+  "browserInjection": false,
+  "collectionEnabledByThisIntegration": false,
+  "sourceKit": "Chris0Jeky/Pulseboard/observatory",
+  "releaseGate": "Preserve v0.3 zero egress; any v0.4 adapter requires separate review"
+}

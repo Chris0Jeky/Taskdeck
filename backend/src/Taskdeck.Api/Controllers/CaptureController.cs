@@ -124,6 +124,20 @@ public class CaptureController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    /// <summary>Read current triage status without loading capture text on the wire or persisting backfill.</summary>
+    [HttpGet("{id:guid}/status")]
+    [ProducesResponseType(typeof(CaptureTriageStatusDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetStatus(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+        var result = await _captureService.GetStatusAsync(userId, id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     /// <summary>
     /// Keep a capture in the Inbox for later without creating a proposal or work item.
     /// </summary>

@@ -125,6 +125,13 @@ public class Board : Entity
     /// </summary>
     public void RecordCardMutation() => RecordDependentMutation();
 
+    // Serialize complete-graph decisions without changing board metadata timestamps.
+    public void RecordHierarchyMutation()
+    {
+        RecordCardMutation();
+        ConcurrencyToken = Guid.NewGuid();
+    }
+
     private void TouchAndAdvanceConcurrencyToken()
     {
         Touch();

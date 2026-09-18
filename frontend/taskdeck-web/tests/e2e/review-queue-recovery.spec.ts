@@ -23,6 +23,42 @@ async function moveReviewScopeWithoutReload(page: Page, boardId: string) {
   }, boardId)
 }
 
+test('delayed unavailable proposal preserves keyboard focus in the queue', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('td.paper.mode.v2', 'paper'))
+  const missingId = '11111111-1111-4111-8111-111111111111'
+  const detailPath = apiRoutePath(API_BASE_URL, `automation/proposals/${missingId}`)
+  let releaseLookup!: () => void
+  const lookupRelease = new Promise<void>((resolve) => { releaseLookup = resolve })
+  let signalLookup!: () => void
+  const lookupStarted = new Promise<void>((resolve) => { signalLookup = resolve })
+  await page.route((url) => url.origin === API_ORIGIN && url.pathname === detailPath, async (route) => {
+    signalLookup()
+    await lookupRelease
+    await route.fulfill({ status: 404, contentType: 'application/json', body: '{"title":"Not found"}' })
+  })
+  await page.goto('/workspace/review')
+  const queueControl = page.locator('.paper-review-rail__pill').first()
+  await expect(queueControl).toBeVisible()
+  const announcement = page.getByTestId('paper-review-unavailable-announcement')
+  await expect(announcement).toHaveAttribute('role', 'status')
+  await expect(announcement).toHaveAttribute('aria-live', 'polite')
+  await expect(announcement).toBeEmpty()
+  await page.evaluate((id) => {
+    window.history.pushState({}, '', `/workspace/review#proposal-${id}`)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, missingId)
+  await lookupStarted
+  await queueControl.focus()
+  await expect(queueControl).toBeFocused()
+  releaseLookup()
+  await expect(page.getByTestId('paper-review-unavailable-return')).toBeVisible()
+  await expect(queueControl).toBeFocused()
+  await expect(announcement).toContainText(missingId)
+  await page.screenshot({ path: testInfo.outputPath('unavailable-preserves-queue-focus.png'), fullPage: true })
+  await page.getByTestId('paper-review-unavailable-return').click()
+  await expect(announcement).toBeEmpty()
+})
+
 test('shows repeated refusal feedback only after a second explicit 403 and clears it on success', async ({ page }, testInfo) => {
   test.setTimeout(60_000)
 

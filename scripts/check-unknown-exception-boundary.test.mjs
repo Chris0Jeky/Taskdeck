@@ -1,12 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 import {
   ALLOWLIST,
   LOG_SANITIZER_MEMBERS,
+  MCP_DIRECTORY,
   PERSISTED_STATE_FILES,
   findCatchBlockFindings,
   findMcpFindings,
@@ -319,6 +321,22 @@ test('the real tree has zero unknown-exception boundary findings', async () => {
     findings.map((finding) => `${finding.path}:${finding.line} ${finding.message}`),
     [],
   )
+})
+
+test('reports an unreadable MCP surface instead of treating it as empty', async () => {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), 'taskdeck-exception-boundary-'))
+
+  try {
+    const findings = await scanTree(temporaryRoot)
+    assert.ok(
+      findings.some((finding) =>
+        finding.rule === 'mcp-surface-unreadable' && finding.path === MCP_DIRECTORY,
+      ),
+      'a missing MCP directory must fail closed',
+    )
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true })
+  }
 })
 
 test('the webhook delivery worker is guarded as a persisted-state surface', () => {

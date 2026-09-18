@@ -72,6 +72,7 @@ const acceptedTags = [
   'v10.20.30',
   'v1.2.3-rc.1',
   'v1.2.3-beta2',
+  'v1.2.3-0.alpha.1',
   'v1.2.3+build.5',
   'v0.0.0-dryrun+abc1234', // the generated rehearsal version must stay valid
   'v1.2.3-rc.1+build.5',
@@ -117,6 +118,7 @@ const rejectedTags = [
   ['no v prefix', '1.2.3'],
   ['missing patch', 'v1.2'],
   ['leading zero major', 'v01.2.3'],
+  ['leading zero numeric prerelease', 'v1.2.3-01'],
   ['trailing dot', 'v1.2.3.'],
   ['non-ascii', 'v1.2.3-ré'],
   ['too long', `v1.2.3-${'a'.repeat(80)}`],

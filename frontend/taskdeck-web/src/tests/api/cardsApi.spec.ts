@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { cardsApi } from '../../api/cardsApi'
+import { ASSIGNMENT_SAVE_TIMEOUT_MS, cardsApi } from '../../api/cardsApi'
 import http from '../../api/http'
 
 vi.mock('../../api/http', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
   },
@@ -63,6 +64,12 @@ describe('cardsApi', () => {
   })
 
   describe('createCard', () => {
+    it('passes an explicit zero estimate and preserves an unknown response', async () => {
+      vi.mocked(http.post).mockResolvedValue({ data: { id: 'card-1', estimatedEffortMinutes: null } })
+      const result = await cardsApi.createCard('board-1', { columnId: 'col-1', title: 'Zero', estimatedEffortMinutes: 0 })
+      expect(http.post).toHaveBeenCalledWith('/boards/board-1/cards', { columnId: 'col-1', title: 'Zero', estimatedEffortMinutes: 0 })
+      expect(result.estimatedEffortMinutes).toBeNull()
+    })
     it('should create a card with the provided data', async () => {
       const newCard = { id: 'card-1', title: 'New Card' }
       vi.mocked(http.post).mockResolvedValue({ data: newCard })
@@ -76,6 +83,13 @@ describe('cardsApi', () => {
   })
 
   describe('updateCard', () => {
+    it('passes explicit estimate clearing and its concurrency token unchanged', async () => {
+      vi.mocked(http.patch).mockResolvedValue({ data: { id: 'card-1', estimatedEffortMinutes: null } })
+      const update = { clearEstimatedEffort: true, expectedUpdatedAt: 'loaded-v1' }
+      await cardsApi.updateCard('board-1', 'card-1', update)
+      expect(http.patch).toHaveBeenCalledWith('/boards/board-1/cards/card-1', update)
+      expect(vi.mocked(http.patch).mock.calls[0]![1]).not.toHaveProperty('estimatedEffortMinutes')
+    })
     it('should update a card with partial data', async () => {
       const updatedCard = { id: 'card-1', title: 'Updated Card' }
       vi.mocked(http.patch).mockResolvedValue({ data: updatedCard })
@@ -109,13 +123,28 @@ describe('cardsApi', () => {
     })
   })
 
+  describe('replaceAssignments', () => {
+    it('bounds the unrecallable assignment save so it always settles (#2981)', async () => {
+      vi.mocked(http.put).mockResolvedValue({ data: { id: 'card-1' } })
+
+      await cardsApi.replaceAssignments('board-1', 'card-1', ['user-2'], 'v1')
+
+      expect(http.put).toHaveBeenCalledWith(
+        '/boards/board-1/cards/card-1/assignments',
+        { userIds: ['user-2'], expectedUpdatedAt: 'v1' },
+        { skipRetry: true, timeout: ASSIGNMENT_SAVE_TIMEOUT_MS },
+      )
+      expect(ASSIGNMENT_SAVE_TIMEOUT_MS).toBeGreaterThan(0)
+    })
+  })
+
   describe('deleteCard', () => {
     it('should delete a card by ID', async () => {
       vi.mocked(http.delete).mockResolvedValue({})
 
       await cardsApi.deleteCard('board-1', 'card-1')
 
-      expect(http.delete).toHaveBeenCalledWith('/boards/board-1/cards/card-1')
+      expect(http.delete).toHaveBeenCalledWith('/boards/board-1/cards/card-1', { params: undefined, skipRetry: true })
     })
   })
 

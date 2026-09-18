@@ -103,6 +103,7 @@ jobs:
             --backend-exit-code-file /tmp/release-security/backend-vulnerabilities.exitcode \
             --frontend-report /tmp/release-security/frontend-audit.json \
             --frontend-exit-code-file /tmp/release-security/frontend-audit.exitcode \
+            --allowlist ci/dependency-allowlist.v1.json \
             --policy-doc docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md \
             --summary-title "Release Security Dependency Summary" \
             --workflow-context "release-security" \

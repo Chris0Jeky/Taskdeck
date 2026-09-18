@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -143,6 +143,10 @@ public class ColumnService
 
     public async Task<Result> DeleteColumnAsync(Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
+        var target = await _unitOfWork.Columns.GetByIdAsync(id, cancellationToken);
+        if (target == null)
+            return Result.Failure(ErrorCodes.NotFound, $"Column with ID {id} not found");
+        var board = await _unitOfWork.Boards.GetByIdAsync(target.BoardId, cancellationToken);
         var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(id, cancellationToken);
         if (column == null)
             return Result.Failure(ErrorCodes.NotFound, $"Column with ID {id} not found");
@@ -150,6 +154,7 @@ public class ColumnService
         if (column.Cards.Any())
             return Result.Failure(ErrorCodes.Conflict, "Cannot delete column that contains cards");
 
+        board?.RecordHierarchyMutation();
         await _unitOfWork.Columns.DeleteAsync(column, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.NotifyBoardMutationAsync(
@@ -301,7 +306,7 @@ public class ColumnService
             column.Name,
             column.Position,
             column.WipLimit,
-            column.Cards.Count,
+            column.Cards.Count(card => !card.IsArchived),
             column.CreatedAt,
             column.UpdatedAt
         );

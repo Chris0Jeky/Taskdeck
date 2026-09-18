@@ -5,11 +5,18 @@ import type {
   ClientTelemetryConfig,
   TelemetryEventPayload,
 } from '../api/telemetryApi'
+import { useToastStore } from './toastStore'
 
 const CONSENT_KEY = 'taskdeck_telemetry_consent'
 const FLUSH_INTERVAL_MS = 30_000 // 30 seconds
 const MAX_BUFFER_SIZE = 200
 const DEFAULT_APP_VERSION = '0.0.0-dev'
+const CONSENT_PERSISTENCE_WARNING_TITLE = 'Telemetry preference not saved'
+const DISABLED_CONSENT_PERSISTENCE_WARNING =
+  'Telemetry is disabled for this session, but that choice could not be saved. It may be enabled again after reload.'
+const ENABLED_CONSENT_PERSISTENCE_WARNING =
+  'Telemetry is enabled for this session, but that choice could not be saved. It may be disabled after reload.'
+
 type PrivacyAwareNavigator = Navigator & {
   globalPrivacyControl?: boolean
 }
@@ -53,6 +60,8 @@ function generateSessionId(): string {
 }
 
 export const useTelemetryStore = defineStore('telemetry', () => {
+  const toast = useToastStore()
+
   // ── State ──────────────────────────────────────────────────────────
 
   /** User has explicitly opted in to telemetry */
@@ -78,6 +87,9 @@ export const useTelemetryStore = defineStore('telemetry', () => {
 
   /** Guard to prevent concurrent flushes causing duplicate sends */
   let isFlushing = false
+
+  /** Invalidates in-flight retry ownership when consent is withdrawn. */
+  let consentEpoch = 0
 
   // ── Computed ────────────────────────────────────────────────────────
 
@@ -116,21 +128,44 @@ export const useTelemetryStore = defineStore('telemetry', () => {
       consentGiven.value = false
       return
     }
-    const stored = localStorage.getItem(CONSENT_KEY)
-    consentGiven.value = stored === 'true'
+    try {
+      const stored = localStorage.getItem(CONSENT_KEY)
+      consentGiven.value = stored === 'true'
+    } catch {
+      // Storage can be unavailable. Never turn that into implicit consent.
+      consentGiven.value = false
+    }
   }
 
-  /** Set user consent and persist */
+  /** Set user consent; persistence failure must not prevent revocation. */
   function setConsent(value: boolean) {
     consentGiven.value = value
-    localStorage.setItem(CONSENT_KEY, String(value))
 
     if (!value) {
-      // User revoked consent — clear buffer and stop flushing
+      // Invalidate old requests even if the user opts in again before they settle.
+      consentEpoch += 1
       eventBuffer.value = []
+      sessionId.value = generateSessionId()
       stopFlushTimer()
     } else {
       startFlushTimer()
+    }
+
+    try {
+      localStorage.setItem(CONSENT_KEY, String(value))
+    } catch {
+      // Keep the privacy-first in-memory choice, but do not let stale browser
+      // storage silently reverse it after a reload.
+      toast.warning(
+        value
+          ? ENABLED_CONSENT_PERSISTENCE_WARNING
+          : DISABLED_CONSENT_PERSISTENCE_WARNING,
+        0,
+        {
+          title: CONSENT_PERSISTENCE_WARNING_TITLE,
+          label: 'warning',
+        },
+      )
     }
   }
 
@@ -188,16 +223,19 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     }
     isFlushing = true
 
+    const flushEpoch = consentEpoch
     const eventsToSend = [...eventBuffer.value]
     eventBuffer.value = []
 
     try {
       await telemetryApi.sendEvents(eventsToSend)
     } catch {
-      // Re-buffer events on failure (up to max size)
-      eventBuffer.value = [...eventsToSend, ...eventBuffer.value].slice(
-        -MAX_BUFFER_SIZE,
-      )
+      // Retry only inside the same uninterrupted consent period.
+      if (flushEpoch === consentEpoch && isActive.value) {
+        eventBuffer.value = [...eventsToSend, ...eventBuffer.value].slice(
+          -MAX_BUFFER_SIZE,
+        )
+      }
     } finally {
       isFlushing = false
     }

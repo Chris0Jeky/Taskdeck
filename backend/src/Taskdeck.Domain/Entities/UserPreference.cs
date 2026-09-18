@@ -11,6 +11,24 @@ public class UserPreference : Entity
     public WorkspaceOnboardingVisibility OnboardingVisibility { get; private set; }
     public DateTimeOffset? OnboardingDismissedAt { get; private set; }
     public DateTimeOffset? OnboardingCompletedAt { get; private set; }
+    public string? PersonalPlanJson { get; private set; }
+    public long PersonalPlanRevision { get; private set; }
+    public string? AttentionJson { get; private set; }
+    public long AttentionRevision { get; private set; }
+    public WorkspaceAttention ReadAttention() => AttentionJson is null ? new()
+        : System.Text.Json.JsonSerializer.Deserialize<WorkspaceAttention>(AttentionJson)!;
+
+    public PersonalPlan ReadPersonalPlan() => PersonalPlanJson is null
+        ? PersonalPlan.Empty
+        : System.Text.Json.JsonSerializer.Deserialize<PersonalPlan>(PersonalPlanJson)!;
+
+    public void ReplacePersonalPlan(PersonalPlan plan)
+    {
+        plan.Validate();
+        PersonalPlanJson = System.Text.Json.JsonSerializer.Serialize(plan);
+        PersonalPlanRevision++;
+        Touch();
+    }
 
     public User User { get; private set; } = null!;
 

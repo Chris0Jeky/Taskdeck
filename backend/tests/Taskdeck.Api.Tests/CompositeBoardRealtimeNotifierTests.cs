@@ -175,6 +175,53 @@ public class CompositeBoardRealtimeNotifierTests
         webhookLogger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error);
     }
 
+    [Fact]
+    public async Task StageBoardMutationAsync_ShouldPrepareWebhookOnly_AndPropagateFailure()
+    {
+        var mutation = CreateMutation();
+        var signalRClientProxy = new RecordingClientProxy();
+        var outboundService = new RecordingOutboundWebhookService();
+        var notifier = CreateNotifier(signalRClientProxy, outboundService);
+
+        await notifier.StageBoardMutationAsync(mutation, CancellationToken.None);
+
+        outboundService.StageCalls.Should().ContainSingle();
+        outboundService.EnqueueCalls.Should().BeEmpty();
+        signalRClientProxy.MethodName.Should().BeNull();
+
+        outboundService.StageResultToReturn = Result.Failure("stage_failed", "queue failed");
+        var act = () => notifier.StageBoardMutationAsync(CreateMutation(), CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task NotifyCommittedBoardMutationAsync_ShouldPublishSignalROnly()
+    {
+        var mutation = CreateMutation();
+        var signalRClientProxy = new RecordingClientProxy();
+        var outboundService = new RecordingOutboundWebhookService();
+        var notifier = CreateNotifier(signalRClientProxy, outboundService);
+
+        await notifier.NotifyCommittedBoardMutationAsync(mutation, CancellationToken.None);
+
+        signalRClientProxy.MethodName.Should().Be("boardMutation");
+        outboundService.StageCalls.Should().BeEmpty();
+        outboundService.EnqueueCalls.Should().BeEmpty();
+    }
+
+    private static CompositeBoardRealtimeNotifier CreateNotifier(
+        RecordingClientProxy signalRClientProxy,
+        RecordingOutboundWebhookService outboundService)
+    {
+        var hubContext = new FakeHubContext(signalRClientProxy);
+        return new CompositeBoardRealtimeNotifier(
+            new SignalRBoardRealtimeNotifier(hubContext),
+            new WebhookBoardMutationNotifier(
+                outboundService,
+                new InMemoryLogger<WebhookBoardMutationNotifier>()),
+            new InMemoryLogger<CompositeBoardRealtimeNotifier>());
+    }
+
     private static BoardRealtimeEvent CreateMutation()
     {
         return new BoardRealtimeEvent(
@@ -187,8 +234,11 @@ public class CompositeBoardRealtimeNotifierTests
 
     private sealed class RecordingOutboundWebhookService : IOutboundWebhookService
     {
-        public List<(BoardRealtimeEvent Mutation, CancellationToken CancellationToken)> Calls { get; } = [];
+        public List<(BoardRealtimeEvent Mutation, CancellationToken CancellationToken)> EnqueueCalls { get; } = [];
+        public List<(BoardRealtimeEvent Mutation, CancellationToken CancellationToken)> StageCalls { get; } = [];
+        public List<(BoardRealtimeEvent Mutation, CancellationToken CancellationToken)> Calls => EnqueueCalls;
         public Result ResultToReturn { get; set; } = Result.Success();
+        public Result StageResultToReturn { get; set; } = Result.Success();
         public Exception? ExceptionToThrow { get; set; }
 
         public Task<Result<OutboundWebhookSubscriptionSecretDto>> CreateSubscriptionAsync(
@@ -229,7 +279,7 @@ public class CompositeBoardRealtimeNotifierTests
             BoardRealtimeEvent mutation,
             CancellationToken cancellationToken = default)
         {
-            Calls.Add((mutation, cancellationToken));
+            EnqueueCalls.Add((mutation, cancellationToken));
 
             if (ExceptionToThrow is not null)
             {
@@ -237,6 +287,18 @@ public class CompositeBoardRealtimeNotifierTests
             }
 
             return Task.FromResult(ResultToReturn);
+        }
+
+        public Task<Result> StageBoardMutationAsync(
+            BoardRealtimeEvent mutation,
+            CancellationToken cancellationToken = default)
+        {
+            StageCalls.Add((mutation, cancellationToken));
+
+            if (ExceptionToThrow is not null)
+                throw ExceptionToThrow;
+
+            return Task.FromResult(StageResultToReturn);
         }
     }
 

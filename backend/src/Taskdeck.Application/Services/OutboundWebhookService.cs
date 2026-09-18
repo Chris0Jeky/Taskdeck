@@ -164,6 +164,20 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
         BoardRealtimeEvent mutation,
         CancellationToken cancellationToken = default)
     {
+        var stageResult = await StageBoardMutationAsync(mutation, cancellationToken);
+        if (!stageResult.IsSuccess)
+        {
+            return stageResult;
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> StageBoardMutationAsync(
+        BoardRealtimeEvent mutation,
+        CancellationToken cancellationToken = default)
+    {
         var eventType = $"{mutation.EntityType}.{mutation.Operation}".Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(eventType) || eventType == ".")
         {
@@ -202,7 +216,6 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             subscription.MarkTriggered();
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 

@@ -40,7 +40,11 @@ public class AccountDeletionService : IAccountDeletionService
         IWorkspaceInsightRepository workspaceInsights,
         IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null,
-        ICaptureStore? captureStore = null)
+        ICaptureStore? captureStore = null,
+        IBlobStore? blobStore = null,
+        IAudioTranscriptionStore? audioTranscription = null,
+        CardAssignmentService? assignments = null,
+        ICardAssignmentStore? assignmentStore = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -50,9 +54,17 @@ public class AccountDeletionService : IAccountDeletionService
         _transcripts = transcripts;
         _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
+        _blobStore = blobStore;
+        _audioTranscription = audioTranscription;
+        _assignments = assignments;
+        _assignmentStore = assignmentStore;
     }
 
     private readonly ICaptureStore? _captureStore;
+    private readonly IBlobStore? _blobStore;
+    private readonly IAudioTranscriptionStore? _audioTranscription;
+    private readonly CardAssignmentService? _assignments;
+    private readonly ICardAssignmentStore? _assignmentStore;
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
         Guid userId,
@@ -100,6 +112,15 @@ public class AccountDeletionService : IAccountDeletionService
         try
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            if (_assignmentStore is not null)
+                await _assignmentStore.RefreshAuthorityAsync(Guid.Empty, userId, cancellationToken);
+            if (!user.IsActive)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                return Result.Failure<AccountDeletionResultDto>(ErrorCodes.InvalidOperation, "Account is already deactivated");
+            }
+            var detachedAssignments = _assignments is null ? Array.Empty<Card>() :
+                await _assignments.StageDetachAsync(userId, null, userId, "account-erased", cancellationToken);
 
             // Log the deletion request inside the transaction so it rolls back if deletion fails
             await _historyService.LogActionAsync(
@@ -129,9 +150,13 @@ public class AccountDeletionService : IAccountDeletionService
             // 3b. Delete the durable Capture mirrors (ADR-0065). Rows exist only when
             //     ContextFabric:DualWriteCaptures was ever on; they carry user-authored titles and
             //     their FK to User is Restrict, so they must go inside this same transaction.
+            if (_audioTranscription is not null)
+                await _audioTranscription.DeleteOwnerAsync(userId, cancellationToken);
             var durableCapturesDeleted = _captureStore is null
                 ? 0
                 : await _captureStore.DeleteByUserAsync(userId, cancellationToken);
+            if (_blobStore is not null)
+                await _blobStore.DeleteOwnerAsync(userId, cancellationToken);
 
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.
@@ -213,6 +238,9 @@ public class AccountDeletionService : IAccountDeletionService
             // concurrent requests cannot repopulate the cache from the still-active row
             // during the commit window.
             _activeUserCache?.Invalidate(userId);
+            if (_assignments is not null)
+                foreach (var card in detachedAssignments)
+                    await _assignments.NotifyAsync(card.BoardId, card.Id, cancellationToken);
 
             return Result.Success(new AccountDeletionResultDto(
                 Success: true,
@@ -228,7 +256,8 @@ public class AccountDeletionService : IAccountDeletionService
                 DurableCapturesDeleted: durableCapturesDeleted,
                 WorkspaceMemoriesDeleted: privateWorkspaceDeleted.Memories,
                 WorkspaceMemoryRevisionsDeleted: privateWorkspaceDeleted.Revisions,
-                QuietInsightsDeleted: privateWorkspaceDeleted.Insights));
+                QuietInsightsDeleted: privateWorkspaceDeleted.Insights,
+                CardAssignmentsRemoved: detachedAssignments.Count));
         }
         catch (Exception ex)
         {

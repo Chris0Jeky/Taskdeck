@@ -518,6 +518,7 @@ builder.Services.AddApplicationServices();
 
 // Add LLM providers (quota, kill switch, OpenAI/compatible/Ollama/Mock selection)
 builder.Services.AddLlmProviders(builder.Configuration);
+builder.Services.AddSpeechTranscription(builder.Configuration, builder.Environment.EnvironmentName);
 
 // Add IUserContext for claim-based identity
 builder.Services.AddHttpContextAccessor();

@@ -27,9 +27,19 @@ public static class ApplicationServiceRegistration
                 sp.GetService<ILogger<BoardService>>()));
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
+        services.AddScoped<CardAssignmentService>();
+        services.AddScoped<IBoardEstimateRollupService, BoardEstimateRollupService>();
+        services.AddScoped<IBoardRelationService, BoardRelationService>();
         services.AddScoped<CardCommentService>();
         services.AddScoped<ThinkingDeckService>();
+        services.AddScoped<BoardDependencyService>();
+        services.AddScoped<WorkspacePlanService>();
+        services.AddScoped<WorkspaceAttentionService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ChatContextResolver>();
+        services.AddScoped<ThinkingStepService>();
         services.AddScoped<ThinkingAnswerService>();
+        services.AddScoped<ThinkingAudioService>();
         services.AddScoped<LabelService>();
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<AuthenticationService>();
@@ -142,6 +152,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, GetCardDetailsExecutor>();
         services.AddScoped<IToolExecutor, SearchCardsExecutor>();
         services.AddScoped<IToolExecutor, GetBoardLabelsExecutor>();
+        services.AddScoped<IToolExecutor, GetBoardCardRelationsExecutor>();
 
         // Tool-calling infrastructure (write tools — always produce proposals, GP-06)
         services.AddScoped<IToolExecutor, ProposeCreateCardExecutor>();
@@ -150,6 +161,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, ProposeUpdateCardExecutor>();
         services.AddScoped<IToolExecutor, ProposeBulkMoveExecutor>();
         services.AddScoped<IToolExecutor, ProposeCreateColumnExecutor>();
+        services.AddScoped<IToolExecutor, ProposeAddCardRelationExecutor>();
+        services.AddScoped<IToolExecutor, ProposeRemoveCardRelationExecutor>();
 
         services.AddScoped<IDailySealService, DailySealService>();
 

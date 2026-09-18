@@ -5,7 +5,8 @@ import exportImportSource from '../../views/ExportImportView.vue?raw'
 
 const mocks = vi.hoisted(() => ({
   exportBoardJson: vi.fn(),
-  importBoardJson: vi.fn(),
+  importBoard: vi.fn(),
+  previewBoardJson: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
   warningToast: vi.fn(),
@@ -15,7 +16,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../api/exportImportApi', () => ({
   exportImportApi: {
     exportBoardJson: mocks.exportBoardJson,
-    importBoardJson: mocks.importBoardJson,
+    importBoard: mocks.importBoard,
+    previewBoardJson: mocks.previewBoardJson,
   },
 }))
 
@@ -45,8 +47,9 @@ async function waitForUi() {
 describe('ExportImportView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.previewBoardJson.mockResolvedValue({ board: { name: 'Preview board', cards: [] }, cardCount: 0, columnCount: 0, sourceAssignees: [], me: { userId: 'me', displayName: 'Me' } })
     mocks.exportBoardJson.mockResolvedValue({ boardId: 'b-1', columns: [], cards: [] })
-    mocks.importBoardJson.mockResolvedValue({
+    mocks.importBoard.mockResolvedValue({
       success: true,
       errorMessage: null,
       columnsImported: 2,
@@ -58,6 +61,45 @@ describe('ExportImportView', () => {
   it('renders the Export / Import page title', () => {
     const wrapper = mount(ExportImportView)
     expect(wrapper.text()).toContain('Export / Import')
+  })
+
+  it('requires an explicit choice for every source person and sends only reviewed mappings', async () => {
+    mocks.previewBoardJson.mockResolvedValue({
+      board: { name: 'Mapped', cards: [{ title: 'Imported task', columnName: 'Next' }] }, cardCount: 1, columnCount: 1,
+      sourceAssignees: [
+        { sourceKey: 'source-a', displayName: 'Alex', affectedCardCount: 1 },
+        { sourceKey: 'source-b', displayName: 'Blair', affectedCardCount: 1 },
+      ], me: { userId: 'me', displayName: 'Current owner' },
+    })
+    const wrapper = mount(ExportImportView)
+    await wrapper.findAll('button').find(b => b.text() === 'Import')!.trigger('click')
+    await wrapper.find('textarea').setValue('{"source":"fixture"}')
+    await wrapper.findAll('button').find(b => b.text() === 'Validate & Preview')!.trigger('click')
+    await waitForUi()
+    const apply = () => wrapper.findAll('button').find(b => b.text() === 'Import Board')!
+    expect(wrapper.text()).toContain('Imported task')
+    expect(wrapper.text()).toContain('1 affected cards')
+    expect(apply().attributes('disabled')).toBeDefined()
+    await wrapper.findAll('select')[0]!.setValue('me')
+    expect(apply().attributes('disabled')).toBeDefined()
+    await wrapper.findAll('select')[1]!.setValue('unassigned')
+    expect(apply().attributes('disabled')).toBeUndefined()
+    await apply().trigger('click'); await waitForUi()
+    expect(mocks.importBoard).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Mapped', assigneeMappings: { 'source-a': 'me', 'source-b': null },
+    }))
+  })
+
+  it('keeps invalid JSON input editable and never presents it as validated', async () => {
+    mocks.previewBoardJson.mockRejectedValue(new Error('Invalid'))
+    const wrapper = mount(ExportImportView)
+    await wrapper.findAll('button').find(b => b.text() === 'Import')!.trigger('click')
+    await wrapper.find('textarea').setValue('{invalid}')
+    await wrapper.findAll('button').find(b => b.text() === 'Validate & Preview')!.trigger('click')
+    await waitForUi()
+    expect(wrapper.find('[role="alert"]').text()).toContain('invalid')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('{invalid}')
+    expect(mocks.importBoard).not.toHaveBeenCalled()
   })
 
   it('renders Export and Import tabs', () => {
@@ -205,7 +247,7 @@ describe('ExportImportView', () => {
       await validateBtn!.trigger('click')
       await waitForUi()
 
-      expect(wrapper.text()).toContain('Review the data before importing.')
+      expect(wrapper.text()).toContain('Create a new board')
       expect(wrapper.findAll('button').some((b) => b.text().includes('Back'))).toBe(true)
       expect(wrapper.findAll('button').some((b) => b.text().includes('Import Board'))).toBe(true)
     })
@@ -229,8 +271,8 @@ describe('ExportImportView', () => {
       expect(wrapper.text()).toContain('Paste board JSON data to import.')
     })
 
-    it('calls importBoardJson and shows success result on step 3', async () => {
-      mocks.importBoardJson.mockResolvedValue({
+    it('calls importBoard and shows success result on step 3', async () => {
+      mocks.importBoard.mockResolvedValue({
         success: true,
         errorMessage: null,
         columnsImported: 3,
@@ -252,14 +294,14 @@ describe('ExportImportView', () => {
       await importBtn!.trigger('click')
       await waitForUi()
 
-      expect(mocks.importBoardJson).toHaveBeenCalled()
+      expect(mocks.importBoard).toHaveBeenCalled()
       expect(mocks.successToast).toHaveBeenCalledWith('Board imported successfully')
       expect(wrapper.text()).toContain('Board imported successfully')
       expect(wrapper.text()).toContain('Columns: 3, Cards: 10, Labels: 2')
     })
 
     it('shows error result on step 3 when import fails with API error', async () => {
-      mocks.importBoardJson.mockResolvedValue({
+      mocks.importBoard.mockResolvedValue({
         success: false,
         errorMessage: 'Invalid schema',
         columnsImported: 0,
@@ -286,7 +328,7 @@ describe('ExportImportView', () => {
     })
 
     it('shows error result on step 3 when import throws', async () => {
-      mocks.importBoardJson.mockRejectedValue(new Error('network error'))
+      mocks.importBoard.mockRejectedValue(new Error('network error'))
 
       const wrapper = mount(ExportImportView)
       await switchToImport(wrapper)

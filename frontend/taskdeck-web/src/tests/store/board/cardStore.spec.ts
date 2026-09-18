@@ -101,7 +101,7 @@ describe('cardStore', () => {
         { id: 'card-c', columnId: 'col-1', title: 'C' },
       ]
       mockCardsApi.getCards.mockResolvedValueOnce(apiCards)
-      const { fetchCards } = createCardActions(state as any, helpers as any)
+      const { fetchCards } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await fetchCards('board-1')
 
@@ -112,7 +112,7 @@ describe('cardStore', () => {
 
     it('passes filters to the API', async () => {
       mockCardsApi.getCards.mockResolvedValueOnce([])
-      const { fetchCards } = createCardActions(state as any, helpers as any)
+      const { fetchCards } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await fetchCards('board-1', { search: 'test', labelId: 'lbl-1' })
 
@@ -124,7 +124,7 @@ describe('cardStore', () => {
 
     it('skips fetch in demo mode', async () => {
       helpers.isDemoMode = true
-      const { fetchCards } = createCardActions(state as any, helpers as any)
+      const { fetchCards } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await fetchCards('board-1')
 
@@ -133,7 +133,7 @@ describe('cardStore', () => {
 
     it('handles error by calling handleApiError and rethrowing', async () => {
       mockCardsApi.getCards.mockRejectedValueOnce(new Error('network'))
-      const { fetchCards } = createCardActions(state as any, helpers as any)
+      const { fetchCards } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(fetchCards('board-1')).rejects.toThrow('network')
       expect(helpers.handleApiError).toHaveBeenCalledWith(
@@ -157,7 +157,7 @@ describe('cardStore', () => {
         updatedAt: '2024-01-04T00:00:00Z',
       }
       mockCardsApi.createCard.mockResolvedValueOnce(newCard)
-      const { createCard } = createCardActions(state as any, helpers as any)
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       const result = await createCard('board-1', {
         title: 'New Card',
@@ -175,11 +175,97 @@ describe('cardStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
+    it('adds a created card before board detail has loaded', async () => {
+      const newCard = {
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'New Card',
+      }
+      state.currentBoard.value = null
+      state.currentBoardCards.value = []
+      mockCardsApi.createCard.mockResolvedValueOnce(newCard)
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      await createCard('board-1', { title: 'New Card', columnId: 'col-1' } as any)
+
+      expect(state.currentBoardCards.value).toEqual([newCard])
+      expect(helpers.updateColumnCardCount).toHaveBeenCalledWith('col-1', 1)
+    })
+
+    it('preserves a board-detail card that commits before the create response', async () => {
+      let resolveCreate!: (card: Record<string, unknown>) => void
+      mockCardsApi.createCard.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveCreate = resolve
+      }))
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      const creating = createCard('board-1', {
+        title: 'Created card',
+        columnId: 'col-1',
+      } as any)
+
+      const committedByDetailRead = {
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'Created card with refreshed details',
+        updatedAt: '2024-01-05T00:00:00Z',
+      }
+      state.currentBoardCards.value.push(committedByDetailRead as any)
+      state.currentBoard.value!.columns[0].cardCount = 3
+
+      resolveCreate({
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'Created card',
+      })
+      await creating
+
+      expect(state.currentBoardCards.value).toHaveLength(3)
+      expect(state.currentBoardCards.value.find((card) => card.id === 'card-new')).toEqual(committedByDetailRead)
+      expect(state.currentBoard.value!.columns[0].cardCount).toBe(3)
+      expect(helpers.updateColumnCardCount).not.toHaveBeenCalled()
+    })
+
+    it('does not write a late create response into a board selected after navigation', async () => {
+      let resolveCreate!: (card: Record<string, unknown>) => void
+      mockCardsApi.createCard.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveCreate = resolve
+      }))
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      const creating = createCard('board-1', {
+        title: 'Created card',
+        columnId: 'col-1',
+      } as any)
+
+      state.currentBoard.value = {
+        id: 'board-2',
+        columns: [{ id: 'col-2', name: 'Next', cardCount: 1 }],
+      }
+      const nextBoardCard = { id: 'card-board-2', boardId: 'board-2', columnId: 'col-2' }
+      state.currentBoardCards.value = [nextBoardCard as any]
+
+      resolveCreate({
+        id: 'card-new',
+        boardId: 'board-1',
+        columnId: 'col-1',
+        title: 'Created card',
+      })
+      await creating
+
+      expect(state.currentBoardCards.value).toEqual([nextBoardCard])
+      expect(state.currentBoard.value!.columns[0].cardCount).toBe(1)
+      expect(helpers.updateColumnCardCount).not.toHaveBeenCalled()
+    })
+
     it('guards demo mutation', async () => {
       helpers.guardDemoMutation.mockImplementation(() => {
         throw new Error('demo')
       })
-      const { createCard } = createCardActions(state as any, helpers as any)
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(
         createCard('board-1', { title: 'X', columnId: 'col-1' } as any),
@@ -189,7 +275,7 @@ describe('cardStore', () => {
 
     it('handles error by calling handleApiError and rethrowing', async () => {
       mockCardsApi.createCard.mockRejectedValueOnce(new Error('create-fail'))
-      const { createCard } = createCardActions(state as any, helpers as any)
+      const { createCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(
         createCard('board-1', { title: 'X', columnId: 'col-1' } as any),
@@ -219,7 +305,7 @@ describe('cardStore', () => {
       helpers.markBoardDetailMutation.mockImplementationOnce(() => {
         expect(state.currentBoardCards.value[0].title).toBe('First')
       })
-      const { updateCard } = createCardActions(state as any, helpers as any)
+      const { updateCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       const result = await updateCard('board-1', 'card-1', {
         title: 'Updated',
@@ -236,7 +322,7 @@ describe('cardStore', () => {
     it('uses expectedUpdatedAt from existing card if not provided', async () => {
       const updatedCard = { id: 'card-1', title: 'Updated' }
       mockCardsApi.updateCard.mockResolvedValueOnce(updatedCard)
-      const { updateCard } = createCardActions(state as any, helpers as any)
+      const { updateCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await updateCard('board-1', 'card-1', { title: 'Updated' } as any)
 
@@ -249,7 +335,7 @@ describe('cardStore', () => {
     it('preserves explicit expectedUpdatedAt when provided', async () => {
       const updatedCard = { id: 'card-1', title: 'Updated' }
       mockCardsApi.updateCard.mockResolvedValueOnce(updatedCard)
-      const { updateCard } = createCardActions(state as any, helpers as any)
+      const { updateCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await updateCard('board-1', 'card-1', {
         title: 'Updated',
@@ -266,7 +352,7 @@ describe('cardStore', () => {
       const conflictError = new Error('Card was modified by another user')
       helpers.isHttpConflict.mockReturnValue(true)
       mockCardsApi.updateCard.mockRejectedValueOnce(conflictError)
-      const { updateCard } = createCardActions(state as any, helpers as any)
+      const { updateCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(
         updateCard('board-1', 'card-1', { title: 'X' } as any),
@@ -285,7 +371,7 @@ describe('cardStore', () => {
 
     it('handles other errors via handleApiError', async () => {
       mockCardsApi.updateCard.mockRejectedValueOnce(new Error('server'))
-      const { updateCard } = createCardActions(state as any, helpers as any)
+      const { updateCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(
         updateCard('board-1', 'card-1', { title: 'X' } as any),
@@ -302,7 +388,7 @@ describe('cardStore', () => {
     it('removes card from array, cleans up comments, and updates column count', async () => {
       state.cardCommentsByCardId.value = { 'card-1': [{ id: 'cmt-1' }] }
       mockCardsApi.deleteCard.mockResolvedValueOnce(undefined)
-      const { deleteCard } = createCardActions(state as any, helpers as any)
+      const { deleteCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await deleteCard('board-1', 'card-1')
 
@@ -317,7 +403,7 @@ describe('cardStore', () => {
 
     it('does not crash when card has no comments entry', async () => {
       mockCardsApi.deleteCard.mockResolvedValueOnce(undefined)
-      const { deleteCard } = createCardActions(state as any, helpers as any)
+      const { deleteCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await deleteCard('board-1', 'card-2')
 
@@ -329,7 +415,7 @@ describe('cardStore', () => {
       helpers.guardDemoMutation.mockImplementation(() => {
         throw new Error('demo')
       })
-      const { deleteCard } = createCardActions(state as any, helpers as any)
+      const { deleteCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(deleteCard('board-1', 'card-1')).rejects.toThrow('demo')
       expect(mockCardsApi.deleteCard).not.toHaveBeenCalled()
@@ -337,7 +423,7 @@ describe('cardStore', () => {
 
     it('handles error by calling handleApiError and rethrowing', async () => {
       mockCardsApi.deleteCard.mockRejectedValueOnce(new Error('delete-fail'))
-      const { deleteCard } = createCardActions(state as any, helpers as any)
+      const { deleteCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(deleteCard('board-1', 'card-1')).rejects.toThrow('delete-fail')
       expect(helpers.handleApiError).toHaveBeenCalledWith(
@@ -366,7 +452,7 @@ describe('cardStore', () => {
       // Add col-2 to the board
       state.currentBoard.value!.columns.push({ id: 'col-2', name: 'Done', cardCount: 0 })
 
-      const { moveCard } = createCardActions(state as any, helpers as any)
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       const result = await moveCard('board-1', 'card-1', 'col-2', 0)
 
@@ -395,7 +481,7 @@ describe('cardStore', () => {
           position: 0,
         }
       })
-      const { moveCard } = createCardActions(state as any, helpers as any)
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await moveCard('board-1', 'card-1', 'col-2', 0)
 
@@ -412,7 +498,7 @@ describe('cardStore', () => {
         position: 0,
       }
       mockCardsApi.moveCard.mockResolvedValueOnce(movedCard)
-      const { moveCard } = createCardActions(state as any, helpers as any)
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await moveCard('board-1', 'card-1', 'col-2', 0)
 
@@ -429,7 +515,7 @@ describe('cardStore', () => {
         position: 1,
       }
       mockCardsApi.moveCard.mockResolvedValueOnce(movedCard)
-      const { moveCard } = createCardActions(state as any, helpers as any)
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await moveCard('board-1', 'card-1', 'col-1', 1)
 
@@ -440,7 +526,7 @@ describe('cardStore', () => {
       helpers.guardDemoMutation.mockImplementation(() => {
         throw new Error('demo')
       })
-      const { moveCard } = createCardActions(state as any, helpers as any)
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(moveCard('board-1', 'card-1', 'col-2', 0)).rejects.toThrow('demo')
       expect(mockCardsApi.moveCard).not.toHaveBeenCalled()
@@ -448,7 +534,7 @@ describe('cardStore', () => {
 
     it('handles error by calling handleApiError and rethrowing', async () => {
       mockCardsApi.moveCard.mockRejectedValueOnce(new Error('move-fail'))
-      const { moveCard } = createCardActions(state as any, helpers as any)
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(moveCard('board-1', 'card-1', 'col-2', 0)).rejects.toThrow(
         'move-fail',
@@ -471,7 +557,7 @@ describe('cardStore', () => {
         triageRunId: null,
       }
       mockCardsApi.getCardProvenance.mockResolvedValueOnce(provenance)
-      const { fetchCardProvenance } = createCardActions(state as any, helpers as any)
+      const { fetchCardProvenance } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       const result = await fetchCardProvenance('board-1', 'card-1')
 
@@ -481,7 +567,7 @@ describe('cardStore', () => {
 
     it('returns null in demo mode without calling API', async () => {
       helpers.isDemoMode = true
-      const { fetchCardProvenance } = createCardActions(state as any, helpers as any)
+      const { fetchCardProvenance } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       const result = await fetchCardProvenance('board-1', 'card-1')
 
@@ -491,7 +577,7 @@ describe('cardStore', () => {
 
     it('handles error by calling handleApiError and rethrowing', async () => {
       mockCardsApi.getCardProvenance.mockRejectedValueOnce(new Error('prov-fail'))
-      const { fetchCardProvenance } = createCardActions(state as any, helpers as any)
+      const { fetchCardProvenance } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
 
       await expect(fetchCardProvenance('board-1', 'card-1')).rejects.toThrow(
         'prov-fail',

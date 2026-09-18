@@ -23,6 +23,13 @@
  * "por clasificar").
  */
 export default {
+  polling: {
+    waiting: "Waiting for triage. Results will appear here when ready.",
+    retrying: "Status refresh is delayed. Retrying automatically; your triage request was accepted.",
+    unavailable: "A capture is no longer available to check. Refresh status to try again.",
+    paused: "Status checks are paused because your session needs attention. Sign in again to continue.",
+    refresh: "Refresh status",
+  },
   eyebrow:
     'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
   // Shown INSTEAD of `eyebrow` during a scope replacement (#2501). The rows

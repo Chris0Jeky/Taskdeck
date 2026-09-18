@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CalendarView from '../../views/CalendarView.vue'
 import type { CalendarData } from '../../types/workspace'
+import { installTimeZone } from '../utils/timeZone'
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -85,6 +86,13 @@ async function waitForUi() {
 }
 
 describe('CalendarView', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', …)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where the boundary case below silently measured
+  // the host zone instead (#2943). Installed inside each test, after the
+  // `useFakeTimers` below — fake timers replace the whole `Intl` global.
+  let restoreZone: (() => void) | null = null
+
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(MOCK_DATE)
@@ -93,7 +101,8 @@ describe('CalendarView', () => {
   })
 
   afterEach(() => {
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
     vi.useRealTimers()
   })
 
@@ -105,7 +114,7 @@ describe('CalendarView', () => {
   })
 
   it('opens the caller local month when UTC has already crossed the boundary', async () => {
-    vi.stubEnv('TZ', 'America/Los_Angeles')
+    restoreZone = installTimeZone('America/Los_Angeles')
     vi.setSystemTime(new Date('2026-05-01T00:30:00.000Z')) // Apr 30 locally
 
     mount(CalendarView)
@@ -290,7 +299,7 @@ describe('CalendarView', () => {
   })
 
   it('renders a midnight-UTC due key unchanged west of UTC', async () => {
-    vi.stubEnv('TZ', 'America/Los_Angeles')
+    restoreZone = installTimeZone('America/Los_Angeles')
     const wrapper = mount(CalendarView)
     await waitForUi()
 

@@ -2,6 +2,7 @@
 defineProps<{
   messageContent: string
   sendingMessage: boolean
+  sendBlocked?: boolean
   lastMessageIsClarification: boolean
 }>()
 
@@ -18,7 +19,7 @@ const emit = defineEmits<{
       <span class="td-clarification-skip__hint">The assistant is asking for more details.</span>
       <button
         class="td-btn td-btn--secondary td-btn--sm"
-        :disabled="sendingMessage"
+        :disabled="sendingMessage || sendBlocked"
         @click="emit('skip-clarification')"
       >
         Skip, just do your best
@@ -31,9 +32,9 @@ const emit = defineEmits<{
       rows="3"
       placeholder="Describe an automation instruction..."
       @input="emit('update:messageContent', ($event.target as HTMLTextAreaElement).value)"
-      @keydown.ctrl.enter.prevent="emit('send-message')"
+      @keydown.ctrl.enter.prevent="!sendingMessage && !sendBlocked && emit('send-message')"
     ></textarea>
-    <button class="td-btn td-btn--primary" @click="emit('send-message')" :disabled="sendingMessage">
+    <button class="td-btn td-btn--primary" @click="emit('send-message')" :disabled="sendingMessage || sendBlocked">
       {{ sendingMessage ? 'Sending...' : 'Send Message' }}
     </button>
   </div>

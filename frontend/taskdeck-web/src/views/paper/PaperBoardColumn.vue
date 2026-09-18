@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Card, Column } from '../../types/board'
@@ -77,7 +78,7 @@ const emit = defineEmits<{
   (event: 'edit', column: Column): void
   (event: 'move', column: Column, direction: 'left' | 'right'): void
   (event: 'open-composer', column: Column): void
-  (event: 'submit-card', column: Column, title: string): void
+  (event: 'submit-card', column: Column, title: string, estimatedEffortMinutes?: number): void
   (event: 'cancel-composer'): void
   (event: 'card-click', card: Card): void
   (event: 'card-dragstart', card: Card, e: DragEvent): void
@@ -148,8 +149,9 @@ function onAddCard() {
   emit('open-composer', props.column)
 }
 
-function onComposerSubmit(title: string) {
-  emit('submit-card', props.column, title)
+function onComposerSubmit(title: string, estimatedEffortMinutes?: number) {
+  if (estimatedEffortMinutes === undefined) emit('submit-card', props.column, title)
+  else emit('submit-card', props.column, title, estimatedEffortMinutes)
 }
 
 function onComposerCancel() {
@@ -175,6 +177,7 @@ function onCardDrop(card: Card, e: DragEvent) {
 function onCardDragOver(card: Card, e: DragEvent) {
   emit('card-dragover', card, e)
 }
+const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
 </script>
 
 <template>
@@ -186,12 +189,14 @@ function onCardDragOver(card: Card, e: DragEvent) {
       'paper-board-column--selected': selected,
     }"
     :data-column-id="column.id"
+    :data-proposal-change="proposalMarker ? true : undefined"
     :data-collapsed="collapsed"
     role="group"
     :aria-label="`Column ${column.name}`"
     :aria-current="selected ? 'true' : undefined"
   >
     <header class="paper-board-column__header">
+      <span v-if="proposalMarker" class="td-proposal-marker">{{ proposalMarker }}</span>
       <div
         class="paper-board-column__heading"
         data-action="drag-column-handle"

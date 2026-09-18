@@ -212,6 +212,19 @@ public sealed class ExternalImportService : IExternalImportService
                     continue;
                 }
 
+                // Archived matches still own their dedupe key. Describe the domain refusal during
+                // planning, before any row in the batch can write; unchanged archives remain skips.
+                if (existingCard.IsArchived)
+                {
+                    conflicts.Add(new ExternalImportConflictDto(
+                        "ArchivedExistingMatch",
+                        $"$.rows[{candidate.SourceRowNumber}]",
+                        $"Cannot update or move archived card '{existingCard.Title}' matched by dedupe key '{candidate.DedupeKey}'. Restore the card explicitly or remove this row before applying import.",
+                        ExistingValue: BuildCardReference([existingCard]),
+                        IncomingValue: candidate.DedupeKey));
+                    continue;
+                }
+
                 plannedUpserts.Add(new PlannedUpsert(existingCard, candidate));
                 rowsUpdated++;
                 continue;
@@ -235,7 +248,7 @@ public sealed class ExternalImportService : IExternalImportService
             RowsSkipped: rowsSkipped,
             Conflicts: conflicts);
 
-        if (request.DryRun || preview.HasConflicts)
+        if (preview.HasConflicts)
         {
             return Result.Success(preview);
         }
@@ -248,6 +261,9 @@ public sealed class ExternalImportService : IExternalImportService
                 ErrorCodes.WipLimitExceeded,
                 $"Cannot import cards, target column '{targetColumn.Name}' has reached its WIP limit of {targetColumn.WipLimit}.");
         }
+
+        if (request.DryRun)
+            return Result.Success(preview);
 
         var transactionStarted = false;
 
@@ -379,7 +395,7 @@ public sealed class ExternalImportService : IExternalImportService
             return false;
         }
 
-        var projectedCardCount = targetColumn.Cards.Count + cardsMovingIntoTarget;
+        var projectedCardCount = targetColumn.Cards.Count(card => !card.IsArchived) + cardsMovingIntoTarget;
         return projectedCardCount > targetColumn.WipLimit.Value;
     }
 

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
+import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
 import { useBoardStore } from '../../store/boardStore'
 import { useToastStore } from '../../store/toastStore'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
 import CardItem from './CardItem.vue'
 import CardModal from './CardModal.vue'
+import CardEstimateField from './CardEstimateField.vue'
+import { parseEstimatedEffort } from '../../utils/estimatedEffort'
 import ColumnEditModal from './ColumnEditModal.vue'
 import type { Column, Card, Label } from '../../types/board'
 import { logError } from '../../utils/errorReporting'
@@ -27,6 +30,10 @@ const emit = defineEmits<{
 const boardStore = useBoardStore()
 const toast = useToastStore()
 const newCardTitle = ref('')
+const newEstimateHours = ref('')
+const newEstimateMinutes = ref('')
+const newEstimate = computed(() => parseEstimatedEffort(newEstimateHours.value, newEstimateMinutes.value))
+const creatingCard = ref(false)
 const showCardForm = ref(false)
 const selectedCard = ref<Card | null>(null)
 const showCardModal = ref(false)
@@ -54,20 +61,26 @@ function openCardForm() {
 }
 
 async function createCard() {
-  if (!newCardTitle.value.trim()) return
+  if (!newCardTitle.value.trim() || newEstimate.value.error || creatingCard.value) return
 
+  creatingCard.value = true
   try {
     await boardStore.createCard(props.boardId, {
       columnId: props.column.id,
       title: newCardTitle.value,
+      ...(newEstimate.value.value === null ? {} : { estimatedEffortMinutes: newEstimate.value.value }),
     })
 
     newCardTitle.value = ''
+    newEstimateHours.value = ''
+    newEstimateMinutes.value = ''
     showCardForm.value = false
   } catch (error) {
     const { message } = getErrorDisplay(error, 'Failed to create card')
     toast.error(message)
     logError('Failed to create card:', error)
+  } finally {
+    creatingCard.value = false
   }
 }
 
@@ -185,12 +198,14 @@ function handleCardDragOver(event: DragEvent) {
     event.dataTransfer.dropEffect = 'move'
   }
 }
+const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
 </script>
 
 <template>
   <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- drag-and-drop column drop zone; group role + drag events are intentional for kanban DnD -->
   <div
     :data-column-id="column.id"
+    :data-proposal-change="proposalMarker ? true : undefined"
     role="group"
     :aria-label="`${column.name} column`"
     :class="[
@@ -202,6 +217,7 @@ function handleCardDragOver(event: DragEvent) {
     @drop="handleDrop"
   >
     <!-- Column Header -->
+    <span v-if="proposalMarker" class="td-proposal-marker">{{ proposalMarker }}</span>
     <div class="td-column-lane__header">
       <div class="td-column-lane__header-row">
         <h3 class="td-column-lane__title"><span class="td-column-lane__title-dot"></span>{{ column.name }}</h3>
@@ -260,30 +276,38 @@ function handleCardDragOver(event: DragEvent) {
         class="td-column-lane__card-form"
       >
         <form @submit.prevent="createCard">
-          <textarea
-            data-action="add-card-input"
-            v-model="newCardTitle"
-            aria-label="New card title"
-            placeholder="Enter card title..."
-            class="td-column-lane__card-input"
-            rows="3"
-          ></textarea>
-          <div class="td-column-lane__card-form-actions">
-            <button
-              type="submit"
-              class="td-column-lane__form-btn td-column-lane__form-btn--primary"
-            >
-              Add
-            </button>
-            <button
-              type="button"
-              data-action="cancel-add-card"
-              @click="showCardForm = false"
-              class="td-column-lane__form-btn td-column-lane__form-btn--secondary"
-            >
-              Cancel
-            </button>
-          </div>
+          <fieldset :disabled="creatingCard">
+            <textarea
+              data-action="add-card-input"
+              v-model="newCardTitle"
+              aria-label="New card title"
+              placeholder="Enter card title..."
+              class="td-column-lane__card-input"
+              rows="3"
+            ></textarea>
+            <details class="my-2">
+              <summary class="cursor-pointer text-xs text-on-surface-variant">Add estimate (optional)</summary>
+              <CardEstimateField v-model:hours="newEstimateHours" v-model:minutes="newEstimateMinutes" class="mt-2"
+                :read-only="boardStore.currentBoard?.canWrite === false || boardStore.currentBoard?.isArchived === true" />
+            </details>
+            <div class="td-column-lane__card-form-actions">
+              <button
+                type="submit"
+                :disabled="!!newEstimate.error || !newCardTitle.trim() || creatingCard"
+                class="td-column-lane__form-btn td-column-lane__form-btn--primary"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                data-action="cancel-add-card"
+                @click="showCardForm = false"
+                class="td-column-lane__form-btn td-column-lane__form-btn--secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </fieldset>
         </form>
       </div>
     </div>

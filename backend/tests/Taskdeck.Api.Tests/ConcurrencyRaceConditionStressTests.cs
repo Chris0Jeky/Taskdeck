@@ -346,12 +346,11 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     }
 
     /// <summary>
-    /// Scenario 6: Concurrent card edits WITHOUT stale-write detection.
-    /// When ExpectedUpdatedAt is not supplied, both updates should succeed
-    /// (last-writer-wins). The card title should reflect one of the updates.
+    /// Scenario 6: Concurrent card edits without a client version still honor the database
+    /// token. Serialized edits succeed; overlapping stale edits return Conflict for refresh.
     /// </summary>
     [Fact]
-    public async Task CardUpdate_ConcurrentEditsWithoutStaleCheck_LastWriterWins()
+    public async Task CardUpdate_ConcurrentEditsWithoutClientVersion_SucceedOrReturnConflict()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "race-card-lww");
@@ -372,6 +371,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // Two concurrent updates without ExpectedUpdatedAt
         using var barrier = new SemaphoreSlim(0, 2);
         var statusCodes = new ConcurrentBag<HttpStatusCode>();
+        var successfulTitles = new ConcurrentBag<string>();
         var titles = new[] { "Update-Alpha", "Update-Beta" };
 
         var tasks = titles.Select(async title =>
@@ -383,21 +383,22 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 $"/api/boards/{board.Id}/cards/{card!.Id}",
                 new UpdateCardDto(title, null, null, null, null, null));
             statusCodes.Add(resp.StatusCode);
+            if (resp.IsSuccessStatusCode) successfulTitles.Add(title);
         }).ToArray();
 
         barrier.Release(2);
         await Task.WhenAll(tasks);
 
-        // Both should succeed (no concurrency guard without ExpectedUpdatedAt)
+        // A serialized second read can succeed; a stale overlapping read must be a 409, not a 500.
         statusCodes.Should().AllSatisfy(s =>
-            s.Should().Be(HttpStatusCode.OK),
-            "updates without ExpectedUpdatedAt should succeed (last-writer-wins)");
+            s.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict));
+        successfulTitles.Should().NotBeEmpty();
 
         // Card should have one of the two titles
         var finalResp = await client.GetAsync($"/api/boards/{board.Id}/cards");
         var allCards = await finalResp.Content.ReadFromJsonAsync<List<CardDto>>();
         var finalCard = allCards!.Single(c => c.Id == card!.Id);
-        finalCard.Title.Should().BeOneOf("Update-Alpha", "Update-Beta");
+        successfulTitles.Should().Contain(finalCard.Title);
     }
 
     /// <summary>

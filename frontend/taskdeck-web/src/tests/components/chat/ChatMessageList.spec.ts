@@ -71,6 +71,13 @@ function mountList(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ChatMessageList board recovery', () => {
+  it('renders the saved source receipt separately from original user intent', () => {
+    const wrapper = mountList({ messages: [{ ...messages[0], contextSources: [{ kind: 'private-memory', id: 'm1', title: 'Uncertainty', revision: 3, truncated: true }] }] })
+    expect(wrapper.get('.td-message-content').text()).toBe(messages[0]!.content)
+    expect(wrapper.get('details').text()).toContain('Private memory')
+    expect(wrapper.get('details').text()).toContain('version 3')
+    expect(wrapper.get('details').text()).toContain('excerpt')
+  })
   it('requires an explicit choice when multiple writable boards are available', async () => {
     const wrapper = mountList()
 
@@ -142,6 +149,15 @@ describe('ChatMessageList board recovery', () => {
     await wrapper.setProps({ boardBindingReceipt: 'Release Board' })
     expect(wrapper.emitted('continue-instruction')).toBeUndefined()
 
+    await wrapper.get('button.td-btn--primary').trigger('click')
+    expect(wrapper.emitted('continue-instruction')).toEqual([['assistant-1']])
+  })
+  it('disables retained continuation while shared thinking or receipt refresh blocks sending', async () => {
+    const wrapper = mountList({ selectedSessionBoardId: 'board-1', sendBlocked: true })
+    expect(wrapper.get('button.td-btn--primary').attributes('disabled')).toBeDefined()
+    await wrapper.get('button.td-btn--primary').trigger('click')
+    expect(wrapper.emitted('continue-instruction')).toBeUndefined()
+    await wrapper.setProps({ sendBlocked: false })
     await wrapper.get('button.td-btn--primary').trigger('click')
     expect(wrapper.emitted('continue-instruction')).toEqual([['assistant-1']])
   })

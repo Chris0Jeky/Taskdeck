@@ -3,6 +3,9 @@ import type { ThinkingDeck, ThinkingLayer } from '../types/thinking'
 import type { Memory, MemoryStatus } from '../types/workspaceInsights'
 
 export const thinkingApi = {
+  async promote(boardId: string, cardId: string, layerId: string, itemId: string, expectedRevision: number, columnId: string, title: string): Promise<ThinkingDeck> {
+    return (await http.post<ThinkingDeck>(`/boards/${boardId}/cards/${cardId}/thinking/steps/${layerId}/${itemId}/card`, { expectedRevision, columnId, title })).data
+  },
   async getAnswer(boardId: string, cardId: string, layerId: string): Promise<Memory | null> {
     const { data } = await http.get<Memory | null>(`/boards/${boardId}/cards/${cardId}/thinking/questions/${layerId}/answer`)
     return data || null

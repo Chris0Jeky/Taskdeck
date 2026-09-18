@@ -8,6 +8,7 @@ const props = defineProps<{
   count: number
   busy?: boolean
   receipts: BatchExecuteReceiptRow[]
+  announcement?: string
 }>()
 
 const emit = defineEmits<{
@@ -118,6 +119,13 @@ watch(
     :close-on-backdrop="false"
     @close="emit('close')"
   >
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="batch-execute-announcement"
+    >{{ announcement ?? '' }}</p>
     <p
       ref="dialogAnchor"
       class="tk-meta batch-execute-receipt-summary"

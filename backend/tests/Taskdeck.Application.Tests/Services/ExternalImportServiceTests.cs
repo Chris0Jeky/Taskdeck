@@ -277,6 +277,50 @@ public class ExternalImportServiceTests
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    public async Task ImportToBoardAsync_ArchivedCardsDoNotConsumeWip_AndPreviewMatchesApply(bool dryRun, int activeCards)
+    {
+        var board = BuildBoardWithColumn("Imported", wipLimit: 1);
+        var column = board.Columns.Single();
+        var archived = new Card(board.Id, column.Id, "Archived history");
+        archived.Archive();
+        AttachCard(board, archived, column.Id);
+        if (activeCards > 0)
+            AttachCard(board, new Card(board.Id, column.Id, "Active work"), column.Id);
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(board.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+        var parsed = new ExternalImportParseResult(
+            ExternalImportProviders.Csv, ExternalImportProfiles.OutreachContactsV1, 1, 1,
+            [new ExternalImportCandidate(2, "email:new@example.com", "New Incoming", "incoming")], []);
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parsed)]);
+        var request = new ExternalImportRequestDto(
+            ExternalImportProviders.Csv, "unused", TargetColumnName: "Imported", DryRun: dryRun);
+
+        var result = await service.ImportToBoardAsync(board.Id, request);
+
+        if (activeCards == 0)
+        {
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RowsCreated.Should().Be(1);
+            result.Value.Applied.Should().Be(!dryRun);
+        }
+        else
+        {
+            result.IsSuccess.Should().BeFalse();
+            result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        }
+        var writes = activeCards == 0 && !dryRun ? Times.Once() : Times.Never();
+        _unitOfWorkMock.Verify(unit => unit.BeginTransactionAsync(It.IsAny<CancellationToken>()), writes);
+        _cardRepositoryMock.Verify(repository => repository.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()), writes);
+        archived.IsArchived.Should().BeTrue();
+        archived.Title.Should().Be("Archived history");
+    }
+
     [Fact]
     public async Task ImportToBoardAsync_ShouldReturnWipLimitExceeded_WhenCreateWouldOverflowTargetColumn()
     {

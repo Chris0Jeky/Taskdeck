@@ -13,7 +13,8 @@ public sealed class ThinkingDeckService(ICardRepository cards, IThinkingDeckRepo
         var access = await CheckAsync(actorId, boardId, cardId, false, ct);
         if (!access.IsSuccess) return Result.Failure<ThinkingDeckDto>(access.ErrorCode, access.ErrorMessage);
         var writable = await authorization.CanWriteBoardAsync(actorId, boardId);
-        return Result.Success(Map(await decks.GetAsync(cardId, ct) ?? new ThinkingDeck(cardId), !access.Value.IsArchived && writable.IsSuccess && writable.Value));
+        var card = await cards.GetByIdAsync(cardId, ct);
+        return Result.Success(Map(await decks.GetAsync(cardId, ct) ?? new ThinkingDeck(cardId), card is { IsArchived: false } && !access.Value.IsArchived && writable.IsSuccess && writable.Value));
     }
 
     public async Task<Result<ThinkingDeckDto>> SaveAsync(Guid actorId, Guid boardId, Guid cardId, SaveThinkingDeckDto dto, CancellationToken ct)
@@ -23,7 +24,13 @@ public sealed class ThinkingDeckService(ICardRepository cards, IThinkingDeckRepo
         var deck = await decks.GetAsync(cardId, ct) ?? new ThinkingDeck(cardId);
         if (dto.ExpectedRevision != deck.Revision)
             return Conflict();
-        try { deck.Replace(dto.Layers); }
+        // Only promotion may introduce a card link. Removing a thought never removes its card.
+        var saved = deck.ReadLayers();
+        if (dto.Layers is not null && dto.Layers.Where(layer => layer?.Items is not null).Any(layer =>
+            layer.Items.Any(item => item?.LinkedCardId is not null &&
+                saved.FirstOrDefault(old => old.Id == layer.Id)?.Items.FirstOrDefault(old => old.Id == item.Id)?.LinkedCardId != item.LinkedCardId)))
+            return Result.Failure<ThinkingDeckDto>(ErrorCodes.ValidationError, "Create linked cards through the saved step action.");
+        try { deck.Replace(dto.Layers!); }
         catch (DomainException ex) { return Result.Failure<ThinkingDeckDto>(ex.ErrorCode, ex.Message); }
         // Join the board's concurrency-token guard to the same save as the deck.
         // An archive committed after CheckAsync must reject both initial inserts and updates.
@@ -39,6 +46,8 @@ public sealed class ThinkingDeckService(ICardRepository cards, IThinkingDeckRepo
         if (!permission.Value) return Result.Failure<Board>(ErrorCodes.Forbidden, "You do not have access to this board.");
         var card = await cards.GetByIdAsync(cardId, ct);
         if (card?.BoardId != boardId) return Result.Failure<Board>(ErrorCodes.NotFound, "Card not found on this board.");
+        if (write && card.IsArchived)
+            return Result.Failure<Board>(ErrorCodes.InvalidOperation, "Restore the archived card before editing its thinking.");
         var board = await boards.GetByIdAsync(boardId, ct);
         if (board is null) return Result.Failure<Board>(ErrorCodes.NotFound, "Board not found.");
         if (write && board.IsArchived)

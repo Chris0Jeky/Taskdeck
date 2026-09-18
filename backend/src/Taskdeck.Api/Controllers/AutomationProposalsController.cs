@@ -414,7 +414,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 "Idempotency-Key header is required"));
         }
 
-        var executionResult = await _executorService.ExecuteProposalAsync(id, idempotencyHeader.ToString(), cancellationToken);
+        var executionResult = await _executorService.ExecuteProposalWithReceiptAsync(id, idempotencyHeader.ToString(), callerUserId, cancellationToken);
         if (!executionResult.IsSuccess)
             return executionResult.ToErrorActionResult();
 
@@ -685,6 +685,17 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _proposalService.GetProposalDiffAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(new { diff = result.Value }) : result.ToErrorActionResult();
+    }
+
+    [HttpGet("{id}/preview")]
+    public async Task<IActionResult> GetProposalPreview(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null) return auth.ErrorResult;
+        var result = await _proposalService.GetProposalPreviewAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ import { labelsApi } from '../../api/labelsApi'
 import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
+import { applyBoardCardCounts } from '../../utils/boardCardCounts'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import { initialCardFilters, type BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
@@ -21,6 +22,14 @@ export type BoardFetchIntent = 'explicit' | 'background'
 
 export interface BoardFetchOptions {
   intent?: BoardFetchIntent
+  /** Report a failed refresh of an already committed mutation only while this read owns the context. */
+  backgroundFailureMessage?: string
+  /**
+   * Retain the current board's loaded comment cache while replacing
+   * board/card/label detail. Honoured only for same-board background
+   * reconciliation while an editor remains mounted.
+   */
+  preserveCardComments?: boolean
 }
 
 export interface BoardListFetchOptions {
@@ -58,12 +67,16 @@ interface ActiveBoardFetch {
   boardId: string
   intent: BoardFetchIntent
   generation: number
+  backgroundFailureMessage?: string
+  preserveCardComments: boolean
   controller: AbortController
   promise: Promise<boolean>
 }
 
 interface QueuedBackgroundBoardFetch {
   boardId: string
+  backgroundFailureMessage?: string
+  preserveCardComments: boolean
   promise: Promise<boolean>
   resolve: (committed: boolean) => void
 }
@@ -287,8 +300,14 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     queued?.resolve(committed)
   }
 
-  function queueBackgroundBoardFetch(id: string): Promise<boolean> {
+  function queueBackgroundBoardFetch(
+    id: string,
+    backgroundFailureMessage?: string,
+    preserveCardComments = false,
+  ): Promise<boolean> {
     if (queuedBackgroundBoardFetch?.boardId === id) {
+      if (backgroundFailureMessage) queuedBackgroundBoardFetch.backgroundFailureMessage = backgroundFailureMessage
+      if (preserveCardComments) queuedBackgroundBoardFetch.preserveCardComments = true
       return queuedBackgroundBoardFetch.promise
     }
 
@@ -297,7 +316,13 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const promise = new Promise<boolean>((innerResolve) => {
       resolve = innerResolve
     })
-    queuedBackgroundBoardFetch = { boardId: id, promise, resolve }
+    queuedBackgroundBoardFetch = {
+      boardId: id,
+      promise,
+      resolve,
+      backgroundFailureMessage,
+      preserveCardComments,
+    }
     return promise
   }
 
@@ -312,7 +337,12 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     }
 
     queuedBackgroundBoardFetch = null
-    void startBoardFetch(queued.boardId, 'background').then(queued.resolve, () => {
+    void startBoardFetch(
+      queued.boardId,
+      'background',
+      queued.backgroundFailureMessage,
+      queued.preserveCardComments,
+    ).then(queued.resolve, () => {
       queued.resolve(false)
     })
   }
@@ -340,16 +370,27 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
   function fetchBoard(id: string, options: BoardFetchOptions = {}): Promise<boolean> {
     const intent = options.intent ?? 'explicit'
+    const preserveCardComments = intent === 'background' && options.preserveCardComments === true
 
     if (intent === 'background' && activeBoardFetch) {
       if (activeBoardFetch.boardId !== id) {
         return Promise.resolve(false)
       }
 
+      // The kept-open editor owns live comment state. If its reconciliation
+      // arrives behind an explicit same-board load, upgrade that active read
+      // before it can clear the cache, then retain the flag on the successor.
+      if (preserveCardComments) activeBoardFetch.preserveCardComments = true
+
       if (activeBoardFetch.intent === 'explicit') {
-        return queueBackgroundBoardFetch(id)
+        return queueBackgroundBoardFetch(
+          id,
+          options.backgroundFailureMessage,
+          preserveCardComments,
+        )
       }
 
+      if (options.backgroundFailureMessage) activeBoardFetch.backgroundFailureMessage = options.backgroundFailureMessage
       return activeBoardFetch.promise
     }
 
@@ -359,11 +400,25 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       settleQueuedBackgroundBoardFetch()
     }
 
-    return startBoardFetch(id, intent)
+    return startBoardFetch(
+      id,
+      intent,
+      options.backgroundFailureMessage,
+      preserveCardComments,
+    )
   }
 
-  function startBoardFetch(id: string, intent: BoardFetchIntent): Promise<boolean> {
+  function startBoardFetch(
+    id: string,
+    intent: BoardFetchIntent,
+    backgroundFailureMessage?: string,
+    preserveCardComments = false,
+  ): Promise<boolean> {
     const requestGeneration = ++boardFetchGeneration
+    // Record the request boundary before any response can commit. Permission
+    // recovery uses it to reject a server response that was already in flight
+    // when the write was refused.
+    state.currentBoardRequestGeneration.value = requestGeneration
     activeBoardFetch?.controller.abort()
     const controller = new AbortController()
     const mutationEpoch = helpers.getBoardDetailMutationEpoch(id)
@@ -371,6 +426,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       boardId: id,
       intent,
       generation: requestGeneration,
+      backgroundFailureMessage,
+      preserveCardComments,
       controller,
       promise: Promise.resolve(false),
     } satisfies ActiveBoardFetch
@@ -396,8 +453,15 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         return
       }
 
-      void queueBackgroundBoardFetch(id)
+      void queueBackgroundBoardFetch(
+        id,
+        request.backgroundFailureMessage,
+        request.preserveCardComments,
+      )
     }
+
+    const shouldPreserveCurrentComments = () =>
+      request.preserveCardComments && state.currentBoard.value?.id === id
 
     const performFetch = async (): Promise<boolean> => {
       if (helpers.isDemoMode) {
@@ -410,10 +474,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           return false
         }
 
+        const preserveCurrentComments = shouldPreserveCurrentComments()
         state.currentBoard.value = demo.board
         state.currentBoardCards.value = demo.cards
         state.currentBoardLabels.value = []
-        state.cardCommentsByCardId.value = {}
+        if (!preserveCurrentComments) state.cardCommentsByCardId.value = {}
         if (intent === 'explicit') {
           state.loading.value = false
         }
@@ -441,18 +506,17 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           return false
         }
 
-        const cardCounts = cards.reduce((counts, card) => {
-          counts.set(card.columnId, (counts.get(card.columnId) ?? 0) + 1)
-          return counts
-        }, new Map<string, number>())
-        board.columns.forEach((column) => {
-          column.cardCount = cardCounts.get(column.id) ?? 0
-        })
+        applyBoardCardCounts(board, cards)
 
+        const preserveCurrentComments = shouldPreserveCurrentComments()
         state.currentBoard.value = board
+        // Keep the source marker adjacent to the assignment it proves. Local
+        // board patches (for example a settings save) deliberately do not move
+        // it: they are useful UI state, but cannot re-authorize a refused write.
+        state.currentBoardPayloadGeneration.value = requestGeneration
         state.currentBoardCards.value = cards
         state.currentBoardLabels.value = labels
-        state.cardCommentsByCardId.value = {}
+        if (!preserveCurrentComments) state.cardCommentsByCardId.value = {}
         return true
       } catch (e: unknown) {
         // Ensure held-open siblings are cancelled before exposing a current
@@ -477,6 +541,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
               new Error(BOARD_ACCESS_REVOKED_MESSAGE),
               BOARD_ACCESS_REVOKED_MESSAGE,
             )
+          } else if (request.backgroundFailureMessage) {
+            helpers.toast.warning(request.backgroundFailureMessage)
           }
           return false
         }

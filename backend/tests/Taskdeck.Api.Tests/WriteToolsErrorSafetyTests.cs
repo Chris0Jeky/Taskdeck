@@ -22,6 +22,34 @@ namespace Taskdeck.Api.Tests;
 /// </summary>
 public class WriteToolsErrorSafetyTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ParentChangeOnlyProposesThePinnedOperation(bool clear)
+    {
+        var boardId = Guid.NewGuid(); var parentId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "MCP child");
+        if (clear) card.SetParent(parentId);
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        var unit = new Mock<IUnitOfWork>(); unit.SetupGet(u => u.Cards).Returns(cards.Object);
+        CreateProposalDto? captured = null;
+        var proposals = new Mock<IAutomationProposalService>();
+        proposals.Setup(p => p.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => captured = dto)
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Synthetic proposal capture"));
+        await CreateTools(proposalService: proposals.Object, unitOfWork: unit.Object, authorization: AllowingAuthorization(boardId).Object)
+            .UpdateCard(boardId.ToString(), card.Id.ToString(), expected_updated_at: card.UpdatedAt.ToString("O"),
+                parent_card_id: clear ? null : parentId.ToString(), clear_parent: clear);
+        captured.Should().NotBeNull();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("expectedUpdatedAt").GetDateTimeOffset().Should().Be(card.UpdatedAt);
+        if (clear) parameters.RootElement.GetProperty("clearParent").GetBoolean().Should().BeTrue();
+        else parameters.RootElement.GetProperty("parentCardId").GetGuid().Should().Be(parentId);
+        card.ParentCardId.Should().Be(clear ? parentId : null);
+        unit.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private const string HostileError =
         "Bearer sk-live-ABC123 C:\\Users\\alice\\AppData\\taskdeck.db " +
         "SQLite Error 19: UNIQUE constraint failed: Users.Email " +

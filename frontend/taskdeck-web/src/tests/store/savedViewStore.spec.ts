@@ -4,6 +4,7 @@ import { useSavedViewStore, cardMatchesSavedViewFilter } from '../../store/saved
 import type { SavedViewFilter } from '../../store/savedViewStore'
 import type { Card } from '../../types/board'
 import { addCalendarDays, calendarDateKeyToMidnightUtc, localCalendarDateKey } from '../../utils/dueDates'
+import { installTimeZone } from '../utils/timeZone'
 
 const FIXED_NOW = '2026-09-07T23:30:00.000Z'
 
@@ -403,8 +404,15 @@ describe('savedViewStore', () => {
 })
 
 describe('cardMatchesSavedViewFilter', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', …)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where the local-day case below silently measured
+  // the host zone instead (#2943).
+  let restoreZone: (() => void) | null = null
+
   afterEach(() => {
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
     vi.useRealTimers()
   })
 
@@ -545,8 +553,8 @@ describe('cardMatchesSavedViewFilter', () => {
     })
 
     it('should use the browser local day without projecting the due key', () => {
-      vi.stubEnv('TZ', 'Pacific/Kiritimati')
       vi.useFakeTimers()
+      restoreZone = installTimeZone('Pacific/Kiritimati')
       vi.setSystemTime(new Date('2026-08-23T12:30:00.000Z')) // Aug 24 locally
       const localToday = createMockCard({ dueDate: '2026-08-24T00:00:00.000Z' })
       const utcToday = createMockCard({ dueDate: '2026-08-23T00:00:00.000Z' })

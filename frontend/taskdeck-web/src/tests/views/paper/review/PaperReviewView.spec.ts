@@ -4163,13 +4163,16 @@ describe('PaperReviewView', () => {
       expect(right.element.parentElement).toBe(root.element)
       // The hoisted disclosure regions are the first children so they survive
       // every flip of the branch pair below them (#2214 round 2); the three
-      // columns keep their order and their parent. Both are `.sr-only` and
-      // therefore absolutely positioned, so neither takes a grid column.
+      // columns keep their order and their parent. All are `.sr-only` and
+      // therefore absolutely positioned, so none takes a grid column.
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
       const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
+      const unavailable = wrapper.get('[data-testid="paper-review-unavailable-announcement"]')
+      expect(unavailable.classes()).toContain('sr-only')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
         refused.element,
+        unavailable.element,
         queue.element,
         main.element,
         right.element,
@@ -4203,9 +4206,12 @@ describe('PaperReviewView', () => {
       expect(stale.element.parentElement).toBe(empty.element)
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
       const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
+      const unavailable = wrapper.get('[data-testid="paper-review-unavailable-announcement"]')
+      expect(unavailable.classes()).toContain('sr-only')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
         refused.element,
+        unavailable.element,
         queue.element,
         empty.element,
         right.element,

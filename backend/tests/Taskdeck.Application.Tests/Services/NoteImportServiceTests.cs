@@ -202,6 +202,55 @@ public class NoteImportServiceTests
     }
 
     [Fact]
+    public async Task ImportMarkdownAsync_ShouldNotSplitSurrogatePair_WhenExcerptBoundaryFallsInsidePair()
+    {
+        SetupCaptureServiceReturnsSuccess();
+
+        var request = new MarkdownImportRequestDto(
+            "notes.md",
+            new string('x', 199) + "😀tail");
+
+        var result = await _sut.ImportMarkdownAsync(Guid.NewGuid(), request);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Items.Should().ContainSingle().Which.TextExcerpt.Should().Be(new string('x', 199));
+    }
+
+    [Fact]
+    public async Task ImportMarkdownAsync_ShouldNotSplitSurrogatePair_WhenCaptureTextLimitFallsInsidePair()
+    {
+        CreateCaptureItemDto? captured = null;
+        _captureServiceMock
+            .Setup(s => s.CreateAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CreateCaptureItemDto>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CreateCaptureItemDto, CancellationToken>((_, dto, _) => captured = dto)
+            .ReturnsAsync(() => Result.Success(new CaptureItemDto(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                null,
+                CaptureStatus.New,
+                CaptureSource.MarkdownImport,
+                "raw text",
+                "excerpt",
+                DateTimeOffset.UtcNow,
+                null,
+                0)));
+
+        var request = new MarkdownImportRequestDto(
+            "notes.md",
+            new string('x', CaptureRequestContract.MaxRawTextLength - 1) + "😀tail");
+
+        var result = await _sut.ImportMarkdownAsync(Guid.NewGuid(), request);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        captured.Should().NotBeNull();
+        captured!.Text.Should().Be(new string('x', CaptureRequestContract.MaxRawTextLength - 1));
+        captured.Text.Should().NotContain("😀");
+    }
+
+    [Fact]
     public async Task ImportMarkdownAsync_ShouldPassBoardId_WhenProvided()
     {
         SetupCaptureServiceReturnsSuccess();

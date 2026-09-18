@@ -744,6 +744,7 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
  * decision recorded here.
  */
 export const EXCLUDED_WORKSPACE_ROUTES: ExcludedRoute[] = [
+  { routeName: 'workspace-plan', reason: 'Covered by tests/e2e/workspace-plan.spec.ts: persisted choices, all representations, focus/resume, Make room and unchanged card deadlines.' },
   { routeName: 'workspace-experiences', reason: 'Covered by tests/e2e/workspace-overhaul.spec.ts: manual comparison and shared layout switching.' },
   { routeName: 'workspace-insights', reason: 'Covered by tests/e2e/workspace-overhaul.spec.ts: analyze, answer and verify board remains unchanged.' },
   { routeName: 'workspace-memory', reason: 'Covered by tests/e2e/workspace-overhaul.spec.ts: private answer, correction history, archive and restore.' },

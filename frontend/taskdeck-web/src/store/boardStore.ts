@@ -25,7 +25,7 @@ export const useBoardStore = defineStore('board', () => {
   // Domain action groups
   const boardCrud = createBoardCrudActions(state, helpers)
   const columns = createColumnActions(state, helpers)
-  const cards = createCardActions(state, helpers)
+  const cards = createCardActions(state, helpers, boardCrud.fetchBoard)
   const comments = createCardCommentActions(state, helpers)
   const labels = createLabelActions(state, helpers)
   const filtering = createCardFilterActions(state)
@@ -41,6 +41,8 @@ export const useBoardStore = defineStore('board', () => {
     boards: state.boards,
     activeBoardId: state.activeBoardId,
     currentBoard: state.currentBoard,
+    currentBoardRequestGeneration: state.currentBoardRequestGeneration,
+    currentBoardPayloadGeneration: state.currentBoardPayloadGeneration,
     currentBoardCards: state.currentBoardCards,
     currentBoardLabels: state.currentBoardLabels,
     cardCommentsByCardId: state.cardCommentsByCardId,
@@ -72,6 +74,7 @@ export const useBoardStore = defineStore('board', () => {
 
     // Actions — cards
     createCard: cards.createCard,
+    setCardArchived: cards.setCardArchived,
     updateCard: cards.updateCard,
     deleteCard: cards.deleteCard,
     fetchCards: cards.fetchCards,

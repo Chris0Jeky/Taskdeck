@@ -78,7 +78,7 @@ public class Column : Entity
         if (!WipLimit.HasValue)
             return false;
 
-        var activeCardCount = _cards.Count;
+        var activeCardCount = _cards.Count(c => !c.IsArchived);
         return activeCardCount > WipLimit.Value;
     }
 
@@ -87,7 +87,7 @@ public class Column : Entity
         if (!WipLimit.HasValue)
             return false;
 
-        var activeCardCount = _cards.Count;
+        var activeCardCount = _cards.Count(c => !c.IsArchived);
         return activeCardCount >= WipLimit.Value;
     }
 

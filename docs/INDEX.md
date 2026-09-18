@@ -7,6 +7,10 @@ Stable reference material belongs in topical subfolders.
 
 ## Root Living Docs
 
+- [September 11 product-trust reconciliation](analysis/2026-09-11-product-trust-reconciliation.md)
+  - Dated delivery and residual map, accepted work-model clarifications, migration/receipt/aggregate
+    risks, next-stage sequencing and document integration packets. Live GitHub supersedes its snapshot.
+
 - `STATUS.md`
   - Current shipped reality, verified state, current focus, and active constraints.
 - `IMPLEMENTATION_MASTERPLAN.md`

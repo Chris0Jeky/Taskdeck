@@ -75,6 +75,10 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: node -e "require('fs').rmSync('taskdeck.e2e.ci.db',{force:true});"
 
+      # The required lane keeps the complete desktop Chromium smoke project and
+      # adds one Pixel 7 geometry journey in the same Playwright process. The
+      # shared webServer stack therefore starts once; the full mobile matrix
+      # remains nightly/manual in the canonical configuration.
       - name: Run Playwright smoke tests
         timeout-minutes: 12
         working-directory: frontend/taskdeck-web
@@ -82,7 +86,7 @@ jobs:
           CI: "true"
           TASKDECK_E2E_DB: taskdeck.e2e.ci.db
           TASKDECK_RUN_DEMO: "0"
-        run: npx playwright test --project=chromium --reporter=line
+        run: npx playwright test --config=playwright.required.config.ts --reporter=line
 
       - name: Upload Playwright report
         if: failure()

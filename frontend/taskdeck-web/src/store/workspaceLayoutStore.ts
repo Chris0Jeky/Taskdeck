@@ -4,6 +4,15 @@ export const workspaceExperiences = ['classic', 'studio', 'companion', 'unified'
 export const workspacePresentations = ['zen', 'studio', 'control'] as const
 export type WorkspaceExperience = typeof workspaceExperiences[number]
 export type WorkspacePresentation = typeof workspacePresentations[number]
+
+export function isWorkspaceExperience(value: unknown): value is WorkspaceExperience {
+  return typeof value === 'string' && workspaceExperiences.includes(value as WorkspaceExperience)
+}
+
+export function isWorkspacePresentation(value: unknown): value is WorkspacePresentation {
+  return typeof value === 'string' && workspacePresentations.includes(value as WorkspacePresentation)
+}
+
 const STORAGE_KEY = 'td.workspace.layout.v1'
 
 function readPreferences(): { experience: WorkspaceExperience; presentation: WorkspacePresentation } {
@@ -13,10 +22,8 @@ function readPreferences(): { experience: WorkspaceExperience; presentation: Wor
     if (!value || typeof value !== 'object') return fallback
     const saved = value as Record<string, unknown>
     return {
-      experience: workspaceExperiences.includes(saved.experience as WorkspaceExperience)
-        ? saved.experience as WorkspaceExperience : fallback.experience,
-      presentation: workspacePresentations.includes(saved.presentation as WorkspacePresentation)
-        ? saved.presentation as WorkspacePresentation : fallback.presentation,
+      experience: isWorkspaceExperience(saved.experience) ? saved.experience : fallback.experience,
+      presentation: isWorkspacePresentation(saved.presentation) ? saved.presentation : fallback.presentation,
     }
   } catch {
     return fallback
@@ -28,12 +35,12 @@ export const useWorkspaceLayoutStore = defineStore('workspaceLayout', {
   state: readPreferences,
   actions: {
     setExperience(experience: WorkspaceExperience) {
-      if (!workspaceExperiences.includes(experience)) return
+      if (!isWorkspaceExperience(experience)) return
       this.experience = experience
       this.persist()
     },
     setPresentation(presentation: WorkspacePresentation) {
-      if (!workspacePresentations.includes(presentation)) return
+      if (!isWorkspacePresentation(presentation)) return
       this.presentation = presentation
       this.persist()
     },

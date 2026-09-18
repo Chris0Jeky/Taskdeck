@@ -231,6 +231,7 @@ function mountShell(attachTo?: HTMLElement, extraStubs: Record<string, unknown> 
     attachTo,
     global: {
       stubs: {
+        WorkspaceAttentionReminder: true,
         RouterView: true,
         Teleport: true,
         ...extraStubs,

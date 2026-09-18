@@ -3,6 +3,48 @@
 import { access, readFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+export const CI_POLICY_PATH = 'ci/policy.v1.json'
+export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
+const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F]/u
+
+function hasUnpairedUtf16Surrogate(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index)
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1)
+      if (index + 1 >= value.length || nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
+        return true
+      }
+      index += 1
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return true
+    }
+  }
+  return false
+}
+
+// These patterns reproduce the default YAML 1.1 implicit resolver spellings exactly. Keep the
+// explicit case variants and resolver-permitted underscores: broad /i matching or conventional
+// number syntax diverges for values such as 0XFF, +.nAn, 1e3, and 0xF__F.
+const YAML_NULL_SCALAR = /^(?:~|null|Null|NULL)$/
+const YAML_BOOLEAN_SCALAR = /^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/
+const YAML_INTEGER_SCALAR = new RegExp([
+  String.raw`^(?:[-+]?0b[0-1_]+`, // binary
+  String.raw`|[-+]?0[0-7_]+`, // legacy octal
+  String.raw`|[-+]?(?:0|[1-9][0-9_]*)`, // decimal
+  String.raw`|[-+]?0x[0-9a-fA-F_]+`, // hexadecimal
+  String.raw`|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$`, // sexagesimal
+].join(''))
+const YAML_FLOAT_SCALAR = new RegExp([
+  String.raw`^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?`, // decimal, optional exponent
+  String.raw`|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?`, // leading-dot decimal, no sign
+  String.raw`|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*)$`, // sexagesimal
+].join(''))
+const YAML_NON_FINITE_FLOAT_SCALAR = /^(?:[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/
+const YAML_DATE_SCALAR = /^\d{4}-\d{2}-\d{2}$/
+const YAML_TIMESTAMP_SCALAR = /^\d{4}-\d{1,2}-\d{1,2}(?:[Tt]|[ \t]+)\d{1,2}:\d{2}:\d{2}(?:\.\d*)?(?:[ \t]*(?:Z|[+-]\d{1,2}(?::\d{2})?))?$/
 
 const requiredDocs = [
   'docs/STATUS.md',
@@ -27,6 +69,366 @@ function expectContains(source, token, label) {
   if (!source.includes(token)) {
     errors.push(`${label} is missing required token: ${token}`)
   }
+}
+
+/**
+ * Read `controlPaths` out of the Smart CI policy document.
+ *
+ * Fails closed: an unreadable policy, a missing `controlPaths` array, or a non-string entry is an
+ * error rather than an empty list, because an empty list would make the mirror check vacuously pass.
+ */
+export function parsePolicyControlPaths(policyText, policyPath = CI_POLICY_PATH) {
+  let policy
+  try {
+    policy = JSON.parse(policyText)
+  } catch (error) {
+    return { controlPaths: [], errors: [`${policyPath} is not parseable JSON: ${error.message}`] }
+  }
+
+  const controlPaths = policy?.controlPaths
+  if (!Array.isArray(controlPaths)) {
+    return { controlPaths: [], errors: [`${policyPath} does not declare a controlPaths array`] }
+  }
+
+  if (controlPaths.length === 0) {
+    return { controlPaths: [], errors: [`${policyPath} declares an empty controlPaths array`] }
+  }
+
+  const invalid = controlPaths.filter((entry) => typeof entry !== 'string' || entry.length === 0)
+  if (invalid.length > 0) {
+    return {
+      controlPaths: [],
+      errors: [`${policyPath} controlPaths must contain only non-empty strings without control characters`],
+    }
+  }
+
+  if (controlPaths.some((entry) => typeof entry === 'string' && /^\s|\s$/u.test(entry))) {
+    return {
+      controlPaths: [],
+      errors: [`${policyPath} controlPaths must not contain leading or trailing whitespace`],
+    }
+  }
+
+  if (controlPaths.some((entry) => FORBIDDEN_SCALAR_CONTROL.test(entry))) {
+    return {
+      controlPaths: [],
+      errors: [`${policyPath} controlPaths must contain only non-empty strings without control characters`],
+    }
+  }
+
+  if (controlPaths.some((entry) => hasUnpairedUtf16Surrogate(entry))) {
+    return {
+      controlPaths: [],
+      errors: [`${policyPath} controlPaths must contain valid Unicode without unpaired UTF-16 surrogates`],
+    }
+  }
+
+  return { controlPaths, errors: [] }
+}
+
+/**
+ * Read the supported single-line scalar subset, not arbitrary YAML.
+ *
+ * Quoted strings support JSON double-quote escapes or YAML doubled single quotes. Plain scalars
+ * keep internal quotes/brackets literally; only leading indicators select YAML structure. Tags,
+ * aliases, anchors, block/flow collections and multiline scalars are deliberately unsupported.
+ */
+function trimAsciiWhitespace(value) {
+  return value.replace(/^[ \t]+|[ \t]+$/g, '')
+}
+
+function parsedScalar(value, quoted) {
+  if (FORBIDDEN_SCALAR_CONTROL.test(value)) {
+    return { value: null, error: 'forbidden control character', quoted }
+  }
+  if (hasUnpairedUtf16Surrogate(value)) {
+    return { value: null, error: 'unpaired UTF-16 surrogate', quoted }
+  }
+  return { value, error: null, quoted }
+}
+
+function isYamlImplicitNonStringScalar(value) {
+  return (
+    YAML_NULL_SCALAR.test(value) ||
+    YAML_BOOLEAN_SCALAR.test(value) ||
+    YAML_INTEGER_SCALAR.test(value) ||
+    YAML_FLOAT_SCALAR.test(value) ||
+    YAML_NON_FINITE_FLOAT_SCALAR.test(value) ||
+    YAML_DATE_SCALAR.test(value) ||
+    YAML_TIMESTAMP_SCALAR.test(value)
+  )
+}
+
+function parseFrontMatterScalar(rawValue) {
+  const text = trimAsciiWhitespace(rawValue)
+  if (text === '') {
+    return { value: null, error: 'empty unquoted scalar', quoted: false }
+  }
+  if (FORBIDDEN_SCALAR_CONTROL.test(text)) {
+    return { value: null, error: 'forbidden control character', quoted: false }
+  }
+
+  if (text.startsWith('"')) {
+    const quoted = text.match(/^("(?:[^"\\]|\\.)*")(?:[ \t]+#.*)?$/)
+    if (!quoted) {
+      return { value: null, error: 'unbalanced quote or trailing content', quoted: true }
+    }
+    try {
+      return parsedScalar(JSON.parse(quoted[1]), true)
+    } catch {
+      return { value: null, error: 'unsupported double-quoted escape or control character', quoted: true }
+    }
+  }
+
+  if (text.startsWith("'")) {
+    const quoted = text.match(/^'((?:[^']|'')*)'(?:[ \t]+#.*)?$/)
+    return quoted
+      ? parsedScalar(quoted[1].replaceAll("''", "'"), true)
+      : { value: null, error: 'unbalanced quote or trailing content', quoted: true }
+  }
+
+  const value = text.replace(/[ \t]+#.*$/, '')
+  if (/^[\[{]/.test(value)) {
+    const closer = value[0] === '[' ? ']' : '}'
+    return {
+      value: null,
+      error: value.endsWith(closer)
+        ? 'unsupported flow sequence or mapping'
+        : 'unterminated flow sequence or mapping',
+      quoted: false,
+    }
+  }
+  if (/^[!&*|>@`%}\],#]/.test(value) || /^[-?:](?:[ \t]|$)/.test(value)) {
+    return { value: null, error: 'unsupported leading scalar indicator', quoted: false }
+  }
+  if (/:(?:[ \t]|$)/.test(value)) {
+    return { value: null, error: 'unsupported nested mapping', quoted: false }
+  }
+
+  return parsedScalar(value, false)
+}
+
+/**
+ * Validate the WHOLE front matter block, not just `paths:`. An invalid or unsupported line anywhere
+ * must fail closed rather than letting the mirror check certify a rule its loader might reject.
+ *
+ * Accepted: top-level keys with a separated single-line scalar, or one flat indented scalar list;
+ * comments and blank lines. Each list chooses its own indentation, but every sibling must match it.
+ * This dependency-free check intentionally does not implement the complete YAML grammar.
+ */
+function validateFrontMatterStructure(lines, rulePath) {
+  const structureErrors = []
+  const seenKeys = new Set()
+  let blockKey = null
+  let blockIndent = null
+  let reportedOrphanEntry = false
+
+  for (const line of lines) {
+    if (trimAsciiWhitespace(line) === '') {
+      continue
+    }
+    if (/^[ \t]*\t/.test(line)) {
+      structureErrors.push(`${rulePath} front matter has tab indentation, which this check cannot parse: ${line.trim()}`)
+      continue
+    }
+    if (/^ *#/.test(line)) {
+      continue
+    }
+
+    if (/^ /.test(line)) {
+      const entry = line.match(/^( +)-(?:[ \t]+(.*))?$/)
+      if (!entry) {
+        structureErrors.push(`${rulePath} front matter has a line this check cannot parse: ${line.trim()}`)
+        continue
+      }
+      if (blockKey === null) {
+        if (!reportedOrphanEntry) {
+          reportedOrphanEntry = true
+          structureErrors.push(
+            `${rulePath} front matter has a list entry with no preceding key, which this check cannot parse: ${line.trim()} (further orphaned entries not listed)`,
+          )
+        }
+        continue
+      }
+      blockIndent ??= entry[1].length
+      if (entry[1].length !== blockIndent) {
+        structureErrors.push(`${rulePath} front matter has nested or inconsistent list indentation, which this check cannot parse: ${line.trim()}`)
+        continue
+      }
+      // Empty quoted metadata strings are valid; only the paths consumer requires nonempty values.
+      const { error } = parseFrontMatterScalar(entry[2] ?? '')
+      if (error !== null) {
+        structureErrors.push(`${rulePath} front matter has a list entry this check cannot parse (${error}): ${line.trim()}`)
+      }
+      continue
+    }
+
+    if (/^-(?:[ \t]|$)/.test(line)) {
+      structureErrors.push(
+        `${rulePath} front matter has a list entry at column 0 that this check cannot parse (entries must be indented): ${line.trim()}`,
+      )
+      continue
+    }
+
+    // A colon without separation starts plain scalar text, not a YAML mapping value.
+    const keyMatch = line.match(/^([A-Za-z0-9_][A-Za-z0-9_.-]*) *:(?:[ \t]+(.*))?$/)
+    if (!keyMatch) {
+      structureErrors.push(`${rulePath} front matter has a line this check cannot parse: ${line.trim()}`)
+      blockKey = null
+      blockIndent = null
+      continue
+    }
+
+    const [, key, rawValue = ''] = keyMatch
+    if (seenKeys.has(key)) {
+      structureErrors.push(
+        `${rulePath} front matter declares the key "${key}" twice; duplicate mapping keys are not supported`,
+      )
+    }
+    seenKeys.add(key)
+    blockIndent = null
+    reportedOrphanEntry = false
+
+    const value = trimAsciiWhitespace(rawValue)
+    if (value === '' || value.startsWith('#')) {
+      blockKey = key
+      continue
+    }
+
+    const { error } = parseFrontMatterScalar(value)
+    if (key === 'paths' && error === 'unsupported flow sequence or mapping') {
+      structureErrors.push(`${rulePath} front matter paths: must be a block sequence of "- glob" entries`)
+    } else if (error !== null) {
+      structureErrors.push(
+        `${rulePath} front matter has an ${error} on key "${key}", which this check cannot parse: ${line.trim()}`,
+      )
+    }
+    blockKey = null
+  }
+
+  return structureErrors
+}
+
+/**
+ * Parse the `paths:` block sequence out of an agent-rule file's YAML front matter.
+ *
+ * Fails closed on every shape it does not fully understand, and validates the complete front matter
+ * block first. Claude Code drops a rule file whose front matter does not parse, silently and with no
+ * error anywhere, so "cannot parse" has to mean "red check", never "no paths found".
+ */
+export function parseRuleFrontMatterPaths(ruleText, rulePath = CI_CONTROL_RULE_PATH) {
+  const frontMatterMatch = ruleText.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/)
+  if (!frontMatterMatch) {
+    return {
+      paths: [],
+      errors: [`${rulePath} has no parseable YAML front matter (an unparseable rule file loads for nothing)`],
+    }
+  }
+
+  const lines = frontMatterMatch[1].split(/\r?\n/)
+
+  const structureErrors = validateFrontMatterStructure(lines, rulePath)
+  if (structureErrors.length > 0) {
+    return { paths: [], errors: structureErrors }
+  }
+
+  const keyIndex = lines.findIndex((line) => /^paths[ \t]*:/.test(line))
+  if (keyIndex === -1) {
+    return { paths: [], errors: [`${rulePath} front matter has no paths: key`] }
+  }
+
+  if (!/^paths[ \t]*:[ \t]*(#.*)?$/.test(lines[keyIndex])) {
+    return {
+      paths: [],
+      errors: [`${rulePath} front matter paths: must be a block sequence of "- glob" entries`],
+    }
+  }
+
+  const paths = []
+  const errors = []
+  for (let index = keyIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (trimAsciiWhitespace(line) === '' || /^[ \t]*#/.test(line)) {
+      continue
+    }
+
+    if (!/^[ \t]/.test(line)) {
+      break
+    }
+
+    const itemMatch = line.match(/^ +-[ \t]+(.*?)[ \t]*$/)
+    if (!itemMatch) {
+      errors.push(`${rulePath} front matter paths: has an entry this check cannot parse: ${line.trim()}`)
+      continue
+    }
+
+    const { value, quoted } = parseFrontMatterScalar(itemMatch[1])
+    if (
+      value === null ||
+      value === '' ||
+      /^\s|\s$/u.test(value) ||
+      FORBIDDEN_SCALAR_CONTROL.test(value) ||
+      hasUnpairedUtf16Surrogate(value) ||
+      (!quoted && isYamlImplicitNonStringScalar(value))
+    ) {
+      errors.push(`${rulePath} front matter paths: has an entry this check cannot parse: ${line.trim()}`)
+      continue
+    }
+
+    paths.push(value)
+  }
+
+  if (errors.length === 0 && paths.length === 0) {
+    errors.push(`${rulePath} front matter paths: declares no indented entries`)
+  }
+
+  return { paths, errors }
+}
+
+/**
+ * `ci/policy.v1.json` controlPaths is the authority; the rule file's `paths:` front matter is a
+ * mirror of it, and must be a superset (extras such as `.github/**` are deliberate, see the rule).
+ */
+export function collectControlPathMirrorErrors(
+  policyText,
+  ruleText,
+  { policyPath = CI_POLICY_PATH, rulePath = CI_CONTROL_RULE_PATH } = {},
+) {
+  const policyResult = parsePolicyControlPaths(policyText, policyPath)
+  const ruleResult = parseRuleFrontMatterPaths(ruleText, rulePath)
+  const mirrorErrors = [...policyResult.errors, ...ruleResult.errors]
+
+  if (mirrorErrors.length > 0) {
+    return mirrorErrors
+  }
+
+  const declared = new Set(ruleResult.paths)
+  const missing = policyResult.controlPaths.filter((controlPath) => !declared.has(controlPath))
+  if (missing.length > 0) {
+    mirrorErrors.push(
+      `${rulePath} front matter paths: is missing ${missing.length} control path(s) declared in ` +
+        `${policyPath} controlPaths: ${missing.join(', ')} ` +
+        `(add them to the rule in the same PR, or the rule stops loading for those paths)`,
+    )
+  }
+
+  return mirrorErrors
+}
+
+async function validateControlPathMirror() {
+  for (const path of [CI_POLICY_PATH, CI_CONTROL_RULE_PATH]) {
+    if (!(await fileExists(path))) {
+      errors.push(`Missing required control-path mirror input: ${path}`)
+      return
+    }
+  }
+
+  const [policyText, ruleText] = await Promise.all([
+    readFile(resolve(CI_POLICY_PATH), 'utf8'),
+    readFile(resolve(CI_CONTROL_RULE_PATH), 'utf8'),
+  ])
+
+  errors.push(...collectControlPathMirrorErrors(policyText, ruleText))
 }
 
 async function main() {
@@ -67,6 +469,8 @@ async function main() {
     }
   }
 
+  await validateControlPathMirror()
+
   if (errors.length > 0) {
     console.error('Docs governance check failed:')
     for (const error of errors) {
@@ -78,7 +482,9 @@ async function main() {
   console.log('Docs governance check passed.')
 }
 
-main().catch((error) => {
-  console.error('Docs governance check crashed:', error)
-  process.exit(1)
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error('Docs governance check crashed:', error)
+    process.exit(1)
+  })
+}

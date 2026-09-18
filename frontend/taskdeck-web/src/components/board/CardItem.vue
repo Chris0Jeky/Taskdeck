@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import CardAssignees from './CardAssignees.vue'
 import { ref } from 'vue'
+import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
 import type { Card, Column } from '../../types/board'
 import { formatCalendarDate, isCalendarDateOverdue } from '../../utils/dueDates'
 
@@ -17,6 +19,7 @@ const emit = defineEmits<{
 }>()
 
 const isDragging = ref(false)
+const proposalMarker = useBoardProposalMarker('card', () => props.card.id)
 const showMoveMenu = ref(false)
 
 function toggleMoveMenu(event: Event) {
@@ -120,6 +123,7 @@ function isOverdue(dateString: string | null): boolean {
   <div
     draggable="false"
     :data-card-id="card.id"
+    :data-proposal-change="proposalMarker ? true : undefined"
     role="option"
     :class="[
       'td-board-card group relative cursor-pointer',
@@ -135,6 +139,7 @@ function isOverdue(dateString: string | null): boolean {
     @dragend="handleDragEnd"
   >
     <!-- Ember leading-edge indicator -->
+    <span v-if="proposalMarker" class="td-proposal-marker">{{ proposalMarker }}</span>
     <span class="td-board-card__indicator" aria-hidden="true" />
 
     <!-- Card action bar: drag handle + move menu trigger -->
@@ -222,6 +227,7 @@ function isOverdue(dateString: string | null): boolean {
 
     <!-- Card Title -->
     <h4 class="td-board-card__title">{{ card.title }}</h4>
+    <CardAssignees :assignments="card.assignments" />
 
     <!-- Card Description (if exists) -->
     <p v-if="card.description" class="td-board-card__description">

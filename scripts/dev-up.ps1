@@ -502,6 +502,12 @@ function Stop-RecordedProcess {
     param($Record)
     if ($null -eq $Record) { return $true }
     $status = Get-ProcessIdentityStatus -Record $Record
+    # A transient StartTime read failure does not authorize a kill. Give it up to
+    # one second to resolve, then require the fresh result to be Match below.
+    for ($attempt = 0; $status -eq "Unknown" -and $attempt -lt 10; $attempt++) {
+        Start-Sleep -Milliseconds 100
+        $status = Get-ProcessIdentityStatus -Record $Record
+    }
     if ($status -eq "Missing") { return $true }
     if ($status -ne "Match") {
         Write-DevWarning "Recorded $($Record.Role) PID $($Record.Pid) identity is $($status.ToLowerInvariant()). It was not killed; PID state is retained."
@@ -541,11 +547,18 @@ function Stop-LoadedStack {
         return $false
     }
     if ($clean) {
-        try {
-            Remove-Item -LiteralPath $PidFile -ErrorAction Stop
-        } catch {
-            Write-DevWarning "Recorded processes exited, but PID state could not be removed: $($_.Exception.Message)"
-            return $false
+        # Only retry removal after process exit and port release are proved.
+        for ($attempt = 0; $attempt -lt 10; $attempt++) {
+            try {
+                Remove-Item -LiteralPath $PidFile -ErrorAction Stop
+                break
+            } catch {
+                if ($attempt -eq 9) {
+                    Write-DevWarning "Recorded processes exited, but PID state could not be removed: $($_.Exception.Message)"
+                    return $false
+                }
+                Start-Sleep -Milliseconds 100
+            }
         }
         if (Test-Path -LiteralPath $PidFile) {
             Write-DevWarning "Recorded processes exited, but PID state still exists at $PidFile."

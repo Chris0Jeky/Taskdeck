@@ -81,6 +81,9 @@ public interface ICaptureStore
 
     Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Owner-scoped native originals, including those whose board was deleted.</summary>
+    Task<IReadOnlyList<Capture>> NativeByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Deletes every capture owned by <paramref name="userId"/> (account erasure). Set-based and
     /// executed inside the caller's ambient transaction; returns the number of rows removed.

@@ -237,7 +237,8 @@ public class ExportImportServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
-        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
     }
 
     [Fact]

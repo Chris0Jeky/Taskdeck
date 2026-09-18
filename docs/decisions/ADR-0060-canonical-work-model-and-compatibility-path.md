@@ -113,7 +113,7 @@ is recorded as an amendment to this ADR — a conclusion on `#2187` alone neithe
 ruling nor authorizes the stage-5 placement migration.
 
 **hierarchy-boundaries** — A: Parent/child hierarchy is same-board only, one optional parent, a hard
-depth cap of 3, a server-side cycle check, and type-agnostic — any admitted type may parent any
+depth cap of three parent-child links (four levels), a server-side cycle check, and type-agnostic containment: any admitted type may parent any
 admitted type, per the item-type independence rule above. Cross-project hierarchy is recorded as
 "no", vacuously while no Project entity exists, to be re-decided if stage 4 is ever ratified.
 Maintainer scope note: "same as previous" — this ruling is included in the same architecture review,
@@ -124,10 +124,17 @@ clears the child's parent pointer, and children keep their IDs, board, column, h
 exports. Maintainer scope note: "with ability to cascade through a prompt" — a cascade-archive of
 the subtree is permitted only as an explicit, user-confirmed action behind a prompt that names the
 affected count, never silent and never on delete. Because detach is a derived mutation of every
-child, proposal preview, apply, and audit must list the child pointer changes. Prerequisite: the
-shipped archive-card proposal operation applies as a silent no-op today (`#2185`), so a real
-card-archive state and handler must exist and be proven before child behavior is defined on top
-of it.
+child, proposal preview, apply, and audit must list the child pointer changes. Prerequisite:
+`#2920` supplies the true card archive/restore lifecycle before `#2087` defines child behavior.
+The legacy card `archive` proposal operation was repaired by `#2185`/PR `#2410` as Block and
+retains that meaning for persisted proposals; it is not the lifecycle operation.
+
+**Maintainer clarification (2026-09-10, in-session replies recorded on `#2087`):** "Add true
+archive and restore" and "Three links, four levels" settle these two meanings. The lifecycle
+uses distinct `archive-lifecycle` and `restore-lifecycle` proposal operations. Restoring a
+parent does not silently recreate child pointers detached by its archive; later hierarchy
+changes still require their own explicit action. This records the parent-lifecycle detach
+contract and does not claim hierarchy is implemented by `#2920`.
 
 **first-item-types** — A: The first item types are Task, Epic, and Spike; all existing cards default
 to Task; Bug, Decision, and Ongoing are deferred, and ongoing remains lifecycle rather than a type.
@@ -183,17 +190,41 @@ template origin have different validation and lifecycle rules.
 **Adopt a graph database.** Rejected. EF Core, SQLite, adjacency lists, and typed edge tables are
 sufficient for the expected scale and preserve the modular monolith.
 
+## Implementation and import clarification (2026-09-11)
+
+Stage 2 is delivered on the existing Card model: true archive/restore in
+[PR #2932](https://github.com/Chris0Jeky/Taskdeck/pull/2932), types in
+[PR #2949](https://github.com/Chris0Jeky/Taskdeck/pull/2949), and parents in
+[PR #2965](https://github.com/Chris0Jeky/Taskdeck/pull/2965). See the
+[type](../product/CARD_WORK_ITEM_TYPES.md) and [hierarchy](../product/CARD_HIERARCHY.md) contracts.
+This delivery does not admit stages 4-5 or implement optional cascade archive.
+
+The maintainer's [in-session #2240 ruling](https://github.com/Chris0Jeky/Taskdeck/issues/2240#issuecomment-5626095831)
+requires explicit mapping of imported assignees to
+eligible destination participants before Apply. Source identity/name does not grant access or
+create membership. The pending implementation uses the existing owner-or-access substrate;
+a newly imported board belongs to its importer, so its initial mapping choices are the importer
+or explicit Unassigned. There is no automatic name matching or new Participant table.
+[PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977) remains parked on
+[#2981](https://github.com/Chris0Jeky/Taskdeck/issues/2981); this is a decision record, not an
+assignment delivery claim.
+
+The [estimate-unit ruling](https://github.com/Chris0Jeky/Taskdeck/issues/2093#issuecomment-5627296488)
+is recorded in [ADR-0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md):
+effort minutes, displayed as hours/minutes. WorkLog, capacity and historical activity remain separate.
+
 ## Consequences
 
 - Existing boards and cards remain the shipped model until a later migration is implemented.
 - The target vocabulary can guide issue boundaries without claiming planned entities exist.
-- Schema growth is incremental and reversible, at the cost of temporary compatibility adapters.
+- Schema growth is incremental, at the cost of temporary compatibility adapters. A tested Down
+  path reverses schema, not lost metadata: dropping archive/type/parent fields loses those values.
 - Templates, recurrence, custom fields, work logs, and board-independent canonical items remain
   deferred until separately admitted.
 - Stages 4-5 stay gated behind an amendment to this ADR; `#2188` reviews the
   ladder and that gating.
 - The multi-board-identity and hierarchy-boundaries rulings hold as recorded until the architecture
   review seeded as `#2187` produces an amendment to this ADR; the review alone changes nothing.
-- Parent archive and delete behavior depends on a real card-archive operation, so `#2185` is a
-  prerequisite for the `#2087` slice that defines child behavior.
+- The archive prerequisite #2920 and hierarchy parent #2087 are delivered. Restore does not
+  recreate child pointers detached by archive/delete.
 

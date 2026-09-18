@@ -26,6 +26,8 @@ public class ColumnServiceTests
 
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
+        _columnRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid id, CancellationToken ct) => _columnRepoMock.Object.GetByIdWithCardsAsync(id, ct));
 
         _service = new ColumnService(_unitOfWorkMock.Object);
     }

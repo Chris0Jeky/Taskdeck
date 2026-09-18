@@ -18,29 +18,87 @@ public class OperationHandlerRegistry
     private readonly CardService _cardService;
     private readonly BoardService _boardService;
     private readonly ColumnService _columnService;
+    private readonly CardAssignmentService? _assignments;
+    private readonly IBoardRelationService? _relations;
 
     public OperationHandlerRegistry(
         IUnitOfWork unitOfWork,
         CardService cardService,
         BoardService boardService,
-        ColumnService columnService)
+        ColumnService columnService,
+        CardAssignmentService? assignments = null,
+        IBoardRelationService? relations = null)
     {
         _unitOfWork = unitOfWork;
         _cardService = cardService;
         _boardService = boardService;
         _columnService = columnService;
+        _assignments = assignments;
+        _relations = relations;
     }
 
-    public async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken)
+    /// <summary>
+    /// <paramref name="deferredNotifications"/> is the caller's per-execution notification buffer
+    /// (#2934), passed per call rather than held on this registry so that two executions sharing
+    /// one scoped instance can never append to the same list. Null means "notify immediately",
+    /// which is what every caller outside a proposal transaction wants.
+    /// </summary>
+    public async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken,
+        Guid? actorUserId = null, DeferredBoardRealtimeNotifier? deferredNotifications = null)
     {
         var actionType = operation.ActionType.ToLowerInvariant();
         var targetType = operation.TargetType.ToLowerInvariant();
 
         try
         {
+            if (targetType == "card" && actionType == ProposalAssignmentContract.Action)
+            {
+                if (_assignments is null || !actorUserId.HasValue)
+                    return Result.Failure(ErrorCodes.InvalidOperation, "Assignment execution needs an authenticated actor.");
+                if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var error) ||
+                    !OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out error))
+                    return Result.Failure(ErrorCodes.ValidationError, error);
+                var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+                if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found.");
+                var result = await _assignments.StageReplaceAsync(card.BoardId, cardId,
+                    ProposalAssignmentContract.Read(parameters), actorUserId.Value, cancellationToken);
+                if (result.IsSuccess) await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
+            }
+            if (targetType == "card" && actionType is "add-relation" or "remove-relation")
+            {
+                if (_relations is null || !actorUserId.HasValue)
+                    return Result.Failure(ErrorCodes.InvalidOperation, "Relation execution needs an authenticated actor.");
+                if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var error) ||
+                    !OperationParameterParser.TryGetRelationOperationParameters(parameters, out var relationParameters, out error))
+                    return Result.Failure(ErrorCodes.ValidationError, error);
+
+                var result = await _relations.StageMutationAsync(
+                    actorUserId.Value,
+                    relationParameters.BoardId,
+                    relationParameters.Relation,
+                    relationParameters.ExpectedRevision,
+                    remove: actionType == "remove-relation",
+                    cancellationToken);
+                if (!result.IsSuccess)
+                    return Result.Failure(result.ErrorCode, result.ErrorMessage);
+
+                // The relation service intentionally stages no notifier. The executor owns the
+                // transaction and flushes this buffer only after every operation and audit row
+                // commits, so a later failure cannot expose a rolled-back graph mutation.
+                if (deferredNotifications is not null)
+                {
+                    await deferredNotifications.NotifyBoardMutationAsync(
+                        new BoardRealtimeEvent(relationParameters.BoardId, "board", "updated",
+                            relationParameters.BoardId, DateTimeOffset.UtcNow),
+                        cancellationToken);
+                }
+                return Result.Success();
+            }
             if (targetType == "card")
             {
-                return await ExecuteCardOperationAsync(actionType, operation, cancellationToken);
+                return await ExecuteCardOperationAsync(actionType, operation, cancellationToken, actorUserId,
+                    deferredNotifications);
             }
             else if (targetType == "board")
             {
@@ -55,13 +113,29 @@ public class OperationHandlerRegistry
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported target type: {targetType}");
             }
         }
+        catch (DomainException ex) { return Result.Failure(ex.ErrorCode, ex.Message); }
         catch (Exception ex)
         {
             return Result.Failure(ErrorCodes.UnexpectedError, $"Operation execution failed: {ex.Message}");
         }
     }
 
-    private async Task<Result> ExecuteCardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
+    public async Task NotifyAssignmentsCommittedAsync(IEnumerable<ProposalOperationDto> operations, CancellationToken ct)
+    {
+        if (_assignments is null) return;
+        foreach (var operation in operations.Where(o => o.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+                     o.ActionType.Equals(ProposalAssignmentContract.Action, StringComparison.OrdinalIgnoreCase)))
+        {
+            using var parameters = JsonDocument.Parse(operation.Parameters);
+            var id = parameters.RootElement.GetProperty("cardId").GetGuid();
+            var card = await _unitOfWork.Cards.GetByIdAsync(id, ct);
+            if (card is not null) await _assignments.NotifyAsync(card.BoardId, id, ct);
+        }
+    }
+
+    private async Task<Result> ExecuteCardOperationAsync(string actionType, ProposalOperationDto operation,
+        CancellationToken cancellationToken, Guid? actorUserId,
+        DeferredBoardRealtimeNotifier? deferredNotifications = null)
     {
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
@@ -78,7 +152,7 @@ public class OperationHandlerRegistry
                 return await CreateCardAsync(parameters, operation.TargetId, cancellationToken);
 
             case "update":
-                return await UpdateCardAsync(parameters, cancellationToken);
+                return await UpdateCardAsync(parameters, cancellationToken, deferredNotifications);
 
             case "move":
                 return await MoveCardAsync(parameters, cancellationToken);
@@ -86,9 +160,49 @@ public class OperationHandlerRegistry
             case "archive":
                 return await ArchiveCardAsync(parameters, cancellationToken);
 
+            case "delete":
+                return await DeleteCardAsync(parameters, actorUserId, cancellationToken);
+
+            case "archive-lifecycle":
+            case "restore-lifecycle":
+                return await SetCardArchivedAsync(parameters, actionType == "archive-lifecycle", cancellationToken,
+                    deferredNotifications);
+
             default:
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported card action: {actionType}");
         }
+    }
+
+    private async Task<Result> DeleteCardAsync(JsonElement parameters, Guid? actorUserId, CancellationToken ct)
+    {
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
+            return Result.Failure(ErrorCodes.ValidationError, error);
+        if (!parameters.TryGetProperty("expectedUpdatedAt", out var stamp) || stamp.ValueKind != JsonValueKind.String || !stamp.TryGetDateTimeOffset(out var expected))
+            return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt is required");
+        return await _cardService.DeleteCardAsync(cardId, actorUserId: actorUserId, cancellationToken: ct,
+            confirmation: new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")));
+    }
+
+    private async Task<Result> SetCardArchivedAsync(JsonElement parameters, bool archive,
+        CancellationToken cancellationToken, DeferredBoardRealtimeNotifier? deferredNotifications)
+    {
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
+            return Result.Failure(ErrorCodes.ValidationError, error);
+        if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+            timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+            return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+        var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+        if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+        // The Archived/Unarchived receipt for this operation is written by ExecutionAuditRecorder
+        // (which alone knows the proposal), so the service must not stage a second one.
+        // The lifecycle realtime event goes to the executor's deferred buffer (#2934) instead of
+        // straight out: this write is still inside the outer transaction, which a later operation
+        // can still roll back.
+        var result = await _cardService.SetArchivedAsync(card.BoardId, cardId, archive,
+            new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")),
+            recordLifecycleAudit: false, notificationSink: deferredNotifications,
+            cancellationToken: cancellationToken);
+        return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 
     private async Task<Result> CreateCardAsync(
@@ -99,7 +213,16 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryGetRequiredString(parameters, "title", out var title, out var titleError))
             return Result.Failure(ErrorCodes.ValidationError, titleError);
 
+        if (!ProposalHierarchyValidator.TryReadParent(parameters, out var parentId, out var clearParent, out var parentError))
+            return Result.Failure(ErrorCodes.ValidationError, parentError);
         var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+            return Result.Failure(ErrorCodes.ValidationError, typeError);
+
+        if (!OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimatedEffortMinutes, out var estimateError))
+            return Result.Failure(ErrorCodes.ValidationError, estimateError);
+        if (parameters.TryGetProperty("clearEstimatedEffort", out _))
+            return Result.Failure(ErrorCodes.ValidationError, "Parameter 'clearEstimatedEffort' is supported only by card update operations");
 
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 parameters, "dueDate", out _, out var dueDate, out var dueDateError))
@@ -137,19 +260,25 @@ public class OperationHandlerRegistry
         if (!labelResolution.IsSuccess)
             return Result.Failure(labelResolution.ErrorCode, labelResolution.ErrorMessage);
 
-        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value);
+        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value, workItemType, parentId,
+            EstimatedEffortMinutes: estimatedEffortMinutes);
         var result = await _cardService.CreateCardAsync(dto, cardId, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 
-    private async Task<Result> UpdateCardAsync(JsonElement parameters, CancellationToken cancellationToken)
+    private async Task<Result> UpdateCardAsync(JsonElement parameters, CancellationToken cancellationToken,
+        DeferredBoardRealtimeNotifier? deferredNotifications)
     {
         if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
         var title = OperationParameterParser.GetOptionalString(parameters, "title");
+        if (!ProposalHierarchyValidator.TryReadParent(parameters, out var parentId, out var clearParent, out var parentError))
+            return Result.Failure(ErrorCodes.ValidationError, parentError);
         var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+            return Result.Failure(ErrorCodes.ValidationError, typeError);
 
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 parameters, "dueDate", out var dueDateProvided, out var dueDate, out var dueDateError))
@@ -162,6 +291,13 @@ public class OperationHandlerRegistry
         if (dueDate.HasValue && clearDueDate)
             return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
 
+        if (!OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimatedEffortMinutes, out var estimateError))
+            return Result.Failure(ErrorCodes.ValidationError, estimateError);
+        if (!OperationParameterParser.TryGetOptionalBoolean(parameters, "clearEstimatedEffort", out _, out var clearEstimatedEffort, out var clearEstimateError))
+            return Result.Failure(ErrorCodes.ValidationError, clearEstimateError);
+        if (estimatedEffortMinutes.HasValue && clearEstimatedEffort)
+            return Result.Failure(ErrorCodes.ValidationError, "Parameters 'estimatedEffortMinutes' and 'clearEstimatedEffort' cannot both be specified");
+
         if (!OperationParameterParser.TryGetOptionalStringArray(
                 parameters, "labels", out var labelsProvided, out var labelNames, out var labelsError))
             return Result.Failure(ErrorCodes.ValidationError, labelsError);
@@ -170,10 +306,10 @@ public class OperationHandlerRegistry
             return Result.Failure(ErrorCodes.ValidationError, labelIdsError);
 
         var shouldClearDueDate = clearDueDate || (dueDateProvided && !dueDate.HasValue);
-        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided)
+        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided && workItemType is null && !parentId.HasValue && !clearParent && !estimatedEffortMinutes.HasValue && !clearEstimatedEffort)
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', 'workItemType', 'estimatedEffortMinutes', or 'clearEstimatedEffort'");
 
         List<Guid>? labelIds = null;
         if (labelsProvided || labelIdsProvided)
@@ -195,6 +331,24 @@ public class OperationHandlerRegistry
             labelIds = labelResolution.Value;
         }
 
+        DateTimeOffset? expectedUpdatedAt = null;
+        if (workItemType is not null || parentId.HasValue || clearParent)
+        {
+            if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+                timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+                return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+            expectedUpdatedAt = expected;
+        }
+        if (estimatedEffortMinutes.HasValue || clearEstimatedEffort)
+        {
+            // The shared proposal gate already checked every estimate operation against
+            // the initial persisted timestamp. Earlier approved operations may have touched
+            // this tracked card; use that current timestamp while retaining the repository's
+            // concurrency token so a competing writer still aborts the transaction.
+            var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+            if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+            expectedUpdatedAt = card.UpdatedAt;
+        }
         var dto = new UpdateCardDto(
             title,
             description,
@@ -202,8 +356,10 @@ public class OperationHandlerRegistry
             null,
             null,
             labelIds,
-            ClearDueDate: shouldClearDueDate);
-        var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
+            ExpectedUpdatedAt: expectedUpdatedAt, ClearDueDate: shouldClearDueDate, WorkItemType: workItemType, ParentCardId: parentId, ClearParent: clearParent,
+            EstimatedEffortMinutes: estimatedEffortMinutes, ClearEstimatedEffort: clearEstimatedEffort);
+        var result = await _cardService.UpdateCardAsync(cardId, dto, actorUserId: null,
+            cancellationToken: cancellationToken, notificationSink: deferredNotifications);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
@@ -221,7 +377,17 @@ public class OperationHandlerRegistry
         if (targetColumn == null)
             return Result.Failure(ErrorCodes.NotFound, $"Column {columnId} not found");
 
-        var position = targetColumn.Cards.Any() ? targetColumn.Cards.Max(c => c.Position) + 1 : 0;
+        // Append: the index one past the last occupant of the list CardService.MoveCardAsync
+        // rebuilds, which is ICardRepository.GetByColumnIdAsync - active cards only, archived ones
+        // excluded. Deriving it from max(Position) + 1 instead broke whenever the column's stored
+        // positions were non-contiguous (#3025): a deleted middle card leaves 0 and 2, and an
+        // archived card holds a position without occupying a slot, so max + 1 overshot the list
+        // and CardService threw and rolled the proposal back. The service clamps an overshoot
+        // anyway, so this stays correct even if the two reads ever disagree - and it is what
+        // carries the one case that still overshoots by design: a move into the card's own
+        // column counts the mover here but excludes it there, so the clamp lands it at the
+        // bottom, which is what "move to the column it is already in" means.
+        var position = targetColumn.Cards.Count(card => !card.IsArchived);
         var dto = new MoveCardDto(columnId, position);
         var result = await _cardService.MoveCardAsync(cardId, dto, cancellationToken);
 

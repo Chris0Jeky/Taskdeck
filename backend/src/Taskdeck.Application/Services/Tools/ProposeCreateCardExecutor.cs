@@ -120,6 +120,10 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
             createParameters["labels"] = labels;
         if (dueDate.HasValue)
             createParameters["dueDate"] = dueDate.Value.ToString("O");
+        if (arguments.TryGetProperty("estimated_effort_minutes", out var estimate))
+            createParameters["estimatedEffortMinutes"] = estimate;
+        if (arguments.TryGetProperty("clear_estimated_effort", out var clearEstimate))
+            createParameters["clearEstimatedEffort"] = clearEstimate;
 
         var parameters = JsonSerializer.Serialize(createParameters);
 

@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -187,6 +188,20 @@ public class UnitOfWork : IUnitOfWork
                     "Record was updated by another session. Refresh and retry your action.",
                     ex);
             }
+            catch (DbUpdateException ex) when (
+                ex.InnerException is SqliteException { SqliteExtendedErrorCode: 1555 or 2067 } &&
+                ex.Entries.Any(entry => entry.Entity is BoardDependencies or CardRelation && entry.State == EntityState.Added))
+            {
+                throw new DomainException(ErrorCodes.Conflict,
+                    "Relations changed while updating the card. Refresh and retry your action.", ex);
+            }
+            catch (DbUpdateException ex) when (
+                ex.InnerException is SqliteException { SqliteExtendedErrorCode: 787 } &&
+                ex.Entries.Any(entry => entry.Entity is CardRelation))
+            {
+                throw new DomainException(ErrorCodes.Conflict,
+                    "A relation endpoint changed. Refresh and retry your action.", ex);
+            }
             catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
             {
                 throw new DomainException(
@@ -219,6 +234,22 @@ public class UnitOfWork : IUnitOfWork
                 await Task.Delay(GetSqliteWriteLockRetryDelay(attempt), cancellationToken);
             }
         }
+    }
+
+    public async Task BeginReadTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        // Microsoft.Data.Sqlite exposes a deferred BEGIN through its ReadUncommitted
+        // overload. Taskdeck uses private-cache connections, so the provider upgrades
+        // the effective isolation to Serializable while preserving deferred=true. In
+        // WAL mode this pins one read snapshot without reserving the single writer slot.
+        // Other relational providers can express the intended contract directly.
+        var isolationLevel = _context.Database.IsSqlite()
+            ? IsolationLevel.ReadUncommitted
+            : IsolationLevel.RepeatableRead;
+
+        _transaction = await _context.Database.BeginTransactionAsync(
+            isolationLevel,
+            cancellationToken);
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)

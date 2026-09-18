@@ -20,6 +20,7 @@ public class WriteToolExecutorTests
     private readonly Mock<IColumnRepository> _columnRepo = new();
     private readonly Mock<ICardRepository> _cardRepo = new();
     private readonly Mock<ILabelRepository> _labelRepo = new();
+    private readonly Mock<IBoardRelationService> _relations = new();
 
     private readonly Guid _boardId = Guid.NewGuid();
     private readonly Guid _userId = Guid.NewGuid();
@@ -44,6 +45,120 @@ public class WriteToolExecutorTests
     private ToolExecutionContext MakeContext() => new(_boardId, _userId);
 
     #region ProposeCreateCardExecutor
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("0")]
+    [InlineData("90")]
+    [InlineData("1000000")]
+    public async Task ProposeCreateCard_Estimate_PreservesValueWithoutMutation(string rawEstimate)
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"title":"Estimated card","estimated_effort_minutes":{{rawEstimate}}}"""));
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("estimatedEffortMinutes").GetRawText().Should().Be(rawEstimate);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("0", false)]
+    [InlineData("90", false)]
+    [InlineData("null", true)]
+    public async Task ProposeUpdateCard_Estimate_PreservesCallerPinAndClear(string rawEstimate, bool clear)
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Estimate");
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","estimated_effort_minutes":{{rawEstimate}},"clear_estimated_effort":{{clear.ToString().ToLowerInvariant()}},"expected_updated_at":"{{card.UpdatedAt:O}}"}""");
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("expectedUpdatedAt").GetString().Should().Be(card.UpdatedAt.ToString("O"));
+        parameters.RootElement.GetProperty("clearEstimatedEffort").GetBoolean().Should().Be(clear);
+        if (!clear) parameters.RootElement.GetProperty("estimatedEffortMinutes").GetRawText().Should().Be(rawEstimate);
+        card.EstimatedEffortMinutes.Should().BeNull();
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("1.5")]
+    [InlineData("-1")]
+    [InlineData("1000001")]
+    [InlineData("\"90\"")]
+    public async Task EstimateTools_RejectMalformedValuesBeforeCreatingAProposal(string rawEstimate)
+    {
+        SetupColumns("Backlog");
+        var card = CreateCard("Estimate");
+        SetupBoardCards(card);
+        var create = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var update = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"title":"Estimated card","card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","estimated_effort_minutes":{{rawEstimate}},"expected_updated_at":"{{card.UpdatedAt:O}}"}""");
+        foreach (var executor in new IToolExecutor[] { create, update })
+        {
+            var result = await executor.ExecuteAsync(MakeContext(), args);
+            JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("estimatedEffortMinutes");
+        }
+        _proposalService.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("stale")]
+    [InlineData("conflict")]
+    public async Task ProposeUpdateCard_Estimate_RejectsMissingStaleAndConflictingRequests(string kind)
+    {
+        var card = CreateCard("Estimate");
+        SetupBoardCards(card);
+        var values = new Dictionary<string, object>
+        {
+            ["card_id"] = BoardContextBuilder.FormatShortId(card.Id),
+            ["estimated_effort_minutes"] = 0
+        };
+        if (kind != "missing") values["expected_updated_at"] = (kind == "stale" ? card.UpdatedAt.AddMinutes(-1) : card.UpdatedAt).ToString("O");
+        if (kind == "conflict") values["clear_estimated_effort"] = true;
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs(JsonSerializer.Serialize(values)));
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeTrue(result);
+        _proposalService.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_NullEstimate_KeepsCurrentWithoutRequiringPin()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Estimate");
+        card.SetEstimatedEffortMinutes(90);
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","title":"Rename","estimated_effort_minutes":null,"clear_estimated_effort":false}"""));
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.TryGetProperty("estimatedEffortMinutes", out _).Should().BeFalse();
+        parameters.RootElement.GetProperty("clearEstimatedEffort").GetBoolean().Should().BeFalse();
+        card.EstimatedEffortMinutes.Should().Be(90);
+    }
+
+    [Fact]
+    public void EstimateToolSchemas_DeclareBoundsClearAndCallerPin()
+    {
+        foreach (var schema in new[] { WriteToolSchemas.ProposeCreateCard(), WriteToolSchemas.ProposeUpdateCard() })
+        {
+            var estimate = schema.ParametersSchema.GetProperty("properties").GetProperty("estimated_effort_minutes");
+            estimate.GetProperty("minimum").GetInt32().Should().Be(0);
+            estimate.GetProperty("maximum").GetInt32().Should().Be(Card.MaxEstimatedEffortMinutes);
+        }
+        var properties = WriteToolSchemas.ProposeUpdateCard().ParametersSchema.GetProperty("properties");
+        properties.GetProperty("clear_estimated_effort").GetProperty("type").GetString().Should().Be("boolean");
+        properties.GetProperty("expected_updated_at").GetProperty("description").GetString().Should().Contain("get_card_details");
+    }
 
     [Fact]
     public async Task ProposeCreateCard_UsesTrustedContextProducerAndIgnoresForgedArguments()
@@ -213,6 +328,32 @@ public class WriteToolExecutorTests
         JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
         using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
         parameters.RootElement.GetProperty("labels")[0].GetString().Should().Be("urgent");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeCreateCard_ChecksActiveCapacityBeforeCreatingProposal(bool archivedOccupant)
+    {
+        var column = new Column(_boardId, "Limited", 0, wipLimit: 1);
+        var occupant = new Card(_boardId, column.Id, "Occupant");
+        if (archivedOccupant) occupant.Archive();
+        column.AddCard(occupant);
+        _columnRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { column });
+        _columnRepo.Setup(r => r.GetByIdAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        _columnRepo.Setup(r => r.GetByIdWithCardsAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        SetupProposalCreation(Guid.NewGuid());
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs("""{"title":"New card"}"""));
+
+        using var json = JsonDocument.Parse(result);
+        if (archivedOccupant)
+            json.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        else
+            json.RootElement.GetProperty("error").GetString().Should().Contain("Cannot add card").And.Contain("Limited");
+        _proposalService.Verify(service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            archivedOccupant ? Times.Once() : Times.Never());
     }
 
     #endregion
@@ -650,6 +791,169 @@ public class WriteToolExecutorTests
 
     #endregion
 
+    #region ProposeCardRelationExecutors
+
+    [Fact]
+    public async Task ProposeAddCardRelation_UsesTrustedContextAndPreservesCallerRevisionWithoutMutation()
+    {
+        CreateProposalDto? captured = null;
+        var source = Guid.NewGuid();
+        var target = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var context = new ToolExecutionContext(
+            _boardId,
+            _userId,
+            new ProposalProducerMetadata("OpenAICompatible", "vendor/model", "typed-relations-v1"));
+        _relations.Setup(service => service.ValidateMutationAsync(
+                _userId, _boardId, It.IsAny<CardRelationEdge>(), 17, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new BoardRelationsDto(_boardId, 17, [], true)));
+        SetupProposalCreation(proposalId, proposal => captured = proposal);
+        var executor = new ProposeAddCardRelationExecutor(_proposalService.Object, _relations.Object);
+
+        var result = await executor.ExecuteAsync(context, ParseArgs($$"""{"card_id":"{{source}}","related_card_id":"{{target}}","relation_type":"depends-on","expected_revision":17}"""));
+
+        using var response = JsonDocument.Parse(result);
+        response.RootElement.GetProperty("full_proposal_id").GetGuid().Should().Be(proposalId);
+        captured.Should().NotBeNull();
+        captured!.SourceType.Should().Be(ProposalSourceType.Chat);
+        captured.RequestedByUserId.Should().Be(_userId);
+        captured.ProvenanceProvider.Should().Be("OpenAICompatible");
+        captured.ProvenanceModelId.Should().Be("vendor/model");
+        captured.ProvenancePromptVersion.Should().Be("typed-relations-v1");
+        var operation = captured.Operations!.Should().ContainSingle().Subject;
+        operation.ActionType.Should().Be("add-relation");
+        operation.TargetType.Should().Be("card");
+        operation.TargetId.Should().Be(source.ToString());
+        using var parameters = JsonDocument.Parse(operation.Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(source);
+        parameters.RootElement.GetProperty("relatedCardId").GetGuid().Should().Be(target);
+        parameters.RootElement.GetProperty("relationType").GetString().Should().Be("depends-on");
+        parameters.RootElement.GetProperty("expectedRevision").GetInt64().Should().Be(17);
+        _relations.Verify(service => service.StageMutationAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CardRelationEdge>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeRemoveCardRelation_RefusesFailedSharedValidationBeforeCreatingAProposal()
+    {
+        var source = Guid.NewGuid();
+        var target = Guid.NewGuid();
+        _relations.Setup(service => service.ValidateMutationAsync(
+                _userId, _boardId, It.IsAny<CardRelationEdge>(), 3, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<BoardRelationsDto>(ErrorCodes.Conflict, "The board or relations changed. Reload before saving again."));
+        var executor = new ProposeRemoveCardRelationExecutor(_proposalService.Object, _relations.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{source}}","related_card_id":"{{target}}","relation_type":"blocks","expected_revision":3}"""));
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("Reload");
+        _proposalService.Verify(service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeCardRelation_ResolvesShortActiveBoardIdsForAddAndRemove(bool remove)
+    {
+        CreateProposalDto? captured = null;
+        var source = CreateCard("Source");
+        var target = CreateCard("Target");
+        SetupBoardCards(source, target);
+        _relations.Setup(service => service.ValidateMutationAsync(
+                _userId, _boardId, It.IsAny<CardRelationEdge>(), 9, remove, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new BoardRelationsDto(_boardId, 9, [], true)));
+        SetupProposalCreation(Guid.NewGuid(), proposal => captured = proposal);
+        IToolExecutor executor = remove
+            ? new ProposeRemoveCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object)
+            : new ProposeAddCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(source.Id)}}","related_card_id":"{{BoardContextBuilder.FormatShortId(target.Id)}}","relation_type":"blocks","expected_revision":9}"""));
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        captured!.Operations!.Single().ActionType.Should().Be(remove ? "remove-relation" : "add-relation");
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(source.Id);
+        parameters.RootElement.GetProperty("relatedCardId").GetGuid().Should().Be(target.Id);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeCardRelation_ResolvesNFormatAndBracedActiveBoardIdsForAddAndRemove(bool remove)
+    {
+        CreateProposalDto? captured = null;
+        var source = CreateCard("Source");
+        var target = CreateCard("Target");
+        SetupBoardCards(source, target);
+        _relations.Setup(service => service.ValidateMutationAsync(
+                _userId, _boardId, It.IsAny<CardRelationEdge>(), 9, remove, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new BoardRelationsDto(_boardId, 9, [], true)));
+        SetupProposalCreation(Guid.NewGuid(), proposal => captured = proposal);
+        IToolExecutor executor = remove
+            ? new ProposeRemoveCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object)
+            : new ProposeAddCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{source.Id:N}}","related_card_id":"{{{target.Id:D}}}","relation_type":"blocks","expected_revision":9}"""));
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        captured!.Operations!.Single().ActionType.Should().Be(remove ? "remove-relation" : "add-relation");
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(source.Id);
+        parameters.RootElement.GetProperty("relatedCardId").GetGuid().Should().Be(target.Id);
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("ambiguous")]
+    [InlineData("cross-board")]
+    public async Task ProposeCardRelation_RejectsUnknownOrAmbiguousActiveBoardReferencesBeforeValidation(string caseName)
+    {
+        var source = CreateCard("Source");
+        var target = CreateCard("Target");
+        if (caseName == "ambiguous")
+        {
+            var sharedPrefix = BoardContextBuilder.FormatShortId(source.Id);
+            var collisionId = Guid.Parse(sharedPrefix + Guid.NewGuid().ToString()[8..]);
+            var collision = new Card(collisionId, _boardId, Guid.NewGuid(), "Collision");
+            SetupBoardCards(source, target, collision);
+        }
+        else
+        {
+            SetupBoardCards(source, target);
+        }
+
+        var reference = caseName switch
+        {
+            "unknown" => "deadbeef",
+            "cross-board" => new Card(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Foreign").Id.ToString(),
+            _ => BoardContextBuilder.FormatShortId(source.Id)
+        };
+        var executor = new ProposeAddCardRelationExecutor(_proposalService.Object, _relations.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs($$"""{"card_id":"{{reference}}","related_card_id":"{{BoardContextBuilder.FormatShortId(target.Id)}}","relation_type":"blocks","expected_revision":2}"""));
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("unambiguous active cards");
+        _relations.Verify(service => service.ValidateMutationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CardRelationEdge>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        _proposalService.Verify(service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void CardRelationToolSchemas_RequirePinnedRevisionAndCanonicalKinds()
+    {
+        foreach (var schema in new[] { WriteToolSchemas.ProposeAddCardRelation(), WriteToolSchemas.ProposeRemoveCardRelation() })
+        {
+            schema.Name.Should().StartWith("propose_");
+            schema.Required.Should().BeEquivalentTo(["card_id", "related_card_id", "relation_type", "expected_revision"]);
+            var properties = schema.ParametersSchema.GetProperty("properties");
+            properties.GetProperty("card_id").GetProperty("description").GetString().Should().Contain("short ID");
+            properties.GetProperty("related_card_id").GetProperty("description").GetString().Should().Contain("short ID");
+            properties.GetProperty("expected_revision").GetProperty("type").GetString().Should().Be("integer");
+            properties.GetProperty("relation_type").GetProperty("enum").EnumerateArray().Select(kind => kind.GetString())
+                .Should().Equal("relates-to", "blocks", "depends-on", "duplicates", "spawned-from");
+        }
+    }
+
+    #endregion
+
     #region GP-06 Compliance
 
     [Theory]
@@ -659,6 +963,8 @@ public class WriteToolExecutorTests
     [InlineData("propose_update_card")]
     [InlineData("propose_bulk_move")]
     [InlineData("propose_create_column")]
+    [InlineData("propose_add_card_relation")]
+    [InlineData("propose_remove_card_relation")]
     public void AllWriteToolNames_StartWithPropose(string toolName)
     {
         toolName.Should().StartWith("propose_",

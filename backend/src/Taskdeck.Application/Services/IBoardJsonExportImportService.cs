@@ -12,4 +12,5 @@ public interface IBoardJsonExportImportService
     Task<Result<string>> ExportBoardToJsonAsync(Guid boardId, Guid userId);
     Task<Result<ImportResultDto>> ImportBoardAsync(ImportBoardDto dto, Guid userId);
     Task<Result<ImportResultDto>> ImportBoardFromJsonAsync(string json, Guid userId);
+    Task<Result<BoardImportPreviewDto>> PreviewBoardAsync(string json, Guid userId);
 }

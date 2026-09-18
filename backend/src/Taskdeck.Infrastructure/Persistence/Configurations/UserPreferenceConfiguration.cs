@@ -31,6 +31,10 @@ public class UserPreferenceConfiguration : IEntityTypeConfiguration<UserPreferen
         builder.Property(preference => preference.OnboardingDismissedAt);
 
         builder.Property(preference => preference.OnboardingCompletedAt);
+        builder.Property(preference => preference.PersonalPlanJson);
+        builder.Property(preference => preference.AttentionJson);
+        builder.Property(preference => preference.AttentionRevision).HasDefaultValue(0L);
+        builder.Property(preference => preference.PersonalPlanRevision).HasDefaultValue(0L).IsConcurrencyToken();
 
         builder.Property(preference => preference.CreatedAt)
             .IsRequired();

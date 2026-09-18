@@ -44,6 +44,55 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ContextualPreview_ReportsExactlyTheEffectiveRevision_AndDoesNotApply()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "context-preview");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "context-preview-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var url = $"/api/automation/proposals/{proposal.Id}/preview";
+        var original = (await client.GetFromJsonAsync<ProposalPreviewDto>(url))!;
+        original.EffectiveRevisionId.Should().BeNull();
+        var response = await client.PostAsJsonAsync($"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Contextual revision", board.Id, column.Id), reason = "Explicit review edit" });
+        response.EnsureSuccessStatusCode();
+        var revision = (await response.Content.ReadFromJsonAsync<ProposalRevisionDto>())!;
+        var revised = (await client.GetFromJsonAsync<ProposalPreviewDto>(url))!;
+        revised.EffectiveRevisionId.Should().Be(revision.Id);
+        revised.EffectiveRevisionNumber.Should().Be(1);
+        revised.Diff.Should().Contain("Contextual revision");
+        revised.Status.Should().Be(ProposalStatus.PendingReview);
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null)).EnsureSuccessStatusCode();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.Add(new ProposalRevision(proposal.Id, 2, user.UserId,
+                BuildRevisionPayload("Unapproved later revision", board.Id, column.Id), "Simulated historical late revision"));
+            await db.SaveChangesAsync();
+        }
+        var approved = (await client.GetFromJsonAsync<ProposalPreviewDto>(url))!;
+        approved.EffectiveRevisionId.Should().Be(revision.Id);
+        approved.Status.Should().Be(ProposalStatus.Approved);
+        approved.Diff.Should().Contain("Contextual revision").And.NotContain("Unapproved later revision");
+        (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ContextualPreview_PreservesAuthorizationAndRejectsTerminalProposal()
+    {
+        using var client = _factory.CreateClient(); using var anonymous = _factory.CreateClient(); using var other = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "context-preview-access");
+        await ApiTestHarness.AuthenticateAsync(other, "context-preview-other");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "context-preview-access-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var url = $"/api/automation/proposals/{proposal.Id}/preview";
+        (await anonymous.GetAsync(url)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await other.GetAsync(url)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await client.PostAsJsonAsync($"/api/automation/proposals/{proposal.Id}/reject", new { reason = "No change wanted" })).EnsureSuccessStatusCode();
+        (await client.GetAsync(url)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
     public async Task CreateRevision_OnNonExistentProposal_ShouldReturn404()
     {
         var client = _factory.CreateClient();

@@ -4,6 +4,7 @@ import { defineConfig, loadEnv, type Plugin, type ResolvedConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { hoistWorkerImportScripts } from './src/pwa/hoistWorkerImportScripts.ts'
+import { frontendIdentityPlugin } from './build/frontendIdentity.ts'
 import {
   createLocaleCatalogRuntimePattern,
   createStaticAssetRuntimePattern,
@@ -54,6 +55,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+    frontendIdentityPlugin(),
     vue(),
     VitePWA({
       // 'prompt' prevents the new SW from auto-activating; SwUpdatePrompt.vue

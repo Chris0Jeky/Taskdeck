@@ -31,10 +31,49 @@ public class WorkspaceInsightRepository(TaskdeckDbContext db) : IWorkspaceInsigh
     public Task<WorkspaceMemory?> MemoryAsync(Guid userId, Guid id, CancellationToken ct) => db.Set<WorkspaceMemory>().Include(x => x.History).SingleOrDefaultAsync(x => x.UserId == userId && x.Id == id, ct);
     public void Add(QuietInsight insight) => db.Set<QuietInsight>().Add(insight);
     public void Add(WorkspaceMemory memory) => db.Set<WorkspaceMemory>().Add(memory);
+    public void GuardMemoryRevision(WorkspaceMemory memory) => db.Entry(memory).Property(x => x.Revision).IsModified = true;
     public async Task<bool> SaveAsync(CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); return true; }
         catch (DbUpdateConcurrencyException) { return false; }
         catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 }) { return false; }
+    }
+
+    public async Task<ObservationSaveOutcome> SaveObservationAsync(Guid userId, Guid boardId, Guid cardId, string fingerprint, CancellationToken ct)
+    {
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+        var committed = false;
+        try
+        {
+            // SQLite begins an immediate write transaction. The short source/access check and
+            // save therefore cannot straddle a concurrent card edit or membership revocation.
+            transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            var source = await new WorkspaceObservationReader(db).SourceAsync(userId, boardId, cardId, ct);
+            if (source == null || source.Fingerprint != fingerprint) return ObservationSaveOutcome.SourceChanged;
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            committed = true;
+            return ObservationSaveOutcome.Saved;
+        }
+        catch (DbUpdateConcurrencyException) { return ObservationSaveOutcome.ConcurrentWrite; }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteExtendedErrorCode: 2067 }) { return ObservationSaveOutcome.ConcurrentWrite; }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 }) { return ObservationSaveOutcome.SourceChanged; }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 5 or 6 }) { return ObservationSaveOutcome.StorageBusy; }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode is 5 or 6) { return ObservationSaveOutcome.StorageBusy; }
+        finally
+        {
+            if (!committed)
+            {
+                try { if (transaction != null) await transaction.RollbackAsync(CancellationToken.None); }
+                finally
+                {
+                    // A later save in this request must never flush rejected observation changes.
+                    foreach (var entry in db.ChangeTracker.Entries<QuietInsight>()
+                        .Where(x => x.Entity.UserId == userId && x.Entity.BoardId == boardId).ToList())
+                        entry.State = EntityState.Detached;
+                }
+            }
+            if (transaction != null) await transaction.DisposeAsync();
+        }
     }
 }

@@ -78,6 +78,18 @@ curl -s "http://localhost:5000/api/capture/items/$CAPTURE_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+## Read and export text bytes
+
+When durable source text is available and passes reconciliation, capture detail `rawText`
+preserves its submitted line endings. Account export preserves durable source text under
+`durableCapture.sourceAssets[].text`, including superseded source assets. Only captures without
+a durable record use `legacySource.text` from the queue payload. Only a linked-transcript
+correction normalizes that queue projection to LF while retaining the raw source; ordinary
+suggestion edits preserve submitted text. Initial creation can retain the submitted line endings
+in both. Export does not promise universal LF normalization. Reconciliation ignores only
+line-ending differences, not trailing spaces or changed content, and does not rewrite the stored
+source just to make the bytes match.
+
 ## Enqueue for triage
 
 Enqueues the capture item for triage by the deterministic offline extractor (no LLM call) into proposal operations. The response is asynchronous -- the proposal will appear in the review queue when ready.

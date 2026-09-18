@@ -29,6 +29,22 @@ public class WorkspaceInsightsController : AuthenticatedControllerBase
         var result = await service.ListAsync(user, dto.BoardId, true, ct);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
+    [HttpGet("observation-source")]
+    public async Task<IActionResult> ObservationSource([FromQuery] Guid boardId, [FromQuery] Guid cardId,
+        [FromServices] WorkspaceObservationService observations, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var user, out var error)) return error!;
+        var result = await observations.SourceAsync(user, boardId, cardId, ct);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+    [HttpPost("model-analysis")]
+    public async Task<IActionResult> ModelAnalysis(GenerateObservationsDto dto,
+        [FromServices] WorkspaceObservationService observations, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var user, out var error)) return error!;
+        var result = await observations.GenerateAsync(user, dto, ct);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
     [HttpPatch("{id:guid}")]
     public async Task<IActionResult> Act(Guid id, InsightActionDto dto, CancellationToken ct)
     {

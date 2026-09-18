@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PaperBoardCard from '../../../views/paper/PaperBoardCard.vue'
 import type { Card } from '../../../types/board'
+import { installTimeZone } from '../../utils/timeZone'
 
 function makeCard(partial: Partial<Card> = {}): Card {
   return {
@@ -31,8 +32,15 @@ function makeCard(partial: Partial<Card> = {}): Card {
 }
 
 describe('PaperBoardCard', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', ...)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where it silently leaves the host zone in place
+  // (#2943).
+  let restoreZone: (() => void) | null = null
+
   afterEach(() => {
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
     vi.useRealTimers()
   })
 
@@ -121,8 +129,10 @@ describe('PaperBoardCard', () => {
   })
 
   it('renders a UTC due calendar day unchanged west of UTC and marks it overdue', () => {
-    vi.stubEnv('TZ', 'America/Los_Angeles')
+    // Fake timers first: they replace the whole `Intl` global, which would
+    // discard the zone default `installTimeZone` sets.
     vi.useFakeTimers()
+    restoreZone = installTimeZone('America/Los_Angeles')
     vi.setSystemTime(new Date('2026-08-24T19:00:00.000Z'))
 
     const wrapper = mount(PaperBoardCard, {

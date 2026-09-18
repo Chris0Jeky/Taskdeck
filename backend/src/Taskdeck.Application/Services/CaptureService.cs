@@ -12,8 +12,6 @@ public class CaptureService : ICaptureService
 {
     private const int DefaultListLimit = 50;
     private const int MaxListLimit = 200;
-    private const int ExcerptLength = 200;
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
     private readonly CaptureIntakeService _captureIntake;
@@ -397,6 +395,28 @@ public class CaptureService : ICaptureService
         }
 
         return Result.Success<IReadOnlyList<CaptureItemSummaryDto>>(summaries);
+    }
+
+    public async Task<Result<CaptureTriageStatusDto>> GetStatusAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
+        if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");
+        if (item.UserId != userId)
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.Forbidden, "You do not have permission to access this capture item");
+
+        var (payload, _, _) = await ResolveAppliedConversionProvenanceAsync(
+            item, ParsePayload(item), persistChanges: false, cancellationToken);
+        var status = ResolveCaptureStatus(item, payload);
+        return Result.Success(new CaptureTriageStatusDto(
+            item.Id, status, item.ProcessedAt, item.ErrorMessage,
+            payload.Disposition, CanEditSuggestion(item, status)));
     }
 
     public async Task<Result<CaptureItemDto>> GetByIdAsync(
@@ -858,7 +878,7 @@ public class CaptureService : ICaptureService
         // stored bytes. The record of what the user first typed or pasted survives every correction,
         // and a representation can still name the exact asset it was derived from. Staged into the
         // same unit of work as the queue row, so the edit and the new source commit together.
-        var durable = await SupersedeDurableTextAsync(
+        var durable = await UpdateDurableCaptureAsync(
             userId,
             item.Id,
             dto.Text,
@@ -903,14 +923,15 @@ public class CaptureService : ICaptureService
                 "The linked transcript cannot be corrected");
         }
 
-        var normalizedText = NormalizeLineEndings(dto.Text);
-        var textChanged = !string.Equals(normalizedText, canonical.Text, StringComparison.Ordinal);
         var maxTextLength = CaptureRequestContract.MaxTranscriptTextLength;
-        if (normalizedText.Length > maxTextLength)
+        if (dto.Text.Length > maxTextLength)
         {
             return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
                 $"Text exceeds maximum length of {maxTextLength} characters");
         }
+
+        var normalizedText = NormalizeLineEndings(dto.Text);
+        var textChanged = !string.Equals(normalizedText, canonical.Text, StringComparison.Ordinal);
 
         var updatedPayload = currentPayload with
         {
@@ -968,10 +989,10 @@ public class CaptureService : ICaptureService
                     currentPayload.TitleHint,
                     StringComparison.Ordinal))
             {
-                durable = await SupersedeDurableTextAsync(
+                durable = await UpdateDurableCaptureAsync(
                     userId,
                     item.Id,
-                    normalizedText,
+                    textChanged ? dto.Text : null,
                     updatedPayload.TitleHint,
                     cancellationToken);
             }
@@ -1031,10 +1052,11 @@ public class CaptureService : ICaptureService
         text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 
     /// <summary>
-    /// Appends the corrected text as a superseding <c>SourceAsset</c> on the durable capture, if
-    /// there is one, and carries the edited title hint onto the aggregate in the same unit of work.
-    /// Returns the mutated aggregate so the caller's DTO reflects the new current text; null when
-    /// the capture is not (yet) durable, which leaves the queue-row reading intact.
+    /// Applies a corrected text as a superseding <c>SourceAsset</c> on the durable capture when
+    /// <paramref name="sourceText"/> is provided, and carries the edited title hint onto the
+    /// aggregate in the same unit of work. Returns the mutated aggregate so the caller's DTO
+    /// reflects the new current text; null when the capture is not (yet) durable, which leaves the
+    /// queue-row reading intact.
     /// <para>
     /// Deliberately NOT gated on <c>DualWriteCaptures</c>. That flag governs whether a NEW capture
     /// reaches the aggregate; it must never mean that an aggregate which already exists is allowed
@@ -1042,10 +1064,10 @@ public class CaptureService : ICaptureService
     /// and turning it back on would serve that text through the read switch.
     /// </para>
     /// </summary>
-    private async Task<Capture?> SupersedeDurableTextAsync(
+    private async Task<Capture?> UpdateDurableCaptureAsync(
         Guid userId,
         Guid captureId,
-        string text,
+        string? sourceText,
         string? titleHint,
         CancellationToken cancellationToken)
     {
@@ -1062,7 +1084,11 @@ public class CaptureService : ICaptureService
 
         try
         {
-            capture.SupersedeInlineTextSource(text);
+            if (sourceText is not null)
+            {
+                capture.SupersedeInlineTextSource(sourceText);
+            }
+
             // The queue payload carries the edited title hint, so the aggregate has to take it too --
             // otherwise UserTitle silently keeps the pre-edit value forever.
             capture.Retitle(titleHint);
@@ -1074,7 +1100,7 @@ public class CaptureService : ICaptureService
             // detects that and the reconcile pass repairs it on the next start.
             _logger?.LogWarning(
                 ex,
-                "Context Fabric: could not record a superseding source for capture {CaptureId}; " +
+                "Context Fabric: could not update the durable capture {CaptureId}; " +
                 "the edit still applied to the queue row and the backfill will reconcile it.",
                 captureId);
             return null;
@@ -1182,7 +1208,7 @@ public class CaptureService : ICaptureService
         DateTimeOffset queueUpdatedAt,
         CancellationToken cancellationToken)
     {
-        // Not gated on DualWriteCaptures, for the same reason as SupersedeDurableTextAsync: the flag
+        // Not gated on DualWriteCaptures, for the same reason as UpdateDurableCaptureAsync: the flag
         // decides whether new captures reach the aggregate, never whether an existing one may drift.
         if (_captureStore is null)
         {
@@ -1202,7 +1228,7 @@ public class CaptureService : ICaptureService
             // disposition first would make stale durable text look newer than its queue row and
             // hide it from both the read guard and reconcile backlog forever. Sources stay
             // immutable: reconciliation appends a superseding asset.
-            if (!string.Equals(capture.CurrentText, queueText, StringComparison.Ordinal))
+            if (!CaptureTextComparison.Equivalent(capture.CurrentText, queueText))
             {
                 capture.SupersedeInlineTextSource(queueText);
             }
@@ -1414,7 +1440,7 @@ public class CaptureService : ICaptureService
         // it was admitted from. Before the versioned upgrade check, a later Keep/Archive timestamp
         // can mask stale text, so disagreement must prefer the queue regardless of timestamp.
         // After that check, the ordinary newer-queue guard still covers dual-write-off windows.
-        if (!string.Equals(durable.CurrentText, payload.Text, StringComparison.Ordinal) &&
+        if (!CaptureTextComparison.Equivalent(durable.CurrentText, payload.Text) &&
             (durable.LegacyReconciliationVersion < Capture.CurrentLegacyReconciliationVersion ||
              item.UpdatedAt > durable.UpdatedAt))
         {
@@ -1437,7 +1463,7 @@ public class CaptureService : ICaptureService
         CaptureListMaterial? durable = null)
     {
         var material = ResolveCaptureMaterial(item, payload, durable);
-        var excerpt = BuildExcerpt(material.Text);
+        var excerpt = CaptureTextExcerpt.Build(material.Text);
         var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemSummaryDto(
@@ -1461,7 +1487,7 @@ public class CaptureService : ICaptureService
         CaptureListMaterial? durable = null)
     {
         var material = ResolveCaptureMaterial(item, payload, durable);
-        var excerpt = BuildExcerpt(material.Text);
+        var excerpt = CaptureTextExcerpt.Build(material.Text);
         var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemDto(
@@ -1614,18 +1640,5 @@ public class CaptureService : ICaptureService
                                 proposalId != Guid.Empty;
         var isConverted = payload.Provenance?.ConvertedAt is not null;
         return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal, isConverted);
-    }
-
-    private static string BuildExcerpt(string rawText)
-    {
-        var normalized = string.Join(
-            " ",
-            rawText
-                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-
-        if (normalized.Length <= ExcerptLength)
-            return normalized;
-
-        return normalized[..ExcerptLength];
     }
 }

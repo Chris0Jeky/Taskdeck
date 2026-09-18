@@ -156,6 +156,10 @@ R3 sits outside the regions the guard inspects, so it is not suppressed by an al
 regions above where a regression would be silent. It is allowlist-based and deliberately narrow: it
 never inspects log statements and never inspects known-domain catches.
 
+- **Coverage failures fail closed** — if the guarded MCP directory cannot be
+  enumerated, the scan emits `mcp-surface-unreadable` and fails rather than
+  treating the missing surface as an empty, successful scan.
+
 - **Rule 1 (`mcp-error-message`)** — in `backend/src/Taskdeck.Api/Mcp/*.cs`, within a statement in a
   `return` / `throw` / `Error(...)` / `JsonSerializer.Serialize(...)` position, **each individual**
   `.ErrorMessage` occurrence must itself be wrapped in a sanitizing call (`SanitizeLlmFailureMessage`,

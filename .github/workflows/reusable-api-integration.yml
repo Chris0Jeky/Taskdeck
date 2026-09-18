@@ -3,6 +3,11 @@ name: Reusable API Integration
 on:
   workflow_call:
     inputs:
+      platform:
+        description: linux or windows for independent scheduling; all other values retain both platforms
+        required: false
+        default: all
+        type: string
       dotnet-version:
         description: .NET SDK version used for API integration tests
         required: false
@@ -22,9 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
+        os: ${{ fromJSON(inputs.platform == 'linux' && '["ubuntu-latest"]' || inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

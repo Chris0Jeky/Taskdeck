@@ -8,6 +8,12 @@ import type {
   WorkspaceOnboardingAction,
   WorkspaceOnboardingStep,
 } from '../../../types/workspace'
+import {
+  installTimeZone,
+  instantAtZonedWallClock,
+  zonedParts,
+  type WallClock,
+} from '../../utils/timeZone'
 
 /**
  * PaperHomeView — vitest coverage for greeting, queue rendering, empty
@@ -537,16 +543,33 @@ describe('PaperHomeView', () => {
    * with the local clock and must never assert a day-relative origin.
    */
   describe('day-boundary copy (#1768)', () => {
-    // `vi.stubEnv` (restored by unstubAllEnvs) rather than touching `process.env`
-    // directly: this tsconfig project has no node types, and CI type-checks specs.
+    /**
+     * Timezone control comes from `installTimeZone`, not `vi.stubEnv('TZ', …)`.
+     *
+     * The env stub only changes the runtime zone as a side effect of Node's
+     * real environment store notifying V8, and that side effect does not happen
+     * under `pool: 'threads'` — which is exactly the pool
+     * `@stryker-mutator/vitest-runner` forces. These rows therefore measured the
+     * CI runner's own zone during Stryker's Vitest dry run and the UTC+14 row
+     * flipped from -1 to 0, failing the mutation lane before a single mutant ran
+     * (#2943, workflow run 34518952589). `installTimeZone` derives everything
+     * from explicit `Intl` zone arguments, so it behaves identically in every
+     * pool and on a host in any zone.
+     */
+    let restoreZone: (() => void) | null = null
+
     afterEach(() => {
-      vi.unstubAllEnvs()
+      restoreZone?.()
+      restoreZone = null
     })
 
-    function ledeAt(systemTime: Date, tz: string, capturesNeedingTriage: number): string {
-      vi.stubEnv('TZ', tz)
+    function ledeAt(wall: WallClock, tz: string, capturesNeedingTriage: number): string {
+      restoreZone?.()
+      // Fake timers first: they swap the whole `Intl` global, so an earlier
+      // `installTimeZone` would be discarded. See the helper's doc comment.
       vi.useFakeTimers()
-      vi.setSystemTime(systemTime)
+      restoreZone = installTimeZone(tz)
+      vi.setSystemTime(instantAtZonedWallClock(wall, tz))
       mockWorkspaceStore.homeSummary = buildSummary({
         workload: {
           capturesNeedingTriage,
@@ -562,10 +585,29 @@ describe('PaperHomeView', () => {
       return text
     }
 
+    it('runs the view under the installed zone, not the host zone', () => {
+      // The guarantee the rows below rest on: the runtime really adopted the
+      // offset. Asserted directly rather than inferred from a `new Date(...)`
+      // built out of host-local parts.
+      vi.useFakeTimers()
+      restoreZone = installTimeZone('Pacific/Kiritimati')
+      vi.setSystemTime(instantAtZonedWallClock([2026, 7, 19, 12, 0, 0], 'Pacific/Kiritimati'))
+
+      const now = new Date()
+
+      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('Pacific/Kiritimati')
+      expect(now.getTimezoneOffset()).toBe(-840)
+      expect(now.getDate()).toBe(19)
+      expect(now.getHours()).toBe(12)
+      expect(now.getUTCDate()).toBe(18)
+
+      vi.useRealTimers()
+    })
+
     it('never calls a same-day capture a carry-over from yesterday', () => {
       // The live repro: fresh account, first capture saved at 02:43 local, read
       // back seconds later. Before the fix this rendered "1 carry-over from yesterday".
-      const lede = ledeAt(new Date(2026, 7, 19, 2, 43, 12), 'UTC', 1)
+      const lede = ledeAt([2026, 7, 19, 2, 43, 12], 'UTC', 1)
 
       expect(lede).toBe('1 awaiting triage')
       expect(lede.toLowerCase()).not.toContain('yesterday')
@@ -578,34 +620,34 @@ describe('PaperHomeView', () => {
      * one in both directions (Kiritimati is UTC+14, Midway UTC-11).
      *
      * `utcDayShift` is asserted first so the timezone dimension is load-bearing:
-     * it proves the runtime really adopted the offset. Without it a runtime that
-     * ignored the TZ stub would still pass every copy assertion below and the
-     * row would be decorative.
+     * it proves the fixture really straddles the boundary it claims to. It is
+     * computed from the zone's own calendar day via an explicit `Intl` zone, so
+     * unlike the old `new Date(...).getDate()` form it does not quietly re-read
+     * the host zone when the zone stub fails to take (#2943).
      */
     // Wall-clock parts, not Date objects: a `new Date(...)` in this table would be
-    // constructed at collection time under the ambient zone, before the TZ swap.
-    it.each<[string, [number, number, number, number, number, number], string, number]>([
+    // constructed at collection time under the host zone, before the zone swap.
+    it.each<[string, WallClock, string, number]>([
       ['one second before local midnight, UTC', [2026, 7, 19, 23, 59, 59], 'UTC', 0],
       ['one second after local midnight, UTC', [2026, 7, 20, 0, 0, 1], 'UTC', 0],
       ['UTC+14 — UTC is still on the previous day', [2026, 7, 19, 12, 0, 0], 'Pacific/Kiritimati', -1],
       ['UTC-11 — UTC has already rolled to the next day', [2026, 7, 19, 20, 0, 0], 'Pacific/Midway', 1],
       ['UTC+5:30 — half-hour offset just past local midnight', [2026, 7, 20, 0, 15, 0], 'Asia/Kolkata', -1],
       ['DST-observing zone at the local boundary', [2026, 7, 19, 23, 59, 59], 'America/New_York', 1],
-    ])('renders identical date-neutral copy: %s', (_label, parts, tz, utcDayShift) => {
-      vi.stubEnv('TZ', tz)
-      const local = new Date(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5])
-      expect(local.getUTCDate() - local.getDate()).toBe(utcDayShift)
+    ])('renders identical date-neutral copy: %s', (_label, wall, tz, utcDayShift) => {
+      const instant = instantAtZonedWallClock(wall, tz)
+      expect(instant.getUTCDate() - zonedParts(instant, tz).day).toBe(utcDayShift)
 
-      const lede = ledeAt(local, tz, 2)
+      const lede = ledeAt(wall, tz, 2)
 
       expect(lede).toBe('2 awaiting triage')
       expect(lede.toLowerCase()).not.toContain('yesterday')
     })
 
     it('keeps the queue card title date-neutral too', () => {
-      vi.stubEnv('TZ', 'Pacific/Kiritimati')
       vi.useFakeTimers()
-      vi.setSystemTime(new Date(2026, 7, 19, 2, 43, 12))
+      restoreZone = installTimeZone('Pacific/Kiritimati')
+      vi.setSystemTime(instantAtZonedWallClock([2026, 7, 19, 2, 43, 12], 'Pacific/Kiritimati'))
       mockWorkspaceStore.homeSummary = buildSummary({
         workload: {
           capturesNeedingTriage: 1,
@@ -624,9 +666,9 @@ describe('PaperHomeView', () => {
     })
 
     it('still reports nothing waiting when the workload is empty', () => {
-      vi.stubEnv('TZ', 'Pacific/Midway')
       vi.useFakeTimers()
-      vi.setSystemTime(new Date(2026, 7, 20, 0, 0, 1))
+      restoreZone = installTimeZone('Pacific/Midway')
+      vi.setSystemTime(instantAtZonedWallClock([2026, 7, 20, 0, 0, 1], 'Pacific/Midway'))
       mockWorkspaceStore.homeSummary = buildSummary({
         workload: {
           capturesNeedingTriage: 0,

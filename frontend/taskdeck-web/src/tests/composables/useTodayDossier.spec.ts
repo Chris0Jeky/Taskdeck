@@ -5,6 +5,7 @@ import { flushPromises } from '@vue/test-utils'
 import { todayApi } from '../../api/todayApi'
 import type { CadenceApiResponse, StreakApiResponse, SealStatusApiResponse, TomorrowNoteApiResponse } from '../../api/todayApi'
 import type { TodaySummary } from '../../types/workspace'
+import { installTimeZone } from '../utils/timeZone'
 
 const workspaceMock = vi.hoisted(() => ({
   todaySummary: null as TodaySummary | null,
@@ -81,9 +82,16 @@ describe('useTodayDossier', () => {
     workspaceMock.fetchTodaySummary.mockResolvedValue(null)
   })
 
+  // `installTimeZone`, not `vi.stubEnv('TZ', ...)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where it silently leaves the host zone in place
+  // (#2943).
+  let restoreZone: (() => void) | null = null
+
   afterEach(() => {
     vi.useRealTimers()
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
     vi.restoreAllMocks()
   })
 
@@ -313,7 +321,7 @@ describe('useTodayDossier', () => {
   })
 
   it('maps the live Today summary to truthful stats and overdue carry-over cards', async () => {
-    vi.stubEnv('TZ', 'America/Los_Angeles')
+    restoreZone = installTimeZone('America/Los_Angeles')
     workspaceMock.todaySummary = {
       workspaceMode: 'guided',
       onboarding: {

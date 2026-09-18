@@ -8,9 +8,22 @@ import { usePaperThemeStore } from '../../store/paperThemeStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
 import type { Card } from '../../types/board'
 
-const mockSessionStore = reactive<{ userId: string | null; username: string | null }>({
+const demoModeFlag = vi.hoisted(() => ({ value: false }))
+
+vi.mock('../../utils/demoMode', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/demoMode')>()
+  return {
+    ...actual,
+    get isDemoMode() {
+      return demoModeFlag.value
+    },
+  }
+})
+
+const mockSessionStore = reactive<{ userId: string | null; username: string | null; isDemo: boolean }>({
   userId: 'user-abc',
   username: 'alice',
+  isDemo: false,
 })
 
 vi.mock('../../store/sessionStore', () => ({
@@ -185,6 +198,8 @@ describe('BoardView', () => {
     routeMock.params.id = 'board-1'
     mockSessionStore.userId = 'user-abc'
     mockSessionStore.username = 'alice'
+    mockSessionStore.isDemo = false
+    demoModeFlag.value = false
     mockBoardStore.currentBoard = {
       id: 'board-1',
       name: 'Ops Board',
@@ -249,6 +264,31 @@ describe('BoardView', () => {
       name: 'workspace-review',
       query: { boardId: 'board-1' },
     })
+  })
+
+  it('omits server-only estimates from a backendless demo build', async () => {
+    demoModeFlag.value = true
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Board estimates"]').exists()).toBe(false)
+  })
+
+  it('omits server-only estimates for an explicit demo session', async () => {
+    mockSessionStore.isDemo = true
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Board estimates"]').exists()).toBe(false)
+  })
+
+  it('keeps estimates available for a normal authenticated board', async () => {
+    const wrapper = mountView()
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Board estimates"]').exists()).toBe(true)
   })
 
   it('keeps board navigation shortcuts enabled in paper mode while gating hidden controls', async () => {

@@ -438,7 +438,7 @@ These are previously reported bugs. Verify they remain fixed or track their curr
 ### Verifications — MCP Full Inventory (#739)
 
 - [ ] Start API with `--mcp` flag. From MCP client, list available resources. Verify 9 resources under `taskdeck://` scheme: boards, board/{id}, board/{id}/columns, board/{id}/cards, card/{id}, captures, proposals, board/{id}/labels, and proposal/{id}.
-- [ ] List available tools. Verify 11 tools: `search_cards`, `get_board_summary`, `create_card`, `move_card`, `update_card`, `archive_card`, `create_capture`, `create_column`, `get_proposal_status`, `list_proposals`, `dismiss_proposal`.
+- [ ] List available tools. Verify the current 13 tools: `search_cards`, `get_board_summary`, `create_card`, `move_card`, `update_card`, `archive_card`, `archive_card_lifecycle`, `restore_archived_card`, `create_capture`, `create_column`, `get_proposal_status`, `list_proposals`, `dismiss_proposal`. The two lifecycle additions propose changes for Review; legacy `archive_card` still means Block.
 - [ ] Use a write tool (e.g., `create_card`). Verify it returns a proposal ID, not a direct card creation.
 - [ ] Verify `approve_proposal` tool does NOT exist (intentionally excluded per GP-06).
 - [ ] Attempt to access another user's proposal via `get_proposal_status`. Verify access denied.

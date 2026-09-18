@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { captureApi } from '../../api/captureApi'
 import {
@@ -25,6 +25,7 @@ vi.mock('../../api/captureApi', () => ({
     createItem: vi.fn(),
     listItems: vi.fn(),
     getItem: vi.fn(),
+    getStatus: vi.fn(),
     keepItem: vi.fn(),
     archiveItem: vi.fn(),
     ignoreItem: vi.fn(),
@@ -51,8 +52,10 @@ vi.mock('../../composables/useErrorMapper', () => ({
 describe('captureStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
+
+  afterEach(() => { useCaptureStore().stopTriagePolling() })
 
   it('loads capture summaries', async () => {
     const store = useCaptureStore()
@@ -730,7 +733,7 @@ describe('captureStore', () => {
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to load inbox item')
   })
 
-  it('enqueues triage and refreshes detail state', async () => {
+  it('enqueues triage and starts status watching without loading detail', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
       id: 'c7',
@@ -754,8 +757,8 @@ describe('captureStore', () => {
     await store.triageItem('c7')
 
     expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7', undefined)
-    expect(captureApi.getItem).toHaveBeenCalledWith('c7')
-    expect(store.detailById.c7?.status).toBe('Triaging')
+    expect(captureApi.getItem).not.toHaveBeenCalled()
+    expect(store.triagePollingItemIds.has('c7')).toBe(true)
     // QUEUED, never APPLIED (#1970) — triage is enqueued, not run.
     expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued', undefined, {
       label: 'queued',
@@ -792,7 +795,6 @@ describe('captureStore', () => {
   it('optimistically updates cached detail status without overwriting a fresher summary when triage starts from an open item', async () => {
     const store = useCaptureStore()
     const createdAt = new Date().toISOString()
-    let resolveDetailRefresh: ((value: Awaited<ReturnType<typeof captureApi.getItem>>) => void) | null = null
 
     store.items = [
       {
@@ -825,9 +827,7 @@ describe('captureStore', () => {
       status: 'Triaging',
       alreadyTriaging: false,
     })
-    vi.mocked(captureApi.getItem).mockImplementationOnce(() => new Promise((resolve) => {
-      resolveDetailRefresh = resolve
-    }))
+
 
     const triagePromise = store.triageItem('c7-detail')
     await Promise.resolve()
@@ -843,31 +843,9 @@ describe('captureStore', () => {
       processedAt: null,
     })
 
-    resolveDetailRefresh?.({
-      id: 'c7-detail',
-      userId: 'u1',
-      boardId: 'b1',
-      status: 'Triaging',
-      source: 'Typed',
-      textExcerpt: 'refreshed detail excerpt',
-      rawText: 'refreshed detail text',
-      createdAt,
-      processedAt: createdAt,
-      retryCount: 1,
-      provenance: null,
-    })
     await triagePromise
-
-    expect(store.detailById['c7-detail']).toMatchObject({
-      status: 'Triaging',
-      rawText: 'refreshed detail text',
-    })
-    expect(store.items[0]).toMatchObject({
-      id: 'c7-detail',
-      status: 'Triaging',
-      textExcerpt: 'refreshed detail excerpt',
-      processedAt: createdAt,
-    })
+    expect(captureApi.getItem).not.toHaveBeenCalled()
+    expect(store.triagePollingItemIds.has('c7-detail')).toBe(true)
   })
 
   it('keeps the fresher summary visible when triage refresh fails after starting from stale cached detail', async () => {
@@ -932,7 +910,6 @@ describe('captureStore', () => {
   it('optimistically updates summary status when triage starts without cached detail', async () => {
     const store = useCaptureStore()
     const createdAt = new Date().toISOString()
-    let resolveDetailRefresh: ((value: Awaited<ReturnType<typeof captureApi.getItem>>) => void) | null = null
 
     store.items = [
       {
@@ -952,9 +929,7 @@ describe('captureStore', () => {
       status: 'Triaging',
       alreadyTriaging: false,
     })
-    vi.mocked(captureApi.getItem).mockImplementationOnce(() => new Promise((resolve) => {
-      resolveDetailRefresh = resolve
-    }))
+
 
     const triagePromise = store.triageItem('c7-summary')
     await Promise.resolve()
@@ -966,30 +941,9 @@ describe('captureStore', () => {
       textExcerpt: 'summary excerpt',
     })
 
-    resolveDetailRefresh?.({
-      id: 'c7-summary',
-      userId: 'u1',
-      boardId: 'b1',
-      status: 'Triaging',
-      source: 'Typed',
-      textExcerpt: 'refreshed summary excerpt',
-      rawText: 'refreshed detail text',
-      createdAt,
-      processedAt: createdAt,
-      retryCount: 1,
-      provenance: null,
-    })
     await triagePromise
-
-    expect(store.detailById['c7-summary']).toMatchObject({
-      status: 'Triaging',
-      rawText: 'refreshed detail text',
-    })
-    expect(store.items[0]).toMatchObject({
-      id: 'c7-summary',
-      status: 'Triaging',
-      textExcerpt: 'refreshed summary excerpt',
-    })
+    expect(captureApi.getItem).not.toHaveBeenCalled()
+    expect(store.triagePollingItemIds.has('c7-summary')).toBe(true)
   })
 
   it('stores action error when triage enqueue fails', async () => {
@@ -1002,251 +956,6 @@ describe('captureStore', () => {
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
   })
 
-  describe('pollTriageCompletion', () => {
-    it('keeps the server edit capability exact when polling syncs detail into the list summary', async () => {
-      vi.useFakeTimers()
-      try {
-        const store = useCaptureStore()
-        const createdAt = new Date().toISOString()
-        const capabilities: Array<boolean | undefined> = [true, false, undefined]
-        let callCount = 0
-
-        vi.mocked(captureApi.getItem).mockImplementation(async () => {
-          const canEditSuggestion = capabilities[callCount++]
-          return {
-            id: 'poll-capability',
-            userId: 'u1',
-            boardId: 'b1',
-            status: 'Triaging',
-            source: 'Typed' as const,
-            textExcerpt: 'excerpt',
-            rawText: 'full text',
-            createdAt,
-            processedAt: null,
-            retryCount: 0,
-            ...(canEditSuggestion === undefined ? {} : { canEditSuggestion }),
-          }
-        })
-
-        const stop = store.pollTriageCompletion('poll-capability')
-
-        await vi.advanceTimersByTimeAsync(2_000)
-        expect(store.items.find((item) => item.id === 'poll-capability')?.canEditSuggestion).toBe(true)
-
-        await vi.advanceTimersByTimeAsync(2_000)
-        // A server false must clear an earlier true capability.
-        expect(store.items.find((item) => item.id === 'poll-capability')?.canEditSuggestion).toBe(false)
-
-        await vi.advanceTimersByTimeAsync(2_000)
-        // An omitted server field remains absent and cannot grant edit rights.
-        const summary = store.items.find((item) => item.id === 'poll-capability')
-        expect(summary?.canEditSuggestion).toBeUndefined()
-        expect(summary).not.toHaveProperty('canEditSuggestion')
-
-        stop()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('polls until terminal status and updates cached detail', async () => {
-      vi.useFakeTimers()
-      const store = useCaptureStore()
-      const createdAt = new Date().toISOString()
-      let callCount = 0
-
-      vi.mocked(captureApi.getItem).mockImplementation(async () => {
-        callCount++
-        return {
-          id: 'poll-1',
-          userId: 'u1',
-          boardId: 'b1',
-          status: callCount < 3 ? 'Triaging' : 'ProposalCreated',
-          source: 'Typed' as const,
-          textExcerpt: 'excerpt',
-          rawText: 'full text',
-          createdAt,
-          processedAt: callCount < 3 ? null : createdAt,
-          retryCount: 0,
-          provenance: callCount < 3 ? null : { captureItemId: 'poll-1', triageRunId: 'tr1', proposalId: 'p1', promptVersion: 'triage.v1' },
-        }
-      })
-
-      const stop = store.pollTriageCompletion('poll-1')
-      expect(store.triagePollingItemId).toBe('poll-1')
-
-      // First tick at 2s — still Triaging
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(callCount).toBe(1)
-      expect(store.detailById['poll-1']?.status).toBe('Triaging')
-      // A non-terminal poll changes nothing the badge counts.
-      expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
-
-      // Second tick at 4s — still Triaging
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(callCount).toBe(2)
-      expect(store.detailById['poll-1']?.status).toBe('Triaging')
-      expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
-
-      // Third tick at 6s — now ProposalCreated, polling should stop
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(callCount).toBe(3)
-      expect(store.detailById['poll-1']?.status).toBe('ProposalCreated')
-      expect(store.triagePollingItemId).toBeNull()
-      // Terminal is exactly where the count can move (a `Failed` outcome puts
-      // the capture back into `New + Failed`), so the badge is told once.
-      expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
-
-      // No more ticks after terminal
-      await vi.advanceTimersByTimeAsync(4_000)
-      expect(callCount).toBe(3)
-
-      stop()
-      vi.useRealTimers()
-    })
-
-    it('stops polling when stop function is called', async () => {
-      vi.useFakeTimers()
-      const store = useCaptureStore()
-      let callCount = 0
-
-      vi.mocked(captureApi.getItem).mockImplementation(async () => {
-        callCount++
-        return {
-          id: 'poll-2',
-          userId: 'u1',
-          boardId: null,
-          status: 'Triaging' as const,
-          source: 'Typed' as const,
-          textExcerpt: 'excerpt',
-          rawText: 'full text',
-          createdAt: new Date().toISOString(),
-          processedAt: null,
-          retryCount: 0,
-        }
-      })
-
-      const stop = store.pollTriageCompletion('poll-2')
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(callCount).toBe(1)
-
-      stop()
-      expect(store.triagePollingItemId).toBeNull()
-
-      await vi.advanceTimersByTimeAsync(4_000)
-      expect(callCount).toBe(1)
-
-      vi.useRealTimers()
-    })
-
-    it('continues past the old 30-second boundary and stops after the bounded window', async () => {
-      vi.useFakeTimers()
-      const store = useCaptureStore()
-
-      vi.mocked(captureApi.getItem).mockResolvedValue({
-        id: 'poll-3',
-        userId: 'u1',
-        boardId: null,
-        status: 'Triaging',
-        source: 'Typed',
-        textExcerpt: 'excerpt',
-        rawText: 'full text',
-        createdAt: new Date().toISOString(),
-        processedAt: null,
-        retryCount: 0,
-      })
-
-      store.pollTriageCompletion('poll-3')
-
-      // The old 15-poll/30-second boundary must not stop the live triage poll.
-      for (let i = 0; i < 15; i++) {
-        await vi.advanceTimersByTimeAsync(2_000)
-      }
-      expect(vi.mocked(captureApi.getItem)).toHaveBeenCalledTimes(15)
-      expect(store.triagePollingItemId).toBe('poll-3')
-
-      // The bounded window is 450 polls (15 minutes at a 2-second cadence).
-      for (let i = 15; i < 450; i++) {
-        await vi.advanceTimersByTimeAsync(2_000)
-      }
-      expect(store.triagePollingItemId).toBeNull()
-
-      // No more calls after max
-      const callsBefore = vi.mocked(captureApi.getItem).mock.calls.length
-      await vi.advanceTimersByTimeAsync(4_000)
-      expect(vi.mocked(captureApi.getItem).mock.calls.length).toBe(callsBefore)
-
-      vi.useRealTimers()
-    })
-
-    it('continues polling after transient API errors', async () => {
-      vi.useFakeTimers()
-      const store = useCaptureStore()
-      let callCount = 0
-
-      vi.mocked(captureApi.getItem).mockImplementation(async () => {
-        callCount++
-        if (callCount === 1) throw new Error('transient')
-        return {
-          id: 'poll-4',
-          userId: 'u1',
-          boardId: null,
-          status: 'ProposalCreated' as const,
-          source: 'Typed' as const,
-          textExcerpt: 'excerpt',
-          rawText: 'full text',
-          createdAt: new Date().toISOString(),
-          processedAt: new Date().toISOString(),
-          retryCount: 0,
-        }
-      })
-
-      store.pollTriageCompletion('poll-4')
-
-      // First tick — error, but keeps going
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(callCount).toBe(1)
-
-      // Second tick — success with terminal status
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(callCount).toBe(2)
-      expect(store.detailById['poll-4']?.status).toBe('ProposalCreated')
-      expect(store.triagePollingItemId).toBeNull()
-
-      vi.useRealTimers()
-    })
-
-    it('stops any existing poll before starting a new one', async () => {
-      vi.useFakeTimers()
-      const store = useCaptureStore()
-
-      vi.mocked(captureApi.getItem).mockImplementation(async (itemId: string) => ({
-        id: itemId,
-        userId: 'u1',
-        boardId: null,
-        status: 'Triaging',
-        source: 'Typed',
-        textExcerpt: `${itemId} excerpt`,
-        rawText: `${itemId} full text`,
-        createdAt: new Date().toISOString(),
-        processedAt: null,
-        retryCount: 0,
-      }))
-
-      store.pollTriageCompletion('poll-old')
-      store.pollTriageCompletion('poll-new')
-
-      expect(store.triagePollingItemId).toBe('poll-new')
-
-      await vi.advanceTimersByTimeAsync(2_000)
-
-      expect(captureApi.getItem).toHaveBeenCalledTimes(1)
-      expect(captureApi.getItem).toHaveBeenCalledWith('poll-new')
-      expect(store.triagePollingItemId).toBe('poll-new')
-
-      vi.useRealTimers()
-    })
-  })
 
   it('keeps a successful triage enqueue successful when detail refresh fails', async () => {
     const store = useCaptureStore()
@@ -1743,9 +1452,9 @@ describe('captureStore', () => {
         store.detailById['batch-capture'] = staleDetail as never
 
         let resolvePoll!: (value: unknown) => void
-        vi.mocked(captureApi.getItem)
+        vi.mocked(captureApi.getStatus)
           .mockReturnValueOnce(new Promise((resolve) => { resolvePoll = resolve }) as never)
-          .mockResolvedValue({
+        vi.mocked(captureApi.getItem).mockResolvedValue({
             ...staleDetail,
             status: 'Ignored',
             disposition: { kind: 'Ignored', at: createdAt, byUserId: 'u1', boardId: null },
@@ -1764,7 +1473,7 @@ describe('captureStore', () => {
 
         const stop = store.pollTriageCompletion('batch-capture')
         await vi.advanceTimersByTimeAsync(2_000)
-        expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+        expect(captureApi.getStatus).toHaveBeenCalledTimes(1)
 
         await store.batchTriage(['batch-capture'], 'ignore')
         resolvePoll(staleDetail)
@@ -2382,6 +2091,7 @@ describe('captureStore', () => {
         // The single-item poll observes the terminal outcome while the batch
         // list read for the same item is still in flight.
         vi.mocked(captureApi.getItem).mockResolvedValue(detailFor('c-1', 'ProposalCreated'))
+        vi.mocked(captureApi.getStatus).mockResolvedValue(detailFor('c-1', 'ProposalCreated'))
         const stopSingle = store.pollTriageCompletion('c-1')
         await vi.advanceTimersByTimeAsync(2_000)
         expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('ProposalCreated')
@@ -3001,13 +2711,13 @@ describe('captureStore', () => {
         try {
           const store = useCaptureStore()
           let resolveDetail!: (value: unknown) => void
-          vi.mocked(captureApi.getItem).mockReturnValueOnce(
+          vi.mocked(captureApi.getStatus).mockReturnValueOnce(
             new Promise((resolve) => { resolveDetail = resolve }) as never,
           )
 
           const stop = store.pollTriageCompletion('c-1')
           await vi.advanceTimersByTimeAsync(2_000)
-          expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+          expect(captureApi.getStatus).toHaveBeenCalledTimes(1)
 
           vi.mocked(captureApi.batchTriage).mockResolvedValue({
             total: 1,

@@ -79,6 +79,20 @@ function mountCard(props: {
 }
 
 describe('ReviewProposalCard diff presentation (#1397)', () => {
+  it.each(['Chat', 'Manual'] as const)('offers board preview for %s without capture provenance or operations', async sourceType => {
+    const wrapper = mountCard({ proposal: makeProposal({ sourceType, correlationId: '', operations: [] }) })
+    await flushPromises()
+    const preview = wrapper.findAllComponents(RouterLinkStub).find(link => link.text() === 'Preview on board')
+    expect(preview?.props('to')).toEqual({ path: '/workspace/boards/board-1', query: { proposalId: 'p-1' } })
+    expect(wrapper.text()).not.toContain('Capture-linked')
+    wrapper.unmount()
+  })
+  it.each([{ readOnly: true, status: 'PendingReview' }, { readOnly: false, status: 'Applied' }])('withholds board preview for unavailable editing context %j', async ({ readOnly, status }) => {
+    const wrapper = mountCard({ proposal: makeProposal({ status: status as Proposal['status'] }), readOnly })
+    await flushPromises()
+    expect(wrapper.findAllComponents(RouterLinkStub).some(link => link.text() === 'Preview on board')).toBe(false)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     resetProposalDisplayNamesForTests()

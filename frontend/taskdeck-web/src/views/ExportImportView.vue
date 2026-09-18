@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { exportImportApi } from '../api/exportImportApi'
 import { noteImportApi } from '../api/noteImportApi'
@@ -7,6 +7,7 @@ import { getErrorDisplay } from '../composables/useErrorMapper'
 import { useSessionStore } from '../store/sessionStore'
 import { useToastStore } from '../store/toastStore'
 import type { NoteImportResult } from '../types/note-import'
+import type { BoardImportPreview } from '../types/export-import'
 
 const session = useSessionStore()
 const toast = useToastStore()
@@ -23,6 +24,37 @@ const importJson = ref('')
 const importResult = ref<{ success: boolean; message: string; summary: string | null } | null>(null)
 const importing = ref(false)
 const importStep = ref(1)
+const preview = ref<BoardImportPreview | null>(null)
+const mappings = ref<Record<string, string>>({})
+const previewError = ref('')
+const previewing = ref(false)
+let importGeneration = 0
+const mappingsComplete = computed(() => !!preview.value && preview.value.sourceAssignees.every(a =>
+  mappings.value[a.sourceKey] === 'unassigned' || mappings.value[a.sourceKey] === preview.value!.me.userId))
+watch([importJson, () => session.userId], () => {
+  importGeneration++
+  preview.value = null
+  mappings.value = {}
+  previewing.value = false
+  importing.value = false
+  previewError.value = ''
+  importStep.value = 1
+})
+onBeforeUnmount(() => { importGeneration++ })
+async function validateImport() {
+  const request = ++importGeneration
+  previewing.value = true
+  previewError.value = ''
+  try {
+    const result = await exportImportApi.previewBoardJson(importJson.value)
+    if (request !== importGeneration) return
+    preview.value = result
+    mappings.value = {}
+    importStep.value = 2
+  } catch (error) {
+    if (request === importGeneration) previewError.value = getErrorDisplay(error, 'Board JSON is invalid.').message
+  } finally { if (request === importGeneration) previewing.value = false }
+}
 
 // --- Markdown import state ---
 const mdFileName = ref('')
@@ -89,6 +121,8 @@ function handleDownloadExport() {
 
 // --- Board JSON import handlers ---
 async function handleImport() {
+  if (!preview.value || !mappingsComplete.value || importing.value) return
+  const request = importGeneration
   if (!importJson.value.trim()) {
     toast.warning('Please enter or paste JSON data.')
     return
@@ -97,7 +131,10 @@ async function handleImport() {
   try {
     importing.value = true
     session.requireUserId('export/import')
-    const result = await exportImportApi.importBoardJson(importJson.value.trim())
+    const assigneeMappings = Object.fromEntries(Object.entries(mappings.value).map(([key, value]) =>
+      [key, value === 'unassigned' ? null : value]))
+    const result = await exportImportApi.importBoard({ ...preview.value.board, assigneeMappings })
+    if (request !== importGeneration) return
 
     if (result.success) {
       importResult.value = {
@@ -117,12 +154,13 @@ async function handleImport() {
 
     importStep.value = 3
   } catch (err: unknown) {
+    if (request !== importGeneration) return
     const message = getErrorDisplay(err, 'Import failed. Check your JSON data.').message
     importResult.value = { success: false, message, summary: null }
     toast.error(message)
     importStep.value = 3
   } finally {
-    importing.value = false
+    if (request === importGeneration) importing.value = false
   }
 }
 
@@ -283,17 +321,30 @@ function resetWebClipImport() {
           <label for="import-json" class="paper-portability__label">Board JSON</label>
           <textarea id="import-json" v-model="importJson" class="paper-portability__textarea paper-portability__textarea--lg" rows="10" placeholder="Paste JSON here..."></textarea>
         </div>
-        <PaperHLBtn variant="ember" :disabled="!importJson.trim()" @click="importStep = 2">
-          Validate & Preview
+        <p v-if="previewError" role="alert">{{ previewError }}</p>
+        <PaperHLBtn variant="ember" :disabled="!importJson.trim() || previewing" @click="validateImport">
+          {{ previewing ? 'Validating…' : 'Validate & Preview' }}
         </PaperHLBtn>
       </div>
 
-      <div v-if="importStep === 2">
-        <p class="paper-portability__panel-desc">Review the data before importing.</p>
-        <pre class="paper-portability__json paper-portability__json--sm">{{ importJson.substring(0, 500) }}{{ importJson.length > 500 ? '...' : '' }}</pre>
+      <div v-if="importStep === 2 && preview">
+        <p class="paper-portability__panel-desc">Create a new board "{{ preview.board.name }}" with {{ preview.columnCount }} columns and {{ preview.cardCount }} cards. Card identities are new. Memberships are not imported.</p>
+        <ul><li v-for="(card, index) in preview.board.cards" :key="index">{{ card.title }} — {{ card.columnName }}{{ card.isArchived ? ' (archived)' : '' }}</li></ul>
+        <fieldset :disabled="importing" class="space-y-3">
+          <legend v-if="preview.sourceAssignees.length">Map every source assignee</legend>
+          <p v-if="preview.sourceAssignees.length">Choose Me or explicitly leave unassigned. Names and source identities are never matched automatically.</p>
+          <label v-for="source in preview.sourceAssignees" :key="source.sourceKey" class="block">
+            {{ source.displayName }} — {{ source.affectedCardCount }} affected cards
+            <select v-model="mappings[source.sourceKey]" class="paper-portability__input" :aria-label="`Map ${source.displayName}`">
+              <option :value="undefined" disabled>Choose a mapping</option>
+              <option :value="preview.me.userId">Me ({{ preview.me.displayName }})</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+          </label>
+        </fieldset>
         <div class="paper-portability__step-actions">
-          <PaperHLBtn @click="importStep = 1">Back</PaperHLBtn>
-          <PaperHLBtn variant="ember" :disabled="importing" @click="handleImport">
+          <PaperHLBtn :disabled="importing" @click="importStep = 1">Back</PaperHLBtn>
+          <PaperHLBtn variant="ember" :disabled="importing || !mappingsComplete" @click="handleImport">
             {{ importing ? 'Importing...' : 'Import Board' }}
           </PaperHLBtn>
         </div>

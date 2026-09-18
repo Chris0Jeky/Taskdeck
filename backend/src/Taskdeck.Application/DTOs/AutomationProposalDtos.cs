@@ -4,6 +4,10 @@ using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.DTOs;
 
+public record ProposalPreviewDto(Guid ProposalId, Guid? BoardId, ProposalStatus Status,
+    Guid? EffectiveRevisionId, int? EffectiveRevisionNumber, DateTimeOffset ProposalUpdatedAt,
+    DateTime ExpiresAt, DateTimeOffset CheckedAt, string Diff);
+
 public record ProposalDto(
     Guid Id,
     ProposalSourceType SourceType,

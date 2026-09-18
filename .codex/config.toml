@@ -13,7 +13,7 @@ multi_agent = true
 # fan-out range (<=3-5; <=8-12 only for a genuine sweep).
 max_threads = 10
 max_depth = 3
-job_max_runtime_seconds = 8000
+job_max_runtime_seconds = 16000
 
 [agents.issue_worker]
 description = "Implement one Taskdeck issue in an isolated worktree. Use taskdeck-worktree-issue-worker, keep ownership narrow, commit small, test, open a ready PR, and return exact evidence to the coordinator."

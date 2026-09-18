@@ -232,7 +232,8 @@ public class OpenAiLlmProvider : ILlmProvider
         var messages = new List<object>();
 
         // System prompt for tool-calling mode
-        var systemPrompt = request.SystemPrompt ?? ToolCallingSystemPrompt.Prompt;
+        var systemPrompt = LlmSystemPromptBuilder.BuildEffectiveSystemPrompt(
+            request.SystemPrompt ?? ToolCallingSystemPrompt.Prompt, request.BoardContext);
         if (!string.IsNullOrEmpty(systemPrompt))
         {
             messages.Add(new { role = "system", content = systemPrompt });

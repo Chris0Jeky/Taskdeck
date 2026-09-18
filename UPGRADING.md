@@ -14,8 +14,97 @@ changes.
 
 ## Unreleased workspace overhaul
 
-**BREAKING: none.** Three additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
-and correction-history tables, then private question-source columns. Existing boards, cards, captures and proposals retain their identities. Thinking material
+Typed card relations migrate the existing dependency JSON into canonical `CardRelations` rows
+through `20260912172859_AddCanonicalCardRelations`. Existing card IDs, archived endpoints and
+graph revisions are preserved; dangling or foreign-board legacy references are omitted. The
+existing dependency API remains compatible, while new relation writes use reviewed proposals.
+Board JSON with relations uses a version-5 envelope; older importers reject it. Current importers
+still accept legacy and version-2 through version-4 files and remap endpoints to fresh card IDs.
+Developer rollback reconstructs the latest dependency graph, including changes after upgrade,
+but loses relates-to, duplicates and spawned-from metadata. Reapplying the migration cannot
+recover that metadata. Back up the stopped database first; schema rollback tests do not establish
+support for running older application binaries. [Relation contract](docs/product/CARD_RELATIONS.md).
+
+Card estimates add nullable `Cards.EstimatedEffortMinutes` through
+`20260912155107_AddCardEstimatedEffort`. **BREAKING: none.** Existing cards remain unestimated;
+zero is an explicit known estimate. Normal startup applies this additive migration. Current board
+JSON and both account exports retain estimates, including archived cards. Developer rollback drops
+only the estimate column; reapplying it leaves retained cards unestimated and cannot recover the
+old values. Back up the stopped database before upgrading or rolling back. This schema rollback
+test does not establish support for application downgrades. [Estimate contract](docs/product/CARD_ESTIMATES.md).
+
+Card assignments add `CardAssignments` through the
+`20260910225616_AddCardAssignments` migration. Existing cards remain unassigned and retain their
+IDs, placement, hierarchy and history. Assignment does not grant board access. Board JSON with
+assignments uses the `taskdeck-board` version-4 envelope; older importers reject it. Import creates
+a new board and requires every source assignee to be explicitly mapped to the importer or left
+unassigned. Assignment-free plain and version-2/3 files remain supported. Developer rollback drops
+assignment data while preserving cards and users; reapplying the migration does not recover those
+assignments. Back up the database before upgrading; this rollback test does not establish support
+for application downgrades. [Assignment contract](docs/product/CARD_ASSIGNMENTS.md).
+
+Card hierarchy adds nullable `Cards.ParentCardId` through the
+`20260910214635_AddCardParentHierarchy` migration. Existing cards remain parentless and keep their
+IDs and placement. A hierarchy supports three parent-child links (four levels). Archiving or deleting
+a parent requires confirmation of its direct-child detachments; restoring it does not reattach them.
+Board JSON containing parent links uses the `taskdeck-board` version-3 envelope. Older importers
+reject it; current importers still accept plain and version-2 files and remap parent links to fresh
+card IDs. Developer rollback drops parent links while retaining cards, so reapplying the migration
+does not recover those links. Back up the database before upgrading; application downgrades are not
+established by this rollback test. [Hierarchy contract](docs/product/CARD_HIERARCHY.md).
+
+Card work-item types add a required `Cards.WorkItemType` column through the
+`20260910195339_AddCardWorkItemType` migration. Existing cards become Task; Epic and Spike
+are explicit choices in card details. **BREAKING: none.** Existing clients that omit the type
+keep the saved type on update and create Task cards. Board JSON and account exports include it.
+The migration's developer rollback drops type metadata while preserving cards; applying it again
+defaults those cards to Task, so former Epic/Spike distinctions are lost. Back up the database
+before upgrading; this rollback behavior does not establish support for application downgrades.
+
+`20260910165817_AddCardArchiveLifecycle` adds `IsArchived` with false for existing cards. Its Down
+migration drops archive state; reapplying the migration makes every retained card active. This is
+schema rollback with metadata loss, not a supported application downgrade or data recovery.
+Preserve a compatible backup/export before a developer rollback.
+
+Private audio answers add `StoredBlobs`, `StoredBlobChunks`, `StoredBlobReferences`, `Representations`,
+`RepresentationSupersessions` and `ThinkingAudioAnswers`. Three additive migrations introduce these
+tables; existing audio/artefact bytes and legacy transcript rows are not rewritten or backfilled.
+**BREAKING: none.** New account exports include `sourceStorage` and blob-reference IDs on source assets.
+Back up the database before upgrading. Rolling these migrations back removes the new recordings and
+representation history; preserve an account export first. Export is archival, not an automatic restore.
+Originals survive board deletion for owner export and are erased by account deletion. The new question
+audio path accepts 2 MiB originals and never enables a transcription provider automatically.
+
+Private memory sources add four nullable reference columns across `WorkspaceMemories` and its
+history. New answers and corrections stage native Context Fabric captures in the same transaction;
+older memories preserve their saved history and acquire sources on their next explicit write.
+There is no automatic processing job. **BREAKING: none.** Account exports add `nativeCaptures`;
+private board-memory downloads include source assets in version 2 when sources exist. These
+downloads remain archival JSON, not an account or board restore format.
+
+Archiving memory excludes it from active context but retains originals. Deleting its board removes
+the memory and shared context while retaining the owner's native originals for account export.
+Account deletion erases those captures and assets. This retention rule is shown beside originals.
+
+The contextual companion adds two nullable columns to `ChatMessages` for explicit source selections
+and source receipts. Old messages remain readable. Selected private-memory text is resolved for the
+model only after actor, board, archive and revision checks; it is not appended to the stored user
+instruction. Model answers can remain in the private conversation after their sources change.
+Existing approval and explicit Apply behavior is unchanged. **BREAKING: none.**
+
+An additional additive migration creates `BoardDependencies`. Explicit prerequisite links are
+shared with the board and never change card status or deadlines. Deleted-card links are omitted
+from reads and exports; deleting the board removes its graph. JSON exports containing dependencies
+use the `taskdeck-board` version-2 envelope. Current importers remap both ends to newly created cards;
+older importers reject that envelope instead of silently dropping relationships. Boards without
+dependencies retain the existing JSON shape, and existing JSON imports remain supported.
+
+**BREAKING: none.** Additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
+and correction-history tables, then private question-source columns. A further additive migration
+adds private personal-plan JSON and revision columns to UserPreferences with empty defaults. Plan dates
+are independent of card deadlines. Both account exports include the plan and last explicit focus;
+account deletion erases them, while shared board export omits them.
+ Existing boards, cards, captures and proposals retain their identities. Thinking material
 is attached to a card and is removed when that card is deleted. Insights and memory remain private
 to their author and require access to an active board. Memory archive retains correction history.
 

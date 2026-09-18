@@ -30,17 +30,35 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportArtefactDto>? Artefacts = null,
     IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null,
     IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
-    IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null);
+    IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
+    IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null,
+    SourceStorageExportDto? SourceStorage = null,
+    IReadOnlyList<CardDto>? Cards = null,
+    IReadOnlyList<UserDataExportCardRelationDto>? Relations = null);
+
+/// <summary>
+/// A relation the account export is authorized to disclose. Both cards must be
+/// included in the export's card collection; the board identity prevents a
+/// relation from being reattached to a similarly named board on restore.
+/// </summary>
+public record UserDataExportCardRelationDto(
+    Guid BoardId,
+    Guid SourceCardId,
+    Guid TargetCardId,
+    string RelationType);
+
+public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
 
 public record UserDataExportWorkspaceMemoryDto(
     Guid Id, Guid BoardId, Guid? InsightId, Guid? SourceCardId, Guid? SourceLayerId,
     long? SourceDeckRevision, string? SourceQuestionHash, string Title, string Text,
     string OriginalText, string? OriginalEvidence, string Status, bool Archived, int Revision,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<UserDataExportWorkspaceMemoryRevisionDto> History);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<UserDataExportWorkspaceMemoryRevisionDto> History,
+    Guid? SourceCaptureId = null, Guid? AnswerSourceAssetId = null, Guid? EvidenceSourceAssetId = null);
 
 public record UserDataExportWorkspaceMemoryRevisionDto(
     Guid Id, Guid MemoryId, string Title, string Text, string Status, bool Archived, int Revision,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, Guid? AnswerSourceAssetId = null);
 
 public record UserDataExportQuietInsightDto(
     Guid Id, Guid BoardId, Guid? CardId, Guid? MemoryId, string Rule, string TargetKey,
@@ -149,7 +167,8 @@ public record UserDataExportSourceAssetDto(
     string? OriginalName,
     Guid? SupersedesAssetId,
     Guid? SupersededByAssetId,
-    string? Text);
+    string? Text,
+    Guid? BlobReferenceId = null);
 
 public record UserDataExportCaptureDispositionDto(
     string Kind,
@@ -192,7 +211,11 @@ public record UserDataExportAuditEntryDto(
 
 public record UserDataExportPreferencesDto(
     string WorkspaceMode,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Taskdeck.Domain.Entities.PersonalPlan? PersonalPlan = null,
+    long PersonalPlanRevision = 0,
+    Taskdeck.Domain.Entities.WorkspaceAttention? Attention = null,
+    long AttentionRevision = 0);
 
 public record UserDataExportNotificationPreferencesDto(
     bool InAppChannelEnabled,
@@ -225,4 +248,5 @@ public record AccountDeletionResultDto(
     int DurableCapturesDeleted = 0,
     int WorkspaceMemoriesDeleted = 0,
     int WorkspaceMemoryRevisionsDeleted = 0,
-    int QuietInsightsDeleted = 0);
+    int QuietInsightsDeleted = 0,
+    int CardAssignmentsRemoved = 0);

@@ -8,10 +8,18 @@ import {
   localCalendarDateKey,
   toCalendarDateKey,
 } from '../../utils/dueDates'
+import { installTimeZone } from './timeZone'
 
 describe('dueDates calendar-day contract', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', …)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where these rows silently measured the host zone
+  // instead (#2943).
+  let restoreZone: (() => void) | null = null
+
   afterEach(() => {
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
     vi.useRealTimers()
   })
 
@@ -20,7 +28,7 @@ describe('dueDates calendar-day contract', () => {
     ['UTC', '2026-08-23'],
     ['Asia/Kolkata', '2026-08-23'],
   ])('preserves the UTC calendar key when %s projects the instant as %s', (timeZone, projectedKey) => {
-    vi.stubEnv('TZ', timeZone)
+    restoreZone = installTimeZone(timeZone)
     const persisted = '2026-08-23T00:00:00.000Z'
 
     // Load-bearing timezone proof: this is the projection that caused the
@@ -39,7 +47,7 @@ describe('dueDates calendar-day contract', () => {
     ['UTC', '2026-08-23'],
     ['Pacific/Kiritimati', '2026-08-24'],
   ])('derives the caller localDate in %s', (timeZone, expectedKey) => {
-    vi.stubEnv('TZ', timeZone)
+    restoreZone = installTimeZone(timeZone)
     expect(localCalendarDateKey(new Date('2026-08-23T12:30:00.000Z'))).toBe(expectedKey)
   })
 

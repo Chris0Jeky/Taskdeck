@@ -21,6 +21,10 @@ vi.mock('../../api/http', () => ({
   },
 }))
 
+vi.mock('../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => ({ refreshWorkloadCounts: vi.fn(async () => {}) }),
+}))
+
 vi.mock('../../store/toastStore', () => ({
   useToastStore: () => ({ error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() }),
 }))
@@ -62,10 +66,11 @@ function makeDetailPayload(overrides: Partial<CaptureItem> = {}): CaptureItem {
 describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   afterEach(() => {
+    useCaptureStore().stopTriagePolling()
     vi.useRealTimers()
   })
 
@@ -171,7 +176,7 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
   // ── enqueueTriage → status transition ─────────────────────────────────────
 
   describe('triageItem', () => {
-    it('posts to /capture/items/:id/triage and refreshes detail with GET after', async () => {
+    it('posts to /capture/items/:id/triage and watches status independently', async () => {
       const enqueueResponse = { id: 'c-5', status: 'Triaging', alreadyTriaging: false }
       const refreshedDetail = makeDetailPayload({ id: 'c-5', status: 'Triaging' })
 
@@ -186,8 +191,8 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
         expect.stringContaining('/capture/items/c-5/triage'),
         undefined,
       )
-      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/capture/items/c-5'))
-      expect(store.detailById['c-5']?.status).toBe('Triaging')
+      expect(http.get).not.toHaveBeenCalled()
+      expect(store.triagePollingItemIds.has('c-5')).toBe(true)
     })
 
     it('sets actionError when the triage enqueue POST fails', async () => {
@@ -355,16 +360,18 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       const stop = store.pollTriageCompletion('c-poll')
       expect(store.triagePollingItemId).toBe('c-poll')
 
-      // Advance through 3 poll intervals (2s each)
-      await vi.advanceTimersByTimeAsync(2_000)
-      await vi.advanceTimersByTimeAsync(2_000)
-      await vi.advanceTimersByTimeAsync(2_000)
+      // Status backoff is 2s, 4s, 8s; terminal status then hydrates detail.
+      await vi.advanceTimersByTimeAsync(14_000)
 
       // After reaching 'Triaged' (terminal), polling should have stopped
       expect(store.triagePollingItemId).toBeNull()
       expect(store.detailById['c-poll']?.status).toBe('Triaged')
       // Verify the expected number of poll attempts executed
-      expect(callCount).toBe(3)
+      expect(callCount).toBe(4)
+      expect(vi.mocked(http.get).mock.calls.map(call => call[0])).toEqual([
+        '/capture/items/c-poll/status', '/capture/items/c-poll/status',
+        '/capture/items/c-poll/status', '/capture/items/c-poll',
+      ])
 
       stop() // cleanup
       vi.useRealTimers()

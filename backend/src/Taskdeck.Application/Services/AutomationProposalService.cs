@@ -22,6 +22,8 @@ public class AutomationProposalService : IAutomationProposalService
         "add",
         "apply",
         "archive",
+        "archive-lifecycle",
+        "restore-lifecycle",
         "assign",
         "attach",
         "block",
@@ -1388,6 +1390,31 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal == null)
             return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        return await BuildProposalDiffAsync(proposal, effectiveRevision, cancellationToken);
+    }
+
+    public async Task<Result<ProposalPreviewDto>> GetProposalPreviewAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
+        if (proposal is null)
+            return Result.Failure<ProposalPreviewDto>(ErrorCodes.NotFound, "Proposal not found.");
+        if (proposal.Status is not (ProposalStatus.PendingReview or ProposalStatus.Approved))
+            return Result.Failure<ProposalPreviewDto>(ErrorCodes.Conflict, "This proposal is no longer actionable. Open Review for its decision history.");
+        // Capture the effective revision once. Both the receipt and the diff must describe
+        // this same immutable payload, including the approved pin rather than a later revision.
+        var revision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        var diff = await BuildProposalDiffAsync(proposal, revision, cancellationToken, useStoredOriginal: false);
+        return diff.IsSuccess
+            ? Result.Success(new ProposalPreviewDto(id, proposal.BoardId, proposal.Status, revision?.Id,
+                revision?.RevisionNumber, proposal.UpdatedAt, proposal.ExpiresAt, DateTimeOffset.UtcNow, diff.Value))
+            : Result.Failure<ProposalPreviewDto>(diff.ErrorCode, diff.ErrorMessage);
+    }
+
+    private async Task<Result<string>> BuildProposalDiffAsync(AutomationProposal proposal, ProposalRevision? effectiveRevision,
+        CancellationToken cancellationToken, bool useStoredOriginal = true)
+    {
+        var id = proposal.Id;
         // When a reviewer has saved a revision, Apply executes THAT payload — the executor
         // materializes the EFFECTIVE ProposalRevision (the pinned one once approved, the latest
         // while pending) via AutomationExecutorService.MaterializeEffectiveProposalAsync, not the
@@ -1396,7 +1423,6 @@ public class AutomationProposalService : IAutomationProposalService
         // raced in after approval cannot make the diff diverge from the pinned apply set (#1428).
         // The stored DiffPreview is deliberately bypassed on this path because it describes the
         // original proposal, which is exactly the stale-preview bug we are fixing.
-        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
         if (effectiveRevision is not null)
         {
             if (!ProposalRevisionPayload.TryParseOperations(
@@ -1453,7 +1479,7 @@ public class AutomationProposalService : IAutomationProposalService
                 .ToList();
 
             var revisedDiff = await BuildReadableDiffAsync(proposal.BoardId, revisedViews, cancellationToken);
-            return Result.Success(revisedDiff);
+            return revisedDiff;
         }
 
         var originalOperations = proposal.Operations
@@ -1498,7 +1524,8 @@ public class AutomationProposalService : IAutomationProposalService
         if (!originalValidation.IsSuccess)
             return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
 
-        if (!string.IsNullOrWhiteSpace(proposal.DiffPreview))
+        if (useStoredOriginal && !originalOperations.Any(op => OperationParameterParser.TryDeserializeParameters(op.Parameters, out var p, out _) &&
+                (ProposalHierarchyValidator.AffectsHierarchy(op.ActionType, op.TargetType, p) || p.TryGetProperty("estimatedEffortMinutes", out _) || p.TryGetProperty("clearEstimatedEffort", out _))) && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
         var orderedViews = originalOperations
@@ -1506,7 +1533,7 @@ public class AutomationProposalService : IAutomationProposalService
             .ToList();
 
         var generatedDiff = await BuildReadableDiffAsync(proposal.BoardId, orderedViews, cancellationToken);
-        return Result.Success(generatedDiff);
+        return generatedDiff;
     }
 
     public async Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default)
@@ -1582,11 +1609,15 @@ public class AutomationProposalService : IAutomationProposalService
     /// the original-operations path and the revision-aware path so both render
     /// identically (#1235).
     /// </summary>
-    private async Task<string> BuildReadableDiffAsync(
+    private async Task<Result<string>> BuildReadableDiffAsync(
         Guid? boardId,
         IReadOnlyList<DiffOperationView> orderedOperations,
         CancellationToken cancellationToken)
     {
+        var hierarchy = await ProposalHierarchyValidator.ValidateAsync(_unitOfWork, boardId,
+            orderedOperations.Select(op => new ProposalOperationDto(Guid.Empty, Guid.Empty, op.Sequence, op.ActionType,
+                op.TargetType, op.TargetId, op.Parameters, "", null)), cancellationToken);
+        if (!hierarchy.IsSuccess) return Result.Failure<string>(hierarchy.ErrorCode, hierarchy.ErrorMessage);
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
@@ -1601,11 +1632,12 @@ public class AutomationProposalService : IAutomationProposalService
                 foreach (var column in columns)
                     columnNames[column.Id] = column.Name;
 
-                var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
+                var cards = (await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken))
+                    .Concat(await _unitOfWork.Cards.GetArchivedByBoardIdAsync(boardId.Value, cancellationToken));
                 foreach (var card in cards)
                 {
                     cardTitles[card.Id] = card.Title;
-                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason);
+                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason, card.IsArchived, card.WorkItemType.ToString(), card.EstimatedEffortMinutes);
                 }
 
                 var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
@@ -1621,12 +1653,23 @@ public class AutomationProposalService : IAutomationProposalService
         var descriptions = new List<string>(orderedOperations.Count);
         foreach (var operation in orderedOperations)
         {
-            descriptions.Add(DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames));
+            var description = DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames);
+            if (operation.ActionType.Equals(ProposalAssignmentContract.Action, StringComparison.OrdinalIgnoreCase))
+            {
+                using var assignmentJson = JsonDocument.Parse(operation.Parameters);
+                var assignment = await ProposalAssignmentContract.ValidateAsync(_unitOfWork, boardId, assignmentJson.RootElement, cancellationToken);
+                if (!assignment.IsSuccess) return Result.Failure<string>(assignment.ErrorCode, assignment.ErrorMessage);
+                description = $"{operation.Sequence}. {assignment.Value}";
+            }
+            if (hierarchy.Value.TryGetValue(operation.Sequence, out var hierarchyDescription))
+                description += Environment.NewLine + hierarchyDescription;
+            descriptions.Add(description);
             ApplyPreviewCreatedCardState(operation, cardTitles, cardStates);
             ApplyPreviewCardArchiveState(operation, cardStates);
+            ApplyPreviewCardEstimateState(operation, cardStates);
         }
 
-        return string.Join(Environment.NewLine, descriptions);
+        return Result.Success(string.Join(Environment.NewLine, descriptions));
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -1930,7 +1973,7 @@ public class AutomationProposalService : IAutomationProposalService
         string? TargetId,
         string Parameters);
 
-    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason);
+    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason, bool IsArchived = false, string WorkItemType = "Task", int? EstimatedEffortMinutes = null);
 
     private static void ApplyPreviewCreatedCardState(
         DiffOperationView operation,
@@ -1948,7 +1991,22 @@ public class AutomationProposalService : IAutomationProposalService
         if (title is not null)
             cardTitles[plannedCardId] = title;
 
-        cardStates[plannedCardId] = new CardDiffState(false, null);
+        cardStates[plannedCardId] = new CardDiffState(false, null, WorkItemType: ExtractStringParameter(operation.Parameters, "workItemType") ?? "Task");
+    }
+
+    private static void ApplyPreviewCardEstimateState(DiffOperationView operation, IDictionary<Guid, CardDiffState> cardStates)
+    {
+        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+            operation.ActionType.ToLowerInvariant() is not ("create" or "update") ||
+            !OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out _) ||
+            !OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var minutes, out _))
+            return;
+
+        var cardId = ExtractGuidParameter(operation.Parameters, "cardId")
+            ?? (Guid.TryParse(operation.TargetId, out var targetId) ? targetId : (Guid?)null);
+        var clear = OperationParameterParser.GetOptionalBoolean(parameters, "clearEstimatedEffort") == true;
+        if (cardId.HasValue && cardStates.TryGetValue(cardId.Value, out var state) && (minutes.HasValue || clear))
+            cardStates[cardId.Value] = state with { EstimatedEffortMinutes = clear ? null : minutes };
     }
 
     private static void ApplyPreviewCardArchiveState(
@@ -1963,8 +2021,8 @@ public class AutomationProposalService : IAutomationProposalService
 
         var cardId = ExtractGuidParameter(operation.Parameters, "cardId")
             ?? (Guid.TryParse(operation.TargetId, out var parsedTargetId) ? parsedTargetId : (Guid?)null);
-        if (cardId.HasValue)
-            cardStates[cardId.Value] = new CardDiffState(true, OperationHandlerRegistry.ArchiveCardBlockReason);
+        if (cardId.HasValue && cardStates.TryGetValue(cardId.Value, out var state))
+            cardStates[cardId.Value] = state with { IsBlocked = true, BlockReason = OperationHandlerRegistry.ArchiveCardBlockReason };
     }
 
     /// <summary>
@@ -1984,6 +2042,24 @@ public class AutomationProposalService : IAutomationProposalService
         var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
         var isLabelOperation = isCardTarget &&
             labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove;
+
+        if (isCardTarget && operation.ActionType.ToLowerInvariant() is "add-relation" or "remove-relation")
+        {
+            if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var relationJson, out _) ||
+                !OperationParameterParser.TryGetRelationOperationParameters(relationJson, out var relationParameters, out _))
+            {
+                return $"{operation.Sequence}. {operation.ActionType} card relation (invalid relation parameters)";
+            }
+
+            var relation = relationParameters.Relation;
+            var source = DescribeRelationCard(relation.SourceCardId, cardTitles);
+            var target = DescribeRelationCard(relation.TargetCardId, cardTitles);
+            var action = operation.ActionType.Equals("add-relation", StringComparison.OrdinalIgnoreCase) ? "Add" : "Remove";
+            // The parser carries CardRelationRules.Normalize, so this line names the stored kind
+            // and direction. In particular, "depends-on A B" reads as "B blocks A" here.
+            return $"{operation.Sequence}. {action} {relation.RelationType} relation: card {source} -> card {target}";
+        }
+
         var namedTarget = isLabelOperation ? null : ExtractNamedTarget(operation.Parameters);
 
         // Try to resolve card title from lookup when not embedded in parameters
@@ -2018,6 +2094,15 @@ public class AutomationProposalService : IAutomationProposalService
                     : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
             var preposition = labelAction == CardLabelOperationAction.Add ? "to" : "from";
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
+        }
+
+        if (isCardTarget && operation.ActionType.ToLowerInvariant() is "archive-lifecycle" or "restore-lifecycle")
+        {
+            var cardId = ExtractGuidParameter(operation.Parameters, "cardId");
+            var display = cardId.HasValue && cardTitles.TryGetValue(cardId.Value, out var title) ? title : cardId?.ToString() ?? "(unspecified)";
+            return operation.ActionType.Equals("archive-lifecycle", StringComparison.OrdinalIgnoreCase)
+                ? $"{operation.Sequence}. Archive card {display}; Archived: false -> true; retain original column, labels and history."
+                : $"{operation.Sequence}. Restore card {display}; Archived: true -> false; return to its original column and position.";
         }
 
         if (isCardTarget && string.Equals(operation.ActionType, "archive", StringComparison.OrdinalIgnoreCase))
@@ -2097,12 +2182,56 @@ public class AutomationProposalService : IAutomationProposalService
                 description += $" in column {columnDisplay}";
         }
 
-        var cardEffects = DescribeCardParameterEffects(operation.Parameters, labelNames);
+        // Render the type transition ONLY for the two actions whose handlers actually apply
+        // 'workItemType'. A move (or any other generic card action) ignores the parameter at
+        // Apply, so describing a type change there would overstate the approved change (#2950).
+        // The contract validator now rejects that shape outright; this guard keeps any payload
+        // that reaches rendering without that gate (a stored DiffPreview, for instance) honest.
+        var workItemType = ExtractStringParameter(operation.Parameters, "workItemType");
+        var appliesWorkItemType = operation.ActionType.ToLowerInvariant() is "create" or "update";
+        if (isCardTarget && appliesWorkItemType && workItemType is not null)
+        {
+            var typeCardId = ExtractGuidParameter(operation.Parameters, "cardId");
+            var before = typeCardId.HasValue && cardStates.TryGetValue(typeCardId.Value, out var typeState)
+                ? typeState.WorkItemType : "(new card)";
+            description += $"; Work item type: {before} -> {workItemType}";
+        }
+        // Only create/update consume replacement labels and due-date fields. Keep the
+        // renderer honest even when invoked without the shared contract preflight.
+        var cardEffects = isCardTarget && appliesWorkItemType
+            ? DescribeCardParameterEffects(operation.Parameters, labelNames)
+            : Array.Empty<string>();
+        if (isCardTarget && appliesWorkItemType &&
+            OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var estimateParameters, out _) &&
+            OperationParameterParser.TryGetEstimatedEffortMinutes(estimateParameters, out var estimate, out _))
+        {
+            var clear = OperationParameterParser.GetOptionalBoolean(estimateParameters, "clearEstimatedEffort") == true;
+            var create = operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase);
+            if (estimate.HasValue || clear || (create && estimateParameters.TryGetProperty("estimatedEffortMinutes", out _)))
+            {
+                var estimateCardId = ExtractGuidParameter(operation.Parameters, "cardId");
+                var before = create ? "(new card)"
+                    : estimateCardId.HasValue && cardStates.TryGetValue(estimateCardId.Value, out var estimateState)
+                        ? FormatEffortEstimate(estimateState.EstimatedEffortMinutes) : "(current estimate unavailable)";
+                description += $"; Effort estimate: {before} -> {FormatEffortEstimate(clear ? null : estimate)}";
+            }
+        }
         if (isCardTarget && cardEffects.Count > 0)
             description += $"; {string.Join("; ", cardEffects)}";
 
         return description;
     }
+
+    private static string DescribeRelationCard(Guid cardId, IReadOnlyDictionary<Guid, string> cardTitles) =>
+        cardTitles.TryGetValue(cardId, out var title) ? $"\"{title}\" ({cardId})" : cardId.ToString();
+
+    private static string FormatEffortEstimate(int? minutes) => minutes switch
+    {
+        null => "unknown",
+        < 60 => $"{minutes}m",
+        _ when minutes % 60 == 0 => $"{minutes / 60}h",
+        _ => $"{minutes / 60}h {minutes % 60}m"
+    };
 
     private static IReadOnlyList<string> DescribeCardParameterEffects(
         string parameters,

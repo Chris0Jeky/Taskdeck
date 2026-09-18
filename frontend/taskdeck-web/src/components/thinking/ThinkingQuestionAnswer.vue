@@ -2,11 +2,16 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { thinkingApi } from '../../api/thinkingApi'
+import ThinkingAudioAnswer from './ThinkingAudioAnswer.vue'
 import type { Memory, MemoryStatus } from '../../types/workspaceInsights'
 
 const props = defineProps<{ boardId: string; cardId: string; layerId: string; revision: number; sourceReady: boolean }>()
-const emit = defineEmits<{ 'dirty-change': [dirty: boolean] }>()
+const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; busy: [busy: boolean] }>()
 const opened = ref(false)
+const activated = ref(false)
+const audioOpened = ref(false)
+const audioDirty = ref(false)
+const audioBusy = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const loaded = ref(false)
@@ -15,8 +20,9 @@ const status = ref<MemoryStatus>('statement')
 const memory = ref<Memory | null>(null)
 const error = ref('')
 let request = 0
-const dirty = computed(() => text.value.length > 0)
+const dirty = computed(() => text.value.length > 0 || audioDirty.value || audioBusy.value)
 watch(dirty, value => emit('dirty-change', value), { immediate: true })
+watch([saving, audioBusy], () => emit('busy', saving.value || audioBusy.value), { flush: 'sync' })
 async function load() {
   if (!props.sourceReady) return
   const current = ++request
@@ -28,7 +34,7 @@ async function load() {
   catch { if (current === request) { error.value = 'Could not load your private answer. Your draft is still here.'; loaded.value = false } }
   finally { if (current === request) loading.value = false }
 }
-async function open() { opened.value = !opened.value; if (opened.value && !loaded.value) await load() }
+async function open() { activated.value = true; opened.value = !opened.value; if (opened.value && !loaded.value) await load() }
 async function save() {
   if (!props.sourceReady || !loaded.value || saving.value || !text.value.trim()) return
   const submittedText = text.value
@@ -51,8 +57,8 @@ watch(() => [props.revision, props.sourceReady], () => {
 
 <template>
   <section class="private-answer" aria-label="Your private answer">
-    <button type="button" :aria-expanded="opened" @click="open">{{ opened ? 'Hide private answer' : 'Your private answer' }}</button>
-    <div v-if="opened">
+    <button type="button" :aria-expanded="opened" :disabled="saving || audioBusy" @click="open">{{ opened ? 'Hide private answer' : 'Your private answer' }}</button>
+    <div v-if="activated" v-show="opened">
       <p>The question above is shared. Your answer is private memory; it will not edit the task or appear in board exports.</p>
       <p v-if="!sourceReady" role="status">Save your shared thinking before keeping a private answer.</p>
       <p v-if="loading" role="status">Loading your answer…</p>
@@ -61,16 +67,18 @@ watch(() => [props.revision, props.sourceReady], () => {
         <p><strong>{{ memory.archived ? 'Archived private answer' : 'Kept in your private memory' }}</strong> · {{ memory.status }}</p>
         <p class="answer-text">{{ memory.text }}</p>
         <RouterLink :to="{ path: '/workspace/memory', query: { boardId } }">Review or correct in private memory</RouterLink>
-        <p v-if="dirty">You still have an unsaved answer draft:</p>
-        <textarea v-if="dirty" v-model="text" aria-label="Unsaved private answer draft" rows="3" maxlength="8000" />
-        <button v-if="dirty" type="button" @click="text = ''">Discard this private draft</button>
+        <p v-if="text.length">You still have an unsaved answer draft:</p>
+        <textarea v-if="text.length" v-model="text" aria-label="Unsaved private answer draft" rows="3" maxlength="8000" />
+        <button v-if="text.length" type="button" @click="text = ''">Discard this private draft</button>
       </div>
       <div v-else>
         <label>Private answer<textarea v-model="text" aria-label="Private answer" rows="3" maxlength="8000" placeholder="What do you know, or what remains unclear?" /></label>
         <label>How to treat this answer<select v-model="status" aria-label="Private answer status"><option value="statement">Statement</option><option value="assumption">Assumption</option><option value="unknown">Unknown</option><option value="needsReview">Needs review</option></select></label>
         <p>Unknowns and answers needing review can appear in Quiet insights when you analyze this board.</p>
-        <button type="button" :disabled="!sourceReady || !loaded || saving || !text.trim()" @click="save">{{ saving ? 'Keeping answer…' : 'Keep answer privately' }}</button>
+        <button type="button" :disabled="!sourceReady || !loaded || saving || audioBusy || !text.trim()" @click="save">{{ saving ? 'Keeping answer…' : 'Keep answer privately' }}</button>
       </div>
+      <button v-if="!audioOpened" type="button" :disabled="saving" @click="audioOpened = true">Record or open a private audio answer</button>
+      <ThinkingAudioAnswer v-if="audioOpened" :board-id="boardId" :card-id="cardId" :layer-id="layerId" :revision="revision" :source-ready="sourceReady && !saving" :answer-already-kept="!!memory" @dirty-change="audioDirty = $event" @busy="audioBusy = $event" @confirmed="load" />
     </div>
   </section>
 </template>

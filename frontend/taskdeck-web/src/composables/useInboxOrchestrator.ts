@@ -3,12 +3,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
 import type { DetailCacheOutcome } from '../store/captureStore'
 import { boardsApi } from '../api/boardsApi'
-import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureListQuery } from '../types/capture'
 import type { BoardDetail } from '../types/board'
 import { registerEscapeHandler } from './useEscapeStack'
 import { usePerformanceMark } from './usePerformanceMark'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
+import { getCaptureIdFromHash, isHttpNotFound } from '../utils/inboxDeepLink'
 
 export function useInboxOrchestrator(options: {
   scrollToIndex: () => ((index: number) => void) | undefined
@@ -21,7 +21,6 @@ export function useInboxOrchestrator(options: {
   const hashLoadFailedItemId = ref<string | null>(null)
   const activeItemIndex = ref(0)
   const showCaptureModal = ref(false)
-  let stopTriagePolling: (() => void) | null = null
   const activeBatchTriagePollStops = new Set<() => void>()
   let batchActionGeneration = 0
   let scopedBoardLoadGeneration = 0
@@ -248,26 +247,6 @@ export function useInboxOrchestrator(options: {
   }
 
   // ---- Hash / deep link handling ----
-
-  function getCaptureIdFromHash(hash: string): string | null {
-    if (!hash.startsWith('#capture-')) {
-      return null
-    }
-    const rawId = hash.slice('#capture-'.length).trim()
-    if (!rawId) {
-      return null
-    }
-    try {
-      return decodeURIComponent(rawId)
-    } catch {
-      return null
-    }
-  }
-
-  function isHttpNotFound(error: unknown): boolean {
-    const candidate = error as { response?: { status?: number; data?: { errorCode?: string } } } | null
-    return candidate?.response?.status === 404 || candidate?.response?.data?.errorCode === 'NotFound'
-  }
 
   async function clearCaptureHash() {
     if (!getCaptureIdFromHash(route.hash)) {
@@ -603,24 +582,10 @@ export function useInboxOrchestrator(options: {
     const itemId = selectedItemId.value
     if (!itemId) return
 
-    if (stopTriagePolling) {
-      stopTriagePolling()
-      stopTriagePolling = null
-    }
-
     try {
       await captureStore.triageItem(itemId)
-      const latestStatus = captureStore.detailById[itemId]?.status
-      if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
-        return
-      }
-      stopTriagePolling = captureStore.pollTriageCompletion(itemId)
     } catch {
-      if (stopTriagePolling) {
-        stopTriagePolling()
-        stopTriagePolling = null
-      }
-      // Store handles toast + error state.
+      // Store handles enqueue failures; other accepted watches keep running.
     }
   }
 
@@ -699,6 +664,7 @@ export function useInboxOrchestrator(options: {
   })
 
   function resetScopedState() {
+    captureStore.stopTriagePolling()
     cancelBatchTriagePolling()
     selectedItemId.value = null
     selectedIds.value = new Set()
@@ -732,10 +698,6 @@ export function useInboxOrchestrator(options: {
   )
 
   watch(selectedItemId, (itemId, _, onCleanup) => {
-    if (stopTriagePolling) {
-      stopTriagePolling()
-      stopTriagePolling = null
-    }
     // Reset editing state when switching items
     isEditingSuggestion.value = false
     editedText.value = ''
@@ -759,11 +721,8 @@ export function useInboxOrchestrator(options: {
   })
 
   onUnmounted(() => {
+    captureStore.stopTriagePolling()
     cancelBatchTriagePolling()
-    if (stopTriagePolling) {
-      stopTriagePolling()
-      stopTriagePolling = null
-    }
   })
 
   return {

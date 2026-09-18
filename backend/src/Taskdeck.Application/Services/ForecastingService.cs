@@ -103,6 +103,12 @@ public class ForecastingService : IForecastingService
         // --- Load audit data for throughput ---
         var cardMoveAudits = await LoadCardMoveAuditsAsync(
             query.BoardId, historyFrom, now, cancellationToken);
+        if (cardMoveAudits.Count > 0)
+        {
+            var activeIds = (await _unitOfWork.Cards.GetForMetricsAsync(query.BoardId,
+                cardIds: cardMoveAudits.Keys, cancellationToken: cancellationToken)).Select(card => card.Id).ToHashSet();
+            cardMoveAudits = cardMoveAudits.Where(entry => activeIds.Contains(entry.Key)).ToDictionary(entry => entry.Key, entry => entry.Value);
+        }
 
         // --- Compute daily throughput from audit data ---
         var dailyThroughput = ComputeDailyThroughput(

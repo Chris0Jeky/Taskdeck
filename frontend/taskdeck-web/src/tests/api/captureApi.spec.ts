@@ -39,6 +39,13 @@ describe('captureApi', () => {
     expect(http.get).toHaveBeenNthCalledWith(2, '/capture/items/capture-42', options)
   })
 
+  it('reads encoded status IDs with abort and no transport retries', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 'capture/42', status: 'Triaging' } })
+    const options = { signal: new AbortController().signal, skipRetry: true }
+    await captureApi.getStatus('capture/42', options)
+    expect(http.get).toHaveBeenCalledWith('/capture/items/capture%2F42/status', options)
+  })
+
   it('creates a capture item', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'capture-1' } })
 

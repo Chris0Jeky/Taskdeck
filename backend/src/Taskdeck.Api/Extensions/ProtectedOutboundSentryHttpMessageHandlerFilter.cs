@@ -16,6 +16,7 @@ internal sealed class ProtectedOutboundSentryHttpMessageHandlerFilter : IHttpMes
         nameof(OpenAiLlmProvider),
         LlmProviderRegistration.OpenAiCompatibleHttpClientName,
         nameof(OllamaLlmProvider),
+        nameof(HttpAudioTranscriptionProvider),
         "OutboundWebhookDelivery"
     };
 

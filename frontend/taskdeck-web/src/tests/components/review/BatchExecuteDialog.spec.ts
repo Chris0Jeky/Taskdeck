@@ -101,6 +101,9 @@ describe('BatchExecuteDialog', () => {
     const preMountedSummary = document.body.querySelector(
       '[data-testid="batch-execute-receipt-summary"]',
     ) as HTMLElement
+    const lookupAnnouncement = document.body.querySelector(
+      '[data-testid="batch-execute-announcement"]',
+    ) as HTMLElement
     const backgroundSentinel = document.createElement('button')
     backgroundSentinel.type = 'button'
     backgroundSentinel.dataset.testid = 'background-sentinel'
@@ -111,9 +114,15 @@ describe('BatchExecuteDialog', () => {
     expect(preMountedSummary.getAttribute('aria-live')).toBe('polite')
     expect(preMountedSummary.getAttribute('aria-atomic')).toBe('true')
     expect(preMountedSummary.classList).toContain('batch-execute-receipt-summary--empty')
-    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+    expect(lookupAnnouncement.textContent).toBe('')
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(2)
 
+    await wrapper.vm.$nextTick()
     confirm.focus()
+    await wrapper.setProps({ announcement: 'The requested proposal is unavailable.' })
+    expect(document.activeElement).toBe(confirm)
+    expect(lookupAnnouncement.textContent).toBe('The requested proposal is unavailable.')
+    expect(wrapper.emitted('confirm')).toBeUndefined()
     confirm.click()
     await wrapper.setProps({
       receipts: [
@@ -128,7 +137,9 @@ describe('BatchExecuteDialog', () => {
     expect(summary).toBe(preMountedSummary)
     expect(summary.textContent).toContain('Applied 1')
     expect(summary.classList).not.toContain('batch-execute-receipt-summary--empty')
-    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+    expect(document.body.querySelector('[data-testid="batch-execute-announcement"]')).toBe(lookupAnnouncement)
+    expect(lookupAnnouncement.textContent).toBe('The requested proposal is unavailable.')
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(2)
 
     done.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
     expect(document.activeElement).toBe(done)
@@ -145,7 +156,11 @@ describe('BatchExecuteDialog', () => {
     ) as HTMLElement
     expect(stableSummary).toBe(preMountedSummary)
     expect(stableSummary.textContent).toBe(summaryText)
-    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(2)
+    await wrapper.setProps({ announcement: '' })
+    expect(lookupAnnouncement.textContent).toBe('')
+    expect(stableSummary.textContent).toBe(summaryText)
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
   })
 
   it('keeps receipts open while Enter remains held and rearms Done only after keyup', async () => {

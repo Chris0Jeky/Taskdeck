@@ -41,6 +41,7 @@ import {
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { formatRecordedOperationActionLabel } from '../../utils/recordedOperationPresentation'
+import { splitQuotedSummary } from '../../utils/paperReviewPresentation'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -498,14 +499,29 @@ watch(
 )
 
 const unavailableReturnRef = ref<HTMLButtonElement | null>(null)
+const unavailableAnnouncementOwner = ref<'page' | 'approve' | 'execute'>('page')
+const unavailableAnnouncement = computed(() => unavailableProposalId.value && !queueAccessRevoked.value
+  ? `${t(unavailableProposalMalformed.value ? 'review.empty.unavailable.malformedBody' : 'review.empty.unavailable.body', { id: unavailableProposalId.value })} ${t('review.empty.unavailable.return')}`
+  : '')
 
 // The unavailable panel replaces the decision column after an async lookup.
-// Give keyboard and assistive-technology users a stable recovery control as
-// soon as that panel lands instead of leaving focus on the document body.
+// Recover focus when its old control disappears, but preserve a queue control
+// or dialog the reviewer focused while the lookup was pending.
 watch(unavailableProposalId, (id) => {
+  // Keep one announcement owner for this result, even after the dialog closes.
+  unavailableAnnouncementOwner.value = id && batchExecuteOpen.value
+    ? 'execute'
+    : id && batchConfirmationOpen.value ? 'approve' : 'page'
   if (!id) return
+  const previousFocus = document.activeElement
   activeProposalSettledElsewhere.value = null
-  void nextTick(() => unavailableReturnRef.value?.focus?.())
+  void nextTick(() => {
+    const currentFocus = document.activeElement
+    if (currentFocus !== document.body && currentFocus !== document.documentElement) return
+    if (previousFocus?.isConnected && previousFocus !== document.body &&
+      previousFocus !== document.documentElement) return
+    unavailableReturnRef.value?.focus?.()
+  })
 })
 
 const selectors = usePaperReviewSelectors(activeProposal)
@@ -881,34 +897,6 @@ const titleParts = computed(() => {
   // backend annotates highlight ranges, we wrap any quoted phrase in <em>.
   return splitQuotedSummary(p.summary ?? '')
 })
-
-function splitQuotedSummary(summary: string): Array<{ text: string; emphasis?: boolean }> {
-  if (!summary) return [{ text: '' }]
-  const parts: Array<{ text: string; emphasis?: boolean }> = []
-  let cursor = 0
-
-  while (cursor < summary.length) {
-    const straight = summary.indexOf('"', cursor)
-    const curly = summary.indexOf('“', cursor)
-    const startCandidates = [straight, curly].filter((index) => index >= 0)
-    if (startCandidates.length === 0) break
-    const start = Math.min(...startCandidates)
-    const endQuote = summary[start] === '“' ? '”' : '"'
-    const end = summary.indexOf(endQuote, start + 1)
-    if (end < 0) break
-
-    if (start > cursor) {
-      parts.push({ text: summary.slice(cursor, start) })
-    }
-    parts.push({ text: `“${summary.slice(start + 1, end)}”`, emphasis: true })
-    cursor = end + 1
-  }
-
-  if (cursor < summary.length) {
-    parts.push({ text: summary.slice(cursor) })
-  }
-  return parts.length > 0 ? parts : [{ text: summary, emphasis: true }]
-}
 
 const lede = computed(
   () => activeProposal.value?.presentation?.plainSummary ?? t('review.main.ledeFallback'),
@@ -2790,6 +2778,15 @@ async function onClearBoardScope() {
       data-testid="paper-review-queue-refused"
     >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
 
+    <!-- Keep the status node mounted before a delayed lookup settles. -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-unavailable-announcement"
+    >{{ unavailableAnnouncementOwner === 'page' ? unavailableAnnouncement : '' }}</p>
+
     <ReviewQueueRail
       ref="queueRailRef"
       :items="queueItems"
@@ -2869,6 +2866,11 @@ async function onClearBoardScope() {
       >
         {{ revisionReviewUnavailableNote }}
       </p>
+      <router-link
+        v-if="activeProposal.boardId && !isArchivedHistory && ['PendingReview', 'Approved'].includes(normalizeProposalStatus(activeProposal.status))"
+        class="tk-meta"
+        :to="{ path: `/workspace/boards/${activeProposal.boardId}`, query: { proposalId: activeProposal.id } }"
+      >Preview on board</router-link>
       <ReviewMain
         ref="reviewMainRef"
         :key="activeProposal.id"
@@ -3205,6 +3207,7 @@ async function onClearBoardScope() {
       :open="batchConfirmationOpen"
       :count="batchSelectedCount"
       :busy="batchApproveBusy"
+      :announcement="unavailableAnnouncementOwner === 'approve' && batchConfirmationOpen ? unavailableAnnouncement : ''"
       @confirm="confirmBatchApproval"
       @cancel="cancelBatchApproval"
     />
@@ -3214,6 +3217,7 @@ async function onClearBoardScope() {
       :count="batchExecuteConfirmationCount"
       :busy="batchExecuteBusy"
       :receipts="batchExecuteReceipts"
+      :announcement="unavailableAnnouncementOwner === 'execute' && batchExecuteOpen ? unavailableAnnouncement : ''"
       @confirm="confirmBatchExecute"
       @close="cancelBatchExecute"
     />

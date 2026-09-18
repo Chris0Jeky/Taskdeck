@@ -28,7 +28,8 @@ public record BoardDetailDto(
     bool IsArchived,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    List<ColumnDto> Columns
+    List<ColumnDto> Columns,
+    bool CanWrite = false
 );
 
 public record CreateBoardDto(

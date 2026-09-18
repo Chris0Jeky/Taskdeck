@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -98,7 +98,10 @@ public class BoardService
         if (!permission.IsSuccess)
             return Result.Failure<BoardDetailDto>(permission.ErrorCode, permission.ErrorMessage);
 
-        return await GetBoardDetailAsync(id, cancellationToken);
+        var detail = await GetBoardDetailAsync(id, cancellationToken);
+        if (!detail.IsSuccess) return detail;
+        var writable = _authorizationService is null ? null : await _authorizationService.CanWriteBoardAsync(actingUserId, id);
+        return Result.Success(detail.Value with { CanWrite = writable is { IsSuccess: true, Value: true } });
     }
 
     /// <summary>
@@ -359,8 +362,28 @@ public class BoardService
             if (board == null)
                 return Result.Failure(ErrorCodes.NotFound, $"Board with ID {id} not found");
 
+            // DELETE is a desired-state operation. Avoid advancing the token or duplicating
+            // archive side effects when that state is already present.
+            if (board.IsArchived)
+                return Result.Success();
+
             board.Archive(); // Soft delete
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            catch (DomainException ex) when (ex.ErrorCode == ErrorCodes.Conflict)
+            {
+                // The tracked board still contains this request's desired local state after an
+                // EF concurrency failure, so it cannot prove what committed. Read only the
+                // persisted flag through the repository's no-tracking projection.
+                var persistedIsArchived = await _unitOfWork.Boards.GetIsArchivedAsync(id, cancellationToken);
+                if (persistedIsArchived == true)
+                    return Result.Success();
+
+                return Result.Failure(ex.ErrorCode, ex.Message);
+            }
+
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
@@ -433,7 +456,7 @@ public class BoardService
                 c.Name,
                 c.Position,
                 c.WipLimit,
-                c.Cards.Count,
+                c.Cards.Count(card => !card.IsArchived),
                 c.CreatedAt,
                 c.UpdatedAt
             ))

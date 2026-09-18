@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { useWorkspaceLayoutStore, type WorkspaceExperience } from '../../store/workspaceLayoutStore'
+import { isWorkspaceExperience, isWorkspacePresentation, useWorkspaceLayoutStore, type WorkspaceExperience } from '../../store/workspaceLayoutStore'
 
 describe('workspace layout preferences', () => {
   beforeEach(() => { window.localStorage.clear(); setActivePinia(createPinia()) })
@@ -28,6 +28,16 @@ describe('workspace layout preferences', () => {
     const store = useWorkspaceLayoutStore()
     store.setExperience('unexpected' as WorkspaceExperience)
     expect(store.experience).toBe('classic')
+  })
+  it.each([
+    ['classic', true], ['studio', true], ['companion', true], ['unified', true], ['unknown', false], [null, false],
+  ] as const)('recognizes canonical experience %s', (value, expected) => {
+    expect(isWorkspaceExperience(value)).toBe(expected)
+  })
+  it.each([
+    ['zen', true], ['studio', true], ['control', true], ['unknown', false], [42, false],
+  ] as const)('recognizes canonical presentation %s', (value, expected) => {
+    expect(isWorkspacePresentation(value)).toBe(expected)
   })
   it('keeps switching usable when storage is denied', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })

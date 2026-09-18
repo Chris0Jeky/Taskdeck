@@ -11,6 +11,20 @@ namespace Taskdeck.Api.Tests;
 
 public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    [Fact]
+    public async Task SecurityHeaders_CspMediaSrc_AllowsOnlySameOriginAndLocalBlobs()
+    {
+        using var client = _factory.CreateClient();
+        var response = await client.GetAsync("/health/live");
+        response.Headers.TryGetValues("Content-Security-Policy", out var values).Should().BeTrue();
+        foreach (var policy in new[] { values!.Single(), new SecurityHeadersSettings().ContentSecurityPolicy })
+        {
+            policy.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Should().ContainSingle(directive => directive.StartsWith("media-src ", StringComparison.Ordinal))
+                .Which.Should().Be("media-src 'self' blob:");
+        }
+    }
+
     private const string ReferrerPolicyHeaderName = "Referrer-Policy";
 
     private readonly TestWebApplicationFactory _factory;

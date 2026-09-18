@@ -36,7 +36,7 @@ public class ExportController : AuthenticatedControllerBase
             return errorResult!;
 
         var result = await _exportImportService.ExportBoardAsync(boardId, userId);
-        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+        return result.IsSuccess ? Ok(BoardJsonExportImportService.ToPortablePayload(result.Value)) : result.ToErrorActionResult();
     }
 
     [HttpGet("export/boards/{boardId}/json")]

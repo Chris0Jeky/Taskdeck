@@ -295,4 +295,92 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
       wrapper.unmount()
     }
   })
+
+  it.each(['queue control', 'batch dialog', 'batch apply dialog'] as const)(
+    'preserves focus in a %s when a delayed missing lookup resolves',
+    async (target) => {
+      let rejectLookup!: (reason: unknown) => void
+      mocks.getProposal.mockReturnValueOnce(new Promise((_resolve, reject) => {
+        rejectLookup = reject
+      }))
+      const proposal = makeProposal({
+        status: target === 'batch apply dialog' ? 'Approved' : 'PendingReview',
+        operations: [{ ...makeProposal().operations[0], actionType: 'create', targetType: 'card' }],
+      })
+      const wrapper = await mountView([proposal], [proposal], '/workspace/review')
+      let announcementObserver: MutationObserver | undefined
+      try {
+        const announcement = wrapper.get('[data-testid="paper-review-unavailable-announcement"]')
+        expect(announcement.attributes('role')).toBe('status')
+        expect(announcement.attributes('aria-live')).toBe('polite')
+        expect(announcement.attributes('aria-atomic')).toBe('true')
+        expect(announcement.text()).toBe('')
+        const announced: string[] = []
+        await routerOf(wrapper).push('/workspace/review#proposal-proposal-missing')
+        await flushPromises()
+        expect(mocks.getProposal).toHaveBeenCalledWith('proposal-missing')
+        const selection = wrapper.get(target === 'batch apply dialog'
+          ? '[data-testid="queue-batch-execute"]'
+          : '[data-testid="queue-batch-select-proposal-active"]')
+        let focused = selection.element as HTMLElement
+        if (target === 'batch dialog') {
+          await selection.trigger('change')
+          await wrapper.get('[data-testid="queue-batch-approve"]').trigger('click')
+          await flushPromises()
+          focused = document.body.querySelector<HTMLElement>('[data-testid="batch-approve-confirm"]')!
+          expect(focused).not.toBeNull()
+        } else if (target === 'batch apply dialog') {
+          await selection.trigger('click')
+          await flushPromises()
+          focused = document.body.querySelector<HTMLElement>('[data-testid="batch-execute-confirm"]')!
+          expect(focused).not.toBeNull()
+        }
+        focused.focus()
+        expect(document.activeElement).toBe(focused)
+        const statusNode = target !== 'queue control'
+          ? document.body.querySelector<HTMLElement>(target === 'batch apply dialog'
+            ? '[data-testid="batch-execute-announcement"]'
+            : '[data-testid="batch-approve-announcement"]')!
+          : announcement.element as HTMLElement
+        expect(statusNode).not.toBeNull()
+        expect(statusNode.textContent?.trim()).toBe('')
+        if (target !== 'queue control') expect(statusNode.closest('[role="dialog"]')).not.toBeNull()
+        announcementObserver = new MutationObserver(() => {
+          const text = statusNode.textContent?.trim()
+          if (text) announced.push(text)
+        })
+        announcementObserver.observe(statusNode, { childList: true, characterData: true, subtree: true })
+
+        rejectLookup({ response: { status: 404 } })
+        await flushPromises()
+        await nextTick()
+
+        expect(wrapper.find('[data-testid="paper-review-unavailable-return"]').exists()).toBe(true)
+        expect(focused.isConnected).toBe(true)
+        expect(document.activeElement).toBe(focused)
+        const announcedText = statusNode.textContent?.trim()
+        expect(announcedText).toContain('proposal-missing')
+        expect(announced).toEqual([announcedText])
+        if (target !== 'queue control') expect(announcement.text()).toBe('')
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+        expect(announced).toEqual([announcedText])
+
+        if (target !== 'queue control') {
+          document.body.querySelector<HTMLButtonElement>(target === 'batch apply dialog'
+            ? '[data-testid="batch-execute-cancel"]'
+            : '[data-testid="batch-approve-cancel"]')!.click()
+          await flushPromises()
+          expect(announcement.text()).toBe('')
+        }
+        await wrapper.get('[data-testid="paper-review-unavailable-return"]').trigger('click')
+        await flushPromises()
+        expect(announcement.text()).toBe('')
+        expect(wrapper.get('[data-testid="paper-review-unavailable-announcement"]').element).toBe(announcement.element)
+      } finally {
+        announcementObserver?.disconnect()
+        wrapper.unmount()
+      }
+    },
+  )
 })

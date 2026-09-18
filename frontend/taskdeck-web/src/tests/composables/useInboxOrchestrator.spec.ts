@@ -42,6 +42,7 @@ const mockCaptureStore = {
   cancelItem: vi.fn(),
   triageItem: vi.fn(),
   pollTriageCompletion: vi.fn(() => vi.fn()),
+  stopTriagePolling: vi.fn(),
   pollBatchTriageCompletion: vi.fn(() => vi.fn()),
   cacheDetail: vi.fn(),
   peekDetail: vi.fn(),
@@ -756,7 +757,7 @@ describe('useInboxOrchestrator', () => {
       expect(mockCaptureStore.cancelItem).not.toHaveBeenCalled()
     })
 
-    it('triageSelected calls store and starts polling when not terminal', async () => {
+    it('triageSelected delegates enqueue and watch ownership to the store', async () => {
       mockCaptureStore.detailById = { 'item-t': { id: 'item-t', rawText: '', boardId: null, status: 'Triaging' } }
       const stopPoll = vi.fn()
       mockCaptureStore.pollTriageCompletion.mockReturnValue(stopPoll)
@@ -764,7 +765,7 @@ describe('useInboxOrchestrator', () => {
       orch.selectedItemId.value = 'item-t'
       await orch.triageSelected()
       expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('item-t')
-      expect(mockCaptureStore.pollTriageCompletion).toHaveBeenCalledWith('item-t')
+      expect(mockCaptureStore.stopTriagePolling).not.toHaveBeenCalled()
     })
 
     it('triageSelected does nothing without selection', async () => {
@@ -774,7 +775,7 @@ describe('useInboxOrchestrator', () => {
       expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
     })
 
-    it('triageSelected stops existing polling before starting new', async () => {
+    it('selection and a second triage preserve existing watches', async () => {
       const stopPoll1 = vi.fn()
       const stopPoll2 = vi.fn()
       mockCaptureStore.pollTriageCompletion
@@ -784,8 +785,11 @@ describe('useInboxOrchestrator', () => {
       const orch = createOrchestrator()
       orch.selectedItemId.value = 'a'
       await orch.triageSelected()
+      orch.selectedItemId.value = 'b'
+      watcherForSource(orch.selectedItemId)[1]('b', 'a', () => {})
       await orch.triageSelected()
-      expect(stopPoll1).toHaveBeenCalled()
+      expect(stopPoll1).not.toHaveBeenCalled()
+      expect(mockCaptureStore.stopTriagePolling).not.toHaveBeenCalled()
     })
   })
 
@@ -824,7 +828,7 @@ describe('useInboxOrchestrator', () => {
       await orch.triageSelected()
       expect(stopPoll).not.toHaveBeenCalled()
       unmountedCallback!()
-      expect(stopPoll).toHaveBeenCalled()
+      expect(mockCaptureStore.stopTriagePolling).toHaveBeenCalled()
     })
 
     it('onUnmounted stops active batch triage polling independently', async () => {

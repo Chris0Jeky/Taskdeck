@@ -312,7 +312,7 @@ export function useReviewProposals() {
   const queueAccessRevokedRetry = ref(false)
   // Unlike `queueAccessRevoked`, this is not an authority result. It means the
   // last queue we could render is still shown while background reads retry.
-  const queueRefreshStale = ref(false)
+  const currentQueueRefreshStale = ref(false)
   // The second, SEPARATE threshold (#2214 item 2). `queueRefreshStale` belongs
   // to the transient counter and must keep belonging to it: "the network keeps
   // blipping, we are retrying" and "the server is answering and refusing the
@@ -320,7 +320,7 @@ export function useReviewProposals() {
   // told the first while the second is true will wait for a recovery that
   // cannot arrive. Both can stand at once; the surfaces show the refusal,
   // which is the stronger and more actionable statement.
-  const queueRefreshRefused = ref(false)
+  const currentQueueRefreshRefused = ref(false)
   // The EVENT that pairs with the two states above (#2214), and WHICH of them
   // it retracts (#2638 item 2). Clearing `queueRefreshStale` or
   // `queueRefreshRefused` unmounts the warning, which is silent: a reviewer who
@@ -638,7 +638,7 @@ export function useReviewProposals() {
    * An empty filter is the unscoped live queue, exactly as
    * `boardId: activeBoardFilter.value || undefined` sends it.
    */
-  function queueScopeOf(boardId: string | null | undefined): string | null {
+  function queueScopeOf(boardId: string | null | undefined): string {
     const boardScope = boardId ? boardId.toLowerCase() : '<unscoped>'
     return `${boardScope}:${isArchivedHistory.value ? 'archived' : 'live'}`
   }
@@ -882,6 +882,7 @@ export function useReviewProposals() {
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
     const requestedAccessScope = queueAccessScopeOf(activeBoardFilter.value || undefined)
+    const requestedQueueScope = queueScopeOf(activeBoardFilter.value || undefined)
     // A scope change clears the previous board's authority claim before the
     // new request starts, but an explicit 403 for that request is still a
     // repeated refusal from the reviewer's perspective. Carry only this
@@ -889,6 +890,7 @@ export function useReviewProposals() {
     // `recordQueueAccessRevoked`, so it cannot carry the old board into view.
     const hadRevokedPreviousScope =
       queueAccessRevoked.value && queueAccessRevokedScope.value !== requestedAccessScope
+    resetQueueRefreshHealthForScope(requestedQueueScope)
     let outcome: ProposalLoadOutcome = 'landed'
 
     try {
@@ -925,20 +927,20 @@ export function useReviewProposals() {
       // An answer the caller stopped waiting for must not become the rendered
       // authority behind its back, and proves nothing about queue freshness.
       if (signal?.aborted) return 'aborted'
+      // Capture the disclosures this synchronous landing retires before
+      // replacing the rows and their provenance. Explicit recovery keeps its
+      // existing lifetime through the next background success (#2638).
+      recordQueueRefreshSuccess()
       proposals.value = loadedProposals
+      landedQueueProposalIds.value = new Set(loadedProposals.map(proposal => proposal.id.toLowerCase()))
       // A read has now landed for that scope, so the count the surfaces render
       // is a real count of the queue on screen and may be announced (#2599
       // item 1).
       landedQueueScope.value = requestedScope
-      // An explicit successful load is as trustworthy as a successful poll and
-      // clears any older degraded indication without changing load semantics.
-      // It goes through the same accounting as a successful poll so both exits
-      // from the degraded state raise the recovery signal (#2214) — but it
-      // never RETIRES a standing one, because it can land a few hundred
-      // milliseconds after the poll that raised it and blank the live region
-      // before it is spoken (#2638 item 2). No `source` is passed: the default
-      // is 'explicit'.
-      recordQueueRefreshSuccess()
+      // The rendered queue has been replaced, so any older queue's retained
+      // health no longer describes anything on screen.
+      retainedQueueRefreshHealth.value = null
+      queueRefreshScope = requestedScope
       // An explicit load that succeeded is proof access is back.
       const accessWasRevoked = queueAccessRevoked.value
       queueAccessRevoked.value = false
@@ -1009,6 +1011,32 @@ export function useReviewProposals() {
   let refreshInFlight = false
   let consecutiveQueueRefreshFailures = 0
   let consecutiveQueueRefreshRefusals = 0
+  // Request counters and newly raised warnings always belong to this scope.
+  // Restoring a retained disclosure must never relabel that request run.
+  let queueRefreshScope: string | undefined
+  type QueueRefreshHealthSnapshot = {
+    scope: string
+    stale: boolean
+    refused: boolean
+  }
+  // Only one queue can remain rendered while another scope is loading. Keep
+  // health for that retained queue only; this is intentionally not a per-board
+  // history of disclosures.
+  const retainedQueueRefreshHealth = ref<QueueRefreshHealthSnapshot | null>(null)
+  // Only a landed list owns these IDs; hash-only upserts cannot inherit its health.
+  const landedQueueProposalIds = ref(new Set<string>())
+  const visibleRetainedQueueHealth = computed(() => {
+    const retained = retainedQueueRefreshHealth.value
+    return retained && queueRefreshHealthStillDescribesScreen(
+      queueScopeOf(activeBoardFilter.value), retained.scope,
+    ) ? retained : null
+  })
+  const queueRefreshStale = computed(() =>
+    currentQueueRefreshStale.value || visibleRetainedQueueHealth.value?.stale === true,
+  )
+  const queueRefreshRefused = computed(() =>
+    currentQueueRefreshRefused.value || visibleRetainedQueueHealth.value?.refused === true,
+  )
   // A 403 pauses the configured poll without making it forget how the owning
   // surface asked it to behave. Permanent stop/disposal clears this state so a
   // late successful explicit load cannot resurrect a surface that has left.
@@ -1030,7 +1058,7 @@ export function useReviewProposals() {
     if (leg === 'list' && isRefusedQueueRefreshFailure(err)) {
       consecutiveQueueRefreshRefusals += 1
       if (consecutiveQueueRefreshRefusals >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
-        queueRefreshRefused.value = true
+        currentQueueRefreshRefused.value = true
         // Same reason as the degraded onset below: a standing recovery
         // sentence of EITHER kind contradicts the warning beside it, and its
         // unchanged text would silence the next real recovery.
@@ -1053,7 +1081,7 @@ export function useReviewProposals() {
     }
     consecutiveQueueRefreshFailures += 1
     if (consecutiveQueueRefreshFailures >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
-      queueRefreshStale.value = true
+      currentQueueRefreshStale.value = true
       // A degraded onset retires the previous recovery announcement, whichever
       // disclosure it retracted. Leaving it standing would both contradict the
       // warning beside it and stop the NEXT recovery from being announced,
@@ -1063,6 +1091,67 @@ export function useReviewProposals() {
       // now false".
       retireQueueRecovery()
     }
+  }
+
+  /**
+   * Whether health owned by `healthScope` still describes what a reviewer can
+   * see now that `scope` is the requested read identity.
+   *
+   * It does for an empty queue in the same scope, and whenever the
+   * queue that landed for `healthScope` is still rendering under the requested
+   * filter. That second case is the one the disclosure exists for: only a
+   * landing replaces `proposals`, so a widening to All boards whose read fails
+   * leaves board B's rows on screen -- and `matchesActiveBoardFilter` admits
+   * every one of them, because an unscoped filter admits everything. Narrowing
+   * from a degraded unscoped queue into a board it already returned rows for is
+   * the same shape. Clearing the warning on either transition would present a
+   * partial, known-stale queue as the ordinary one for the new scope once the
+   * transient failure toast is gone.
+   *
+   * `visibleProposals` rather than `proposals` because it is what is actually
+   * rendered: retained rows the new scope's history mode or status filters hide
+   * are not a queue anyone is being misled by.
+   */
+  function queueRefreshHealthStillDescribesScreen(
+    scope: string,
+    healthScope: string | undefined,
+  ): boolean {
+    // No read has landed for the health's owner, so nothing it describes is on
+    // screen. A 403 takes this branch by construction: `recordQueueAccessRevoked`
+    // drops the rows AND `landedQueueScope`, and the durable revoked panel is
+    // that fact's single owner.
+    if (healthScope === undefined) return false
+    if (landedQueueScope.value !== healthScope) return false
+    // An empty queue can itself be stale. For its own scope, keep the warning
+    // even when filters hide every row; only a successful read proves recovery.
+    if (healthScope === scope && visibleProposals.value.length === 0) return true
+    const healthBoard = healthScope.slice(0, healthScope.lastIndexOf(':'))
+    return visibleProposals.value.some(proposal =>
+      landedQueueProposalIds.value.has(proposal.id.toLowerCase()) &&
+      (healthBoard === '<unscoped>' || proposal.boardId?.toLowerCase() === healthBoard),
+    )
+  }
+
+  function resetQueueRefreshHealthForScope(scope: string) {
+    if (queueRefreshScope === scope) return
+    retireQueueRecovery()
+    if (
+      queueRefreshScope !== undefined &&
+      landedQueueScope.value === queueRefreshScope &&
+      (currentQueueRefreshStale.value || currentQueueRefreshRefused.value)
+    ) {
+      const retained = retainedQueueRefreshHealth.value
+      retainedQueueRefreshHealth.value = {
+        scope: queueRefreshScope,
+        stale: currentQueueRefreshStale.value || retained?.stale === true,
+        refused: currentQueueRefreshRefused.value || retained?.refused === true,
+      }
+    }
+    queueRefreshScope = scope
+    consecutiveQueueRefreshFailures = 0
+    consecutiveQueueRefreshRefusals = 0
+    currentQueueRefreshStale.value = false
+    currentQueueRefreshRefused.value = false
   }
 
   /**
@@ -1092,6 +1181,12 @@ export function useReviewProposals() {
     // gate on both surfaces; this only stops the count coming back as speakable
     // the moment the panel clears for some other reason.
     landedQueueScope.value = undefined
+    landedQueueProposalIds.value = new Set()
+    retainedQueueRefreshHealth.value = null
+    consecutiveQueueRefreshFailures = 0
+    consecutiveQueueRefreshRefusals = 0
+    currentQueueRefreshStale.value = false
+    currentQueueRefreshRefused.value = false
     suspendQueueRefreshForPermission()
   }
 
@@ -1118,8 +1213,8 @@ export function useReviewProposals() {
    */
   function recordQueueListReadSucceeded(source: 'poll' | 'explicit'): boolean {
     consecutiveQueueRefreshRefusals = 0
-    if (!queueRefreshRefused.value) return false
-    queueRefreshRefused.value = false
+    if (!currentQueueRefreshRefused.value) return false
+    currentQueueRefreshRefused.value = false
     // Retracting a disclosure silently is exactly the #2630 defect: the warning
     // is simply gone on the next render and a reviewer who was not watching
     // that corner is never told the refusal claim no longer holds.
@@ -1154,14 +1249,17 @@ export function useReviewProposals() {
     recoveryAlreadyRaised?: boolean
   }) {
     const source = options?.source ?? 'explicit'
+    const wasRefused = queueRefreshRefused.value
     consecutiveQueueRefreshFailures = 0
     // Idempotent: a no-op when the poll already ran it at the list-success
     // point, and the whole clear when an explicit load lands.
     const recoveryRaisedThisRead =
       recordQueueListReadSucceeded(source) || options?.recoveryAlreadyRaised === true
+    if (wasRefused && !recoveryRaisedThisRead) raiseQueueRecovery('refused', source)
     // The QUEUE sentence is spoken only when a read that COMPLETED ended a
-    // visible degraded state: `proposals.value` was replaced just above, so
-    // "showing current proposals" is provable. Raising it on every success
+    // visible degraded state: the caller has accepted the answer and replaces
+    // `proposals.value` synchronously, so current proposals are provable.
+    // Raising it on every success
     // would make both skins announce every 15 s, and raising it without the
     // degraded state having been up would announce a recovery from nothing.
     //
@@ -1176,6 +1274,7 @@ export function useReviewProposals() {
     } else if (
       source === 'poll' &&
       !recoveryRaisedThisRead &&
+      !wasRefused &&
       queueRecoveryRaisedAtBackgroundRead !== null &&
       backgroundQueueReadCount > queueRecoveryRaisedAtBackgroundRead
     ) {
@@ -1187,7 +1286,7 @@ export function useReviewProposals() {
       // clear is silent: a live region going empty announces nothing.
       retireQueueRecovery()
     }
-    queueRefreshStale.value = false
+    currentQueueRefreshStale.value = false
   }
 
   /**
@@ -1305,6 +1404,7 @@ export function useReviewProposals() {
     // describes the board it queried, never whichever board is on screen now.
     const requestedBoardId = activeBoardFilter.value || null
     const requestedHistoryMode = isArchivedHistory.value
+    resetQueueRefreshHealthForScope(queueScopeOf(requestedBoardId))
     // A hash target is part of the question too. Hash navigation does not start
     // a queue load, so it needs its own snapshot to stop an old by-id answer from
     // inserting or marking unavailable whichever proposal is selected next.
@@ -1443,13 +1543,17 @@ export function useReviewProposals() {
           clearProposalUnavailable()
         }
       }
+      recordQueueRefreshSuccess({ source: 'poll', recoveryAlreadyRaised: listRecoveryRaised })
       proposals.value = next
+      landedQueueProposalIds.value = new Set(loadedProposals.map(proposal => proposal.id.toLowerCase()))
       // `isCurrentRead` has already refused any answer whose scope moved, so
       // this read landed for the board on screen (#2599 item 1). The poll is a
       // landing site in its own right: after a failed entry load, it is what
       // makes the count speakable again without the reviewer reloading.
       landedQueueScope.value = queueScopeOf(requestedBoardId)
-      recordQueueRefreshSuccess({ source: 'poll', recoveryAlreadyRaised: listRecoveryRaised })
+      // Same handover as the explicit landing above.
+      retainedQueueRefreshHealth.value = null
+      queueRefreshScope = queueScopeOf(requestedBoardId)
       // The queue moved under a reviewer who did not ask for it. Surfaces use
       // this to notice that the row they were rendering has just been dropped
       // or reordered away, instead of silently sliding onto another one
@@ -1674,6 +1778,18 @@ export function useReviewProposals() {
   }
 
   // --- Watchers ---
+
+  // Visibility also changes without a read: completed filtering, snooze expiry,
+  // and hash navigation can reveal retained rows after their health was parked.
+  // A list-only success may also raise recovery while that warning is already
+  // visible. Recheck both changes; a full landing clears retained health before
+  // this watcher runs, so its genuine recovery announcement remains intact.
+  watch(
+    [visibleRetainedQueueHealth, queueRefreshRecoveredKind],
+    ([health]) => {
+      if (health?.stale || health?.refused) retireQueueRecovery()
+    },
+  )
 
   watch(
     () => route.hash,

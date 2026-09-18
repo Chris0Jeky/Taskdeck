@@ -1,22 +1,35 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue'
+import ThinkingStepCard from './ThinkingStepCard.vue'
 import ThinkingQuestionAnswer from './ThinkingQuestionAnswer.vue'
+import CardDependencies from './CardDependencies.vue'
+import CardRelations from './CardRelations.vue'
 import { useThinkingDeck } from '../../composables/useThinkingDeck'
-import type { ThinkingKind, ThinkingLayer } from '../../types/thinking'
+import type { ThinkingLayer } from '../../types/thinking'
+import { isThinkingItemLayer, thinkingItemLabel, thinkingKinds } from '../../utils/thinkingLayerPresentation'
+import { isDemoMode } from '../../utils/demoMode'
 
 const props = defineProps<{ boardId: string; cardId: string }>()
-const emit = defineEmits<{ 'dirty-change': [dirty: boolean] }>()
-const { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, save, add, move } =
+const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; busy: [busy: boolean]; 'relation-busy': [busy: boolean] }>()
+const { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, refreshPermission, save, add, move, acceptPromotion } =
   useThinkingDeck(toRef(props, 'boardId'), toRef(props, 'cardId'))
 const view = ref<'stack' | 'path'>('stack')
 const confirmReload = ref(false)
 const pendingRemoval = ref<string | null>(null)
-const kinds: ThinkingKind[] = ['note', 'question', 'options', 'steps', 'thread']
+const kinds = thinkingKinds
+const promoting = ref(false)
+const dependenciesBusy = ref(false)
+const relationsBusy = ref(false)
+const stepDrafts = ref<Record<string, boolean>>({})
 const privateDrafts = ref<Record<string, boolean>>({})
-const anyDirty = computed(() => dirty.value || layers.value.some(layer => privateDrafts.value[layer.id]))
+const privateBusy = ref<Record<string, boolean>>({})
+const answering = computed(() => layers.value.some(layer => privateBusy.value[layer.id]))
+watch(answering, value => emit('busy', value), { flush: 'sync' })
+watch(relationsBusy, value => emit('relation-busy', value), { flush: 'sync' })
+const anyDirty = computed(() => dependenciesBusy.value || relationsBusy.value || promoting.value || dirty.value || layers.value.some(layer => privateDrafts.value[layer.id] || layer.items.some(item => stepDrafts.value[item.id])))
 watch(anyDirty, value => emit('dirty-change', value), { immediate: true })
 function addItem(layer: ThinkingLayer) {
-  if (layer.items.length < 50) layer.items.push({ id: crypto.randomUUID(), text: 'New item', completed: false })
+  if (layer.items.length < 50) layer.items.push({ id: crypto.randomUUID(), text: 'New item', completed: false, linkedCardId: null })
 }
 function removeItem(layer: ThinkingLayer, id: string) {
   layer.items = layer.items.filter(item => item.id !== id)
@@ -51,46 +64,52 @@ function reload() { confirmReload.value = false; void load() }
       <p v-if="!layers.length" class="empty">This task can stay simple. Start a layer when you need space to work something out.</p>
       <ol class="layers" :class="`layers--${view}`">
         <li v-for="(layer, index) in layers" :key="layer.id" class="layer">
-          <fieldset :disabled="!canWrite" :aria-label="`Shared thinking layer ${index + 1}`">
+          <fieldset :disabled="!canWrite || promoting || saving || answering" :aria-label="`Shared thinking layer ${index + 1}`">
           <div class="layer-top"><span class="layer-kind">{{ index + 1 }} · {{ layer.kind }}</span>
             <div class="layer-tools">
               <button type="button" :disabled="index === 0" :aria-label="`Move layer ${index + 1} up`" @click="move(index, -1)">↑</button>
               <button type="button" :disabled="index === layers.length - 1" :aria-label="`Move layer ${index + 1} down`" @click="move(index, 1)">↓</button>
-              <button type="button" :aria-label="`Remove layer ${index + 1}`" @click="pendingRemoval = layer.id">Remove</button>
+              <button type="button" :disabled="!!privateDrafts[layer.id]" :aria-label="`Remove layer ${index + 1}`" @click="pendingRemoval = layer.id">Remove</button>
             </div>
           </div>
           <div v-if="pendingRemoval === layer.id" class="deck-confirm">
-            <span>Remove this layer from the draft?</span>
+            <span>Remove this layer from the draft? Linked cards will remain on the board.</span>
             <button type="button" @click="pendingRemoval = null">Keep</button>
-            <button type="button" @click="layers.splice(index, 1); pendingRemoval = null">Remove layer</button>
+            <button type="button" :disabled="!!privateDrafts[layer.id]" @click="layers.splice(index, 1); pendingRemoval = null">Remove layer</button>
           </div>
           <input v-model="layer.title" :aria-label="`Layer ${index + 1} title`" class="layer-title" maxlength="200" :placeholder="layer.kind === 'question' ? 'What is still unknown?' : 'Give this thought a title'">
           <textarea v-model="layer.body" :aria-label="`Layer ${index + 1} details`" maxlength="8000" rows="3" :placeholder="layer.kind === 'question' ? 'Add context or your working answer…' : 'Write a little, or leave this open…'" />
-          <ul v-if="['options', 'steps', 'thread'].includes(layer.kind)" class="items">
+          <p v-if="privateDrafts[layer.id]" class="hint">Keep or explicitly discard your private answer and audio draft before removing this question.</p>
+          <ul v-if="isThinkingItemLayer(layer.kind)" class="items">
             <li v-for="(item, itemIndex) in layer.items" :key="item.id">
-              <input v-if="layer.kind === 'steps'" v-model="item.completed" type="checkbox" :aria-label="`Complete step ${itemIndex + 1}`">
+              <input v-if="layer.kind === 'steps'" v-model="item.completed" :disabled="!!item.linkedCardId" type="checkbox" :aria-label="`Complete step ${itemIndex + 1}`">
               <input v-if="layer.kind === 'options'" v-model="layer.selectedOptionId" type="radio" :name="`option-${layer.id}`" :value="item.id" :aria-label="`Choose option ${itemIndex + 1}`">
               <input v-model="item.text" :aria-label="`${layer.kind} item ${itemIndex + 1}`" maxlength="2000">
               <button type="button" :aria-label="`Remove item ${itemIndex + 1}`" @click="removeItem(layer, item.id)">×</button>
             </li>
           </ul>
-          <div v-if="['options', 'steps', 'thread'].includes(layer.kind)" class="item-actions">
-            <button type="button" :disabled="layer.items.length >= 50" @click="addItem(layer)">+ Add {{ layer.kind === 'steps' ? 'step' : layer.kind === 'options' ? 'option' : 'thought' }}</button>
+          <div v-if="isThinkingItemLayer(layer.kind)" class="item-actions">
+            <button type="button" :disabled="layer.items.length >= 50" @click="addItem(layer)">+ Add {{ thinkingItemLabel(layer.kind) }}</button>
             <button v-if="layer.kind === 'options' && layer.selectedOptionId" type="button" @click="layer.selectedOptionId = null">Clear choice</button>
           </div>
           <p v-if="layer.kind === 'options'" class="hint">Choosing keeps every alternative.</p>
-          <p v-if="layer.kind === 'steps'" class="hint">These are thinking steps. Checking one does not change the task’s board status.</p>
+          <p v-if="layer.kind === 'steps'" class="hint">Save your steps before creating linked cards. Linked status comes from the real card; removing a step keeps its card.</p>
           </fieldset>
-          <ThinkingQuestionAnswer v-if="layer.kind === 'question'" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :revision="revision" :source-ready="!dirty && !saving" @dirty-change="privateDrafts[layer.id] = $event" />
+          <template v-if="layer.kind === 'steps'">
+            <ThinkingStepCard v-for="item in layer.items" :key="item.id" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :item="item" :revision="revision" :can-write="canWrite" :source-ready="!dirty && !saving && !promoting && !conflict" @promoted="acceptPromotion" @busy="promoting = $event" @dirty-change="stepDrafts[item.id] = $event" />
+          </template>
+          <ThinkingQuestionAnswer v-if="layer.kind === 'question'" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :revision="revision" :source-ready="!dirty && !saving" @dirty-change="privateDrafts[layer.id] = $event" @busy="privateBusy[layer.id] = $event" />
         </li>
       </ol>
-      <fieldset :disabled="!canWrite" aria-label="Shared thinking layer controls">
+      <fieldset :disabled="!canWrite || promoting || saving || answering" aria-label="Shared thinking layer controls">
       <div class="add-layers" role="group" aria-label="Add thinking layer"><button v-for="kind in kinds" :key="kind" type="button" :disabled="layers.length >= 40" @click="add(kind)">+ {{ kind }}</button></div>
       </fieldset>
       <footer class="deck-footer">
         <span role="status">{{ dirty ? 'Unsaved thinking' : revision ? 'Thinking saved' : 'No layers yet' }}</span>
-        <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || conflict" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
+        <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict || answering" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
       </footer>
+      <CardDependencies :board-id="boardId" :card-id="cardId" :can-write="canWrite" :refresh-permission="refreshPermission" @busy="dependenciesBusy = $event" />
+      <CardRelations v-if="!isDemoMode" :board-id="boardId" :card-id="cardId" :can-write="canWrite" :refresh-permission="refreshPermission" @busy="relationsBusy = $event" />
     </template>
   </section>
 </template>

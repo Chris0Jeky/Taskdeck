@@ -61,3 +61,21 @@ test('Paper command palette returns focus inside a card modal after a narrow tra
   await expect(closeEditor).toBeFocused()
   await expect.poll(() => editor.evaluate((element) => element.contains(document.activeElement))).toBe(true)
 })
+
+test('Paper command palette restores the programmatically focused Review empty state', async ({ page, request }) => {
+  await enablePaperMode(page)
+  await registerAndAttachSession(page, request, 'palette-prog')
+  await page.goto('/workspace/review')
+  const emptyState = page.getByTestId('paper-review-empty')
+  await expect(emptyState).toBeVisible()
+  await expect(emptyState).toHaveAttribute('tabindex', '-1')
+  await emptyState.focus()
+  await expect(emptyState).toBeFocused()
+
+  await page.keyboard.press('Control+K')
+  const palette = page.getByRole('dialog', { name: 'Command palette' })
+  await expect(palette.getByRole('combobox', { name: 'Command palette search' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(palette).toHaveCount(0)
+  await expect(emptyState).toBeFocused()
+})

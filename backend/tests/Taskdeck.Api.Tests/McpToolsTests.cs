@@ -44,6 +44,7 @@ public class McpToolsTests : IDisposable
         services.AddScoped<LabelService>();
         services.AddScoped<AuthorizationService>();
         services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
+        services.AddScoped<IBoardRelationService, BoardRelationService>();
         services.AddScoped<AutomationProposalService>();
         services.AddScoped<IAutomationProposalService>(sp => sp.GetRequiredService<AutomationProposalService>());
         services.AddScoped<CaptureService>();
@@ -87,13 +88,241 @@ public class McpToolsTests : IDisposable
     // ── ReadTools tests ──────────────────────────────────────────────────────
 
     [Fact]
+    public async Task EstimatedEffort_RollupToolReturnsAuthorizedTotalsAndRejectsOtherUsers()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, columnId) = await SetupBoardAsync(scope);
+        var cards = scope.ServiceProvider.GetRequiredService<CardService>();
+        await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Known effort", null, null, null, EstimatedEffortMinutes: 135));
+        await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Known zero", null, null, null, EstimatedEffortMinutes: 0));
+        await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Unknown effort", null, null, null));
+        var rollups = new BoardEstimateRollupService(scope.ServiceProvider.GetRequiredService<IUnitOfWork>(),
+            scope.ServiceProvider.GetRequiredService<ICardAssignmentStore>(), scope.ServiceProvider.GetRequiredService<IAuthorizationService>());
+        ReadTools Tools(Guid actor) => new(scope.ServiceProvider.GetRequiredService<BoardService>(), cards,
+            new McpBoardResourcesTests.FixedUserContextProvider(actor), estimateRollups: rollups);
+        using var response = JsonDocument.Parse(await Tools(user.Id).GetBoardEstimateRollups(boardId.ToString()));
+        response.RootElement.GetProperty("boardId").GetGuid().Should().Be(boardId);
+        var totals = response.RootElement.GetProperty("board");
+        totals.GetProperty("cardCount").GetInt32().Should().Be(3);
+        totals.GetProperty("knownEstimateMinutes").GetInt64().Should().Be(135);
+        totals.GetProperty("missingEstimateCount").GetInt32().Should().Be(1);
+        using var denied = JsonDocument.Parse(await Tools(Guid.NewGuid()).GetBoardEstimateRollups(boardId.ToString()));
+        denied.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+        denied.RootElement.TryGetProperty("board", out _).Should().BeFalse();
+        using var malformed = JsonDocument.Parse(await Tools(user.Id).GetBoardEstimateRollups("not-a-board"));
+        malformed.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TypedRelationTools_CreateOneProposalWithTheCallerPinnedRevisionWithoutMutatingTheGraph()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, columnId) = await SetupBoardAsync(scope);
+        var cards = scope.ServiceProvider.GetRequiredService<CardService>();
+        var source = (await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Source", null, null, null))).Value;
+        var target = (await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Target", null, null, null))).Value;
+        var relations = scope.ServiceProvider.GetRequiredService<IBoardRelationService>();
+        var before = await relations.GetAsync(owner.Id, boardId, CancellationToken.None);
+        before.IsSuccess.Should().BeTrue(before.ErrorMessage);
+        before.Value.Revision.Should().Be(0);
+        var tools = CreateWriteTools(scope, owner.Id);
+
+        using var response = JsonDocument.Parse(await tools.AddCardRelation(
+            boardId.ToString(), source.Id.ToString(), target.Id.ToString(), "depends-on", before.Value.Revision));
+        var proposalId = response.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        var operation = proposal.Operations.Should().ContainSingle().Subject;
+        operation.ActionType.Should().Be("add-relation");
+        operation.TargetType.Should().Be("card");
+        using var parameters = JsonDocument.Parse(operation.Parameters);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(source.Id);
+        parameters.RootElement.GetProperty("relatedCardId").GetGuid().Should().Be(target.Id);
+        parameters.RootElement.GetProperty("expectedRevision").GetInt64().Should().Be(before.Value.Revision);
+        (await relations.GetAsync(owner.Id, boardId, CancellationToken.None)).Value.Relations.Should().BeEmpty();
+
+        using var stale = JsonDocument.Parse(await tools.RemoveCardRelation(
+            boardId.ToString(), source.Id.ToString(), target.Id.ToString(), "blocks", before.Value.Revision + 1));
+        stale.RootElement.GetProperty("error").GetString().Should().Contain("Reload");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(135)]
+    public async Task EstimatedEffort_CreateRequiresApprovalAndAppliesNullableEstimate(int? minutes)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, columnId) = await SetupBoardAsync(scope);
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var proposals = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        using var response = JsonDocument.Parse(await CreateWriteTools(scope, user.Id).CreateCard(
+            boardId.ToString(), "Estimated MCP card", columnId.ToString(), estimated_effort_minutes: minutes));
+        var proposalId = response.RootElement.GetProperty("proposalId").GetGuid();
+        (await unit.Cards.GetByBoardIdAsync(boardId)).Should().BeEmpty();
+        var proposal = (await proposals.GetProposalByIdAsync(proposalId)).Value;
+        using var parameters = JsonDocument.Parse(proposal.Operations.Single().Parameters);
+        parameters.RootElement.TryGetProperty("estimatedEffortMinutes", out var estimate).Should().Be(minutes.HasValue);
+        if (minutes.HasValue) estimate.GetInt32().Should().Be(minutes.Value);
+
+        await ApproveAndExecuteAsync(scope, user.Id, proposalId);
+
+        (await unit.Cards.GetByBoardIdAsync(boardId)).Should().ContainSingle()
+            .Which.EstimatedEffortMinutes.Should().Be(minutes);
+    }
+
+    [Fact]
+    public async Task EstimatedEffort_SetZeroClearAndOmitPreserveReviewFirstSemantics()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, columnId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, columnId, "Estimated", null, null, null,
+            EstimatedEffortMinutes: 60))).Value;
+        var proposals = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var tools = CreateWriteTools(scope, user.Id);
+        using var unchangedResponse = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(),
+            title: "Renamed", estimated_effort_minutes: null));
+        var unchangedId = unchangedResponse.RootElement.GetProperty("proposalId").GetGuid();
+        var unchangedProposal = (await proposals.GetProposalByIdAsync(unchangedId)).Value;
+        using var unchangedParameters = JsonDocument.Parse(unchangedProposal.Operations.Single().Parameters);
+        unchangedParameters.RootElement.TryGetProperty("estimatedEffortMinutes", out _).Should().BeFalse();
+        unchangedParameters.RootElement.TryGetProperty("clearEstimatedEffort", out _).Should().BeFalse();
+        await ApproveAndExecuteAsync(scope, user.Id, unchangedId);
+        (await service.GetCardAsync(boardId, card.Id)).Value.EstimatedEffortMinutes.Should().Be(60);
+        foreach (var minutes in new int?[] { 135, 0, null })
+        {
+            var before = (await service.GetCardAsync(boardId, card.Id)).Value;
+            using var response = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(),
+                expected_updated_at: before.UpdatedAt.ToString("O"), estimated_effort_minutes: minutes,
+                clear_estimated_effort: !minutes.HasValue));
+            var proposalId = response.RootElement.GetProperty("proposalId").GetGuid();
+            (await service.GetCardAsync(boardId, card.Id)).Value.EstimatedEffortMinutes.Should().Be(before.EstimatedEffortMinutes);
+            var proposal = (await proposals.GetProposalByIdAsync(proposalId)).Value;
+            using var parameters = JsonDocument.Parse(proposal.Operations.Single().Parameters);
+            parameters.RootElement.GetProperty("expectedUpdatedAt").GetDateTimeOffset().Should().Be(before.UpdatedAt);
+            if (minutes.HasValue)
+            {
+                parameters.RootElement.GetProperty("estimatedEffortMinutes").GetInt32().Should().Be(minutes.Value);
+                parameters.RootElement.TryGetProperty("clearEstimatedEffort", out _).Should().BeFalse();
+            }
+            else
+            {
+                parameters.RootElement.GetProperty("clearEstimatedEffort").GetBoolean().Should().BeTrue();
+                parameters.RootElement.TryGetProperty("estimatedEffortMinutes", out _).Should().BeFalse();
+            }
+            var diff = await proposals.GetProposalDiffAsync(proposalId);
+            diff.IsSuccess.Should().BeTrue(diff.ErrorMessage);
+            diff.Value.Should().Contain("estimate");
+            await ApproveAndExecuteAsync(scope, user.Id, proposalId);
+            (await service.GetCardAsync(boardId, card.Id)).Value.EstimatedEffortMinutes.Should().Be(minutes);
+        }
+    }
+
+    [Fact]
+    public async Task EstimatedEffort_RejectsBoundsConflictingClearAndMissingOrStaleVersionBeforeProposal()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, columnId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, columnId, "Unchanged", null, null, null))).Value;
+        var tools = CreateWriteTools(scope, user.Id);
+        foreach (var minutes in new[] { -1, Card.MaxEstimatedEffortMinutes + 1 })
+        {
+            using var create = JsonDocument.Parse(await tools.CreateCard(boardId.ToString(), "Invalid", estimated_effort_minutes: minutes));
+            create.RootElement.GetProperty("error").GetString().Should().Contain("between 0 and 1000000");
+            using var update = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(), estimated_effort_minutes: minutes));
+            update.RootElement.GetProperty("error").GetString().Should().Contain("between 0 and 1000000");
+        }
+        using var conflict = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(),
+            estimated_effort_minutes: 0, clear_estimated_effort: true));
+        conflict.RootElement.GetProperty("error").GetString().Should().Contain("cannot both");
+        using var missing = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(), estimated_effort_minutes: 0));
+        missing.RootElement.GetProperty("error").GetString().Should().Contain("expected_updated_at is required");
+        using var stale = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(),
+            expected_updated_at: card.UpdatedAt.AddSeconds(-1).ToString("O"), clear_estimated_effort: true));
+        stale.RootElement.GetProperty("error").GetString().Should().Contain("Refresh");
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        (await unit.AutomationProposals.GetByBoardIdAsync(boardId)).Should().BeEmpty();
+        (await service.GetCardAsync(boardId, card.Id)).Value.EstimatedEffortMinutes.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(135)]
+    public async Task EstimatedEffort_ReadToolsAndResourcesExposeNullZeroAndPositive(int? minutes)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, columnId) = await SetupBoardAsync(scope);
+        var cards = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await cards.CreateCardAsync(new CreateCardDto(boardId, columnId, "Estimated read", null, null, null,
+            EstimatedEffortMinutes: minutes))).Value;
+        var context = new McpBoardResourcesTests.FixedUserContextProvider(user.Id);
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var read = new ReadTools(boardService, cards, context);
+        var resources = new BoardResources(boardService, scope.ServiceProvider.GetRequiredService<ColumnService>(), cards,
+            scope.ServiceProvider.GetRequiredService<LabelService>(), context);
+        using var search = JsonDocument.Parse(await read.SearchCards("Estimated read", boardId.ToString()));
+        using var column = JsonDocument.Parse(await resources.GetColumnCards(boardId.ToString(), columnId.ToString()));
+        using var detail = JsonDocument.Parse(await resources.GetCardDetail(boardId.ToString(), card.Id.ToString()));
+        foreach (var value in new[] { search.RootElement.GetProperty("cards")[0], column.RootElement.GetProperty("cards")[0], detail.RootElement })
+        {
+            var estimate = value.GetProperty("estimatedEffortMinutes");
+            if (minutes.HasValue) estimate.GetInt32().Should().Be(minutes.Value);
+            else estimate.ValueKind.Should().Be(JsonValueKind.Null);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WorkItemType_McpRejectsNonMembersAndViewersWithoutCreatingProposal(bool viewer)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, columnId) = await SetupBoardAsync(scope);
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var caller = new User($"type-reader-{Guid.NewGuid():N}", $"type-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unit.Users.AddAsync(caller);
+        if (viewer) await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Viewer, owner.Id));
+        await unit.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, columnId, "Private", null, null, null))).Value;
+        using var result = JsonDocument.Parse(await CreateWriteTools(scope, caller.Id).UpdateCard(boardId.ToString(), card.Id.ToString(),
+            work_item_type: "Epic", expected_updated_at: card.UpdatedAt.ToString("O")));
+        result.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        (await unit.AutomationProposals.GetByBoardIdAsync(boardId)).Should().BeEmpty();
+        (await service.GetCardAsync(boardId, card.Id)).Value.WorkItemType.Should().Be("Task");
+    }
+
+    [Fact]
+    public async Task WorkItemType_McpProposesVersionedUpdateWithoutMutation()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, columnId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, columnId, "Type", null, null, null))).Value;
+        var tools = CreateWriteTools(scope, owner.Id);
+        using var missing = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(), work_item_type: "Epic"));
+        missing.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+        using var result = JsonDocument.Parse(await tools.UpdateCard(boardId.ToString(), card.Id.ToString(),
+            work_item_type: "Spike", expected_updated_at: card.UpdatedAt.ToString("O")));
+        var proposalId = result.RootElement.GetProperty("proposalId").GetGuid();
+        var proposals = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var proposal = (await proposals.GetProposalByIdAsync(proposalId)).Value;
+        using var parameters = JsonDocument.Parse(proposal.Operations.Single().Parameters);
+        parameters.RootElement.GetProperty("workItemType").GetString().Should().Be("Spike");
+        parameters.RootElement.GetProperty("expectedUpdatedAt").GetDateTimeOffset().Should().Be(card.UpdatedAt);
+        (await service.GetCardAsync(boardId, card.Id)).Value.WorkItemType.Should().Be("Task");
+    }
+
+    [Fact]
     public async Task SearchCards_ReturnsMatchingCards()
     {
         using var scope = _serviceProvider.CreateScope();
         var (user, boardId, colId) = await SetupBoardAsync(scope);
         var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
 
-        await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Fix login bug", "auth issue", null, null));
+        await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Fix login bug", "auth issue", null, null, "Epic"));
         await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Add feature X", null, null, null));
 
         var tools = new ReadTools(
@@ -102,6 +331,8 @@ public class McpToolsTests : IDisposable
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id));
 
         var json = await tools.SearchCards("login");
+        using var typeResult = JsonDocument.Parse(json);
+        typeResult.RootElement.GetProperty("cards")[0].GetProperty("workItemType").GetString().Should().Be("Epic");
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -340,6 +571,40 @@ public class McpToolsTests : IDisposable
         var movedCard = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>()
             .Cards.GetByIdAsync(card.Value.Id);
         movedCard!.ColumnId.Should().Be(col2.Value.Id);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CreateAndMoveTools_KeepReviewFirstCreation_AndRejectFullCapacityAtApproval(bool create)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, sourceColumnId) = await SetupBoardAsync(scope);
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+        var target = await scope.ServiceProvider.GetRequiredService<ColumnService>()
+            .CreateColumnAsync(new CreateColumnDto(boardId, "Limited", null, 1));
+        target.IsSuccess.Should().BeTrue(target.ErrorMessage);
+        var occupant = await cardService.CreateCardAsync(new CreateCardDto(boardId, target.Value.Id, "Occupant", null, null, null));
+        var mover = await cardService.CreateCardAsync(new CreateCardDto(boardId, sourceColumnId, "Mover", null, null, null));
+        occupant.IsSuccess.Should().BeTrue(occupant.ErrorMessage);
+        mover.IsSuccess.Should().BeTrue(mover.ErrorMessage);
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var tools = new WriteTools(proposalService, new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(), unitOfWork);
+
+        var json = create
+            ? await tools.CreateCard(boardId.ToString(), "Proposed new card", target.Value.Id.ToString())
+            : await tools.MoveCard(boardId.ToString(), mover.Value.Id.ToString(), target.Value.Id.ToString());
+
+        using var result = JsonDocument.Parse(json);
+        var proposalId = result.RootElement.GetProperty("proposalId").GetGuid();
+        result.RootElement.GetProperty("status").GetString().Should().Be("Pending");
+        var approved = await proposalService.ApproveProposalAsync(proposalId, user.Id);
+        approved.ErrorCode.Should().Be("WipLimitExceeded");
+        approved.ErrorMessage.Should().Contain(create ? "Cannot add card" : "Cannot move card").And.Contain("Limited");
+        (await unitOfWork.Columns.GetByIdWithCardsAsync(target.Value.Id))!.Cards.Should().ContainSingle();
+        (await unitOfWork.Cards.GetByIdAsync(mover.Value.Id))!.ColumnId.Should().Be(sourceColumnId);
     }
 
     [Fact]
@@ -632,6 +897,70 @@ public class McpToolsTests : IDisposable
             .Should().BeEquivalentTo("boardId", "cardId");
         parameters.RootElement.GetProperty("boardId").GetGuid().Should().Be(boardId);
         parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(card.Value.Id);
+    }
+
+    [Theory]
+    [InlineData(true, "archive-lifecycle", false)]
+    [InlineData(false, "restore-lifecycle", false)]
+    [InlineData(true, "archive-lifecycle", true)]
+    [InlineData(false, "restore-lifecycle", true)]
+    public async Task CardLifecycleTools_CreateDistinctVersionPinnedProposal_WithoutApplying(bool archive, string action, bool editor)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Lifecycle", null, null, null))).Value;
+        if (!archive) card = (await service.SetArchivedAsync(boardId, card.Id, true, new(card.UpdatedAt))).Value;
+        var callerId = user.Id;
+        if (editor)
+        {
+            var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var caller = new User($"editor-{Guid.NewGuid():N}", $"editor-{Guid.NewGuid():N}@example.com", "Password1!");
+            await unit.Users.AddAsync(caller);
+            await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Editor, user.Id));
+            await unit.SaveChangesAsync();
+            callerId = caller.Id;
+        }
+        var tools = CreateWriteTools(scope, callerId);
+        var json = archive
+            ? await tools.ArchiveCardLifecycle(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"))
+            : await tools.RestoreArchivedCard(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"));
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        proposal.Operations.Should().ContainSingle().Which.ActionType.Should().Be(action);
+        using var parameters = JsonDocument.Parse(proposal.Operations[0].Parameters);
+        parameters.RootElement.GetProperty("expectedUpdatedAt").GetDateTimeOffset().Should().Be(card.UpdatedAt);
+        (await service.GetCardAsync(boardId, card.Id)).Value.IsArchived.Should().Be(!archive);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task CardLifecycleTools_NonMemberOrViewer_CannotCreateProposal(bool archive, bool viewer)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, colId) = await SetupBoardAsync(scope);
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var caller = new User($"reader-{Guid.NewGuid():N}", $"reader-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unit.Users.AddAsync(caller);
+        if (viewer)
+            await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Viewer, owner.Id));
+        await unit.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Private card", null, null, null))).Value;
+        if (!archive) card = (await service.SetArchivedAsync(boardId, card.Id, true, new(card.UpdatedAt))).Value;
+        var tools = CreateWriteTools(scope, caller.Id);
+        var json = archive
+            ? await tools.ArchiveCardLifecycle(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"))
+            : await tools.RestoreArchivedCard(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"));
+        (await unit.AutomationProposals.GetByBoardIdAsync(boardId)).Should().BeEmpty("board write access is required before any proposal is persisted");
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        document.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse();
+        (await service.GetCardAsync(boardId, card.Id)).Value.Should().BeEquivalentTo(card);
     }
 
     [Fact]
@@ -1010,7 +1339,9 @@ public class McpToolsTests : IDisposable
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(userId),
             scope.ServiceProvider.GetRequiredService<ICaptureService>(),
-            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>(),
+            scope.ServiceProvider.GetRequiredService<IAuthorizationService>(),
+            scope.ServiceProvider.GetRequiredService<IBoardRelationService>());
     }
 
     private static async Task ApproveAndExecuteAsync(IServiceScope scope, Guid userId, Guid proposalId)

@@ -143,6 +143,24 @@ implementation.
   proof, and rollback behavior, making this contract identical to ADR-0060's per-stage checklist so
   that a slice cannot pass ADR-0062 and fail ADR-0060.
 
+## Estimate-unit clarification (2026-09-11)
+
+The maintainer selected **effort time, stored in minutes and displayed as hours/minutes** in
+the [#2093 ruling](https://github.com/Chris0Jeky/Taskdeck/issues/2093#issuecomment-5627296488).
+Null means not estimated; zero is an explicit zero estimate. This resolves the unit choice
+without admitting actual-time tracking, WorkLog, capacity forecasts or a generic duration field.
+The derived-on-read aggregate rule above remains binding.
+
+The [September 6 maintainer ruling](https://github.com/Chris0Jeky/Taskdeck/issues/2240#issuecomment-5556351206)
+supersedes the historical v0.3 exception above: #2240 and #2093 are both in v0.4.
+#2240's assignment implementation is parked in
+[PR #2977](https://github.com/Chris0Jeky/Taskdeck/pull/2977); #2093 is Next with no implementation.
+The [residual contract](https://github.com/Chris0Jeky/Taskdeck/issues/2093#issuecomment-5627326866)
+records overlapping participant totals and independent parent estimates as implementation
+choices, not new maintainer rulings. Numeric bounds and arithmetic proof remain implementation work.
+See the [reconciliation](../analysis/2026-09-11-product-trust-reconciliation.md) for risks and
+shared-path sequencing. Generic custom fields retain their separate post-Stage-2 gate.
+
 ## Consequences
 
 - Field types, metrics, and rules remain legible and independently testable.

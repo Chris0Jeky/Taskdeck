@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Extensions.Http;
 using Taskdeck.Api.Workers;
@@ -59,6 +60,7 @@ public static class LlmProviderRegistration
         var llmKillSwitchSettings = configuration.GetSection("LlmKillSwitch").Get<LlmKillSwitchSettings>() ?? new LlmKillSwitchSettings();
         services.AddSingleton(llmKillSwitchSettings);
         services.AddScoped<ILlmQuotaService, LlmQuotaService>();
+        services.AddScoped<WorkspaceObservationService>();
         services.AddSingleton<ILlmKillSwitchService, LlmKillSwitchService>();
 
         // Abuse detection settings, shared state (singleton), and service (scoped to access ILlmUsageRecordRepository)
@@ -80,8 +82,11 @@ public static class LlmProviderRegistration
         // LLM-backed transcript triage (REVIVAL-08 M1): the extraction leg CaptureTriageService
         // consults for transcript-source captures. Scoped because it depends on the scoped
         // ILlmProvider and ILlmQuotaService.
-        var llmCaptureTriageSettings = configuration.GetSection("CaptureTriageLlm").Get<LlmCaptureTriageSettings>() ?? new LlmCaptureTriageSettings();
-        services.AddSingleton(llmCaptureTriageSettings);
+        // Adapt the existing raw-settings dependency to the validated options pipeline.
+        // Resolving rather than snapshotting here preserves later host configuration
+        // providers, including WebApplicationFactory and operator overrides.
+        services.AddSingleton(sp =>
+            sp.GetRequiredService<IOptions<LlmCaptureTriageSettings>>().Value);
         services.AddScoped<ILlmCaptureTriageExtractor, LlmCaptureTriageExtractor>();
 
         // LLM provider settings and deterministic provider selection policy

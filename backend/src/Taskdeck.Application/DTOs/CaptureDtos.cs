@@ -49,6 +49,15 @@ public record CaptureItemSummaryDto(
     CaptureDispositionV1? Disposition = null,
     bool CanEditSuggestion = false);
 
+/// <summary>Read-only polling projection; excludes capture text and provenance.</summary>
+public record CaptureTriageStatusDto(
+    Guid Id,
+    CaptureStatus Status,
+    DateTimeOffset? ProcessedAt,
+    string? ErrorMessage,
+    CaptureDispositionV1? Disposition,
+    bool CanEditSuggestion);
+
 public record CaptureListFilterDto(
     CaptureStatus? Status = null,
     Guid? BoardId = null,

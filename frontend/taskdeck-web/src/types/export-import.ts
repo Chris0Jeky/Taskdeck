@@ -40,3 +40,10 @@ export interface ImportResult {
   cardsImported: number
   labelsImported: number
 }
+export interface BoardImportPreview {
+  board: { name: string; cards: Array<{ title: string; columnName: string; isArchived: boolean }>; [key: string]: unknown }
+  cardCount: number
+  columnCount: number
+  sourceAssignees: Array<{ sourceKey: string; displayName: string; affectedCardCount: number }>
+  me: { userId: string; displayName: string }
+}

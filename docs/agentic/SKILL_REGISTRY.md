@@ -22,7 +22,7 @@ Use one primary skill per task and at most one support skill. Skills are for tar
 
 ## Claude Skills
 
-`.claude/skills/` is the canonical tree for the shared workflows above and adds the Claude-only helpers `issue-to-pr`, `pre-merge-gate`, and `docs-sweep`. `.codex/skills/` is the Codex adapter: same workflow names, Codex-shaped frontmatter and orientation order, per-skill `agents/` folders. The two trees are not byte mirrors (measured 2026-09-02) — port a shared-workflow change from the canonical tree to the adapter in the same PR. The review pipeline lives in neither; it is the global `review-and-ship` skill.
+`.claude/skills/` is the canonical tree for the shared workflows above and adds the Claude-only helpers `issue-to-pr`, `pre-merge-gate`, and `docs-sweep`. `.codex/skills/` is the Codex adapter: same workflow names, Codex-shaped frontmatter and orientation order, per-skill `agents/` folders. Grok loads the canonical Claude tree via compatibility; there is no `.grok/skills/`. The two Claude/Codex trees are not byte mirrors (measured 2026-09-02) — port a shared-workflow change from the canonical tree to the Codex adapter in the same PR. The review pipeline lives in neither; it is the global `review-and-ship` skill.
 
 ## Maintenance
 

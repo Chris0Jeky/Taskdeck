@@ -97,6 +97,7 @@ public class SideEffectAnalyzerTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Rows.Single(row => row.Key == "Cards").Tone.Should().Be("active");
+        result.Value.Rows.Single(row => row.Key == "Cards").Value.Should().Be("Creates cards on the board");
     }
 
     [Fact]
@@ -151,6 +152,26 @@ public class SideEffectAnalyzerTests
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be("active");
+    }
+
+    [Theory]
+    [InlineData("archive-lifecycle")]
+    [InlineData("restore-lifecycle")]
+    [InlineData("ARCHIVE-LIFECYCLE")]
+    [InlineData("Restore-Lifecycle")]
+    public async Task AnalyzeAsync_CardsMutation_ShouldBeActive_WhenCardLifecycleOperation(string actionType)
+    {
+        // #2939: applying either lifecycle action flips the card's archived state, so the review
+        // disclosure must not claim "No board mutations" for the write being approved.
+        var proposal = CreateProposal(RiskLevel.Low, null, (actionType, "card"));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
+
+        var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
+        cardsRow.Tone.Should().Be("active");
+        cardsRow.Value.Should().NotBe("No board mutations");
     }
 
     [Fact]
@@ -332,8 +353,7 @@ public class SideEffectAnalyzerTests
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         // Should be active (column mutation) but description should mention columns, not card mutations
-        cardsRow.Value.Should().NotContain("Creates, moves, or archives cards on the board");
-        cardsRow.Value.Should().Contain("column");
+        cardsRow.Value.Should().Be("Adds columns to the board (no direct card mutations)");
     }
 
     [Fact]
@@ -347,8 +367,7 @@ public class SideEffectAnalyzerTests
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be("active");
-        cardsRow.Value.Should().Contain("cards");
-        cardsRow.Value.Should().Contain("columns");
+        cardsRow.Value.Should().Be("Creates cards and adds columns on the board");
     }
 
     [Fact]
@@ -472,6 +491,71 @@ public class SideEffectAnalyzerTests
 
     #region BuildSideEffectRows Static Tests
 
+    [Theory]
+    [InlineData("create", "Creates")]
+    [InlineData("move", "Moves")]
+    [InlineData("bulk_move", "Moves")]
+    [InlineData("update", "Updates")]
+    [InlineData("delete", "Deletes")]
+    [InlineData("archive", "Blocks")]
+    [InlineData("archive-lifecycle", "Archives")]
+    [InlineData("restore-lifecycle", "Restores")]
+    [InlineData("DELETE", "Deletes")]
+    public void BuildSideEffectRows_SingleCardAction_DisclosesOnlyItsActualEffect(string action, string verb)
+    {
+        var proposal = CreateProposal(RiskLevel.Low, null, (action, "card"));
+
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(proposal.Operations, false);
+
+        var cards = rows.Single(row => row.Key == "Cards");
+        cards.Value.Should().Be($"{verb} cards on the board");
+        cards.Tone.Should().Be(SideEffectTone.Active);
+    }
+
+    [Theory]
+    [InlineData(new string[] { "delete", "archive-lifecycle" }, "Deletes and archives cards on the board")]
+    [InlineData(new string[] { "delete", "archive" }, "Blocks and deletes cards on the board")]
+    [InlineData(new string[] { "delete", "delete", "DELETE" }, "Deletes cards on the board")]
+    [InlineData(new string[] { "bulk_move", "move", "MOVE" }, "Moves cards on the board")]
+    [InlineData(new string[] { "delete", "create", "update", "create" }, "Creates, updates, and deletes cards on the board")]
+    [InlineData(new string[] { "restore-lifecycle", "archive-lifecycle", "delete", "update", "archive", "bulk_move", "move", "create" },
+        "Creates, moves, blocks, updates, deletes, archives, and restores cards on the board")]
+    public void BuildSideEffectRows_MixedCardActions_DisclosesEachEffectOnceInStableOrder(string[] actions, string expected)
+    {
+        var proposal = CreateProposal(RiskLevel.Low, null, actions.Select(action => (action, "card")).ToArray());
+
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(proposal.Operations, false);
+
+        var cards = rows.Single(row => row.Key == "Cards");
+        cards.Value.Should().Be(expected);
+        cards.Tone.Should().Be(SideEffectTone.Active);
+    }
+
+    [Theory]
+    [InlineData("add-relation", "Adds typed links on the board")]
+    [InlineData("remove-relation", "Removes typed links on the board")]
+    public void BuildSideEffectRows_TypedRelationActionsHaveAnExplicitDisclosure(string action, string expected)
+    {
+        var proposal = CreateProposal(RiskLevel.Low, null, (action, "card"));
+
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(proposal.Operations, false);
+
+        var cards = rows.Single(row => row.Key == "Cards");
+        cards.Value.Should().Be(expected);
+        cards.Tone.Should().Be(SideEffectTone.Active);
+    }
+
+    [Fact]
+    public void BuildSideEffectRows_DeleteCardWithOtherTargets_DescribesOnlyCardDeletionAndColumnCreation()
+    {
+        var proposal = CreateProposal(RiskLevel.Low, null,
+            ("delete", "CARD"), ("create", "column"), ("restore-lifecycle", "artefact"), ("update", "board"));
+
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(proposal.Operations, false);
+
+        rows.Single(row => row.Key == "Cards").Value.Should().Be("Deletes cards and adds columns on the board");
+    }
+
     [Fact]
     public void BuildSideEffectRows_ShouldAlwaysReturn7Rows()
     {
@@ -502,6 +586,33 @@ public class SideEffectAnalyzerTests
         cardsRow.Tone.Should().Be(SideEffectTone.Active);
     }
 
+    [Theory]
+    [InlineData("archive-lifecycle")]
+    [InlineData("restore-lifecycle")]
+    public void BuildSideEffectRows_WithCardLifecycleAction_ShouldSetCardsActive(string actionType)
+    {
+        var op = new AutomationProposalOperation(
+            Guid.NewGuid(), 0, actionType, "card", "{}", Guid.NewGuid().ToString());
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(new List<AutomationProposalOperation> { op }, false);
+
+        var cardsRow = rows.First(r => r.Key == "Cards");
+        cardsRow.Tone.Should().Be(SideEffectTone.Active);
+        cardsRow.Value.Should().NotBe("No board mutations");
+    }
+
+    [Fact]
+    public void BuildSideEffectRows_WithCardLifecycleActionTargetingNonCard_ShouldNotSetCardMutation()
+    {
+        // Guards the pairing: the action set only counts when the target really is a card.
+        var op = new AutomationProposalOperation(
+            Guid.NewGuid(), 0, "archive-lifecycle", "board", "{}", Guid.NewGuid().ToString());
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(new List<AutomationProposalOperation> { op }, false);
+
+        var cardsRow = rows.First(r => r.Key == "Cards");
+        cardsRow.Value.Should().Be("No board mutations");
+        cardsRow.Tone.Should().Be(SideEffectTone.Passive);
+    }
+
     [Fact]
     public void BuildSideEffectRows_WithWebhooks_ShouldSetWebhooksActive()
     {
@@ -528,13 +639,13 @@ public class SideEffectAnalyzerTests
     [Fact]
     public void BuildSideEffectRows_CreateTargetingNonCard_ShouldNotSetCardMutation()
     {
-        // "create" targeting "column" should not say "Creates, moves, or archives cards"
+        // A column creation must not imply that cards will be created.
         var op = new AutomationProposalOperation(
             Guid.NewGuid(), 0, "create", "column", "{}", Guid.NewGuid().ToString());
         var rows = SideEffectAnalyzer.BuildSideEffectRows(new List<AutomationProposalOperation> { op }, false);
 
         var cardsRow = rows.First(r => r.Key == "Cards");
-        cardsRow.Value.Should().NotBe("Creates, moves, or archives cards on the board");
+        cardsRow.Value.Should().Be("Adds columns to the board (no direct card mutations)");
     }
 
     [Fact]

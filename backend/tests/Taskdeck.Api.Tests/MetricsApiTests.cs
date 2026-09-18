@@ -12,6 +12,30 @@ public class MetricsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly TestWebApplicationFactory _factory;
 
+    [Fact]
+    public async Task ArchivedCards_DoNotContributeToActiveMetrics_EvenWithRetainedMoveAudits()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "archive-metrics-owner");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "Archive metrics");
+        var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var doneResponse = await client.PostAsJsonAsync($"/api/boards/{boardId}/columns", new CreateColumnDto(boardId, "Done", 1, null));
+        var done = (await doneResponse.Content.ReadFromJsonAsync<ColumnDto>())!;
+        var cardResponse = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, board.Columns[0].Id, "Completed then archived", null, null, null));
+        var card = (await cardResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        var moved = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards/{card.Id}/move", new MoveCardDto(done.Id, 0));
+        card = (await moved.Content.ReadFromJsonAsync<CardDto>())!;
+        var before = (await client.GetFromJsonAsync<BoardMetricsResponse>($"/api/metrics/boards/{boardId}"))!;
+        before.Throughput.Sum(point => point.CompletedCount).Should().Be(1);
+        (await client.PostAsJsonAsync($"/api/boards/{boardId}/cards/{card.Id}/archive", new CardLifecycleDto(card.UpdatedAt)))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var after = (await client.GetFromJsonAsync<BoardMetricsResponse>($"/api/metrics/boards/{boardId}"))!;
+        after.Throughput.Sum(point => point.CompletedCount).Should().Be(0);
+        after.TotalWip.Should().Be(0);
+        after.CycleTimeEntries.Should().BeEmpty();
+    }
+
     public MetricsApiTests(TestWebApplicationFactory factory)
     {
         _factory = factory;

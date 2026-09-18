@@ -3,7 +3,7 @@ import { collectWorkspaceMemoryExport, downloadWorkspaceMemoryJson } from '../..
 import { workspaceInsightsApi } from '../../api/workspaceInsights'
 import type { Memory } from '../../types/workspaceInsights'
 
-vi.mock('../../api/workspaceInsights', () => ({ workspaceInsightsApi: { getMemories: vi.fn() } }))
+vi.mock('../../api/workspaceInsights', () => ({ workspaceInsightsApi: { getMemories: vi.fn(), getMemorySources: vi.fn() } }))
 const record: Memory = {
   id: 'memory-1', boardId: 'board-1', title: 'Original context', text: 'Correction',
   originalText: '  Original answer\nwith spacing  ', originalEvidence: 'Blocked by a device; card revision at creation',
@@ -48,5 +48,20 @@ describe('private workspace memory export', () => {
     expect(() => downloadWorkspaceMemoryJson('{}', 'board-1')).toThrow('Download blocked')
     expect(revoke).toHaveBeenCalledWith('blob:memory-export')
     expect(document.querySelector('a[download]')).toBeNull()
+  })
+  it('includes linked originals and refuses a partial or mismatched source export', async () => {
+    const linked = { ...record, sources: { captureId: 'c1', answerAssetId: 'a1', evidenceAssetId: null } }
+    vi.mocked(workspaceInsightsApi.getMemories).mockResolvedValueOnce([linked]).mockResolvedValueOnce([])
+    const sources = { id: 'c1', boardId: 'board-1', capture: { sourceAssets: [{ id: 'a1', ordinal: 0, originalName: null, contentHash: 'hash', text: record.text, supersedesAssetId: null, supersededByAssetId: null }] } }
+    vi.mocked(workspaceInsightsApi.getMemorySources).mockResolvedValueOnce(sources)
+    const exported = JSON.parse(await collectWorkspaceMemoryExport('board-1', () => true))
+    expect(exported.version).toBe(2)
+    expect(exported.nativeCaptures).toEqual([sources])
+    vi.mocked(workspaceInsightsApi.getMemories).mockResolvedValueOnce([linked]).mockResolvedValueOnce([])
+    vi.mocked(workspaceInsightsApi.getMemorySources).mockResolvedValueOnce({ ...sources, id: 'wrong' })
+    await expect(collectWorkspaceMemoryExport('board-1', () => true)).rejects.toThrow('did not match')
+    vi.mocked(workspaceInsightsApi.getMemories).mockResolvedValueOnce([linked]).mockResolvedValueOnce([])
+    vi.mocked(workspaceInsightsApi.getMemorySources).mockRejectedValueOnce(new Error('Source unavailable'))
+    await expect(collectWorkspaceMemoryExport('board-1', () => true)).rejects.toThrow('Source unavailable')
   })
 })
