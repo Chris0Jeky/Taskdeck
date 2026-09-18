@@ -35,51 +35,24 @@ jobs:
           path = Path('scripts/ci/dev-up.test.mjs')
           source = path.read_text(encoding='utf-8')
 
-          old_listen = """  }
-  listen()
-} else if (kind === 'dotnet') {
-"""
-          new_listen = """  }
-  const bindDelayMs = Number(process.env.FAKE_FRONTEND_BIND_DELAY_MS ?? 0)
-  if (Number.isFinite(bindDelayMs) && bindDelayMs > 0) {
-    setTimeout(listen, bindDelayMs)
-  } else {
-    listen()
-  }
-} else if (kind === 'dotnet') {
-"""
+          old_listen = "  }\n  listen()\n} else if (kind === 'dotnet') {\n"
+          new_listen = "  }\n  const bindDelayMs = Number(process.env.FAKE_FRONTEND_BIND_DELAY_MS ?? 0)\n  if (Number.isFinite(bindDelayMs) && bindDelayMs > 0) {\n    setTimeout(listen, bindDelayMs)\n  } else {\n    listen()\n  }\n} else if (kind === 'dotnet') {\n"
           if source.count(old_listen) != 1:
               raise SystemExit(f'Expected one frontend listen call, found {source.count(old_listen)}.')
           source = source.replace(old_listen, new_listen, 1)
 
-          old_test = """  {
-    concurrency: false,
-    timeout: 10_000,
-    skip: process.platform === 'win32' ? 'requires POSIX signal handling; hosted Linux proof is required' : false,
-  },
-"""
-          new_test = """  {
-    concurrency: false,
-    timeout: 25_000,
-    skip: process.platform === 'win32' ? 'requires POSIX signal handling; hosted Linux proof is required' : false,
-  },
-"""
           marker = "test(\n  'Node helper: TERM closes an active frontend connection',\n"
           marker_start = source.index(marker)
-          test_block_start = source.index(old_test, marker_start)
+          old_test = "  {\n    concurrency: false,\n    timeout: 10_000,\n    skip: process.platform === 'win32' ? 'requires POSIX signal handling; hosted Linux proof is required' : false,\n  },\n"
+          new_test = "  {\n    concurrency: false,\n    timeout: 25_000,\n    skip: process.platform === 'win32' ? 'requires POSIX signal handling; hosted Linux proof is required' : false,\n  },\n"
+          test_block_start = source.find(old_test, marker_start)
           if test_block_start < 0:
               raise SystemExit('Could not find the TERM helper test options.')
           source = source[:test_block_start] + source[test_block_start:].replace(old_test, new_test, 1)
 
-          old_env = """        FAKE_FRONTEND_HOST: '127.0.0.1',
-        FAKE_FRONTEND_PORT: String(frontendPort),
-"""
-          new_env = """        FAKE_FRONTEND_HOST: '127.0.0.1',
-        FAKE_FRONTEND_PORT: String(frontendPort),
-        // #2588: exceed the historical five-second ceiling deterministically.
-        FAKE_FRONTEND_BIND_DELAY_MS: '5250',
-"""
-          env_start = source.index(old_env, marker_start)
+          old_env = "        FAKE_FRONTEND_HOST: '127.0.0.1',\n        FAKE_FRONTEND_PORT: String(frontendPort),\n"
+          new_env = "        FAKE_FRONTEND_HOST: '127.0.0.1',\n        FAKE_FRONTEND_PORT: String(frontendPort),\n        // #2588: exceed the historical five-second ceiling deterministically.\n        FAKE_FRONTEND_BIND_DELAY_MS: '5250',\n"
+          env_start = source.find(old_env, marker_start)
           if env_start < 0:
               raise SystemExit('Could not find the TERM helper environment.')
           source = source[:env_start] + source[env_start:].replace(old_env, new_env, 1)
@@ -110,15 +83,8 @@ jobs:
           path = Path('scripts/ci/dev-up.test.mjs')
           source = path.read_text(encoding='utf-8')
 
-          old_constants = """const DIAGNOSTIC_OUTPUT_LIMIT = 8 * 1024
-const RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000
-"""
-          new_constants = """const DIAGNOSTIC_OUTPUT_LIMIT = 8 * 1024
-const RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000
-// #2588: repeated hosted failures reached the former 5s ceiling before the fake frontend bound.
-// Stay bounded below the 30s hosted per-test ceiling while retaining time for TERM and cleanup.
-const FRONTEND_HELPER_READINESS_TIMEOUT_MS = 15_000
-"""
+          old_constants = "const DIAGNOSTIC_OUTPUT_LIMIT = 8 * 1024\nconst RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000\n"
+          new_constants = "const DIAGNOSTIC_OUTPUT_LIMIT = 8 * 1024\nconst RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000\n// #2588: repeated hosted failures reached the former 5s ceiling before the fake frontend bound.\n// Stay bounded below the 30s hosted per-test ceiling while retaining time for TERM and cleanup.\nconst FRONTEND_HELPER_READINESS_TIMEOUT_MS = 15_000\n"
           if source.count(old_constants) != 1:
               raise SystemExit(f'Expected one readiness-constant anchor, found {source.count(old_constants)}.')
           source = source.replace(old_constants, new_constants, 1)
