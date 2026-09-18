@@ -409,8 +409,15 @@ function parseReferenceDestination(text) {
   return text.slice(start, cursor)
 }
 
-function markdownContainerContentStart(line) {
+// Blockquote and list markers that a reference definition may sit behind. A list
+// marker may be followed by at most four spaces/tabs: five or more make the rest
+// of the line an indented code block inside the item (CommonMark 5.2), which is
+// illustrative text rather than a definition this checker should resolve.
+const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])[ \t]{1,4}(?![ \t])/
+
+function markdownContainerPrefix(line) {
   let cursor = 0
+  let listMarkers = 0
 
   while (cursor < line.length) {
     let indentation = 0
@@ -425,16 +432,21 @@ function markdownContainerContentStart(line) {
       continue
     }
 
-    const listMarker = /^(?:[-+*]|\d{1,9}[.)])[ \t]+/.exec(line.slice(cursor))
+    const listMarker = LIST_MARKER.exec(line.slice(cursor))
     if (listMarker) {
       cursor += listMarker[0].length
+      listMarkers += 1
       continue
     }
 
-    return cursor
+    return { contentStart: cursor, listMarkers }
   }
 
-  return cursor
+  return { contentStart: cursor, listMarkers }
+}
+
+function markdownContainerContentStart(line) {
+  return markdownContainerPrefix(line).contentStart
 }
 
 function extractReferenceDefinitions(masked, push) {
@@ -461,8 +473,15 @@ function extractReferenceDefinitions(masked, push) {
           nextLineStart,
           nextLineEnd === -1 ? masked.length : nextLineEnd,
         )
-        const nextContentStart = markdownContainerContentStart(nextLine)
-        const continuation = /^[ \t]*(\S.*)$/.exec(nextLine.slice(nextContentStart))
+        // A line that opens its own list item starts a new block, so it can never
+        // be this definition's destination continuation — treating a sibling item
+        // as one turned ordinary list prose into a "missing target" report.
+        const nextPrefix = markdownContainerPrefix(nextLine)
+        const nextContentStart = nextPrefix.contentStart
+        const continuation =
+          nextPrefix.listMarkers > 0
+            ? null
+            : /^[ \t]*(\S.*)$/.exec(nextLine.slice(nextContentStart))
         if (continuation) {
           destinationText = continuation[1]
           destinationIndex =

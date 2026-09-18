@@ -113,6 +113,67 @@ test('reference definitions inside blockquote and list containers are checked', 
   )
 })
 
+test('a sibling list item is not consumed as a reference definition destination', () => {
+  withFixture(
+    {
+      'docs/index.md': [
+        '- [ref]:',
+        '- ordinary sibling item',
+        '',
+        '[plain]:',
+        '- another ordinary item',
+      ].join('\n'),
+    },
+    (root) => {
+      assert.deepEqual(compact(findBrokenLinks(root)), [])
+    },
+  )
+})
+
+test('a genuine continuation line is still resolved inside its container', () => {
+  withFixture(
+    {
+      'docs/index.md': [
+        '- [ref]:',
+        '  ./indented-missing.md',
+        '',
+        '> [quoted]:',
+        '> ./quoted-missing.md',
+      ].join('\n'),
+    },
+    (root) => {
+      assert.deepEqual(compact(findBrokenLinks(root)), [
+        { file: 'docs/index.md', line: 2, target: './indented-missing.md', reason: 'missing' },
+        { file: 'docs/index.md', line: 5, target: './quoted-missing.md', reason: 'missing' },
+      ])
+    },
+  )
+})
+
+test('an indented code block inside a list item is not read as a reference definition', () => {
+  withFixture(
+    {
+      'docs/index.md': '-     [ref]: ./illustrative-missing.md\n',
+    },
+    (root) => {
+      assert.deepEqual(compact(findBrokenLinks(root)), [])
+    },
+  )
+})
+
+test('list-marker padding within the list indentation limit still defines a reference', () => {
+  withFixture(
+    {
+      'docs/index.md': '-    [ref]: ./padded-missing.md\n',
+    },
+    (root) => {
+      assert.deepEqual(compact(findBrokenLinks(root)), [
+        { file: 'docs/index.md', line: 1, target: './padded-missing.md', reason: 'missing' },
+      ])
+    },
+  )
+})
+
 test('escaped backtick runs after an unmatched opener cannot mask a visible link', () => {
   withFixture(
     {
