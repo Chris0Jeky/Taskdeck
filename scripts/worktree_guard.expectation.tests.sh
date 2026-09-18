@@ -64,6 +64,25 @@ assert_setup_error() {
     pass "$name rejects invalid expectations as a setup error"
 }
 
+assert_named_branch_mismatch() {
+    local name="$1"
+    local code="$2"
+    local output="$3"
+    local normalized_output
+
+    if [ "$code" -ne 1 ]; then
+        printf '%s\n' "$output" >&2
+        fail "$name must treat the Unicode value as a named branch expectation (got $code)"
+    fi
+
+    normalized_output="$(normalize_assertion_output "$output")"
+    if ! printf '%s' "$normalized_output" | grep -qF -- "detached but a branch was required"; then
+        printf '%s\n' "$output" >&2
+        fail "$name did not reach the ordinary named-branch mismatch"
+    fi
+    pass "$name treats Unicode whitespace as a named branch character"
+}
+
 assert_setup_error "formatter-wrapped setup error" \
     2 $'ERROR: cannot be\r\ncombined with -ExpectedBranch' "cannot be combined"
 
@@ -101,6 +120,19 @@ set -e
 assert_setup_error "shell guard whitespace-only branch" \
     "$sh_whitespace_code" "$sh_whitespace_output" "cannot be whitespace-only"
 
+unicode_branch=$'\u00a0'
+set +e
+sh_unicode_output="$(
+    cd -- "$FIXTURE_ROOT/detached"
+    WT_EXPECT_HEAD=any \
+    WT_EXPECT_BRANCH="$unicode_branch" \
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
+sh_unicode_code=$?
+set -e
+assert_named_branch_mismatch "shell guard Unicode branch" \
+    "$sh_unicode_code" "$sh_unicode_output"
+
 if [ -z "$PS_EXE" ]; then
     printf '  SKIP: PowerShell guard contract (no powershell/pwsh on PATH)\n'
 else
@@ -127,6 +159,18 @@ else
     set -e
     assert_setup_error "PowerShell guard whitespace-only branch" \
         "$ps_whitespace_code" "$ps_whitespace_output" "cannot be whitespace-only"
+
+    set +e
+    ps_unicode_output="$(
+        cd -- "$FIXTURE_ROOT/detached"
+        "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
+            -ExpectHead Any \
+            -ExpectedBranch "$unicode_branch" 2>&1
+    )"
+    ps_unicode_code=$?
+    set -e
+    assert_named_branch_mismatch "PowerShell guard Unicode branch" \
+        "$ps_unicode_code" "$ps_unicode_output"
 fi
 
 printf 'worktree_guard expectation contract passed.\n'
