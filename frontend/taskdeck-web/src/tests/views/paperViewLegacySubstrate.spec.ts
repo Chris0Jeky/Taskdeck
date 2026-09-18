@@ -67,12 +67,25 @@ const VIEW_ROOTS = PAPER_VIEW_ROOTS.map(({ view, selector }) => ({
 const SUBSTRATE = /background(?:-color)?:\s*var\(--paper(?:-card|-2)?,\s*(#[0-9a-fA-F]{3,8})\s*\)/
 const PAPER_INK = /color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/
 
-/** Read the first top-level rule body for `selector` (these blocks contain no nested braces). */
-function readRootRule(source: string, selector: string): string {
-  const pattern = new RegExp(`^\\${selector}\\s*\\{([\\s\\S]*?)\\}`, 'm')
-  const match = source.match(pattern)
-  if (!match) throw new Error(`Could not locate the ${selector} rule`)
-  return match[1]
+/** Read a top-level rule body for `selector`, including selectors grouped by commas. */
+function readRootRule(source: string, selector: string, filename = '<inline SFC>'): string {
+  const parsed = parseSfc(source, { filename })
+  if (parsed.errors.length > 0) {
+    throw new Error(`Could not parse ${filename}: ${parserErrorMessage(parsed.errors[0])}`)
+  }
+
+  const rulePattern = /(?:^|})\s*([^{}]+)\{([^{}]*)\}/gm
+  for (const style of parsed.descriptor.styles) {
+    for (const match of style.content.matchAll(rulePattern)) {
+      const selectors = match[1]
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split(',')
+        .map((candidate) => candidate.trim())
+      if (selectors.includes(selector)) return match[2]
+    }
+  }
+
+  throw new Error(`Could not locate the ${selector} rule in ${filename}`)
 }
 
 function parserErrorMessage(error: unknown): string {
@@ -134,17 +147,13 @@ function compareRoots(left: DiscoveredRoot, right: DiscoveredRoot): number {
  * namespace. This guard owns top-level roots whose own rule opts into Paper's
  * `--ink` token, which is precisely the substrate invariant under test.
  */
-function discoverPaperInkRoots(): DiscoveredRoot[] {
-  return Object.entries(TOP_LEVEL_VIEW_SOURCES)
+function discoverPaperInkRoots(sources: Record<string, string> = TOP_LEVEL_VIEW_SOURCES): DiscoveredRoot[] {
+  return Object.entries(sources)
     .flatMap(([path, source]) =>
       rootPaperSelectors(source, path).flatMap((selector) => {
-        try {
-          return PAPER_INK.test(readRootRule(source, selector))
-            ? [{ view: viewName(path), selector }]
-            : []
-        } catch {
-          return []
-        }
+        return PAPER_INK.test(readRootRule(source, selector, path))
+          ? [{ view: viewName(path), selector }]
+          : []
       }),
     )
     .sort(compareRoots)
@@ -182,6 +191,33 @@ describe('Paper view root inventory', () => {
 
   it('parses native void elements in a discovered SFC template', () => {
     expect(rootPaperSelectors(sourceForView('ApiKeySettingsView.vue'))).toContain('.paper-api-keys')
+  })
+
+  it('discovers a Paper root from a grouped CSS selector', () => {
+    const source = `<template><div class="paper-grouped" /></template>
+      <style>
+        .paper-grouped,
+        .paper-alias {
+          color: var(--ink, #1a1814);
+          background: var(--paper, #f7f1e5);
+        }
+      </style>`
+
+    expect(discoverPaperInkRoots({ '../../views/GroupedView.vue': source })).toEqual([
+      { view: 'GroupedView.vue', selector: '.paper-grouped' },
+    ])
+  })
+
+  it('fails closed when a discovered root has a malformed CSS rule', () => {
+    const source = `<template><div class="paper-malformed" /></template>
+      <style>
+        .paper-malformed {
+          color: var(--ink, #1a1814);
+      </style>`
+
+    expect(() => discoverPaperInkRoots({ '../../views/MalformedView.vue': source })).toThrow(
+      'Could not locate the .paper-malformed rule',
+    )
   })
 
   it('fails closed with a source name when template parsing fails', () => {
