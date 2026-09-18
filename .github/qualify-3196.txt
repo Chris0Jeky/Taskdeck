@@ -1,1 +1,0 @@
-Temporary exact-head qualification trigger for PR #3196.
