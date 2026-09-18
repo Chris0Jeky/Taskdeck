@@ -7,6 +7,7 @@ import {
 export type DisplayDateInput = string | Date | null | undefined
 
 const CALENDAR_DATE_KEY = /^\d{4}-\d{2}-\d{2}$/
+const ISO_CALENDAR_PREFIX = /^(\d{4}-\d{2}-\d{2})T/
 
 const DISPLAY_DATE_DEFAULTS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -138,6 +139,12 @@ function calendarKeyFromDisplayInput(value: string | null | undefined): string |
   if (CALENDAR_DATE_KEY.test(normalized)) {
     return isCalendarDateKey(normalized) ? normalized : null
   }
+
+  // V8 normalizes impossible ISO components (for example, February 30) into a
+  // different valid instant. Validate the wire form's stated calendar day
+  // before Date parsing so the adapter preserves its invalid-input contract.
+  const isoCalendarPrefix = ISO_CALENDAR_PREFIX.exec(normalized)?.[1]
+  if (isoCalendarPrefix && !isCalendarDateKey(isoCalendarPrefix)) return null
 
   return toCalendarDateKey(normalized)
 }
