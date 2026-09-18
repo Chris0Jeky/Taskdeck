@@ -29,22 +29,36 @@ const isBlocked = defineModel<boolean>('isBlocked', { required: true })
 const blockReason = defineModel<string>('blockReason', { required: true })
 const workItemTypeSelect = ref<HTMLSelectElement | null>(null)
 const typePermissionRefresh = ref<HTMLButtonElement | null>(null)
-const retryOwnedFocus = ref(false)
+const retryOwnedCardId = ref<string | null>(null)
+
+// A replacement card owns a separate focus contract. Retire the old retry's
+// claim synchronously before parent/card permission watchers can settle it.
+watch(
+  () => props.card.id,
+  () => { retryOwnedCardId.value = null },
+  { flush: 'sync' },
+)
 
 watch(
   () => [props.typePermissionChecking, props.typePermissionUnknown, props.canEditType] as const,
   async ([checking, unknown, canEdit], [wasChecking, wasUnknown]) => {
     if (checking && !wasChecking) {
-      retryOwnedFocus.value = document.activeElement === typePermissionRefresh.value
+      retryOwnedCardId.value = document.activeElement === typePermissionRefresh.value
+        ? props.card.id
+        : null
       return
     }
 
     if (checking || unknown || !(wasChecking || wasUnknown)) return
 
     const activeElement = document.activeElement
-    const shouldRestoreFocus = activeElement === typePermissionRefresh.value
-      || (retryOwnedFocus.value && (activeElement === document.body || activeElement === null))
-    retryOwnedFocus.value = false
+    const retryOwnsCurrentCard = retryOwnedCardId.value === props.card.id
+    const shouldRestoreFocus = retryOwnsCurrentCard && (
+      activeElement === typePermissionRefresh.value
+      || activeElement === document.body
+      || activeElement === null
+    )
+    retryOwnedCardId.value = null
     if (!canEdit || !shouldRestoreFocus) return
 
     await nextTick()
