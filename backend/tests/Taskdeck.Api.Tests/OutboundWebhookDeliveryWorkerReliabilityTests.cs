@@ -658,6 +658,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
             => Task.FromResult(0);
 
         public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task BeginReadTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 

@@ -139,6 +139,10 @@ public class MachinePathCanonicalFormTests
     [InlineData("/api", "/%61pi")]
     // A case variant that is ALSO percent-encoded.
     [InlineData("/API/boards", "/%41PI/boards")]
+    // HTTP/1.1 absolute-form carries the same raw path after an authority. Kestrel accepts this
+    // proxy-style target, so encoded prefix letters remain non-canonical there too (#2279).
+    [InlineData("/api/boards", "http://localhost/%61pi/boards")]
+    [InlineData("/mcp/messages", "https://localhost/%6Dcp/messages?trace=%61")]
     public void RejectsPercentEncodedSpellingsOfAMachinePrefix(string path, string rawTarget) =>
         IsRejectedSpelling(path, rawTarget).Should().BeTrue();
 
@@ -147,20 +151,34 @@ public class MachinePathCanonicalFormTests
     [InlineData("/api/boards", "/api/boards")]
     [InlineData("/mcp", "/mcp")]
     [InlineData("/health/live", "/health/live")]
+    // Canonical absolute-form machine targets are supported and remain untouched.
+    [InlineData("/api/boards", "http://localhost/api/boards")]
+    [InlineData("/mcp/messages", "https://localhost/mcp/messages")]
+    [InlineData("/api/boards", "http://localhost/api/boards?q=%61")]
     // An escape in the first segment of a path that is NOT machine-facing is ordinary SPA routing.
     [InlineData("/café", "/caf%C3%A9")]
     [InlineData("/a b", "/a%20b")]
     [InlineData("/apidocs", "/%61pidocs")]
+    [InlineData("/workspace/home", "http://localhost/%77orkspace/home")]
     // An escape DEEPER in a machine path is route data, not a spelling of the prefix.
     [InlineData("/api/board s", "/api/board%20s")]
     [InlineData("/api/boards", "/api/%62oards")]
+    [InlineData("/api/boards", "http://localhost/api/%62oards")]
     // A query-string escape is not in the path at all.
     [InlineData("/api/boards", "/api/boards?q=%61")]
-    // Hosts that supply no raw target, or an absolute-form one, fall back to the path-only rules.
+    // Hosts that supply no raw target fall back to the path-only rules.
     [InlineData("/api/boards", null)]
     [InlineData("/api/boards", "")]
-    [InlineData("/api/boards", "http://localhost/%61pi/boards")]
     public void AcceptsCanonicalAndNonMachineSpellings(string path, string? rawTarget) =>
+        IsRejectedSpelling(path, rawTarget).Should().BeFalse();
+
+    [Theory]
+    [InlineData("/api/boards", "ftp://localhost/%61pi/boards")]
+    [InlineData("/api/boards", "mailto:user@example.test")]
+    [InlineData("/api/boards", "http:///api/boards")]
+    public void UnsupportedOrMalformedAbsoluteTargetsUseOnlyTheParsedPathRules(
+        string path,
+        string rawTarget) =>
         IsRejectedSpelling(path, rawTarget).Should().BeFalse();
 
     [Fact]
