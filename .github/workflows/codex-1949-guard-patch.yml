@@ -1,0 +1,221 @@
+name: Codex 1949 guard patch
+
+on:
+  push:
+    branches:
+      - fix/1949-bound-href-guard-precision
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/1949-bound-href-guard-precision
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Add red parser-precision regressions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/taskdeck-web/src/tests/guards/deadAnchors.spec.ts')
+          text = path.read_text()
+
+          old_loop = "    for (const href of ['/search?q=a&amp;b=c', '&#35;details', 'java&amp;#115;cript:void(0)']) {"
+          new_loop = """    for (const href of [
+                '/search?q=a&amp;b=c',
+                '/search?q=&quot;#&quot;',
+                '&#35;details',
+                'java&amp;#115;cript:void(0)',
+              ]) {"""
+          if old_loop not in text:
+              raise SystemExit('static real-URL fixture anchor not found')
+          text = text.replace(old_loop, new_loop, 1)
+
+          marker = "  it('detects empty and javascript: placeholder hrefs', () => {"
+          regression = """  it('detects entity-encoded placeholder literals inside bound href expressions without decoding twice', () => {
+              for (const expression of [
+                \"dead ?? 'java&#115;cript:void(0)'\",
+                \"dead ?? 'java&#x73;cript:void(0)'\",
+                \"dead ?? 'javascript&colon;void(0)'\",
+                \"dead ?? '&#35;'\",
+                'dead ?? &quot;&quot;',
+              ]) {
+                expect(
+                  findDeadAnchors(`<template><a :href=\"${expression}\">Open details</a></template>`),
+                  expression,
+                ).toHaveLength(1)
+              }
+
+              expect(
+                findDeadAnchors(
+                  `<template><a v-bind:href=\"dead ?? 'java&#115;cript:void(0)'\">Open details</a></template>`,
+                ),
+              ).toHaveLength(1)
+
+              for (const expression of [
+                \"dead ?? 'java&amp;#115;cript:void(0)'\",
+                \"dead ?? '&amp;#35;'\",
+              ]) {
+                expect(
+                  findDeadAnchors(`<template><a :href=\"${expression}\">Navigate</a></template>`),
+                  expression,
+                ).toEqual([])
+              }
+
+              expect(
+                findDeadAnchors(
+                  `<template><a v-bind:href=\"dead ?? 'java&#115;cript:void(0)'\" @click.prevent=\"open\">Open</a></template>`,
+                ),
+              ).toEqual([])
+            })
+
+          """
+          if marker not in text:
+              raise SystemExit('bound-regression insertion marker not found')
+          text = text.replace(marker, regression + marker, 1)
+          path.write_text(text)
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/taskdeck-web/src/tests/guards/deadAnchors.spec.ts
+          git commit -m "test(guard): reproduce bound href parser gaps"
+
+      - name: Prove regressions are red
+        working-directory: frontend/taskdeck-web
+        shell: bash
+        run: |
+          set +e
+          npx vitest run src/tests/guards/deadAnchors.spec.ts --reporter=verbose 2>&1 | tee /tmp/codex-1949-red.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected the new parser-precision contract to fail before implementation.' >&2
+            exit 1
+          fi
+          grep -q 'entity-encoded placeholder literals inside bound href expressions' /tmp/codex-1949-red.log
+
+      - name: Implement single-pass href decoding
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/taskdeck-web/src/tests/guards/deadAnchors.spec.ts')
+          text = path.read_text()
+
+          old_header = """ *  - Control characters inside a scheme are not normalized. Static href HTML
+           *    entities are decoded once by Vue's parser; bound expressions remain raw.
+          """
+          new_header = """ *  - Control characters inside a scheme are not normalized. Static and bound
+           *    href attribute values are decoded once by Vue's parser before checks.
+          """
+          if old_header not in text:
+              raise SystemExit('guard limitation header anchor not found')
+          text = text.replace(old_header, new_header, 1)
+
+          marker = "/** True when any href on `tag` is the bare `#` placeholder, statically or inside a bound expression. */\n"
+          helper = """/** Decode one href attribute value exactly as Vue sees it, without recursive entity decoding. */
+          function decodeHrefAttributeValue(
+            binding: string | undefined,
+            quote: string,
+            rawValue: string,
+          ): string {
+            const attributeName = binding ? `${binding}href` : 'href'
+            const element = baseParse(
+              `<a ${attributeName}=${quote}${rawValue}${quote}></a>`,
+              parserOptions,
+            ).children[0]
+            if (element?.type !== NodeTypes.ELEMENT) return rawValue
+
+            const href = element.props[0]
+            if (!binding && href?.type === NodeTypes.ATTRIBUTE && href.value) {
+              return href.value.content
+            }
+            if (
+              binding &&
+              href?.type === NodeTypes.DIRECTIVE &&
+              href.name === 'bind' &&
+              href.arg?.type === NodeTypes.SIMPLE_EXPRESSION &&
+              href.arg.content.toLowerCase() === 'href' &&
+              href.exp?.type === NodeTypes.SIMPLE_EXPRESSION
+            ) {
+              return href.exp.content
+            }
+
+            return rawValue
+          }
+
+          """
+          if marker not in text:
+              raise SystemExit('href helper insertion marker not found')
+          text = text.replace(marker, helper + marker, 1)
+
+          old_start = """  for (const [, binding, quote, rawValue] of tag.matchAll(HREF_ATTR)) {
+              let value = rawValue
+              // A bound href's value is a JS expression: a bare `#` literal anywhere in
+              // it is the placeholder, however it is reached (`dead ?? '#'`).
+              if (binding) {
+          """
+          new_start = """  for (const [, binding, quote, rawValue] of tag.matchAll(HREF_ATTR)) {
+              const value = decodeHrefAttributeValue(binding, quote, rawValue)
+              // A bound href's decoded value is a JS expression: a bare `#` literal
+              // anywhere in it is the placeholder, however it is reached (`dead ?? '#'`).
+              if (binding) {
+          """
+          if old_start not in text:
+              raise SystemExit('hasPlaceholderHref start anchor not found')
+          text = text.replace(old_start, new_start, 1)
+
+          old_static_decode = """    // Use the same attribute decoding as Vue, preserving the source delimiter.
+              // Parsing the isolated attribute also avoids interpreting decoded text as
+              // markup or recursively decoding a literal entity such as &amp;#115;.
+              const element = baseParse(`<a href=${quote}${rawValue}${quote}></a>`, parserOptions).children[0]
+              if (element?.type === NodeTypes.ELEMENT) {
+                const href = element.props[0]
+                if (href?.type === NodeTypes.ATTRIBUTE && href.value) value = href.value.content
+              }
+          """
+          if old_static_decode not in text:
+              raise SystemExit('legacy static decoder anchor not found')
+          text = text.replace(old_static_decode, '', 1)
+
+          old_tail = """    // `href=\"javascript:void(0)\"` is the classic inert-anchor placeholder.
+              if (JAVASCRIPT_SCHEME_VALUE.test(value)) return true
+              if (BARE_HASH_LITERAL.test(value)) return true
+          """
+          new_tail = """    // `href=\"javascript:void(0)\"` is the classic inert-anchor placeholder.
+              if (JAVASCRIPT_SCHEME_VALUE.test(value)) return true
+          """
+          if old_tail not in text:
+              raise SystemExit('static substring-check anchor not found')
+          text = text.replace(old_tail, new_tail, 1)
+
+          path.write_text(text)
+          PY
+          git add frontend/taskdeck-web/src/tests/guards/deadAnchors.spec.ts
+          git commit -m "fix(guard): decode bound href attributes once"
+
+      - name: Verify focused guard contract
+        working-directory: frontend/taskdeck-web
+        run: |
+          npx vitest run src/tests/guards/deadAnchors.spec.ts --reporter=verbose
+          npx eslint src/tests/guards/deadAnchors.spec.ts
+
+      - name: Publish red and green commits
+        run: git push origin HEAD:fix/1949-bound-href-guard-precision
