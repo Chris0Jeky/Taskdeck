@@ -49,6 +49,13 @@ public class OperationHandlerRegistry
         var actionType = operation.ActionType.ToLowerInvariant();
         var targetType = operation.TargetType.ToLowerInvariant();
 
+        if (!ProposalOperationVocabulary.IsSupported(targetType, actionType))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                ProposalOperationVocabulary.GetUnsupportedMessage(targetType, actionType));
+        }
+
         try
         {
             if (targetType == "card" && actionType == ProposalAssignmentContract.Action)

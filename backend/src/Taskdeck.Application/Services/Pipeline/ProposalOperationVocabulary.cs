@@ -42,4 +42,15 @@ internal static class ProposalOperationVocabulary
             _ => false
         };
     }
+
+    public static string GetUnsupportedMessage(string targetType, string actionType)
+    {
+        return targetType.ToLowerInvariant() switch
+        {
+            "card" => $"Unsupported card action: {actionType}",
+            "board" => $"Unsupported board action: {actionType}",
+            "column" => $"Unsupported column action: {actionType}",
+            _ => $"Unsupported target type: {targetType}"
+        };
+    }
 }
