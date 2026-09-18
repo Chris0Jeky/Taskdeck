@@ -82,6 +82,13 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm run test:coverage
 
+      - name: Reconcile equivalent Windows snapshot index metadata
+        if: runner.os == 'Windows'
+        run: >-
+          node scripts/git/refresh-equivalent-tracked-file.mjs
+          --repo .
+          --path frontend/taskdeck-web/src/tests/components/paper/__snapshots__/PaperConfidenceDial.spec.ts.snap
+
       # Bundle-size budget promoted into the required lane (#1132). Reuses the build above
       # (no extra install/build), so it is the "cheap" check the issue asks for. Runs AFTER the
       # unit tests so a bundle regression does not mask test results. Linux-only to avoid a
