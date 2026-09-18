@@ -1,7 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import requiredE2eWorkflow from '../../../../../.github/workflows/reusable-e2e-smoke.yml?raw'
 import requiredPlaywrightConfig from '../../../playwright.required.config.ts?raw'
 import mobileResponsiveSpec from '../../../tests/e2e/mobile-responsive.spec.ts?raw'
+
+const requiredE2eWorkflow = readFileSync(
+  fileURLToPath(new URL('../../../../../.github/workflows/reusable-e2e-smoke.yml', import.meta.url)),
+  'utf8',
+)
 
 /**
  * The contracted VisualViewport journey is the browser-level proof that
