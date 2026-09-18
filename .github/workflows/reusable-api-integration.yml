@@ -45,6 +45,11 @@ jobs:
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln
 
+      - name: Validate Docker MCP profile safety regressions
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/mcp/Test-DockerMcpProfile.Tests.ps1 -RequireBash
+
       - name: Capture API integration runner context
         continue-on-error: true
         run: python scripts/ci/collect_runner_context.py begin --state "backend/TestResults/api-integration/${{ matrix.os }}/runner-context-state.json" --matrix-os "${{ matrix.os }}" --workspace "${{ github.workspace }}"

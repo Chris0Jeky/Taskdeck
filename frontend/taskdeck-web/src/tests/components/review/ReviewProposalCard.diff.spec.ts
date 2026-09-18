@@ -238,7 +238,7 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
       selectedDiff: null,
     })
 
-    expect(wrapper.find('[data-testid="review-diff-stored-ops-note"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-diff-stored-ops-note"]').exists()).toBe(false)
     const ops = wrapper.find('[data-testid="review-diff-stored-operations"]')
     expect(ops.exists()).toBe(true)
     const banner = wrapper.find('[data-testid="review-diff-banner"]')

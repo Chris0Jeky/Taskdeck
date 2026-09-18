@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { archiveApi } from '../api/archiveApi'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import { useToastStore } from '../store/toastStore'
 import type { ArchiveItem } from '../types/archive'
 import type { Board } from '../types/board'
@@ -16,6 +17,7 @@ const toast = useToastStore()
 const router = useRouter()
 const loadingItems = ref(false)
 const loadingBoards = ref(false)
+const archivedBoardsLoadFailed = ref(false)
 const restoreBusyId = ref<string | null>(null)
 const boardRestoreBusyId = ref<string | null>(null)
 const archiveItems = ref<ArchiveItem[]>([])
@@ -120,10 +122,15 @@ async function loadArchiveItems() {
 async function loadArchivedBoards() {
   try {
     loadingBoards.value = true
-    const boards = await boardsApi.getBoards(undefined, true)
+    const boards = await boardsApi.getBoards(undefined, true, {
+      timeout: BOARD_REQUEST_TIMEOUT_MS,
+      skipRetry: true,
+    })
     archivedBoards.value = boards.filter(board => board.isArchived)
+    archivedBoardsLoadFailed.value = false
     reconcileHiddenArchivedBoards()
   } catch (e: unknown) {
+    archivedBoardsLoadFailed.value = true
     toast.error(getErrorDisplay(e, 'Failed to load archived boards').message)
   } finally {
     loadingBoards.value = false
@@ -223,7 +230,31 @@ onMounted(() => {
         board's history. <strong>Hide</strong> only removes a board from this default Archive view.
       </p>
 
-      <div v-if="loadingBoards" class="paper-archive__state">Loading archived boards...</div>
+      <div
+        v-if="loadingBoards && !archivedBoardsLoadFailed"
+        class="paper-archive__state"
+        role="status"
+        aria-live="polite"
+      >
+        Loading archived boards...
+      </div>
+
+      <div
+        v-else-if="archivedBoardsLoadFailed"
+        class="paper-archive__state paper-archive__state--error"
+        data-testid="archive-boards-error"
+      >
+        <p id="archive-boards-error-message" role="alert">Archived boards could not be loaded.</p>
+        <PaperHLBtn
+          class="paper-archive__retry-boards"
+          data-testid="archive-boards-retry"
+          :disabled="loadingBoards"
+          aria-describedby="archive-boards-error-message"
+          @click="loadArchivedBoards"
+        >
+          {{ loadingBoards ? 'Retrying archived boards...' : 'Retry archived boards' }}
+        </PaperHLBtn>
+      </div>
 
       <div v-else-if="visibleArchivedBoards.length === 0" class="paper-archive__state">
         <span v-if="hiddenArchivedBoardCount > 0 && !showHiddenBoards">
@@ -399,6 +430,10 @@ onMounted(() => {
   text-align: center;
   padding: var(--s-6, 24px);
   color: var(--mute, #635c4e);
+}
+
+.paper-archive__state--error p {
+  margin: 0 0 var(--s-3, 12px);
 }
 
 .paper-archive__list {

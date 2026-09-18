@@ -12,6 +12,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
 import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapper'
 import { formatShortcut } from '../../utils/keyboardShortcuts'
+import { shouldHandlePaperCaptureShortcut } from '../../utils/paperCaptureShortcut'
 
 /**
  * PaperHomeView — morning-reset surface in the Paper & Graphite, Ember Edition skin.
@@ -333,10 +334,10 @@ async function submitCapture() {
 
 function onCaptureShortcut(event: KeyboardEvent) {
   // Cmd/Ctrl + ; — jump focus into the quick capture row.
-  if ((event.metaKey || event.ctrlKey) && event.key === ';') {
-    event.preventDefault()
-    captureInputRef.value?.focus()
-  }
+  if (!shouldHandlePaperCaptureShortcut(event)) return
+
+  event.preventDefault()
+  captureInputRef.value?.focus()
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────

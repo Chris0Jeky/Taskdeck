@@ -633,6 +633,11 @@ export function useCardModal(options: UseCardModalOptions) {
   })
 
   return {
+    acceptCommittedWriteVersion: (updatedAt: string) => {
+      // A matching lifecycle receipt advances only the CAS baseline.
+      // It must never replace a newer local form draft.
+      expectedUpdatedAt.value = updatedAt
+    },
     acceptAssignmentVersion: (updatedAt: string, previousVersion?: string) => {
       // Only advance the draft's CAS after our own write from its exact version.
       // A conflict refresh must not silently authorize overwriting someone else's edit.

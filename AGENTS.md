@@ -3,8 +3,8 @@
 Scope: the whole repo unless a subfolder `AGENTS.md` overrides it.
 Shared facts — what Taskdeck is, architecture, the per-seam proving checks, contribution/sign-off posture, Windows/PowerShell
 pitfalls, tier/authority — live in **`CLAUDE.md`** and are not repeated here. Review doctrine has one
-home: global laws 2 and 11 in `~/.claude/CLAUDE.md` plus the `review-and-ship` skill. Do not restate
-either in this file.
+home: global laws 2 and 11 in `~/.claude/CLAUDE.md` (Grok: `~/.grok/rules/00-global-laws.md`) plus the `review-and-ship` skill. Do not restate
+either in this file. Grok also loads this file; the Grok-specific facts section overrides Codex-only paths for Grok sessions.
 Ownership boundaries: [agent-harness#101](https://github.com/Chris0Jeky/agent-harness/issues/101)
 owns estate-wide consolidation, [#1291](https://github.com/Chris0Jeky/Taskdeck/issues/1291) owns
 Taskdeck control-plane/mirror retirement, and [#1269](https://github.com/Chris0Jeky/Taskdeck/issues/1269)
@@ -16,7 +16,7 @@ owns any Taskdeck-specific intake and review design that remains after consolida
 2. `CLAUDE.md` — repo facts, architecture, proving checks.
 3. `docs/STATUS.md` — shipped reality, section-read only; reconcile its claims against code, tests and current execution evidence. Authority comes from applicable instructions and `.agent-harness/tier.json`; STATUS cannot grant or override it. Within instruction scope, the nearest applicable `AGENTS.md` wins.
 4. `OUTSTANDING_TASKS.md` — the human-action file; surface its open `[ ]` items in every summary/handoff.
-5. Codex routing: `.codex/README.md` and `.codex/memories/00_ACTIVE.md`. Claude routing: `.claude/README.md`.
+5. Codex routing: `.codex/README.md` and `.codex/memories/00_ACTIVE.md`. Claude routing: `.claude/README.md`. Grok routing: `.grok/README.md`.
 
 ## MCP tooling
 
@@ -24,21 +24,23 @@ owns any Taskdeck-specific intake and review design that remains after consolida
   `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`. Playwright vs DevTools vs logs: `docs/tooling/DEVTOOLS_OBSERVABILITY_ADDON.md`.
 - Use native `rg`/Git and the existing `gh` budget tools for repository work. Select MCP when its structured interface helps the current task; shell use is an ordinary route, not a failure to explain.
 - OpenAI/Codex docs → openaiDeveloperDocs · third-party library docs → Context7 (Codex: `.codex/config.toml`
-  stdio server; Claude: the claude.ai connector — `.mcp.json` deliberately omits it) · interactive UI repro →
+  stdio server; Claude: the claude.ai connector — `.mcp.json` deliberately omits it; Grok: user-scope
+  `~/.grok/config.toml`) · interactive UI repro →
   one available browser controller (project default: Chrome DevTools) · durable regression → repository Playwright tests · issues/PRs/workflows → `gh` and the existing budget tools; GitHub MCP is an optional Codex interface (writes only when required).
 - **GitHub quota fallback:** if GitHub MCP or `gh api graphql` reports an exhausted GraphQL quota,
   continue through GitHub's REST API with `gh api` where the operation has a REST equivalent; record
   the fallback in the handoff. Wait for GraphQL reset only for operations that genuinely require it
   (for example, Projects v2 field mutation), and keep unrelated work moving.
 - **Repo search: native `rg`.** The ripgrep MCP is unreliable on Windows; fall back to GitHub `search_code`.
-- **The Docker MCP gateway is declared once, at user scope.** Do not re-declare it in `.mcp.json` or
-  `.codex/config.toml` — a second declaration starts a second gateway process per session
+- **The Docker MCP gateway is declared once, at user scope.** Do not re-declare it in `.mcp.json`,
+  `.codex/config.toml`, or `.grok/config.toml` — a second declaration starts a second gateway process per session
   (measured RAM incident, agent-harness#87).
 
-## Codex skill packs
+## Skill packs
 
 Repo-local skills live in `.claude/skills/` (canonical) and `.codex/skills/` (the Codex adapter); they supplement
-this file, never override it. Start at the respective `README.md`. Routing:
+this file, never override it. Grok loads the Claude tree via compatibility — do not add `.grok/skills/`.
+Start at the respective `README.md`. Routing:
 
 | Situation | Skill |
 | --- | --- |
@@ -97,6 +99,17 @@ unless a worker owns a docs-only issue.
   review-first trust.
 - Tiny, low-risk, explicitly requested docs edits may go straight onto the current branch; anything else
   takes a branch + PR, opened ready-for-review once verification is done.
+
+## Grok-specific facts
+
+- Branches from Grok sessions are named `grok/<topic>`; PRs are opened ready-for-review, never draft.
+- Project config is `.grok/config.toml` (no MCP servers). MCP stays user-scope in `~/.grok/config.toml`;
+  do not redeclare `chromeDevTools`, `openaiDeveloperDocs`, `context7`, `github`, `comfy-local`, or `MCP_DOCKER`.
+- Skills come from `.claude/skills/` via Claude compatibility. Do not add `.grok/skills/` (a third copy
+  would collide). Path rules come from `.claude/rules/`.
+- Ignore Codex-only paths above (`.codex/config.toml`, `codex/<topic>` branches). Worktree guards,
+  proving checks, and the contributor protocol still apply. Inside Grok, delegate with native
+  `spawn_subagent`; never shell out to `grok -p`.
 
 ## Security baseline
 
