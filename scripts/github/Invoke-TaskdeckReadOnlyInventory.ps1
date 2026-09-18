@@ -1352,67 +1352,60 @@ function Invoke-ReadOnlyInventorySelfTest {
             $selfTestEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
         }
 
-        try {            foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
-        Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
-    }
+        try {
+            foreach ($probeName in $environmentProbeNames) {
+                Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
+            }
 
-    try {
-        $environmentProbe = @{}
-        [System.Environment]::SetEnvironmentVariable($environmentProbeName, "external-helper", "Process")
-        Set-InventoryEnvironmentVariable -Saved $environmentProbe -Name $environmentProbeName -Value $null
-        Assert-InventoryEnvironmentState `
-            -Name $environmentProbeName `
-            -Present $false `
-            -Message "Neutralized environment variables must be absent before the child process starts."
-        Restore-InventoryEnvironment -Saved $environmentProbe
-        Assert-InventoryEnvironmentState `
-            -Name $environmentProbeName `
-            -Present $true `
-            -Value "external-helper" `
-            -Message "Non-empty environment variables must be restored exactly afterwards."
-        $state.Checks++
+            $environmentProbe = @{}
+            Set-InventoryProcessEnvironmentVariable -Name $environmentProbeName -Value "external-helper"
+            Set-InventoryEnvironmentVariable -Saved $environmentProbe -Name $environmentProbeName -Value $null
+            Assert-InventoryEnvironmentState `
+                -Name $environmentProbeName `
+                -Present $false `
+                -Message "Neutralized environment variables must be absent before the child process starts."
+            Restore-InventoryEnvironment -Saved $environmentProbe
+            Assert-InventoryEnvironmentState `
+                -Name $environmentProbeName `
+                -Present $true `
+                -Value "external-helper" `
+                -Message "Non-empty environment variables must be restored exactly afterwards."
+            $state.Checks++
 
-        $missingEnvironmentProbe = @{}
-        Set-InventoryEnvironmentVariable -Saved $missingEnvironmentProbe -Name $missingEnvironmentProbeName -Value "temporary"
-        Assert-InventoryEnvironmentState `
-            -Name $missingEnvironmentProbeName `
-            -Present $true `
-            -Value "temporary" `
-            -Message "The environment helper must set a value while preserving a missing original."
-        Restore-InventoryEnvironment -Saved $missingEnvironmentProbe
-        Assert-InventoryEnvironmentState `
-            -Name $missingEnvironmentProbeName `
-            -Present $false `
-            -Message "A missing environment variable must remain missing after restore."
-        $state.Checks++
+            $missingEnvironmentProbe = @{}
+            Set-InventoryEnvironmentVariable -Saved $missingEnvironmentProbe -Name $missingEnvironmentProbeName -Value "temporary"
+            Assert-InventoryEnvironmentState `
+                -Name $missingEnvironmentProbeName `
+                -Present $true `
+                -Value "temporary" `
+                -Message "The environment helper must set a value while preserving a missing original."
+            Restore-InventoryEnvironment -Saved $missingEnvironmentProbe
+            Assert-InventoryEnvironmentState `
+                -Name $missingEnvironmentProbeName `
+                -Present $false `
+                -Message "A missing environment variable must remain missing after restore."
+            $state.Checks++
 
-        Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
-        Assert-InventoryEnvironmentState `
-            -Name $emptyEnvironmentProbeName `
-            -Present $true `
-            -Value "" `
-            -Message "The process environment must retain an explicitly empty probe value."
+            Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
+            Assert-InventoryEnvironmentState `
+                -Name $emptyEnvironmentProbeName `
+                -Present $true `
+                -Value "" `
+                -Message "The process environment must retain an explicitly empty probe value."
 
-        $emptyEnvironmentProbe = @{}
-        Set-InventoryEnvironmentVariable -Saved $emptyEnvironmentProbe -Name $emptyEnvironmentProbeName -Value $null
-        Assert-InventoryEnvironmentState `
-            -Name $emptyEnvironmentProbeName `
-            -Present $false `
-            -Message "An explicitly empty environment variable must still be removed during neutralization."
-        Restore-InventoryEnvironment -Saved $emptyEnvironmentProbe
-        Assert-InventoryEnvironmentState `
-            -Name $emptyEnvironmentProbeName `
-            -Present $true `
-            -Value "" `
-            -Message "An explicitly empty environment variable must be restored as present and empty."
-        $state.Checks++
-    }
-    finally {
-        foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
-            Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
-        }
-    }
-
+            $emptyEnvironmentProbe = @{}
+            Set-InventoryEnvironmentVariable -Saved $emptyEnvironmentProbe -Name $emptyEnvironmentProbeName -Value $null
+            Assert-InventoryEnvironmentState `
+                -Name $emptyEnvironmentProbeName `
+                -Present $false `
+                -Message "An explicitly empty environment variable must still be removed during neutralization."
+            Restore-InventoryEnvironment -Saved $emptyEnvironmentProbe
+            Assert-InventoryEnvironmentState `
+                -Name $emptyEnvironmentProbeName `
+                -Present $true `
+                -Value "" `
+                -Message "An explicitly empty environment variable must be restored as present and empty."
+            $state.Checks++
         }
         finally {
             Restore-InventoryEnvironment -Saved $selfTestEnvironmentProbeStates
@@ -1437,6 +1430,18 @@ function Invoke-ReadOnlyInventorySelfTest {
     finally {
         Restore-InventoryEnvironment -Saved $originalEnvironmentProbeStates
     }
+
+    foreach ($probeName in $environmentProbeNames) {
+        $expected = $originalEnvironmentProbeStates[$probeName]
+        $actual = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+        if (
+            $actual.Present -ne $expected.Present -or
+            ($expected.Present -and $actual.Value -cne $expected.Value)
+        ) {
+            throw "The self-test did not restore the inherited process environment state for '$probeName'."
+        }
+    }
+    $state.Checks++
     $pathspecLaunch = Get-GitLaunchArguments -Arguments @("diff", "--name-only", "HEAD", "--", "scripts")
     if ($pathspecLaunch -cnotcontains "--") {
         throw "Local subcommands must keep their -- pathspec separator."
