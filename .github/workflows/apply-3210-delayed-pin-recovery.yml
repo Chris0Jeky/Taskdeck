@@ -1,0 +1,42 @@
+name: Apply PR 3210 delayed recovery patch
+
+on:
+  push:
+    branches:
+      - fix/2930-delayed-pin-recovery
+    paths:
+      - .github/patches/3210-delayed-pin-recovery.patch
+      - .github/workflows/apply-3210-delayed-pin-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/2930-delayed-pin-recovery
+          fetch-depth: 0
+
+      - name: Apply and remove one-shot patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check .github/patches/3210-delayed-pin-recovery.patch
+          git apply .github/patches/3210-delayed-pin-recovery.patch
+          rm .github/patches/3210-delayed-pin-recovery.patch
+          rm .github/workflows/apply-3210-delayed-pin-recovery.yml
+
+      - name: Commit production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Cristian Tcaci"
+          git config user.email "59696583+Chris0Jeky@users.noreply.github.com"
+          git add -A
+          git commit --signoff -m "fix(review): bind recovery to active receipt"
+          git push origin HEAD:fix/2930-delayed-pin-recovery
