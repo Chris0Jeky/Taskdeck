@@ -1,69 +1,50 @@
 name: Apply PR 3169 comment-tab repair
 
 on:
-  push:
-    branches:
-      - fix/3006-yaml-nonprintable-residuals
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-3169-comment-tab-${{ github.ref }}
+  group: apply-3169-comment-tab-${{ github.event.pull_request.head.ref }}
   cancel-in-progress: true
 
 jobs:
   repair:
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-slim
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/3006-yaml-nonprintable-residuals'
+    runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      TRIGGER_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Checkout exact triggering head
+      - name: Checkout exact pull request branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Verify exact triggering head
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$TRIGGER_HEAD"
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.13.1"
 
-      - name: Add the YAML-comment regression
+      - name: Prove the committed regression is red
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('scripts/check-docs-governance.review-residuals.test.mjs')
-          source = path.read_text(encoding='utf-8').replace('\r\n', '\n')
-          if not source.endswith('\n'):
-              raise SystemExit('review residual suite must end with one newline')
-          regression = r"""
-          test('permits horizontal tabs in comment-only frontmatter content', () => {
-            const errors = collectControlPathMirrorErrors(
-              JSON.stringify({ controlPaths: ['ci/**'] }),
-              quotedRule('ci/**', ['# owner\tteam']),
-            )
-
-            assert.deepEqual(errors, [])
-          })
-          """
-          regression = '\n'.join(line[10:] if line.startswith('          ') else line for line in regression.splitlines()).strip('\n')
-          path.write_text(source + '\n' + regression + '\n', encoding='utf-8', newline='\n')
-          PY
-          git diff --check
-
-      - name: Prove the regression is red
-        shell: bash
-        run: |
+          test "$(grep -Fc "test('permits horizontal tabs in comment-only frontmatter content'" scripts/check-docs-governance.review-residuals.test.mjs)" -eq 1
           set +e
           node --test --test-name-pattern="permits horizontal tabs in comment-only frontmatter content" scripts/check-docs-governance.review-residuals.test.mjs > /tmp/pr-3169-red.log 2>&1
           status=$?
@@ -133,12 +114,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          branch='fix/3006-yaml-nonprintable-residuals'
-          trigger_head="$GITHUB_SHA"
-          test "$(git rev-parse HEAD)" = "$trigger_head"
-          remote_head="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          test "$(git rev-parse HEAD)" = "$TRIGGER_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$PR_HEAD_REF" | awk '{print $1}')"
           test -n "$remote_head"
-          test "$remote_head" = "$trigger_head"
+          test "$remote_head" = "$TRIGGER_HEAD"
 
           git rm .github/workflows/apply-3169-comment-tab.yml
           git config user.name 'github-actions[bot]'
@@ -151,6 +130,6 @@ jobs:
           test "$actual_names" = "$expected_names"
 
           tree="$(git write-tree)"
-          repair_commit="$(printf '%s\n' 'fix(docs): permit tabs in frontmatter comments' | git commit-tree "$tree" -p "$trigger_head")"
-          test "$(git rev-parse "$repair_commit^")" = "$trigger_head"
-          git push --force-with-lease="refs/heads/$branch:$trigger_head" origin "$repair_commit:refs/heads/$branch"
+          repair_commit="$(printf '%s\n' 'fix(docs): permit tabs in frontmatter comments' | git commit-tree "$tree" -p "$TRIGGER_HEAD")"
+          test "$(git rev-parse "$repair_commit^")" = "$TRIGGER_HEAD"
+          git push --force-with-lease="refs/heads/$PR_HEAD_REF:$TRIGGER_HEAD" origin "$repair_commit:refs/heads/$PR_HEAD_REF"
