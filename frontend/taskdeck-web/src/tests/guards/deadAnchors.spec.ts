@@ -19,8 +19,8 @@ import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler
  * WHAT THIS DOES NOT MECHANIZE. The dogfooding pass that produced GH-1932 and
  * GH-1934 found dead affordances of several other shapes; this guard does not
  * cover them, and passing it is not evidence that they are gone:
- *  - Control characters inside a scheme are not normalized. Static href HTML
- *    entities are decoded once by Vue's parser; bound expressions remain raw.
+ *  - Control characters inside a scheme are not normalized. Static href values
+ *    and bound expressions are entity-decoded exactly once through Vue's parser.
  *  - Runtime-assembled hrefs and dynamic event names are out of reach: this
  *    guard reads SFC source, not Vue's rendered event table.
  *  - Button action hidden behind a runtime-bound `:type` is not inferred.
@@ -249,7 +249,7 @@ const BINDING_PREFIX = /^(?::|v-bind:)/i
  *
  * On a component whose declared emit is `click` this really can wire
  * activation, so it redeems a call site — unlike on a native control, where the
- * compiler-backed scan reports it as unproven.
+ * compiler-backed scan reports it as a proven click handler.
  */
 const VON_OBJECT_BINDING = /(?:^|\s)v-on\s*=\s*(?:"([^"]*)"|'([^']*)')/i
 
@@ -335,10 +335,33 @@ function markupOnly(source: string): string {
     .replace(/<!--[\s\S]*?-->/g, '')
 }
 
-/** True when any href on `tag` is the bare `#` placeholder, statically or inside a bound expression. */
+/** True when any href on `tag` is a bare placeholder, statically or inside a bound expression. */
 function hasPlaceholderHref(tag: string): boolean {
   for (const [, binding, quote, rawValue] of tag.matchAll(HREF_ATTR)) {
     let value = rawValue
+    // Vue entity-decodes an attribute before compiling either its static value
+    // or its bound JS expression. Parse the isolated attribute once for both
+    // forms: this catches `java&#115;cript:` in a bound literal without
+    // recursively decoding a deliberate `&amp;#115;` string.
+    const attributeName = binding ? ':href' : 'href'
+    const element = baseParse(
+      `<a ${attributeName}=${quote}${rawValue}${quote}></a>`,
+      parserOptions,
+    ).children[0]
+    if (element?.type === NodeTypes.ELEMENT) {
+      const href = element.props[0]
+      if (
+        binding &&
+        href?.type === NodeTypes.DIRECTIVE &&
+        href.name === 'bind' &&
+        href.exp?.type === NodeTypes.SIMPLE_EXPRESSION
+      ) {
+        value = href.exp.content
+      } else if (!binding && href?.type === NodeTypes.ATTRIBUTE && href.value) {
+        value = href.value.content
+      }
+    }
+
     // A bound href's value is a JS expression: a bare `#` literal anywhere in
     // it is the placeholder, however it is reached (`dead ?? '#'`).
     if (binding) {
@@ -351,22 +374,14 @@ function hasPlaceholderHref(tag: string): boolean {
       if (JAVASCRIPT_SCHEME_LITERAL.test(value)) return true
       continue
     }
-    // Use the same attribute decoding as Vue, preserving the source delimiter.
-    // Parsing the isolated attribute also avoids interpreting decoded text as
-    // markup or recursively decoding a literal entity such as &amp;#115;.
-    const element = baseParse(`<a href=${quote}${rawValue}${quote}></a>`, parserOptions).children[0]
-    if (element?.type === NodeTypes.ELEMENT) {
-      const href = element.props[0]
-      if (href?.type === NodeTypes.ATTRIBUTE && href.value) value = href.value.content
-    }
-    // A static href's value IS the URL. `#` alone is the placeholder;
-    // `#section-id` is a real in-page target and must survive.
+
+    // A static href's value IS the URL. Whole-value checks keep a real URL such
+    // as `/search?q=&quot;#&quot;` from being mistaken for a bare-hash literal.
     if (value.trim() === '#') return true
     // `href=""` is not "no destination" - it re-navigates to the current URL.
     if (value.trim() === '') return true
     // `href="javascript:void(0)"` is the classic inert-anchor placeholder.
     if (JAVASCRIPT_SCHEME_VALUE.test(value)) return true
-    if (BARE_HASH_LITERAL.test(value)) return true
   }
   return false
 }
@@ -477,7 +492,7 @@ function findCompilerDynamicListenerTags(source: string): string[] {
   return findings
 }
 
-/** Opening anchor tags in `source` whose href is the bare `#` and which bind no click. */
+/** Opening anchor tags in `source` whose href is a placeholder and which bind no click. */
 function findDeadAnchors(source: string): string[] {
   const dead: string[] = []
   for (const [tag] of markupOnly(source).matchAll(ANCHOR_TAG)) {
