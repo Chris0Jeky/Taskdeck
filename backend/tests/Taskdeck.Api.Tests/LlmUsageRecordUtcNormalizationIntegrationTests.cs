@@ -131,7 +131,7 @@ public class LlmUsageRecordUtcNormalizationIntegrationTests : IClassFixture<Test
     private static User CreateUniqueUser(string prefix)
     {
         var suffix = Guid.NewGuid().ToString("N");
-        return new User($"{prefix}-{suffix}", $"{prefix}-{suffix}@example.com", "hash");
+        return new User($"{prefix}-{suffix[..12]}", $"{suffix}@example.com", "hash");
     }
 
     private static async Task SeedCommittedUsageAtAsync(
