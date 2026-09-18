@@ -7,6 +7,7 @@ const policyUrl = new URL('../../../ci/policy.v1.json', import.meta.url)
 const lanesDocUrl = new URL('../../../docs/ci/continuation/LANES.md', import.meta.url)
 const testingGuideUrl = new URL('../../../docs/TESTING_GUIDE.md', import.meta.url)
 const LAUNCHER_STEP_NAME = 'Run source launcher regression suite'
+// This literal is the hosted and canonical local reproduction contract; both docs must carry it exactly.
 const LAUNCHER_COMMAND = 'node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs'
 const UNCONDITIONAL_STEP_NAMES = [
   'Run frontend lint', 'Run frontend typecheck', 'Run frontend build', 'Run frontend tests with coverage thresholds',
