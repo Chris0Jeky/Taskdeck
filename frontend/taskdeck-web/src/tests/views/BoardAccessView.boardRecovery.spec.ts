@@ -120,6 +120,6 @@ describe('BoardAccessView board-list recovery', () => {
     expect((wrapper.get('#board-selector').element as HTMLSelectElement).value).toBe('board-deep-link')
     expect(permissions.fetchBoardAccess).toHaveBeenCalledWith('board-deep-link')
     expect(wrapper.text()).toContain('teammate')
-    expect(wrapper.get('[data-testid="board-access-boards-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="board-access-boards-error"]').exists()).toBe(true)
   })
 })
