@@ -36,6 +36,10 @@ jobs:
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
 
+      - name: Validate read-only inventory environment contract on PowerShell 7
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
+
       - name: Validate read-only inventory launch on PowerShell 7
         shell: pwsh
         run: |
