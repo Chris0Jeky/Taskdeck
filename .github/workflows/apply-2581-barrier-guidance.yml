@@ -1,0 +1,105 @@
+name: Apply issue 2581 barrier guidance
+
+on:
+  push:
+    branches:
+      - fix/2581-rekey-revision-unavailable-note
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-2581-barrier-guidance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact triggering head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact triggering head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.13.1"
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Prove the poll-driven regression is red
+        working-directory: frontend/taskdeck-web
+        shell: bash
+        run: |
+          set +e
+          npm test -- src/tests/views/paper/review/PaperReviewView.spec.ts -t "keeps unavailable review guidance with its barrier across revision identity polls" > /tmp/issue-2581-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/issue-2581-red.log
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected the identity-poll regression to fail before the epoch-bound implementation.' >&2
+            exit 1
+          fi
+          grep -F 'the unavailable note must survive same-proposal revision identity polling' /tmp/issue-2581-red.log
+
+      - name: Bind unavailable guidance to the active barrier epoch
+        shell: bash
+        env:
+          PATCH_PAYLOAD: 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
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          import zlib
+
+          source = zlib.decompress(base64.b64decode(os.environ['PATCH_PAYLOAD'])).decode('utf-8')
+          exec(compile(source, 'apply-2581-barrier-guidance.py', 'exec'), {})
+          PY
+
+      - name: Verify focused regression and type contract
+        working-directory: frontend/taskdeck-web
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test -- src/tests/views/paper/review/PaperReviewView.spec.ts -t "keeps unavailable review guidance with its barrier across revision identity polls"
+          npm run typecheck
+          git -C ../.. diff --check
+
+      - name: Publish one exact-parent implementation commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='fix/2581-rekey-revision-unavailable-note'
+          trigger_head="$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$trigger_head"
+
+          remote_head="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          test -n "$remote_head"
+          test "$remote_head" = "$trigger_head"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+
+          expected_names=$'.github/workflows/apply-2581-barrier-guidance.yml\nfrontend/taskdeck-web/src/tests/views/paper/review/PaperReviewView.spec.ts\nfrontend/taskdeck-web/src/views/paper/PaperReviewView.vue'
+          actual_names="$(git diff --cached --name-only | sort)"
+          test "$actual_names" = "$expected_names"
+
+          tree="$(git write-tree)"
+          implementation_commit="$(printf '%s\n' 'fix: bind revision refresh guidance to barrier epochs' | git commit-tree "$tree" -p "$trigger_head")"
+          test "$(git rev-parse "$implementation_commit^")" = "$trigger_head"
+          git push --force-with-lease="refs/heads/$branch:$trigger_head" origin "$implementation_commit:refs/heads/$branch"
