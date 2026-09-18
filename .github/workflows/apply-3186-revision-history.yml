@@ -1,119 +1,100 @@
 name: Apply PR 3186 revision-history hardening
 
-on:
+'on':
   push:
     branches:
       - fix/2579-revision-history-residuals
+    paths:
+      - .github/workflows/apply-3186-revision-history.yml
 
 permissions:
   contents: write
 
-concurrency:
-  group: apply-pr-3186-revision-history
-  cancel-in-progress: true
-
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
+    if: ${{ github.repository == 'Chris0Jeky/Taskdeck' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: frontend/taskdeck-web
     steps:
       - name: Checkout branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v4
         with:
           ref: fix/2579-revision-history-residuals
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.2.0
+        uses: actions/setup-node@v4
         with:
           node-version: 24.13.1
           cache: npm
           cache-dependency-path: frontend/taskdeck-web/package-lock.json
 
       - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
         run: npm ci
 
-      - name: Prove the residual regressions fail before implementation
+      - name: Prove the residual regressions are red
+        working-directory: frontend/taskdeck-web
         shell: bash
         run: |
           set -euo pipefail
-          if npx vitest run src/tests/composables/useProposalRevisionsResiduals.spec.ts > /tmp/revision-history-red.log 2>&1; then
-            cat /tmp/revision-history-red.log
-            echo 'Expected at least one #2579 residual regression to fail before implementation.' >&2
+          if npx vitest run src/tests/composables/useProposalRevisionsResiduals.spec.ts; then
+            echo 'Expected the #2579 residual contract to fail before implementation.' >&2
             exit 1
           fi
-          cat /tmp/revision-history-red.log
 
       - name: Apply bounded authority-aware history state
-        working-directory: .
-        shell: python
+        shell: bash
         run: |
+          set -euo pipefail
+          python3 <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('frontend/taskdeck-web/src/composables/useProposalRevisions.ts')
           text = path.read_text(encoding='utf-8').replace('\r\n', '\n')
 
-          def replace_once(old: str, new: str, label: str) -> None:
+          def replace_once(pattern: str, replacement: str, label: str, *, regex: bool = False) -> None:
               global text
-              count = text.count(old)
+              if regex:
+                  text, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+              else:
+                  count = text.count(pattern)
+                  if count == 1:
+                      text = text.replace(pattern, replacement)
               if count != 1:
                   raise RuntimeError(f'{label}: expected one match, found {count}')
-              text = text.replace(old, new)
 
           replace_once(
-              '''type RevisionHistory = {
+              """type RevisionHistory = {
             revisions: Map<number, ProposalRevision>
             loaded: boolean
             invalid: boolean
-          }
-          ''',
-              '''const REVISION_HISTORY_LIMIT = 64
+          }""",
+              """const REVISION_HISTORY_LIMIT = 64
 
           type RevisionHistory = {
             revisions: Map<number, ProposalRevision>
             loaded: boolean
             invalid: boolean
             disputedRevisionNumbers: Set<number>
-          }
-          ''',
+          }""",
               'history type',
           )
 
           replace_once(
-              '''  let loadGeneration = 0
+              """  let loadGeneration = 0
             let saveGeneration = 0
-
-            // Successful save responses survive A -> B -> A navigation so a delayed
-          ''',
-              '''  let loadGeneration = 0
+""",
+              """  let loadGeneration = 0
             let saveGeneration = 0
-            let revisionMetadataSource: 'load' | 'save' | null = null
-
-            // Successful save responses survive A -> B -> A navigation so a delayed
-          ''',
-              'metadata source state',
+            let saveMetadataGeneration = 0
+""",
+              'save metadata generation',
           )
 
           replace_once(
-              '''  const revisionHistoryByProposal = new Map<string, RevisionHistory>()
-
-            function getRevisionHistory(proposalId: string): RevisionHistory {
-              const existing = revisionHistoryByProposal.get(proposalId)
-              if (existing) return existing
-              const created: RevisionHistory = {
-                revisions: new Map(),
-                loaded: false,
-                invalid: false,
-              }
-              revisionHistoryByProposal.set(proposalId, created)
-              return created
-            }
-          ''',
-              '''  const revisionHistoryByProposal = new Map<string, RevisionHistory>()
+              r"  const revisionHistoryByProposal = new Map<string, RevisionHistory>\(\)\n\n  function getRevisionHistory\(proposalId: string\): RevisionHistory \{.*?\n  \}\n\n  function isUsableRevision",
+              """  const revisionHistoryByProposal = new Map<string, RevisionHistory>()
 
             function touchRevisionHistory(proposalId: string, history: RevisionHistory) {
               revisionHistoryByProposal.delete(proposalId)
@@ -140,30 +121,15 @@ jobs:
               touchRevisionHistory(proposalId, created)
               return created
             }
-          ''',
+
+            function isUsableRevision""",
               'bounded history cache',
+              regex=True,
           )
 
           replace_once(
-              '''  function mergeRevision(
-              history: RevisionHistory,
-              proposalId: string,
-              revision: ProposalRevision,
-            ) {
-              if (!isUsableRevision(revision, proposalId)) {
-                history.invalid = true
-                return
-              }
-
-              const existing = history.revisions.get(revision.revisionNumber)
-              if (existing && existing.id !== revision.id) {
-                history.invalid = true
-                return
-              }
-              history.revisions.set(revision.revisionNumber, revision)
-            }
-          ''',
-              '''  function recordRevisionInconsistency(
+              r"  function mergeRevision\(.*?\n  \}\n\n  /\*\*",
+              """  function recordRevisionInconsistency(
               history: RevisionHistory,
               revision: ProposalRevision,
             ) {
@@ -190,233 +156,162 @@ jobs:
               }
               history.revisions.set(revision.revisionNumber, revision)
             }
-          ''',
+
+            /**""",
               'revision inconsistency helper',
+              regex=True,
           )
 
           replace_once(
-              '''    for (const revision of revisions) {
-              if (!isUsableRevision(revision, proposalId)) {
-                history.invalid = true
-                history.loaded = true
-                return
+              r"  function mergeLoadedRevisions\(proposalId: string, revisions: ProposalRevision\[\]\) \{.*?\n  \}\n\n  function rememberPersistedRevision",
+              """  function mergeLoadedRevisions(proposalId: string, revisions: ProposalRevision[]) {
+              const history = getRevisionHistory(proposalId)
+              const loaded = new Map<number, ProposalRevision>()
+              let highestLoaded = 0
+              for (const revision of revisions) {
+                if (!isUsableRevision(revision, proposalId)) {
+                  recordRevisionInconsistency(history, revision)
+                  history.loaded = true
+                  return
+                }
+                const conflicting = loaded.get(revision.revisionNumber)
+                if (conflicting && conflicting.id !== revision.id) {
+                  recordRevisionInconsistency(history, revision)
+                  history.loaded = true
+                  return
+                }
+                loaded.set(revision.revisionNumber, revision)
+                if (revision.revisionNumber > highestLoaded) highestLoaded = revision.revisionNumber
               }
-              const conflicting = loaded.get(revision.revisionNumber)
-              if (conflicting && conflicting.id !== revision.id) {
-                history.invalid = true
-                history.loaded = true
-                return
+
+              const isCompleteResponse = loaded.size === highestLoaded
+              const coversEveryDisputedNumber = [...history.disputedRevisionNumbers].every(
+                (revisionNumber) => loaded.has(revisionNumber),
+              )
+              if (isCompleteResponse && coversEveryDisputedNumber) {
+                history.invalid = false
+                history.disputedRevisionNumbers.clear()
               }
-              loaded.set(revision.revisionNumber, revision)
-              if (revision.revisionNumber > highestLoaded) highestLoaded = revision.revisionNumber
+              for (const [revisionNumber, revision] of loaded) {
+                history.revisions.set(revisionNumber, revision)
+              }
+              history.loaded = true
             }
 
-            if (loaded.size === highestLoaded) history.invalid = false
-            for (const [revisionNumber, revision] of loaded) {
-          ''',
-              '''    for (const revision of revisions) {
-              if (!isUsableRevision(revision, proposalId)) {
-                recordRevisionInconsistency(history, revision)
-                history.loaded = true
-                return
-              }
-              const conflicting = loaded.get(revision.revisionNumber)
-              if (conflicting && conflicting.id !== revision.id) {
-                recordRevisionInconsistency(history, revision)
-                history.loaded = true
-                return
-              }
-              loaded.set(revision.revisionNumber, revision)
-              if (revision.revisionNumber > highestLoaded) highestLoaded = revision.revisionNumber
-            }
-
-            const isCompleteResponse = loaded.size === highestLoaded
-            const coversEveryDisputedNumber = [...history.disputedRevisionNumbers].every(
-              (revisionNumber) => loaded.has(revisionNumber),
-            )
-            if (isCompleteResponse && coversEveryDisputedNumber) {
-              history.invalid = false
-              history.disputedRevisionNumbers.clear()
-            }
-            for (const [revisionNumber, revision] of loaded) {
-          ''',
+            function rememberPersistedRevision""",
               'loaded revision authority gate',
+              regex=True,
           )
 
           replace_once(
-              '''  function getCompleteRevisionMetadata(proposalId: string): RevisionMetadata | null {
-              const history = revisionHistoryByProposal.get(proposalId)
+              """    const history = revisionHistoryByProposal.get(proposalId)
               if (!history || history.invalid) return null
 
               const revisionNumbers = [...history.revisions.keys()].sort((a, b) => a - b)
-          ''',
-              '''  function getCompleteRevisionMetadata(proposalId: string): RevisionMetadata | null {
-              const history = revisionHistoryByProposal.get(proposalId)
+""",
+              """    const history = revisionHistoryByProposal.get(proposalId)
               if (!history || history.invalid) return null
               touchRevisionHistory(proposalId, history)
 
               const revisionNumbers = [...history.revisions.keys()].sort((a, b) => a - b)
-          ''',
+""",
               'history read touch',
           )
 
           replace_once(
-              '''    if (!metadata) {
-              revisionCount.value = 0
-              latestRevision.value = null
-              revisionsLoaded.value = false
-              return false
-            }
-            revisionCount.value = metadata.count
-            latestRevision.value = metadata.latest
-            revisionsLoaded.value = true
-            return true
-          }
-          ''',
-              '''    if (!metadata) {
-              revisionCount.value = 0
-              latestRevision.value = null
-              revisionsLoaded.value = false
-              revisionMetadataSource = null
-              return false
-            }
-            revisionCount.value = metadata.count
-            latestRevision.value = metadata.latest
-            revisionsLoaded.value = true
-            revisionMetadataSource = 'save'
-            return true
-          }
-          ''',
-              'save metadata source',
-          )
-
-          replace_once(
-              '''    revisionCount.value = 0
-            latestRevision.value = null
-            revisionsLoaded.value = false
-            return true
-          }
-          ''',
-              '''    revisionCount.value = 0
-            latestRevision.value = null
-            revisionsLoaded.value = false
-            revisionMetadataSource = null
-            return true
-          }
-          ''',
-              'active metadata invalidation',
-          )
-
-          replace_once(
-              '''      if (!metadata) {
+              r"  function publishPersistedRevisionMetadata\(proposalId: string\): boolean \{.*?\n  \}\n\n  /\*\*",
+              """  function publishPersistedRevisionMetadata(proposalId: string): boolean {
+              if (activeProposal.value?.id !== proposalId) return false
+              const metadata = getCompleteRevisionMetadata(proposalId)
+              if (!metadata) {
                 revisionCount.value = 0
                 latestRevision.value = null
                 revisionsLoaded.value = false
-                return
+                return false
               }
               revisionCount.value = metadata.count
               latestRevision.value = metadata.latest
               revisionsLoaded.value = true
-            } catch (e: unknown) {
-          ''',
-              '''      if (!metadata) {
-                revisionCount.value = 0
-                latestRevision.value = null
-                revisionsLoaded.value = false
-                revisionMetadataSource = null
-                return
-              }
-              revisionCount.value = metadata.count
-              latestRevision.value = metadata.latest
-              revisionsLoaded.value = true
-              revisionMetadataSource = 'load'
-            } catch (e: unknown) {
-          ''',
-              'load metadata source',
+              saveMetadataGeneration += 1
+              return true
+            }
+
+            /**""",
+              'published-save metadata generation',
+              regex=True,
           )
 
           replace_once(
-              '''      if (!revisionsLoaded.value) {
-                revisionCount.value = 0
-                latestRevision.value = null
+              r"  async function loadRevisionState\(proposalId: string, options\?: \{ silent\?: boolean \}\) \{.*?\n  \}\n\n  // Keyed on the proposal",
+              """  async function loadRevisionState(proposalId: string, options?: { silent?: boolean }) {
+              const gen = ++loadGeneration
+              const saveMetadataGenerationAtStart = saveMetadataGeneration
+              try {
+                const revisions = await proposalRevisionsApi.getRevisions(proposalId)
+                if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
+                mergeLoadedRevisions(proposalId, revisions)
+                const metadata = getCompleteRevisionMetadata(proposalId)
+                if (!metadata) {
+                  revisionCount.value = 0
+                  latestRevision.value = null
+                  revisionsLoaded.value = false
+                  return
+                }
+                revisionCount.value = metadata.count
+                latestRevision.value = metadata.latest
+                revisionsLoaded.value = true
+              } catch (e: unknown) {
+                if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
+                // A failed read stays actionable unless this exact request was
+                // overtaken by a successful save that already published complete
+                // metadata. In that one case the failure is stale noise, not a
+                // reason to make the reviewer distrust the proven save.
+                const savePublishedMetadataWhileLoading =
+                  saveMetadataGeneration > saveMetadataGenerationAtStart && revisionsLoaded.value
+                if (!revisionsLoaded.value) {
+                  revisionCount.value = 0
+                  latestRevision.value = null
+                }
+                if (!options?.silent && !savePublishedMetadataWhileLoading) {
+                  toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
+                }
               }
-              if (!options?.silent) {
-                toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
-              }
-          ''',
-              '''      const saveAlreadyProvedMetadata =
-                revisionsLoaded.value && revisionMetadataSource === 'save'
-              if (!revisionsLoaded.value) {
-                revisionCount.value = 0
-                latestRevision.value = null
-                revisionMetadataSource = null
-              }
-              if (!options?.silent && !saveAlreadyProvedMetadata) {
-                toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
-              }
-          ''',
-              'stale load toast gate',
-          )
+            }
 
-          replace_once(
-              '''        revisionsLoaded.value = false
-            // Silent: this load is driven by a background poll the reviewer never
-          ''',
-              '''        revisionsLoaded.value = false
-              revisionMetadataSource = null
-            // Silent: this load is driven by a background poll the reviewer never
-          ''',
-              'same proposal revision reset',
-          )
-
-          replace_once(
-              '''      revisionCount.value = 0
-            latestRevision.value = null
-            revisionsLoaded.value = false
-            if (id) {
-          ''',
-              '''      revisionCount.value = 0
-            latestRevision.value = null
-            revisionsLoaded.value = false
-            revisionMetadataSource = null
-            if (id) {
-          ''',
-              'proposal switch reset',
+            // Keyed on the proposal""",
+              'request-scoped stale load handling',
+              regex=True,
           )
 
           for fragment in [
               'const REVISION_HISTORY_LIMIT = 64',
               'disputedRevisionNumbers: Set<number>',
-              "revisionMetadataSource: 'load' | 'save' | null",
+              'let saveMetadataGeneration = 0',
               'const coversEveryDisputedNumber',
-              'saveAlreadyProvedMetadata',
+              'const savePublishedMetadataWhileLoading',
           ]:
               if fragment not in text:
                   raise RuntimeError(f'Missing post-patch fragment: {fragment}')
 
           path.write_text(text, encoding='utf-8')
+          PY
 
       - name: Verify focused revision state machine
+        working-directory: frontend/taskdeck-web
         shell: bash
         run: |
           set -euo pipefail
-          npx vitest run \
-            src/tests/composables/useProposalRevisions.spec.ts \
-            src/tests/composables/useProposalRevisionsResiduals.spec.ts
-          npm run typecheck
-          npx eslint \
-            src/composables/useProposalRevisions.ts \
-            src/tests/composables/useProposalRevisionsResiduals.spec.ts
+          npx vitest run src/tests/composables/useProposalRevisionsResiduals.spec.ts src/tests/composables/useProposalRevisions.spec.ts
+          npm run type-check
 
       - name: Publish implementation
-        working-directory: .
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
           git rm .github/workflows/apply-3186-revision-history.yml
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add frontend/taskdeck-web/src/composables/useProposalRevisions.ts
-          git commit -m 'fix: bound revision history authority state'
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(review): harden revision history authority"
           git push origin HEAD:fix/2579-revision-history-residuals
