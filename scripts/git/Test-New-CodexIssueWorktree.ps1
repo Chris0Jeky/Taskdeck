@@ -28,6 +28,7 @@ param(
         "remote-default-head",
         "missing-base",
         "what-if",
+        "fsmonitor-fixture-cleanup",
         "git-add-failure",
         "target-artifact-smudge"
     )]
@@ -529,7 +530,7 @@ function Test-FsmonitorFixtureCleanupLauncher {
             -GitExecutable $powerShellExecutable `
             -GitExecutablePrefixArguments $successfulStopArguments `
             -RemovalInvoker $persistentRemovalInvoker `
-            -RemovalTimeoutMilliseconds 25 `
+            -RemovalTimeoutMilliseconds 1000 `
             -RemovalRetryDelayMilliseconds 1
     }
     catch {
@@ -2427,6 +2428,12 @@ finally {
         Complete-Test "WhatIf validates local and remote bases without worktree, branch, or ref mutation"
     }
 
+    if (Test-CaseSelected "fsmonitor-fixture-cleanup") {
+        $fsmonitorCleanupProbeRoot = Join-Path $testRoot "fsmonitor-cleanup-probe"
+        New-Item -ItemType Directory -Path $fsmonitorCleanupProbeRoot | Out-Null
+        Test-FsmonitorFixtureCleanupLauncher -ProbeRoot $fsmonitorCleanupProbeRoot
+        Complete-Test "fixture-owned fsmonitor shutdown precedes removal and preserves stop failures"
+    }
     if (Test-CaseSelected "git-add-failure") {
         $fsmonitorCleanupProbeRoot = Join-Path $testRoot "fsmonitor-cleanup-probe"
         New-Item -ItemType Directory -Path $fsmonitorCleanupProbeRoot | Out-Null
