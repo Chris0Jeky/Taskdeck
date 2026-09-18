@@ -54,6 +54,7 @@ function makeExpiredProposal(): Proposal {
 }
 
 describe('ReviewProposalCard fallback copy (#1434)', () => {
+  // The read-only banner owns this explanation; the operation list must not repeat it.
   beforeEach(() => {
     vi.clearAllMocks()
     resetProposalDisplayNamesForTests()
