@@ -25,8 +25,12 @@ export default {
   },
   eyebrow:
     'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
+  // Variante de `eyebrow` con ámbito de tablero. Ambos recuentos salen de las
+  // filas que este cliente cargó, y `currentListQuery()` limita esa página a
+  // 200: ninguno es un total autoritativo del tablero. «Mostrando» es toda la
+  // honestidad de esta cadena (GH-1991 M4).
   eyebrowScoped:
-    'Inbox · {board} · {pending} por clasificar · {total} capturada en este tablero | Inbox · {board} · {pending} por clasificar · {total} capturadas en este tablero',
+    'Inbox · {board} · Mostrando {pending} por clasificar · {total} capturada | Inbox · {board} · Mostrando {pending} por clasificar · {total} capturadas',
   // Se muestra EN LUGAR de `eyebrow` mientras se sustituye el ámbito (#2501):
   // los recuentos serían del ámbito que el usuario acaba de dejar. Sin plural:
   // no hay ningún número con el que concordar. Y sin ninguna palabra sobre la
