@@ -25,7 +25,7 @@ public class LlmUsageRecordUtcNormalizationIntegrationTests : IClassFixture<Test
     }
 
     [Fact]
-    public async Task GetRequestCountAsync_WithNonUtcBounds_SelectsTheSameInstantWindow()
+    public async Task ReportingQueries_WithNonUtcBounds_SelectTheSameInstantWindow()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -37,14 +37,30 @@ public class LlmUsageRecordUtcNormalizationIntegrationTests : IClassFixture<Test
         var storedAtUtc = new DateTimeOffset(2026, 1, 15, 10, 30, 0, TimeSpan.Zero);
         await SeedCommittedUsageAtAsync(db, user.Id, LlmSurface.Chat, storedAtUtc);
         var callerOffset = TimeSpan.FromHours(2);
+        var from = storedAtUtc.AddMinutes(-1).ToOffset(callerOffset);
+        var to = storedAtUtc.AddMinutes(1).ToOffset(callerOffset);
 
-        var count = await repository.GetRequestCountAsync(
+        var requestCount = await repository.GetRequestCountAsync(
             user.Id,
             LlmSurface.Chat,
-            storedAtUtc.AddMinutes(-1).ToOffset(callerOffset),
-            storedAtUtc.AddMinutes(1).ToOffset(callerOffset));
+            from,
+            to);
+        var totalTokens = await repository.GetTotalTokensAsync(
+            user.Id,
+            LlmSurface.Chat,
+            from,
+            to);
+        var summary = await repository.GetUsageSummaryAsync(
+            user.Id,
+            LlmSurface.Chat,
+            from,
+            to);
 
-        count.Should().Be(1);
+        requestCount.Should().Be(1);
+        totalTokens.Should().Be(15);
+        summary.TotalInputTokens.Should().Be(10);
+        summary.TotalOutputTokens.Should().Be(5);
+        summary.TotalRequests.Should().Be(1);
     }
 
     [Fact]
