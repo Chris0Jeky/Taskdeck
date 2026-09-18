@@ -1,7 +1,8 @@
 # `.claude/` — Claude Code execution layer
 
 Settings and local skills for Taskdeck. Repo facts and proving checks live in `../CLAUDE.md`;
-the contributor contract in `../AGENTS.md`; review doctrine in the global laws. Nothing is restated here.
+the contributor contract in `../AGENTS.md`; review doctrine in the global laws. Grok loads this
+skill tree via Claude compatibility. Nothing is restated here.
 
 ## What is in here
 
@@ -30,12 +31,13 @@ Tier and push/merge authority are declared only in `../.agent-harness/tier.json`
   For headless workers start `claude -p` in the exact target; never add `--worktree`.
 - Keep one coordinator responsible for final synthesis, docs updates, and verification claims.
 
-## Coordinating with Codex
+## Coordinating with Codex and Grok
 
-`.codex/README.md` + `.codex/memories/00_ACTIVE.md` are Codex's routing layer; both control planes share
-`docs/`, `docs/agentic/*`, `autodoc/AGENT_INDEX.md`, and the manual failure-ledger tools under
-`scripts/agent_hooks/*`. Neither control plane installs a Taskdeck-owned runtime hook.
-`docs/agentic/AGENT_TOOL_PARITY.md` records how the two stay equally capable.
+`.codex/README.md` + `.codex/memories/00_ACTIVE.md` are Codex's routing layer; `.grok/README.md` is
+Grok's. All three share `docs/`, `docs/agentic/*`, `autodoc/AGENT_INDEX.md`, and the manual
+failure-ledger tools under `scripts/agent_hooks/*`. None of them installs a Taskdeck-owned runtime hook.
+Grok loads `.claude/skills/` via compatibility — there is no `.grok/skills/`.
+`docs/agentic/AGENT_TOOL_PARITY.md` records how the runtimes stay equally capable.
 On conflict: `docs/STATUS.md` for reality, `AGENTS.md` for protocol.
 
 ## MCP
@@ -49,8 +51,8 @@ never `@latest`). Not declared, on purpose (2026-09-02, RAM/MCP hygiene):
   started a second node process per session and per subagent.
 - **GitHub MCP** — surfaced no tools unauthenticated and every workflow here uses `gh`; re-add only if a
   workflow needs a write `gh` cannot do, and authenticate it via `/mcp` first.
-- **Docker MCP gateway** — declared once at user scope; a project-scope copy starts a second gateway
-  process per session (agent-harness#87).
+- **Docker MCP gateway** — declared once at user scope; a project-scope copy (including
+  `.grok/config.toml`) starts a second gateway process per session (agent-harness#87).
 
 Codex keeps its own baseline in `../.codex/config.toml` (no connector there, so it declares Context7 and an
 authenticated GitHub MCP itself). Repo search is native `rg`, not an MCP.
