@@ -1,0 +1,198 @@
+name: Apply PR 3166 post-commit disposal repair
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-3166-post-commit-disposal-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/3117-post-commit-tail-boundary'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      TRIGGER_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact pull request branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Verify exact triggering head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TRIGGER_HEAD"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore focused test project
+        run: dotnet restore backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj
+
+      - name: Prove the post-commit disposal regression is red
+        shell: bash
+        run: |
+          set +e
+          dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj \
+            -c Release -m:1 --no-restore \
+            --filter FullyQualifiedName~UnitOfWorkTransactionLifecycleTests \
+            > /tmp/pr-3166-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/pr-3166-red.log
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected the transaction lifecycle regression to fail before the UnitOfWork repair.' >&2
+            exit 1
+          fi
+          grep -F 'UnitOfWorkTransactionLifecycleTests.CommitTransactionAsync_WhenDisposeFailsAfterCommit_TreatsCommitAsDurable' /tmp/pr-3166-red.log
+          grep -F 'transaction cleanup failed after commit' /tmp/pr-3166-red.log
+
+      - name: Establish durability before best-effort transaction cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/src/Taskdeck.Infrastructure/Repositories/UnitOfWork.cs')
+          source = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+          old_usings = '''using Microsoft.EntityFrameworkCore.Storage;
+          using Taskdeck.Application.Interfaces;
+          '''
+          old_usings = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_usings.splitlines()) + '\n'
+          new_usings = '''using Microsoft.EntityFrameworkCore.Storage;
+          using Microsoft.Extensions.Logging;
+          using Microsoft.Extensions.Logging.Abstractions;
+          using Taskdeck.Application.Interfaces;
+          '''
+          new_usings = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_usings.splitlines()) + '\n'
+          if source.count(old_usings) != 1:
+              raise SystemExit(f'expected one UnitOfWork using boundary, found {source.count(old_usings)}')
+          source = source.replace(old_usings, new_usings, 1)
+
+          old_fields = '''    private readonly TaskdeckDbContext _context;
+            private IDbContextTransaction? _transaction;
+          '''
+          old_fields = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_fields.splitlines()) + '\n'
+          new_fields = '''    private readonly TaskdeckDbContext _context;
+            private readonly ILogger<UnitOfWork> _logger;
+            private IDbContextTransaction? _transaction;
+          '''
+          new_fields = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_fields.splitlines()) + '\n'
+          if source.count(old_fields) != 1:
+              raise SystemExit(f'expected one UnitOfWork field boundary, found {source.count(old_fields)}')
+          source = source.replace(old_fields, new_fields, 1)
+
+          old_tail = '''        ITomorrowNoteRepository tomorrowNotes,
+              IMcpToolHashRepository mcpToolHashes)
+            {
+                _context = context;
+          '''
+          old_tail = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_tail.splitlines()) + '\n'
+          new_tail = '''        ITomorrowNoteRepository tomorrowNotes,
+              IMcpToolHashRepository mcpToolHashes,
+              ILogger<UnitOfWork>? logger = null)
+            {
+                _context = context;
+                _logger = logger ?? NullLogger<UnitOfWork>.Instance;
+          '''
+          new_tail = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_tail.splitlines()) + '\n'
+          if source.count(old_tail) != 1:
+              raise SystemExit(f'expected one UnitOfWork constructor tail, found {source.count(old_tail)}')
+          source = source.replace(old_tail, new_tail, 1)
+
+          old_commit = '''    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+            {
+                if (_transaction != null)
+                {
+                    await _transaction.CommitAsync(cancellationToken);
+                    await _transaction.DisposeAsync();
+                    _transaction = null;
+                }
+            }
+          '''
+          old_commit = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_commit.splitlines()) + '\n'
+          new_commit = '''    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+            {
+                var transaction = _transaction;
+                if (transaction == null)
+                    return;
+
+                await transaction.CommitAsync(cancellationToken);
+
+                // CommitAsync is the durable boundary. Clear the rollback handle before cleanup so
+                // a provider-specific disposal failure cannot make callers treat committed state as
+                // uncommitted or attempt to roll it back.
+                _transaction = null;
+                try
+                {
+                    await transaction.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Database transaction committed successfully, but transaction cleanup failed.");
+                }
+            }
+          '''
+          new_commit = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_commit.splitlines()) + '\n'
+          if source.count(old_commit) != 1:
+              raise SystemExit(f'expected one UnitOfWork commit method, found {source.count(old_commit)}')
+          source = source.replace(old_commit, new_commit, 1)
+
+          path.write_text(source, encoding='utf-8', newline='\n')
+          PY
+
+          git diff --check
+
+      - name: Verify focused transaction lifecycle and executor regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj \
+            -c Release -m:1 --no-restore \
+            --filter FullyQualifiedName~UnitOfWorkTransactionLifecycleTests
+          dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj \
+            -c Release -m:1 \
+            --filter FullyQualifiedName~AutomationExecutorPostCommitBoundaryTests
+
+      - name: Publish exact-parent repair and remove applicator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TRIGGER_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$PR_HEAD_REF" | awk '{print $1}')"
+          test -n "$remote_head"
+          test "$remote_head" = "$TRIGGER_HEAD"
+
+          git rm .github/workflows/apply-3166-post-commit-disposal.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/src/Taskdeck.Infrastructure/Repositories/UnitOfWork.cs \
+            backend/tests/Taskdeck.Api.Tests/UnitOfWorkTransactionLifecycleTests.cs
+          git diff --cached --check
+
+          expected_names=$'.github/workflows/apply-3166-post-commit-disposal.yml\nbackend/src/Taskdeck.Infrastructure/Repositories/UnitOfWork.cs\nbackend/tests/Taskdeck.Api.Tests/UnitOfWorkTransactionLifecycleTests.cs'
+          actual_names="$(git diff --cached --name-only | sort)"
+          test "$actual_names" = "$expected_names"
+
+          tree="$(git write-tree)"
+          repair_commit="$(printf '%s\n' 'fix(uow): establish durability before transaction cleanup' | git commit-tree "$tree" -p "$TRIGGER_HEAD")"
+          test "$(git rev-parse "$repair_commit^")" = "$TRIGGER_HEAD"
+          git push --force-with-lease="refs/heads/$PR_HEAD_REF:$TRIGGER_HEAD" origin "$repair_commit:refs/heads/$PR_HEAD_REF"
