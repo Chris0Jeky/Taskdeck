@@ -64,8 +64,24 @@ const board = {
   columns: [],
 } as unknown as BoardDetail
 
+const cachedComment: CardComment = {
+  id: 'comment-1',
+  boardId: card.boardId,
+  cardId: card.id,
+  parentCommentId: null,
+  authorUserId: 'user-2',
+  authorUsername: 'Teammate',
+  content: 'Previously loaded comment',
+  isDeleted: false,
+  editedAt: null,
+  mentions: [],
+  createdAt: '2026-09-01T12:00:00Z',
+  updatedAt: '2026-09-01T12:00:00Z',
+}
+
 describe('CardModal comment load state', () => {
   let fetchCardComments: ReturnType<typeof vi.fn>
+  let getCardComments: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.resetAllMocks()
@@ -83,6 +99,7 @@ describe('CardModal comment load state', () => {
     vi.mocked(boardsApi.getBoard).mockResolvedValue(board)
 
     fetchCardComments = vi.fn()
+    getCardComments = vi.fn().mockReturnValue([])
     const store = reactive({
       currentBoard: board,
       currentBoardCards: [card],
@@ -90,7 +107,7 @@ describe('CardModal comment load state', () => {
       currentBoardPayloadGeneration: 1,
       fetchCardComments,
       fetchCardProvenance: vi.fn().mockResolvedValue(null),
-      getCardComments: vi.fn().mockReturnValue([]),
+      getCardComments,
       setEditingCard: vi.fn(),
       fetchBoard: vi.fn(),
       setCardArchived: vi.fn(),
@@ -147,6 +164,65 @@ describe('CardModal comment load state', () => {
 
     expect(wrapper.find('[data-testid="card-comments-loading"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="card-comments-load-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="card-comments-empty"]').text()).toContain('No comments yet')
+
+    wrapper.unmount()
+  })
+
+  it('keeps cached comments visible when their refresh cannot be confirmed', async () => {
+    getCardComments.mockReturnValue([cachedComment])
+    fetchCardComments.mockRejectedValueOnce(new Error('offline'))
+
+    const wrapper = mount(CardModal, {
+      attachTo: document.body,
+      props: { card, isOpen: true, labels: [] },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="card-comments-load-error"]').text()).toContain(
+      'Comments could not be loaded',
+    )
+    expect(wrapper.text()).toContain(cachedComment.content)
+    expect(wrapper.find('[data-testid="card-comments-empty"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('does not let a stale read from the previous card replace the current card state', async () => {
+    const firstRead = createDeferred<CardComment[]>()
+    const secondRead = createDeferred<CardComment[]>()
+    fetchCardComments
+      .mockReturnValueOnce(firstRead.promise)
+      .mockReturnValueOnce(secondRead.promise)
+
+    const wrapper = mount(CardModal, {
+      attachTo: document.body,
+      props: { card, isOpen: true, labels: [] },
+    })
+    await nextTick()
+
+    const replacement: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Replacement card',
+      updatedAt: '2026-09-02T00:00:00Z',
+    }
+    await wrapper.setProps({ card: replacement })
+    await nextTick()
+
+    expect(fetchCardComments).toHaveBeenNthCalledWith(1, card.boardId, card.id)
+    expect(fetchCardComments).toHaveBeenNthCalledWith(2, replacement.boardId, replacement.id)
+
+    secondRead.resolve([])
+    await flushPromises()
+    expect(wrapper.get('[data-testid="card-comments-empty"]').text()).toContain('No comments yet')
+
+    firstRead.reject(new Error('late failure'))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="card-comments-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-comments-loading"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="card-comments-empty"]').text()).toContain('No comments yet')
 
     wrapper.unmount()
