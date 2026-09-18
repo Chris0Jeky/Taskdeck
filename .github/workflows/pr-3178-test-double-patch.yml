@@ -13,6 +13,7 @@ permissions:
 jobs:
   patch:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,11 +72,14 @@ jobs:
           Path('.github/workflows/pr-3178-test-double-patch.yml').unlink()
           PY
 
-      - name: Verify API test project compiles
+      - name: Verify API project and snapshot regression
         shell: bash
         run: |
           dotnet restore backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj
           dotnet build backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --no-restore
+          dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj \
+            -c Release --no-build -m:1 \
+            --filter "FullyQualifiedName~BoardEstimateRollupSnapshotTests"
 
       - name: Commit bounded compatibility repair
         shell: bash
