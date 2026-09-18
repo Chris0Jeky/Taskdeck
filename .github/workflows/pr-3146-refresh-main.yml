@@ -1,0 +1,35 @@
+name: Refresh PR 3146 from main
+
+on:
+  push:
+    branches:
+      - fix/3121-permission-retry-focus-owner
+    paths:
+      - .github/workflows/pr-3146-refresh-main.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/3121-permission-retry-focus-owner
+          fetch-depth: 0
+
+      - name: Merge current main and remove refresh workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-ff --no-commit origin/main
+          rm .github/workflows/pr-3146-refresh-main.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "chore: refresh PR 3146 from main"
+          git push origin HEAD:fix/3121-permission-retry-focus-owner
