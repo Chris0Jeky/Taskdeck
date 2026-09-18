@@ -105,6 +105,13 @@ public class AutomationExecutorAssignmentPostCommitBoundaryTests
         policyEngine.Setup(value => value.ValidatePolicy(It.IsAny<ProposalDto>()))
             .Returns(Result.Success());
         policyEngine
+            .Setup(value => value.ValidateBoardAccessAsync(
+                actor.Id,
+                board.Id,
+                BoardAccessBar.Write,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        policyEngine
             .Setup(value => value.ValidatePermissionsAsync(
                 actor.Id,
                 board.Id,
