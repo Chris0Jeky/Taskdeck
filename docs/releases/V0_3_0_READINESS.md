@@ -104,7 +104,7 @@ a false red. What stands between here and that condition:
    must not be described as shipped or authorized before its evidence conditions are met.
 
 **The cutover checklist is also a clause-5 prerequisite, and it is wider than the chain above.**
-`OUTSTANDING_TASKS.md` SC-6 permits the visibility change only after sections A to I of
+`OUTSTANDING_TASKS.md` SC-6 permits the visibility change only after sections A to J of
 `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` are complete. Those sections name their owners, so every
 one of them is gate work:
 
@@ -119,6 +119,7 @@ one of them is gate work:
 | G. Supply chain | CI-11 `#2335` | Open, hands off to SC-5 |
 | H. Nightly and release | CI-10 `#2334` | Open, v0.3 since 2026-09-03 (Q1 ruled A), Priority I |
 | I. Rehearsal while still public | CI-13 `#2337` (checklist header) | Open, evidence recorded on `#2337` |
+| J. Public distribution preparation | CI-16 `#2439` | Open; provision and verify before the mirror rehearsal |
 
 **Section F is not a human gate, despite SC-7.** Its four boxes are isolated VMs, no host mounts or
 personal credentials with one job per host, a tested hosted override and offline-runner behaviour,
@@ -130,9 +131,10 @@ section F is unbuilt.
 
 **Section H is a prerequisite in full (Q1 on `#2337`, ruled A by the maintainer 2026-09-03).** CI-10
 `#2334` moved from v0.4 to v0.3 and is a release blocker: the nightly coordinator with its honest
-no-change receipt and weekly sweep, mutation kept manual, and the clean-from-tag hosted-only release
-qualification all land before cutover. The agent's recommendation to split the section (keep nightly
-consolidation on v0.4, carve out release qualification) was declined. `#2334` depends on CI-01 (closed),
+no-change receipt and weekly sweep, mutation kept manual, and the pre-cutover release contract plus
+public/no-publish rehearsals all land before cutover. Exact-tag qualification and publication remain
+in section L after privacy and runner association. The agent's recommendation to split the section
+(keep nightly consolidation on v0.4, carve out release qualification) was declined. `#2334` depends on CI-01 (closed),
 CI-03 `#2327` and CI-05 `#2329`, both already v0.3, so nothing else moves milestone; its scope also
 triages `#1210` and `#2180`, which carry no milestone.
 
@@ -165,8 +167,9 @@ The earlier pair named here is closed: **`#2425`** (Windows worktree helper scen
 **Row states re-checked against `OUTSTANDING_TASKS.md` §J on 2026-09-10.** Six of the eleven SC rows
 read as open here while their §J row was already `[x]`: SC-1, SC-3, SC-5, SC-9, SC-10 and SC-11. All six
 are corrected below, and a D-9 row is added for `#1940`. The still-open gates are **SC-4** (register the stable gate), **SC-6** (visibility) and
-**SC-7** (register the runners), and their order is SC-6 before SC-4 before SC-7. §J is the authority for
-these states; this table is a view of it.
+**SC-7** (register the runners), and their order is SC-6 before SC-4 before the CI-17 private-mode,
+Linux-only rehearsal with runners still unassociated, then SC-7. §J is the authority for these
+states; this table is a view of it.
 
 Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and map to issues:
 
@@ -189,7 +192,7 @@ Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and m
 public release and source mirror**. Development, CI, issues and the control plane go private for
 v0.3.0; Releases, checksums and provenance, and the GPL-3.0-only source stay public through a mirror,
 with GitHub Pages still publishing from the private repository. CI-16 `#2439` implements it and
-serves checklist section A, which puts it inside the SC-6 A-to-I prerequisite set. The launch kit and
+serves checklist section J, which puts it inside the SC-6 A-to-J prerequisite set. The launch kit and
 any `awesome-selfhosted` wording point at the mirror, not the private repository.
 
 `#1772` (private shared instance) carries human decision CL-1 and is the one non-CI human-gated issue
@@ -258,7 +261,7 @@ Refresh at each coordination cycle, from live state and not from this file:
 1. Re-read the v0.3 row of `docs/REVIVAL_PLAN.md` for the gate clauses.
 2. Re-read branch protection for the required contexts. Do not infer that the Smart CI gate is
    enforced from a green check.
-3. Re-read `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` sections A to I and their named owners. SC-6
+3. Re-read `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` sections A to J and their named owners. SC-6
    makes that whole list clause-5 work, so an issue moving in or out of it changes this file.
 4. Re-count the milestone and re-check the section 2 chain.
 5. Move anything that becomes shipped reality into `docs/STATUS.md`, not into this file.
