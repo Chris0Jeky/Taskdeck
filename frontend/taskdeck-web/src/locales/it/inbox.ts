@@ -23,6 +23,8 @@ export default {
   },
   eyebrow:
     'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
+  eyebrowScoped:
+    'Inbox · {board} · {pending} da smistare · {total} catturato in questa bacheca | Inbox · {board} · {pending} da smistare · {total} catturati in questa bacheca',
   // Mostrato AL POSTO di `eyebrow` durante la sostituzione dell'ambito (#2501):
   // i conteggi apparterrebbero all'ambito appena lasciato. Nessun plurale: non
   // c'è alcun numero con cui concordare. E nessuna parola sul caricamento: la

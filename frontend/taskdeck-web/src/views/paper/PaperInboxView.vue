@@ -543,8 +543,12 @@ defineExpose({ variant, toggleVariant, setVariant })
               : isScopeReplacement
                 ? $t('inbox.eyebrowUncounted')
                 : $t(
-                    'inbox.eyebrow',
-                    { pending: pendingTriageCount, total: capturedCount },
+                    activeBoardId ? 'inbox.eyebrowScoped' : 'inbox.eyebrow',
+                    {
+                      board: activeBoardName,
+                      pending: pendingTriageCount,
+                      total: capturedCount,
+                    },
                     capturedCount,
                   )
           }}

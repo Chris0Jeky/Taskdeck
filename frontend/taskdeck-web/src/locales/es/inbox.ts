@@ -25,6 +25,8 @@ export default {
   },
   eyebrow:
     'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
+  eyebrowScoped:
+    'Inbox · {board} · {pending} por clasificar · {total} capturada en este tablero | Inbox · {board} · {pending} por clasificar · {total} capturadas en este tablero',
   // Se muestra EN LUGAR de `eyebrow` mientras se sustituye el ámbito (#2501):
   // los recuentos serían del ámbito que el usuario acaba de dejar. Sin plural:
   // no hay ningún número con el que concordar. Y sin ninguna palabra sobre la

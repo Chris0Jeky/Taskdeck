@@ -32,6 +32,8 @@ export default {
   },
   eyebrow:
     'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
+  eyebrowScoped:
+    'Inbox · {board} · {pending} awaiting triage · {total} captured on this board | Inbox · {board} · {pending} awaiting triage · {total} captured on this board',
   // Shown INSTEAD of `eyebrow` during a scope replacement (#2501). The rows
   // those counts would be computed from belong to the scope the user just left,
   // so the eyebrow carries no count at all rather than a count about somewhere
