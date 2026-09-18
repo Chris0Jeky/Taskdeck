@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { WorkspaceOnboarding, WorkspaceOnboardingStep } from '../../types/workspace'
+import type {
+  HomeSummary,
+  WorkspaceOnboarding,
+  WorkspaceOnboardingStep,
+} from '../../types/workspace'
 
 const sessionState = vi.hoisted(() => ({ isAuthenticated: true }))
 
@@ -58,6 +62,26 @@ function makeDeferredPlaceholder(): WorkspaceOnboarding {
   })
 }
 
+function makeHomeSummary(onboarding: WorkspaceOnboarding): HomeSummary {
+  return {
+    workspaceMode: 'guided',
+    isFirstRun: false,
+    onboarding,
+    workload: {
+      capturesNeedingTriage: 0,
+      capturesInProgress: 0,
+      capturesReadyForFollowUp: 0,
+      proposalsPendingReview: 0,
+    },
+    boards: {
+      totalBoards: 0,
+      recentBoardsCount: 0,
+      recentBoards: [],
+    },
+    recommendedActions: [],
+  }
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -77,25 +101,36 @@ describe('workspaceStore guide replay payload adoption (#3124)', () => {
     sessionState.isAuthenticated = true
   })
 
-  it('adopts the authoritative payload when retry succeeds after a failed optimistic replay', async () => {
+  it('restores the deferred placeholder so retry stays reachable after a failed replay', async () => {
     const store = useWorkspaceStore()
+    const deferred = makeDeferredPlaceholder()
     const replayed = makeGuide()
-    store.onboarding = makeDeferredPlaceholder()
+    store.onboarding = deferred
     vi.mocked(http.put)
       .mockRejectedValueOnce(new Error('first replay failed'))
       .mockResolvedValueOnce({ data: replayed })
 
     await expect(store.updateOnboarding('replay')).rejects.toThrow('first replay failed')
-    expect(store.onboarding).toMatchObject({
-      visibility: 'active',
-      isComplete: false,
-      currentStepId: null,
-      steps: [],
-    })
+    expect(store.onboarding).toEqual(deferred)
 
     await store.updateOnboarding('replay')
 
     expect(store.onboarding).toEqual(replayed)
+  })
+
+  it('lets a clean summary repair an ambiguous deferred replay failure', async () => {
+    const store = useWorkspaceStore()
+    const replayed = makeGuide()
+    store.onboarding = makeDeferredPlaceholder()
+    vi.mocked(http.put).mockRejectedValueOnce(new Error('response lost after commit'))
+
+    await expect(store.updateOnboarding('replay')).rejects.toThrow('response lost after commit')
+
+    vi.mocked(http.get).mockResolvedValueOnce({ data: makeHomeSummary(replayed) })
+    await store.fetchHomeSummary()
+
+    expect(store.onboarding).toEqual(replayed)
+    expect(store.homeSummary?.onboarding).toEqual(replayed)
   })
 
   it('lets the latest overlapping replay adopt the authoritative payload', async () => {
