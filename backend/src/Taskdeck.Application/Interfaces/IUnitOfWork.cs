@@ -49,8 +49,9 @@ public interface IUnitOfWork
     Task CheckpointWalAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Begins a repeatable read snapshot without reserving SQLite's WAL writer slot.
-    /// Use this for multi-query read models that must describe one database instant.
+    /// Begins one consistent read snapshot for a multi-query read model. SQLite uses
+    /// a deferred serializable snapshot so readers do not reserve the WAL writer slot;
+    /// other relational providers use repeatable-read isolation.
     /// The caller must finish the non-nestable transaction through
     /// <see cref="CommitTransactionAsync"/> or <see cref="RollbackTransactionAsync"/>.
     /// </summary>
