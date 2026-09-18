@@ -27,10 +27,15 @@ test('rejects removing the calibrated outer test-step timeout', () => {
   assert.match(errorsFor(workflow), /45-minute timeout/)
 })
 
-test('rejects removing per-test hang termination or its bounded mini dump', () => {
+test('rejects removing hang collection, per-test termination, or its bounded mini dump', () => {
+  const withoutHangCollection = canonicalWorkflow.replace(
+    ' --blame-hang --blame-hang-timeout',
+    ' --blame-hang-timeout',
+  )
   const withoutHangTimeout = canonicalWorkflow.replace(' --blame-hang-timeout 20m', '')
   const withoutMiniDump = canonicalWorkflow.replace(' --blame-hang-dump-type mini', '')
 
+  assert.match(errorsFor(withoutHangCollection), /--blame-hang collection switch/)
   assert.match(errorsFor(withoutHangTimeout), /20-minute per-test hang timeout/)
   assert.match(errorsFor(withoutMiniDump), /mini hang dumps/)
 })
