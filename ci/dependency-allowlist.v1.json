@@ -1,0 +1,5 @@
+{
+  "$schema": "./schemas/dependency-allowlist.v1.schema.json",
+  "schemaVersion": 1,
+  "entries": []
+}
