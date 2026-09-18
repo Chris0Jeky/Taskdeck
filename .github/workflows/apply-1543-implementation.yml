@@ -1,0 +1,253 @@
+name: Apply issue 1543 implementation
+
+on:
+  push:
+    branches:
+      - fix/1543-secrets-verdict-evidence
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-1543-implementation
+  cancel-in-progress: true
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/1543-secrets-verdict-evidence
+          fetch-depth: 0
+
+      - name: Implement exact-head hosted Gitleaks evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          skill_path = Path('.claude/skills/pre-merge-gate/SKILL.md')
+          skill = skill_path.read_text(encoding='utf-8')
+          old_step = '''## Step 5: CI status
+
+          ```bash
+          gh pr checks $ARGUMENTS
+          ```
+
+          Report the exact-head state of every check. A red required check makes the local packet incomplete;
+          route diagnosis and recovery through `taskdeck-ci-conflict-recovery`.
+          '''.replace('          ', '')
+          new_step = '''## Step 5: CI status and exact-head secrets evidence
+
+          Derive the secrets verdict from the named hosted check on the exact `pr_head_oid`; never infer it
+          from the aggregate PR colour or from a check attached to another commit.
+
+          ```bash
+          set -euo pipefail
+
+          secrets_scan_check_name="Secret Scan / Gitleaks Scan"
+          secrets_scan_verdict="NOT VERIFIED"
+          secrets_scan_evidence="MISSING"
+          secrets_scan_url=""
+
+          secrets_scan_fields="$(
+            gh api --method GET \\
+              -H "Accept: application/vnd.github+json" \\
+              "repos/{owner}/{repo}/commits/$pr_head_oid/check-runs" \\
+              -f filter=latest \\
+              -f check_name="$secrets_scan_check_name" \\
+              -F per_page=100 \\
+              --jq '[.total_count, (.check_runs | length), (.check_runs[0].name // ""), (.check_runs[0].head_sha // ""), (.check_runs[0].status // ""), (.check_runs[0].conclusion // ""), (.check_runs[0].app.slug // ""), (.check_runs[0].html_url // "")] | @tsv'
+          )"
+          IFS=$'\\t' read -r \\
+            secrets_scan_total \\
+            secrets_scan_loaded \\
+            secrets_scan_name \\
+            secrets_scan_check_head \\
+            secrets_scan_check_status \\
+            secrets_scan_check_conclusion \\
+            secrets_scan_app \\
+            secrets_scan_url \\
+            <<<"$secrets_scan_fields"
+
+          if [[ "$secrets_scan_total" == "0" ]]; then
+            secrets_scan_evidence="MISSING"
+          elif [[ "$secrets_scan_total" != "1" || "$secrets_scan_loaded" != "1" || "$secrets_scan_name" != "$secrets_scan_check_name" ]]; then
+            secrets_scan_evidence="AMBIGUOUS"
+          elif [[ "$secrets_scan_check_head" != "$pr_head_oid" ]]; then
+            secrets_scan_evidence="STALE_HEAD"
+          elif [[ "$secrets_scan_app" != "github-actions" ]]; then
+            secrets_scan_evidence="UNTRUSTED_APP"
+          elif [[ "$secrets_scan_check_status" == "completed" && "$secrets_scan_check_conclusion" == "success" ]]; then
+            secrets_scan_verdict="CLEAN"
+            secrets_scan_evidence="TERMINAL_SUCCESS"
+          else
+            secrets_scan_evidence="${secrets_scan_check_status:-UNKNOWN}/${secrets_scan_check_conclusion:-NONE}"
+          fi
+
+          printf 'Secrets scan evidence: %s — %s (%s; %s)\\n' \\
+            "$secrets_scan_verdict" \\
+            "$secrets_scan_check_name" \\
+            "$secrets_scan_evidence" \\
+            "${secrets_scan_url:-no check URL}"
+
+          gh pr checks $ARGUMENTS
+          ```
+
+          `CLEAN` is valid only for exactly one latest GitHub Actions check named
+          `Secret Scan / Gitleaks Scan` whose `head_sha` equals `pr_head_oid` and whose state is
+          `completed/success`. Missing, duplicate, pending, cancelled, skipped, failed, or stale-head evidence
+          remains `NOT VERIFIED`. Report the exact-head state of every check. A red required check makes the
+          local packet incomplete; route diagnosis and recovery through `taskdeck-ci-conflict-recovery`.
+          '''.replace('          ', '')
+          if skill.count(old_step) != 1:
+              raise SystemExit(f'Expected one Step 5 block, found {skill.count(old_step)}')
+          skill = skill.replace(old_step, new_step)
+          report_old = '- [ ] Secrets scan: CLEAN'
+          report_new = '- [ ] Secrets scan: $secrets_scan_verdict ($secrets_scan_check_name; $secrets_scan_evidence)'
+          if skill.count(report_old) != 1:
+              raise SystemExit(f'Expected one hard-coded report verdict, found {skill.count(report_old)}')
+          skill = skill.replace(report_old, report_new)
+          skill_path.write_text(skill, encoding='utf-8')
+
+          checker_path = Path('scripts/check-docs-governance.mjs')
+          checker = checker_path.read_text(encoding='utf-8')
+          constants_old = "export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'\nconst FORBIDDEN_SCALAR_CONTROL"
+          constants_new = "export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'\nexport const PRE_MERGE_GATE_PATH = '.claude/skills/pre-merge-gate/SKILL.md'\nexport const PRE_MERGE_SECRETS_CHECK_NAME = 'Secret Scan / Gitleaks Scan'\nconst FORBIDDEN_SCALAR_CONTROL"
+          if checker.count(constants_old) != 1:
+              raise SystemExit('Could not locate docs-governance constants anchor.')
+          checker = checker.replace(constants_old, constants_new)
+
+          function_anchor = 'async function validateControlPathMirror() {'
+          if checker.count(function_anchor) != 1:
+              raise SystemExit('Could not locate control-path validator anchor.')
+          secrets_validator = r'''export function collectPreMergeSecretsEvidenceErrors(
+            skillText,
+            skillPath = PRE_MERGE_GATE_PATH,
+          ) {
+            const evidenceErrors = []
+            if (/^- \[ \] Secrets scan: CLEAN\s*$/m.test(skillText)) {
+              evidenceErrors.push(`${skillPath} must not hard-code an unconditional Secrets scan: CLEAN verdict`)
+            }
+
+            const requiredTokens = [
+              ['secrets_scan_check_name="Secret Scan / Gitleaks Scan"', 'name the exact hosted Gitleaks check'],
+              ['commits/$pr_head_oid/check-runs', 'query check runs for the exact PR head OID'],
+              ['-f filter=latest', 'request only the latest check runs'],
+              ['-f check_name="$secrets_scan_check_name"', 'filter by the exact hosted check name'],
+              ['(.check_runs[0].head_sha // "")', 'read the returned check head SHA'],
+              ['secrets_scan_evidence="MISSING"', 'fail closed when scan evidence is missing'],
+              ['secrets_scan_evidence="AMBIGUOUS"', 'fail closed when scan evidence is ambiguous'],
+              ['secrets_scan_evidence="STALE_HEAD"', 'fail closed when scan evidence belongs to another head'],
+              ['secrets_scan_check_status" == "completed"', 'require a terminal check state'],
+              ['secrets_scan_check_conclusion" == "success"', 'require a successful check conclusion'],
+              ['secrets_scan_verdict="CLEAN"', 'derive CLEAN only in the terminal-success branch'],
+              ['Secrets scan: $secrets_scan_verdict', 'render the derived verdict in the evidence template'],
+            ]
+            for (const [token, description] of requiredTokens) {
+              if (!skillText.includes(token)) {
+                evidenceErrors.push(`${skillPath} must ${description}; missing token: ${token}`)
+              }
+            }
+            return evidenceErrors
+          }
+
+          async function validatePreMergeSecretsEvidence() {
+            if (!(await fileExists(PRE_MERGE_GATE_PATH))) {
+              errors.push(`Missing required pre-merge gate skill: ${PRE_MERGE_GATE_PATH}`)
+              return
+            }
+            const skillText = await readFile(resolve(PRE_MERGE_GATE_PATH), 'utf8')
+            errors.push(...collectPreMergeSecretsEvidenceErrors(skillText))
+          }
+
+          '''
+          checker = checker.replace(function_anchor, secrets_validator + function_anchor)
+          main_anchor = '  await validateControlPathMirror()'
+          if checker.count(main_anchor) != 1:
+              raise SystemExit('Could not locate docs-governance main validation anchor.')
+          checker = checker.replace(
+              main_anchor,
+              '  await validatePreMergeSecretsEvidence()\n\n' + main_anchor,
+          )
+          checker_path.write_text(checker, encoding='utf-8')
+
+          old_test = Path('scripts/check-pre-merge-gate-secrets.test.mjs')
+          new_test = Path('scripts/check-docs-governance-pre-merge-secrets.test.mjs')
+          if not old_test.exists():
+              raise SystemExit('The red contract test was not published.')
+          old_test.unlink()
+          new_test.write_text(r'''import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+          import test from 'node:test'
+          import {
+            collectPreMergeSecretsEvidenceErrors,
+            PRE_MERGE_GATE_PATH,
+          } from './check-docs-governance.mjs'
+
+          const skillPath = new URL('../.claude/skills/pre-merge-gate/SKILL.md', import.meta.url)
+          const skill = readFileSync(skillPath, 'utf8')
+
+          test('the repository pre-merge skill satisfies the exact-head secrets evidence contract', () => {
+            assert.deepEqual(collectPreMergeSecretsEvidenceErrors(skill), [])
+          })
+
+          test('the contract rejects an unconditional clean report template', () => {
+            const hardCoded = skill.replace(
+              'Secrets scan: $secrets_scan_verdict ($secrets_scan_check_name; $secrets_scan_evidence)',
+              'Secrets scan: CLEAN',
+            )
+            assert.ok(
+              collectPreMergeSecretsEvidenceErrors(hardCoded).some((error) =>
+                error.includes('must not hard-code an unconditional Secrets scan: CLEAN verdict')),
+            )
+          })
+
+          test('the contract rejects a query detached from the exact PR head', () => {
+            const staleQuery = skill.replace(
+              'commits/$pr_head_oid/check-runs',
+              'commits/HEAD/check-runs',
+            )
+            assert.ok(
+              collectPreMergeSecretsEvidenceErrors(staleQuery).some((error) =>
+                error.includes('query check runs for the exact PR head OID')),
+            )
+          })
+
+          test('the contract rejects a clean verdict without terminal-success proof', () => {
+            const unproved = skill.replace(
+              'secrets_scan_check_conclusion" == "success"',
+              'secrets_scan_check_conclusion" != "failure"',
+            )
+            assert.ok(
+              collectPreMergeSecretsEvidenceErrors(unproved, PRE_MERGE_GATE_PATH).some((error) =>
+                error.includes('require a successful check conclusion')),
+            )
+          })
+          '''.replace(/^          /gm, ''), encoding='utf-8')
+          PY
+
+      - name: Verify targeted and production governance contracts
+        shell: bash
+        run: |
+          node --test scripts/check-docs-governance-pre-merge-secrets.test.mjs
+          node scripts/check-docs-governance.mjs
+          git diff --check
+
+      - name: Publish implementation
+        shell: bash
+        run: |
+          git rm .github/workflows/apply-1543-implementation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .claude/skills/pre-merge-gate/SKILL.md \
+            scripts/check-docs-governance.mjs \
+            scripts/check-docs-governance-pre-merge-secrets.test.mjs \
+            scripts/check-pre-merge-gate-secrets.test.mjs
+          git commit -m 'fix: derive secrets verdict from exact-head Gitleaks evidence'
+          git push origin HEAD:fix/1543-secrets-verdict-evidence
