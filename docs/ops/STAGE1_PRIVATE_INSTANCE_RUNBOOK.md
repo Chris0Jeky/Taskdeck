@@ -1,6 +1,6 @@
 # Stage 1 private instance — deployment runbook (CL-1)
 
-Last Updated: 2026-09-06
+Last Updated: 2026-09-18
 
 Purpose: the exact, ordered procedure for standing up the trusted private instance ruled on `#1772`
 (ADR-0061, CL-1 in `OUTSTANDING_TASKS.md`): one self-hosted Taskdeck stack behind a tunnel with an
@@ -149,7 +149,8 @@ listing; the live volume would show `taskdeck.db`):
 
 ```bash
 docker volume create taskdeck-drill-data
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \n  -v taskdeck-drill-data:/app/data api sh -c 'ls -A /app/data'
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \
+  -v taskdeck-drill-data:/app/data api sh -c 'ls -A /app/data'
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \
   -v taskdeck-drill-data:/app/data \
   -v taskdeck-backups:/backups:ro \
@@ -166,29 +167,64 @@ lines and the exit code in the evidence.
 
 ## 6. Accounts — [human]
 
-1. Open the URL yourself and **register first** (the first registration claims the bootstrap slot).
-2. Mint one invite: `docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7`.
-   Send the code to the collaborator over a channel you already trust; they register.
-3. **Close registration:** set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
-   `up -d` command from step 2 (or the two-file command from step 7 if live providers are already on)
-   so the container is recreated, then prove it with a **syntactically valid** throwaway registration
-   that also carries the invite code minted in 6.2 (an empty body only proves model validation, which
-   answers 400 in every mode):
+Before provisioning either account, establish the live volume's account baseline. Use a newly
+created, empty `taskdeck_taskdeck-db` volume for this instance, or, when reusing a volume, run a
+read-only inventory from a trusted host and reconcile every existing row before continuing:
+
+```bash
+docker run --rm -v taskdeck_taskdeck-db:/data:ro alpine:3 sh -c \
+  'apk add --no-cache sqlite >/dev/null && \
+   sqlite3 -readonly -header -csv /data/taskdeck.db "SELECT Id, Username, Email, IsActive FROM Users ORDER BY Username;" && \
+   printf "\\nUnconsumed registration invites\\n" && \
+   sqlite3 -readonly -header -csv /data/taskdeck.db "SELECT Id, DisplayPrefix, ExpiresAt, ConsumedAt FROM RegistrationInvites WHERE ConsumedAt IS NULL ORDER BY ExpiresAt;"'
+```
+
+Record the inventory or the fresh-volume evidence privately; it contains account identifiers and
+must not be committed or pasted into a public issue. Do not treat `GET /api/users` as this inventory:
+that endpoint returns only the authenticated caller. If any old active account or other unexpected
+identity is present, stop and reconcile it before minting an invite. Two successful registrations
+and a later registration-closed 403 do not prove that the instance contains exactly two accounts.
+Also reconcile every unconsumed, unexpired registration invite in the second query. There is no
+invite-revocation operation; keep registration `Closed` until any unconsumed invite has expired or
+been consumed, and repeat the inventory after closure if the volume was reused.
+
+1. Keep `TASKDECK_REGISTRATION_MODE=InviteOnly` while provisioning both named accounts. Before
+   opening the URL, mint the first-owner invite as the non-root API user:
 
    ```bash
-   curl -s -w '
-%{http_code}
-' -X POST https://<url>/api/auth/register -H 'Content-Type: application/json' \n     -d '{"username":"closure-probe","email":"closure-probe@example.invalid","password":"Closure-Probe-Passw0rd!","inviteCode":"<the 6.2 code>"}'
+   docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api \
+     dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
+   ```
+
+   Open the URL yourself, choose **Register**, and use that invite to create the owner account.
+2. Mint one separate participant invite with the same non-root CLI command. Send that code to the
+   collaborator over a channel you already trust; they register.
+3. **Close registration:** set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
+   `up -d` command from step 2 (or the two-file command from step 7 if live providers are already on)
+   so the container is recreated. Then, from the host, prove the application state against the local
+   bind with a **syntactically valid** throwaway registration that also carries the invite code
+   minted in 6.2. The local probe reaches Taskdeck directly, so Cloudflare Access cannot intercept it
+   before the application returns the required closure response. An empty body only proves model
+   validation, which answers 400 in every mode:
+
+   ```bash
+   curl -s -w '\n%{http_code}\n' -X POST http://localhost:8080/api/auth/register -H 'Content-Type: application/json' \
+     -d '{"username":"closure-probe","email":"closure-probe@example.invalid","password":"Closure-Probe-Passw0rd!","inviteCode":"<the 6.2 code>"}'
    ```
 
    Required: HTTP **403** and the body text `Registration is closed by this Taskdeck instance.`
    (`RegistrationPolicyService.RegistrationClosedMessage`). `InviteOnly` answers a different forbidden
    message (`A valid registration invite is required.`) or, with a live invite, succeeds; either means the
    container was not recreated with `Closed`, and the invite can still create a third account.
-4. Share a board: Boards → the board → Settings → Access → grant the collaborator `Editor`.
+   Section 4's outside-the-policy test separately proves the identity perimeter; do not substitute an
+   unauthenticated request through Cloudflare Access for this application-level closure proof.
+4. Share a board: **Workspace → Settings → Access** (`/workspace/settings/access`) → grant the
+   collaborator `Editor`.
 
-Done when: exactly two users exist (`GET /api/users` while logged in), registration is refused,
-and the collaborator can open the shared board.
+Done when: the pre-registration freshness or authoritative-inventory gate passed, the owner and
+collaborator registrations both succeeded, the valid-registration closure probe returned 403, and
+the collaborator can open the shared board. `GET /api/users` is not an account inventory because it
+returns only the authenticated caller.
 
 ## 7. Live LLM provider, ceiling and disclosure — [human], optional
 
