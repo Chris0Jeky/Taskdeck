@@ -64,7 +64,7 @@ test('every Docker MCP profile safety surface selects the hosted Windows API lan
 
 test('the Windows API lane runs the fake-backed profile suite with mandatory Bash coverage', () => {
   const step = apiWorkflow.match(
-    /      - name: Validate Docker MCP profile safety regressions\n[\s\S]*?(?=\n      - name:|\s*$)/,
+    /      - name: Validate Docker MCP profile safety regressions\r?\n[\s\S]*?(?=\r?\n      - name:|\s*$)/,
   )?.[0];
 
   assert.ok(step, 'reusable-api-integration.yml must contain the Docker MCP profile safety step');
