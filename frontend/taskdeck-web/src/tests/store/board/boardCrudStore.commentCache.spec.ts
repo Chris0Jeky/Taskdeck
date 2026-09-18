@@ -18,6 +18,29 @@ vi.mock('../../../utils/demoData', () => ({
 import { createBoardCrudActions } from '../../../store/board/boardCrudStore'
 import { initialCardFilters } from '../../../store/board/boardState'
 
+type BoardFixture = {
+  id: string
+  name: string
+  columns: Array<{ id: string; cardCount: number }>
+}
+
+type CardFixture = {
+  id: string
+  columnId: string
+}
+
+function board(name: string, id = 'board-1'): BoardFixture {
+  return {
+    id,
+    name,
+    columns: [{ id: 'column-1', cardCount: 0 }],
+  }
+}
+
+function card(id = 'card-1'): CardFixture {
+  return { id, columnId: 'column-1' }
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -32,10 +55,10 @@ function createState() {
   return {
     boards: ref([{ id: 'board-1', name: 'Board' }]),
     activeBoardId: ref<string | null>('board-1'),
-    currentBoard: ref<{ id: string; name: string } | null>({ id: 'board-1', name: 'Old' }),
+    currentBoard: ref<BoardFixture | null>(board('Old')),
     currentBoardRequestGeneration: ref(0),
     currentBoardPayloadGeneration: ref(0),
-    currentBoardCards: ref<Array<{ id: string }>>([{ id: 'card-1' }]),
+    currentBoardCards: ref<CardFixture[]>([card()]),
     currentBoardLabels: ref<Array<{ id: string }>>([]),
     cardCommentsByCardId: ref<Record<string, unknown>>({
       'card-1': [{ id: 'comment-1', content: 'Draft-adjacent comment' }],
@@ -65,8 +88,8 @@ function createHelpers() {
 describe('board detail comment-cache ownership', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockBoardsApi.getBoard.mockResolvedValue({ id: 'board-1', name: 'Fresh' })
-    mockCardsApi.getCards.mockResolvedValue([{ id: 'card-1' }])
+    mockBoardsApi.getBoard.mockResolvedValue(board('Fresh'))
+    mockCardsApi.getCards.mockResolvedValue([card()])
     mockLabelsApi.getLabels.mockResolvedValue([])
   })
 
@@ -80,25 +103,44 @@ describe('board detail comment-cache ownership', () => {
       preserveCardComments: true,
     })).resolves.toBe(true)
 
-    expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Fresh', cardCount: 1 })
+    expect(state.currentBoard.value).toEqual({
+      id: 'board-1',
+      name: 'Fresh',
+      columns: [{ id: 'column-1', cardCount: 1 }],
+    })
     expect(state.cardCommentsByCardId.value).toBe(cachedComments)
 
     await expect(fetchBoard('board-1')).resolves.toBe(true)
     expect(state.cardCommentsByCardId.value).toEqual({})
   })
 
+  it('does not carry one board comment cache into a different board', async () => {
+    const state = createState()
+    mockBoardsApi.getBoard.mockResolvedValue(board('Other', 'board-2'))
+    mockCardsApi.getCards.mockResolvedValue([])
+    const { fetchBoard } = createBoardCrudActions(state as any, createHelpers() as any)
+
+    await expect(fetchBoard('board-2', {
+      intent: 'background',
+      preserveCardComments: true,
+    })).resolves.toBe(true)
+
+    expect(state.currentBoard.value?.id).toBe('board-2')
+    expect(state.cardCommentsByCardId.value).toEqual({})
+  })
+
   it('upgrades a same-board explicit read when a kept-open editor queues preservation behind it', async () => {
     const state = createState()
     const cachedComments = state.cardCommentsByCardId.value
-    const boardRead = deferred<{ id: string; name: string }>()
-    const cardRead = deferred<Array<{ id: string }>>()
+    const boardRead = deferred<BoardFixture>()
+    const cardRead = deferred<CardFixture[]>()
     const labelRead = deferred<Array<{ id: string }>>()
     mockBoardsApi.getBoard
       .mockReturnValueOnce(boardRead.promise)
-      .mockResolvedValueOnce({ id: 'board-1', name: 'Reconciled' })
+      .mockResolvedValueOnce(board('Reconciled'))
     mockCardsApi.getCards
       .mockReturnValueOnce(cardRead.promise)
-      .mockResolvedValueOnce([{ id: 'card-1' }])
+      .mockResolvedValueOnce([card()])
     mockLabelsApi.getLabels
       .mockReturnValueOnce(labelRead.promise)
       .mockResolvedValueOnce([])
@@ -110,8 +152,8 @@ describe('board detail comment-cache ownership', () => {
       preserveCardComments: true,
     })
 
-    boardRead.resolve({ id: 'board-1', name: 'Explicit' })
-    cardRead.resolve([{ id: 'card-1' }])
+    boardRead.resolve(board('Explicit'))
+    cardRead.resolve([card()])
     labelRead.resolve([])
 
     await expect(explicitRead).resolves.toBe(true)
