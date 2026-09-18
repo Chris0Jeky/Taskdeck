@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -49,7 +50,10 @@ public sealed class CaptureTriageLlmSettingsBindingIntegrationTests
         });
         using var scope = factory.Services.CreateScope();
 
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<LlmCaptureTriageSettings>>();
         var settings = scope.ServiceProvider.GetRequiredService<LlmCaptureTriageSettings>();
+        settings.Should().BeSameAs(options.Value,
+            "the raw settings dependency must adapt the validated options instance");
         settings.Enabled.Should().BeFalse(
             "the real application host must bind the operator's CaptureTriageLlm section");
 
