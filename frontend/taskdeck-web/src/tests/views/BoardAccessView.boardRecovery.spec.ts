@@ -96,6 +96,8 @@ describe('BoardAccessView board-list recovery', () => {
       'Boards could not be loaded.',
     )
     expect(wrapper.text()).not.toContain('No boards available yet')
+    expect(wrapper.text()).not.toContain('Select a board to manage access')
+    expect(wrapper.text()).not.toContain('No extra members yet')
 
     await wrapper.get('[data-testid="board-access-boards-retry"]').trigger('click')
     await flushPromises()
