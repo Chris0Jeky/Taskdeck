@@ -1,7 +1,8 @@
 # CLAUDE.md — Taskdeck
 
 Global laws (review, tiers, worktrees, questions, model routing) live in `~/.claude/CLAUDE.md` and
-auto-load. This file carries only what is true of **this** repo. Do not restate global doctrine here.
+auto-load (Grok: `~/.grok/rules/00-global-laws.md`). This file carries only what is true of **this**
+repo. Do not restate global doctrine here. `AGENTS.md` is the Codex adapter; `.grok/` is the Grok adapter.
 
 ## What Taskdeck is
 
@@ -26,7 +27,8 @@ evidence report is its acceptance bar before real execution is enabled). The rep
    `frontend/AGENTS.md`), `frontend/taskdeck-web/CLAUDE.md`,
    `scripts/agent_hooks/CLAUDE.md`, `.claude/rules/ci-control.md` (`.github/**`, `ci/**`, `scripts/ci/**`),
    `.claude/rules/docs.md` (`docs/**`, root `*.md`). Workflow skills: `.claude/skills/README.md` — local
-   skills beat plugins; they trigger by description.
+   skills beat plugins; they trigger by description. Grok loads that same `.claude/skills/` tree via
+   Claude compatibility; do not add `.grok/skills/`.
 
 ## Claude Code runtime facts
 
@@ -39,7 +41,8 @@ evidence report is its acceptance bar before real execution is enabled). The rep
   inspected") — write literal commands, `Write` multi-line edits to a scratchpad script and run it, and pass
   PR bodies with `--body-file`.
 - Root `AGENTS.md` is Codex-facing and is **not** auto-loaded by Claude; read it for Codex
-  coordination. The scoped `frontend/AGENTS.md` is imported by `frontend/CLAUDE.md` for both runtimes.
+  coordination. Grok loads both `AGENTS.md` and this file. The scoped `frontend/AGENTS.md` is
+  imported by `frontend/CLAUDE.md` for both runtimes.
 - Permission rules are prefix rules: `Bash(gh:*)`, never `Bash(gh :*)` — `:*` is a wildcard only at the end.
 
 ## Proving checks (narrowest command per seam)
@@ -102,8 +105,8 @@ Retired Gemini selectors/settings fail startup with migration guidance — `docs
 - **DCO enforcement is paused** (maintainer decision 2026-08-23): `Signed-off-by:` trailers are optional
   and do not affect merge eligibility. Never rewrite another contributor's commits to add one; never use
   `--no-verify`. `#2019` tracks a possible restoration and does not itself authorize it.
-- **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or command-deny list and
-  the root has no `.codex/hooks.json`. User-level hooks (the floor) still apply.
+- **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or command-deny list,
+  the root has no `.codex/hooks.json`, and `.grok/` has no hooks. User-level hooks (the floor) still apply.
 - **PowerShell:** no `&&` chaining; use `;` and check `$LASTEXITCODE`.
 - **Git resolution:** if `git` resolves to Cygwin or throws signal errors, run `bash scripts/check-git-env.sh`
   (or `powershell -File scripts/check-git-env.ps1`); it also clears a stale `.git/index.lock` safely.
@@ -135,4 +138,4 @@ canonical global laws and `review-and-ship` pipeline. Human-action file: `OUTSTA
 `docs/TESTING_GUIDE.md` · `docs/ISSUE_EXECUTION_GUIDE.md` · `docs/MCP_TOOLING_GUIDE.md` ·
 `docs/decisions/INDEX.md` · `docs/agentic/` (question, failure-ledger, guide-update protocols) ·
 `docs/platform/CONFIGURATION_REFERENCE.md` · `docs/platform/EF_MIGRATION_WORKFLOW.md` ·
-`AGENTS.md` (Codex-facing contributor protocol).
+`AGENTS.md` (Codex-facing contributor protocol; Grok loads it too) · `.grok/README.md` (Grok adapter).
