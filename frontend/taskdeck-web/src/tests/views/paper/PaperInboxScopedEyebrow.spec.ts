@@ -87,7 +87,7 @@ describe('PaperInboxView scoped eyebrow', () => {
     i18n.global.locale.value = 'en'
   })
 
-  it('names the board scope when its counts differ from the workspace badge', () => {
+  it('names the board scope without presenting loaded rows as an authoritative total', () => {
     orchestrator.activeBoardId.value = 'board-active'
     orchestrator.activeBoardName.value = 'Active board'
     orchestrator.items.value = [capture('pending', 'New'), capture('finished', 'Converted')]
@@ -96,8 +96,9 @@ describe('PaperInboxView scoped eyebrow', () => {
     const eyebrow = wrapper.get('[data-testid="paper-inbox-eyebrow"]').text()
 
     expect(eyebrow).toBe(
-      'Inbox · Active board · 1 awaiting triage · 2 captured on this board',
+      'Inbox · Active board · Showing 1 awaiting triage · 2 captured',
     )
+    expect(eyebrow).not.toContain('on this board')
     wrapper.unmount()
   })
 
