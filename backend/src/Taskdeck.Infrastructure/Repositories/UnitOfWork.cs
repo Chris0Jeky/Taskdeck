@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -14,6 +16,7 @@ public class UnitOfWork : IUnitOfWork
     private const int MaxWalCheckpointAttempts = 3;
 
     private readonly TaskdeckDbContext _context;
+    private readonly ILogger<UnitOfWork> _logger;
     private IDbContextTransaction? _transaction;
 
     public UnitOfWork(
@@ -53,9 +56,11 @@ public class UnitOfWork : IUnitOfWork
         IProposalFeedbackRepository proposalFeedbacks,
         IDailySnapshotRepository dailySnapshots,
         ITomorrowNoteRepository tomorrowNotes,
-        IMcpToolHashRepository mcpToolHashes)
+        IMcpToolHashRepository mcpToolHashes,
+        ILogger<UnitOfWork>? logger = null)
     {
         _context = context;
+        _logger = logger ?? NullLogger<UnitOfWork>.Instance;
         Boards = boards;
         Columns = columns;
         Cards = cards;
@@ -242,11 +247,25 @@ public class UnitOfWork : IUnitOfWork
 
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
     {
-        if (_transaction != null)
+        var transaction = _transaction;
+        if (transaction == null)
+            return;
+
+        await transaction.CommitAsync(cancellationToken);
+
+        // CommitAsync is the durable boundary. Clear the rollback handle before cleanup so
+        // a provider-specific disposal failure cannot make callers treat committed state as
+        // uncommitted or attempt to roll it back.
+        _transaction = null;
+        try
         {
-            await _transaction.CommitAsync(cancellationToken);
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            await transaction.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Database transaction committed successfully, but transaction cleanup failed.");
         }
     }
 
