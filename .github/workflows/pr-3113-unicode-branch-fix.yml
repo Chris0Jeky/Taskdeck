@@ -1,0 +1,59 @@
+name: Apply PR 3113 Unicode branch expectation alignment
+
+on:
+  push:
+    branches:
+      - codex/1855-submodule-guard-contract-20260915
+    paths:
+      - .github/workflows/pr-3113-unicode-branch-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: codex/1855-submodule-guard-contract-20260915
+          fetch-depth: 0
+
+      - name: Align PowerShell branch-presence semantics
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/worktree_guard.ps1')
+          source = path.read_text(encoding='utf-8-sig')
+          old = '$effectiveExpectHead = $ExpectHead\nif (-not [string]::IsNullOrEmpty($ExpectedBranch) -and [string]::IsNullOrWhiteSpace($ExpectedBranch)) {\n    Write-Error "ERROR [worktree_guard]: -ExpectedBranch cannot be whitespace-only." -ErrorAction Continue\n    exit 2\n}\nif (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $effectiveExpectHead -eq "Detached") {\n    Write-Error "ERROR [worktree_guard]: -ExpectHead Detached cannot be combined with -ExpectedBranch." -ErrorAction Continue\n    exit 2\n}\nif (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $effectiveExpectHead -eq "Any") {\n    $effectiveExpectHead = "Branch"\n}\n'
+          new = 'function Test-GuardAsciiWhitespaceOnly {\n    param([AllowEmptyString()][string]$Value)\n\n    # Git branch names are byte-preserving Unicode strings. Match the shell\n    # guard by rejecting only ASCII horizontal/vertical whitespace; .NET\'s\n    # IsNullOrWhiteSpace also classifies valid characters such as NBSP.\n    return (-not [string]::IsNullOrEmpty($Value)) -and\n        [System.Text.RegularExpressions.Regex]::IsMatch($Value, "^[\\x09-\\x0D\\x20]+$")\n}\n\n$effectiveExpectHead = $ExpectHead\n$hasExpectedBranch = -not [string]::IsNullOrEmpty($ExpectedBranch)\nif ($hasExpectedBranch -and (Test-GuardAsciiWhitespaceOnly $ExpectedBranch)) {\n    Write-Error "ERROR [worktree_guard]: -ExpectedBranch cannot be whitespace-only." -ErrorAction Continue\n    exit 2\n}\nif ($hasExpectedBranch -and $effectiveExpectHead -eq "Detached") {\n    Write-Error "ERROR [worktree_guard]: -ExpectHead Detached cannot be combined with -ExpectedBranch." -ErrorAction Continue\n    exit 2\n}\nif ($hasExpectedBranch -and $effectiveExpectHead -eq "Any") {\n    $effectiveExpectHead = "Branch"\n}\n'
+          if source.count(old) != 1:
+              raise SystemExit('PowerShell expectation anchor changed')
+          source = source.replace(old, new)
+          source = source.replace('expected: $(if ([string]::IsNullOrWhiteSpace($ExpectedBranch)) { "<any branch>" } else { $ExpectedBranch })', 'expected: $(if (-not $hasExpectedBranch) { "<any branch>" } else { $ExpectedBranch })')
+          source = source.replace('if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $headBranch -ne $ExpectedBranch) {', 'if ($hasExpectedBranch -and $headBranch -ne $ExpectedBranch) {')
+          path.write_text(source, encoding='utf-8', newline='\n')
+
+          contract = Path('scripts/worktree_guard.expectation.tests.sh')
+          contract.write_text(contract.read_text(encoding='utf-8-sig'), encoding='utf-8', newline='\n')
+
+          Path('.github/workflows/pr-3113-unicode-branch-fix.yml').unlink()
+          PY
+
+      - name: Run cross-shell expectation contract
+        shell: bash
+        run: bash scripts/worktree_guard.expectation.tests.sh
+
+      - name: Commit verified alignment
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/worktree_guard.ps1 scripts/worktree_guard.expectation.tests.sh .github/workflows/pr-3113-unicode-branch-fix.yml
+          git diff --cached --check
+          git commit -m "fix: preserve Unicode branch expectations across guards"
+          git push origin HEAD:codex/1855-submodule-guard-contract-20260915
