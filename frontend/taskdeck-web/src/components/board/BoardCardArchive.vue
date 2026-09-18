@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { cardsApi } from '../../api/cardsApi'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
+import { isDemoMode } from '../../utils/demoMode'
 import CardArchiveAction from './CardArchiveAction.vue'
 import type { Card } from '../../types/board'
 
@@ -14,6 +15,7 @@ const error = ref<string | null>(null)
 const revision = ref(0)
 let generation = 0
 async function load() {
+  if (isDemoMode) return
   const current = ++generation
   loading.value = true
   error.value = null
@@ -31,9 +33,10 @@ function toggle() { open.value = !open.value; if (open.value) void load() }
 
 <template>
   <section class="border-b border-outline-variant/30 bg-surface-container px-4 py-3" aria-label="Card archive">
-    <button type="button" class="rounded border border-outline-variant/40 px-3 py-2 text-sm"
+    <p v-if="isDemoMode" class="text-sm">Archived card history is not available in this demo.</p>
+    <button v-else type="button" class="rounded border border-outline-variant/40 px-3 py-2 text-sm"
       :aria-expanded="open" aria-controls="board-card-archive-history" @click="toggle">Archived cards</button>
-    <div v-if="open" id="board-card-archive-history" class="mt-3 space-y-3">
+    <div v-if="!isDemoMode && open" id="board-card-archive-history" class="mt-3 space-y-3">
       <p class="text-sm">Archived cards keep their original column, labels, thinking and history. Restore returns them to active work.</p>
       <button type="button" class="text-sm underline" :disabled="loading" @click="load">Refresh archived cards</button>
       <p v-if="loading" role="status">Loading archived cards…</p>

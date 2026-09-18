@@ -77,20 +77,16 @@ public class DatabaseResilienceTests : IClassFixture<TestWebApplicationFactory>
         // Create a board first.
         var board = await ApiTestHarness.CreateBoardAsync(_client, "db-conflict-board");
 
-        // Try to delete the same board twice in quick succession.
+        // Archive the same board twice in parallel. DELETE is a desired-state operation:
+        // both callers should observe success even when one loses the token race.
         var delete1 = _client.DeleteAsync($"/api/boards/{board.Id}");
         var delete2 = _client.DeleteAsync($"/api/boards/{board.Id}");
 
         var results = await Task.WhenAll(delete1, delete2);
 
-        var statusCodes = results.Select(r => (int)r.StatusCode).OrderBy(s => s).ToArray();
-        statusCodes.Should().OnlyContain(statusCode =>
-                (statusCode >= 200 && statusCode < 300) ||
-                statusCode == (int)HttpStatusCode.NotFound ||
-                statusCode == (int)HttpStatusCode.Conflict,
-            "the losing delete can observe an already archived board or lose the Board concurrency-token race");
-        statusCodes.Should().Contain(s => s >= 200 && s < 300,
-            "at least one delete should succeed");
+        results.Should().OnlyContain(
+            response => response.StatusCode == HttpStatusCode.NoContent,
+            "an archive already committed by the competing request satisfies both DELETE calls");
     }
 
     // ── Database Write Validation ─────────────────────────────────────
@@ -106,7 +102,7 @@ public class DatabaseResilienceTests : IClassFixture<TestWebApplicationFactory>
             new CreateBoardDto("", "Empty name board"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "invalid data should return 400, not a database crash");
+            "invalid data should return 400, not a DB crash");
 
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         body.TryGetProperty("errorCode", out _).Should().BeTrue(
