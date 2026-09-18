@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -19,6 +20,7 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
     private readonly Mock<ICardCommentRepository> _comments = new();
     private readonly Mock<IOutboundWebhookSubscriptionRepository> _webhooks = new();
     private readonly Mock<IAuthorizationService> _authorization = new();
+    private readonly RecordingLogger<ProposalConflictEvaluationGuard> _logger = new();
 
     public ProposalConflictDetectorUnevaluableOperationTests()
     {
@@ -81,6 +83,9 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
         warning.Value.Should().NotContain(parameters);
         result.Value.Should().NotContain(row => row.Tone == ConflictTone.Ok);
         result.Value.Should().NotContain(row => row.Key == "status");
+        _logger.Messages.Should().ContainSingle(message =>
+            message.Contains("unevaluated_operation_count=1", StringComparison.Ordinal));
+        _logger.Messages.Single().Should().NotContain(parameters);
     }
 
     [Fact]
@@ -107,6 +112,9 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
             row.Tone == ConflictTone.Warn && row.Key == "unable-to-evaluate-operation").Subject;
         warning.Value.Should().Be("2 proposal operations could not be evaluated");
         result.Value.Should().NotContain(row => row.Tone == ConflictTone.Ok);
+        _logger.Messages.Should().ContainSingle(message =>
+            message.Contains("unevaluated_operation_count=2", StringComparison.Ordinal));
+        _logger.Messages.Single().Should().NotContain("columnId");
     }
 
     [Fact]
@@ -140,10 +148,19 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
         result.Value.Should().Contain(row => row.Key == "high-risk" && row.Tone == ConflictTone.Warn);
         result.Value.Should().Contain(row => row.Key == "capacity" && row.Tone == ConflictTone.Ok);
         result.Value.Should().NotContain(row => row.Key == "unable-to-evaluate-operation");
+        _logger.Messages.Should().BeEmpty();
     }
 
-    private ProposalConflictDetector CreateDetector() =>
-        new(_unitOfWork.Object, _authorization.Object);
+    private IProposalConflictDetector CreateDetector()
+    {
+        var inner = new ProposalConflictDetector(
+            _unitOfWork.Object,
+            _authorization.Object);
+        return new ProposalConflictEvaluationGuard(
+            inner,
+            _unitOfWork.Object,
+            _logger);
+    }
 
     private AutomationProposal CreateProposal(RiskLevel riskLevel = RiskLevel.Low) =>
         new(
@@ -159,5 +176,35 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
         _proposals
             .Setup(repository => repository.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull =>
+            NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Warning)
+                Messages.Add(formatter(state, exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static NullScope Instance { get; } = new();
+
+            public void Dispose()
+            {
+            }
+        }
     }
 }
