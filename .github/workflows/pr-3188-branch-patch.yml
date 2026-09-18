@@ -47,116 +47,7 @@ jobs:
           grep -q "CardModal late restore write baselines" "$RUNNER_TEMP/pr-3188-red.log"
 
       - name: Apply bounded editor-baseline repair
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          modal_state_path = Path('frontend/taskdeck-web/src/composables/useCardModal.ts')
-          modal_state = modal_state_path.read_text(encoding='utf-8')
-          old = """  return {
-    acceptAssignmentVersion: (updatedAt: string, previousVersion?: string) => {
-"""
-          new = """  return {
-    acceptCommittedWriteVersion: (updatedAt: string) => {
-      // A matching server lifecycle receipt is authoritative for the next write,
-      // but it must not replace any newer local form draft.
-      expectedUpdatedAt.value = updatedAt
-    },
-    acceptAssignmentVersion: (updatedAt: string, previousVersion?: string) => {
-"""
-          if modal_state.count(old) != 1:
-              raise SystemExit('Could not locate the useCardModal return seam exactly once.')
-          modal_state_path.write_text(modal_state.replace(old, new, 1), encoding='utf-8', newline='\n')
-
-          assignment_path = Path('frontend/taskdeck-web/src/components/board/CardAssignmentField.vue')
-          assignment = assignment_path.read_text(encoding='utf-8')
-          old = "const props = defineProps<{ card: Card; readOnly: boolean; readsBlocked?: boolean; disabled?: boolean }>()"
-          new = """const props = defineProps<{
-  card: Card
-  committedCard?: Card | null
-  readOnly: boolean
-  readsBlocked?: boolean
-  disabled?: boolean
-}>()"""
-          if assignment.count(old) != 1:
-              raise SystemExit('Could not locate the CardAssignmentField prop seam exactly once.')
-          assignment = assignment.replace(old, new, 1)
-
-          old = """function reset(card: Card) {
-  displayedAssignments.value = card.assignments ?? []
-  archived.value = !!card.isArchived
-  baseline.value = (card.assignments ?? []).map(a => a.userId)
-  selected.value = [...baseline.value]
-  version.value = card.updatedAt
-}
-async function load(refresh = false) {
-"""
-          new = """function reset(card: Card) {
-  displayedAssignments.value = card.assignments ?? []
-  archived.value = !!card.isArchived
-  baseline.value = (card.assignments ?? []).map(a => a.userId)
-  selected.value = [...baseline.value]
-  version.value = card.updatedAt
-}
-// A late archive/restore receipt is authoritative only for lifecycle and CAS state.
-// Preserve the assignment baseline and local selection so a newer draft is never
-// overwritten by a request that started on an earlier card selection.
-watch(
-  () => props.committedCard,
-  committed => {
-    if (!committed || committed.boardId !== props.card.boardId || committed.id !== props.card.id) return
-    version.value = committed.updatedAt
-    archived.value = !!committed.isArchived
-  },
-  { flush: 'sync' },
-)
-async function load(refresh = false) {
-"""
-          if assignment.count(old) != 1:
-              raise SystemExit('Could not locate the CardAssignmentField reset seam exactly once.')
-          assignment_path.write_text(assignment.replace(old, new, 1), encoding='utf-8', newline='\n')
-
-          modal_path = Path('frontend/taskdeck-web/src/components/board/CardModal.vue')
-          modal = modal_path.read_text(encoding='utf-8')
-          old = """  committedArchiveCard.value = committed
-  archiveStateAfterChange.value = committed.isArchived === true
-  if (hasUnsavedChanges.value) archiveCompletedWithDraft.value = true
-"""
-          new = """  committedArchiveCard.value = committed
-  archiveStateAfterChange.value = committed.isArchived === true
-  acceptCommittedWriteVersion(committed.updatedAt)
-  if (hasUnsavedChanges.value) archiveCompletedWithDraft.value = true
-"""
-          if modal.count(old) != 1:
-              raise SystemExit('Could not locate the inactive lifecycle receipt seam exactly once.')
-          modal = modal.replace(old, new, 1)
-
-          old = """  hasUnsavedChanges: hasCardUnsavedChanges,
-  acceptAssignmentVersion,
-  isSaving,
-"""
-          new = """  hasUnsavedChanges: hasCardUnsavedChanges,
-  acceptCommittedWriteVersion,
-  acceptAssignmentVersion,
-  isSaving,
-"""
-          if modal.count(old) != 1:
-              raise SystemExit('Could not locate the CardModal composable seam exactly once.')
-          modal = modal.replace(old, new, 1)
-
-          old = """        <CardAssignmentField v-if=\"isOpen\" :card=\"card\" :disabled=\"isSaving\"
-          :read-only=\"!boardCanWrite || cardIsArchived\"
-"""
-          new = """        <CardAssignmentField v-if=\"isOpen\" :card=\"card\" :committed-card=\"committedArchiveCard\" :disabled=\"isSaving\"
-          :read-only=\"!boardCanWrite || cardIsArchived\"
-"""
-          if modal.count(old) != 1:
-              raise SystemExit('Could not locate the CardAssignmentField template seam exactly once.')
-          modal_path.write_text(modal.replace(old, new, 1), encoding='utf-8', newline='\n')
-
-          Path('.github/workflows/pr-3188-branch-patch.yml').unlink()
-          PY
+        run: python scripts/ci/pr3188_patch.py
 
       - name: Verify focused frontend behavior
         working-directory: frontend/taskdeck-web
@@ -179,7 +70,8 @@ async function load(refresh = false) {
           git add frontend/taskdeck-web/src/composables/useCardModal.ts \
             frontend/taskdeck-web/src/components/board/CardAssignmentField.vue \
             frontend/taskdeck-web/src/components/board/CardModal.vue \
-            .github/workflows/pr-3188-branch-patch.yml
+            .github/workflows/pr-3188-branch-patch.yml \
+            scripts/ci/pr3188_patch.py
           git diff --cached --check
           git commit -m "fix(frontend): advance write baselines after late restore"
           git push origin HEAD:fix/3083-paper-restore-write-baselines
