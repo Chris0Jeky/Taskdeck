@@ -1,6 +1,6 @@
 # Stage 1 private instance — deployment runbook (CL-1)
 
-Last Updated: 2026-09-06
+Last Updated: 2026-09-18
 
 Purpose: the exact, ordered procedure for standing up the trusted private instance ruled on `#1772`
 (ADR-0061, CL-1 in `OUTSTANDING_TASKS.md`): one self-hosted Taskdeck stack behind a tunnel with an
@@ -174,9 +174,9 @@ read-only inventory from a trusted host and reconcile every existing row before 
 ```bash
 docker run --rm -v taskdeck_taskdeck-db:/data:ro alpine:3 sh -c \
   'apk add --no-cache sqlite >/dev/null && \
-   sqlite3 -header -csv /data/taskdeck.db "SELECT Id, Username, Email, IsActive FROM Users ORDER BY Username;" && \
+   sqlite3 -readonly -header -csv /data/taskdeck.db "SELECT Id, Username, Email, IsActive FROM Users ORDER BY Username;" && \
    printf "\\nUnconsumed registration invites\\n" && \
-   sqlite3 -header -csv /data/taskdeck.db "SELECT Id, DisplayPrefix, ExpiresAt, ConsumedAt FROM RegistrationInvites WHERE ConsumedAt IS NULL ORDER BY ExpiresAt;"'
+   sqlite3 -readonly -header -csv /data/taskdeck.db "SELECT Id, DisplayPrefix, ExpiresAt, ConsumedAt FROM RegistrationInvites WHERE ConsumedAt IS NULL ORDER BY ExpiresAt;"'
 ```
 
 Record the inventory or the fresh-volume evidence privately; it contains account identifiers and
@@ -201,14 +201,14 @@ been consumed, and repeat the inventory after closure if the volume was reused.
    collaborator over a channel you already trust; they register.
 3. **Close registration:** set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
    `up -d` command from step 2 (or the two-file command from step 7 if live providers are already on)
-   so the container is recreated, then prove it with a **syntactically valid** throwaway registration
-   that also carries the invite code minted in 6.2 (an empty body only proves model validation, which
-   answers 400 in every mode):
+   so the container is recreated. Then, from the host, prove the application state against the local
+   bind with a **syntactically valid** throwaway registration that also carries the invite code
+   minted in 6.2. The local probe reaches Taskdeck directly, so Cloudflare Access cannot intercept it
+   before the application returns the required closure response. An empty body only proves model
+   validation, which answers 400 in every mode:
 
    ```bash
-   curl -s -w '
-%{http_code}
-' -X POST https://<url>/api/auth/register -H 'Content-Type: application/json' \
+   curl -s -w '\n%{http_code}\n' -X POST http://localhost:8080/api/auth/register -H 'Content-Type: application/json' \
      -d '{"username":"closure-probe","email":"closure-probe@example.invalid","password":"Closure-Probe-Passw0rd!","inviteCode":"<the 6.2 code>"}'
    ```
 
@@ -216,6 +216,8 @@ been consumed, and repeat the inventory after closure if the volume was reused.
    (`RegistrationPolicyService.RegistrationClosedMessage`). `InviteOnly` answers a different forbidden
    message (`A valid registration invite is required.`) or, with a live invite, succeeds; either means the
    container was not recreated with `Closed`, and the invite can still create a third account.
+   Section 4's outside-the-policy test separately proves the identity perimeter; do not substitute an
+   unauthenticated request through Cloudflare Access for this application-level closure proof.
 4. Share a board: **Workspace → Settings → Access** (`/workspace/settings/access`) → grant the
    collaborator `Editor`.
 
