@@ -130,9 +130,15 @@ describe('Review delayed-pin recovery announcement (#2930)', () => {
     review.startQueueRefresh()
     vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
     await flushPromises()
-    review.stopQueueRefresh()
 
-    expect(mocks.getProposal).toHaveBeenLastCalledWith('pin-1')
+    expect(mocks.getProposal).toHaveBeenLastCalledWith(
+      'pin-1',
+      expect.objectContaining({
+        skipRetry: true,
+        signal: expect.any(AbortSignal),
+        expectedStatuses: [400, 403, 404],
+      }),
+    )
     // The successful list leg tentatively retracts the current refusal, but the
     // retained refusal is still what the reviewer sees while the pin is pending.
     // Its watcher therefore suppresses the preliminary recovery sentence.
@@ -142,6 +148,7 @@ describe('Review delayed-pin recovery announcement (#2930)', () => {
     pendingPin.resolve(proposal('pin-1', 'board-c'))
     await flushPromises()
     await nextTick()
+    review.stopQueueRefresh()
 
     expect(review.queueRefreshRefused.value).toBe(false)
     expect(review.queueRefreshRecovered.value).toBe(true)
@@ -157,11 +164,15 @@ describe('Review delayed-pin recovery announcement (#2930)', () => {
     review.startQueueRefresh()
     vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
     await flushPromises()
-    review.stopQueueRefresh()
 
+    expect(mocks.getProposal).toHaveBeenLastCalledWith(
+      'pin-1',
+      expect.objectContaining({ skipRetry: true, signal: expect.any(AbortSignal) }),
+    )
     pendingPin.reject({ response: { status: 500 } })
     await flushPromises()
     await nextTick()
+    review.stopQueueRefresh()
 
     expect(review.queueRefreshRefused.value).toBe(true)
     expect(review.queueRefreshRecovered.value).toBe(false)
