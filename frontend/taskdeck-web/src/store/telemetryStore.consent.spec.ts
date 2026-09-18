@@ -169,9 +169,10 @@ describe('telemetry consent ownership', () => {
     expect(toast.toasts.some((candidate) => candidate.id === unrelatedToastId)).toBe(true)
   })
 
-  it('clears the persistence warning after a later successful consent write', () => {
+  it('clears only the persistence warning after a later successful consent write', () => {
     const store = useTelemetryStore()
     const toast = useToastStore()
+    const unrelatedToastId = toast.info('Background sync remains delayed', 0)
     const setItem = vi
       .fn()
       .mockImplementationOnce(() => {
@@ -192,6 +193,8 @@ describe('telemetry consent ownership', () => {
     expect(
       toast.toasts.filter((candidate) => candidate.title === 'Telemetry preference not saved'),
     ).toHaveLength(0)
+    expect(toast.toasts).toHaveLength(1)
+    expect(toast.toasts.some((candidate) => candidate.id === unrelatedToastId)).toBe(true)
   })
 
   it('does not restore consent when storage cannot be read', () => {
