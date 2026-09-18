@@ -1,0 +1,237 @@
+name: PR 3142 stale probe repair
+
+on:
+  push:
+    branches:
+      - fix/3030-permission-probe-403
+    paths:
+      - .github/workflows/pr3142-stale-probe-repair.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr-3142-stale-probe-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/3030-permission-probe-403
+          fetch-depth: 0
+
+      - name: Verify repair seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "792fbcd11d69f13ab8021e59899c4195a50208a6"
+
+      - name: Add stale-probe regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/taskdeck-web/src/tests/composables/useCardTypePermission.retryOrdering.spec.ts')
+          text = path.read_text()
+          marker = """  it.each([403, 404])(
+          """
+          addition = """  it('lets a newer authoritative board payload supersede a stale automatic probe 403', async () => {
+              const automaticProbe = deferred<BoardDetail>()
+              vi.mocked(boardsApi.getBoard).mockReturnValueOnce(automaticProbe.promise)
+              store.currentBoard = { ...board(true), canWrite: undefined } as Board
+              store.currentBoardRequestGeneration = 1
+              store.currentBoardPayloadGeneration = 1
+              const { api, wrapper } = create()
+              await flushPromises()
+
+              const probeSignal = vi.mocked(boardsApi.getBoard).mock.calls[0]![1]!.signal!
+              expect(api.permissionChecking.value).toBe(true)
+
+              store.currentBoardRequestGeneration = 2
+              store.currentBoard = board(true)
+              store.currentBoardPayloadGeneration = 2
+              await flushPromises()
+
+              automaticProbe.reject({ response: { status: 403 } })
+              await flushPromises()
+
+              expect(probeSignal.aborted).toBe(true)
+              expect(api.canWrite.value).toBe(true)
+              expect(api.permissionRecovery.value).toBe(false)
+              expect(api.accessUnavailable.value).toBe(false)
+              expect(api.readsBlocked.value).toBe(false)
+              wrapper.unmount()
+            })
+
+          """
+          if text.count(marker) != 1:
+              raise SystemExit('retry-ordering insertion seam did not match exactly once')
+          path.write_text(text.replace(marker, addition + marker))
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Prove regression is red
+        shell: bash
+        working-directory: frontend/taskdeck-web
+        run: |
+          set -euo pipefail
+          set +e
+          npx vitest --run src/tests/composables/useCardTypePermission.retryOrdering.spec.ts \
+            -t "lets a newer authoritative board payload supersede a stale automatic probe 403" \
+            --maxWorkers=2 > /tmp/pr3142-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/pr3142-red.log
+          test "$status" -ne 0
+          grep -F "expected false to be true" /tmp/pr3142-red.log
+
+      - name: Apply generation-aware repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/taskdeck-web/src/composables/useCardTypePermission.ts')
+          text = path.read_text()
+
+          replacements = [
+            (
+              """  let inFlightBoardId: string | null = null
+              // A superseded read is not merely ignored, it is cancelled: the editor can be closed or
+          """,
+              """  let inFlightBoardId: string | null = null
+              /** Store payload generation visible when the direct read started. */
+              let inFlightPayloadGeneration: number | null = null
+              // A superseded read is not merely ignored, it is cancelled: the editor can be closed or
+          """,
+            ),
+            (
+              """    inFlightRequest = request
+              inFlightBoardId = boardId
+              checking.value = true
+          """,
+              """    inFlightRequest = request
+              inFlightBoardId = boardId
+              inFlightPayloadGeneration = boardPayloadGeneration.value
+              checking.value = true
+          """,
+            ),
+            (
+              """        inFlightBoardId = null
+                inFlightRequest = null
+                checking.value = false
+          """,
+              """        inFlightBoardId = null
+                inFlightPayloadGeneration = null
+                inFlightRequest = null
+                checking.value = false
+          """,
+            ),
+            (
+              """    inFlightRequest = null
+              inFlightBoardId = null
+              checking.value = false
+          """,
+              """    inFlightRequest = null
+              inFlightBoardId = null
+              inFlightPayloadGeneration = null
+              checking.value = false
+          """,
+            ),
+          ]
+
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'source seam did not match exactly once: {old.splitlines()[0]!r}')
+              text = text.replace(old, new)
+
+          old_watch = """  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
+              if (!permissionRecovery.value || value === null) return
+
+              // A direct false transition is safe to consume immediately: it can only
+              // further restrict the editor. A later true needs the store's committed
+              // server-payload marker, because a local patch must never re-authorize a
+              // write the server just refused.
+              const permissionWasRevoked = value === false && value !== previousValue
+              const hasFreshServerPayload = payloadGeneration !== null &&
+                payloadGeneration !== previousPayloadGeneration &&
+                (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
+          """
+          new_watch = """  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
+              if (value === null) return
+
+              const payloadAdvanced = payloadGeneration !== null &&
+                payloadGeneration !== previousPayloadGeneration
+
+              if (!permissionRecovery.value) {
+                const supersedesAutomaticProbe = inFlightBoardId === options.getBoardId() &&
+                  inFlightPayloadGeneration !== null &&
+                  payloadGeneration !== null &&
+                  payloadGeneration > inFlightPayloadGeneration
+                if (payloadAdvanced && supersedesAutomaticProbe) {
+                  // The board store committed newer server evidence while this legacy-payload
+                  // probe was pending. Retire the older direct request before a stale denial
+                  // can replace the authoritative store permission.
+                  cancelRead()
+                  failedBoardId.value = null
+                  accessUnavailable.value = false
+                }
+                return
+              }
+
+              // A direct false transition is safe to consume immediately: it can only
+              // further restrict the editor. A later true needs the store's committed
+              // server-payload marker, because a local patch must never re-authorize a
+              // write the server just refused.
+              const permissionWasRevoked = value === false && value !== previousValue
+              const hasFreshServerPayload = payloadAdvanced &&
+                (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
+          """
+          if text.count(old_watch) != 1:
+              raise SystemExit('permission watcher seam did not match exactly once')
+          path.write_text(text.replace(old_watch, new_watch))
+          PY
+
+      - name: Verify permission contracts
+        shell: bash
+        working-directory: frontend/taskdeck-web
+        run: |
+          set -euo pipefail
+          npx vitest --run \
+            src/tests/composables/useCardTypePermission.retryOrdering.spec.ts \
+            src/tests/composables/useCardTypePermission.accessDenied.spec.ts \
+            src/tests/composables/useCardTypePermission.spec.ts \
+            src/tests/components/CardModalPermissionRecovery.spec.ts \
+            --maxWorkers=2
+          npm run typecheck
+
+      - name: Commit repair and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/pr3142-stale-probe-repair.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "Cristian Tcaci"
+          git config user.email "59696583+Chris0Jeky@users.noreply.github.com"
+          git commit -s -m "fix: preserve newer permission evidence"
+          git push origin HEAD:refs/heads/fix/3030-permission-probe-403
