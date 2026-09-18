@@ -1,0 +1,81 @@
+name: Patch 3211 constrained centering
+
+on:
+  push:
+    branches:
+      - fix/1746-tablet-visual-viewport
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/1746-tablet-visual-viewport
+          fetch-depth: 0
+
+      - name: Configure commit identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit centering regression first
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("frontend/taskdeck-web/tests/e2e/tablet-card-modal-viewport.spec.ts")
+          text = path.read_text(encoding="utf-8")
+          needle = """  }).toEqual({ top: contractedTop, height: contractedHeight })
+
+  await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
+"""
+          replacement = """  }).toEqual({ top: contractedTop, height: contractedHeight })
+
+  const horizontalBounds = await editModal.boundingBox()
+  expect(horizontalBounds).not.toBeNull()
+  expect(Math.abs(
+    horizontalBounds!.x * 2 + horizontalBounds!.width - viewport!.width,
+  )).toBeLessThanOrEqual(2)
+
+  await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
+"""
+          if needle not in text:
+              raise SystemExit("Expected tablet viewport assertion block was not found")
+          path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+
+      - name: Record red-first regression
+        run: |
+          git add frontend/taskdeck-web/tests/e2e/tablet-card-modal-viewport.spec.ts
+          git commit -m "test(frontend): assert constrained modal remains centered"
+
+      - name: Apply constrained centering fix and remove patch workflow
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("frontend/taskdeck-web/src/components/board/CardModal.vue")
+          text = path.read_text(encoding="utf-8")
+          needle = """  .card-modal-viewport--visual-constrained .card-modal-scroll-region {
+"""
+          replacement = """  .card-modal-viewport--visual-constrained {
+    justify-content: center;
+  }
+
+  .card-modal-viewport--visual-constrained .card-modal-scroll-region {
+"""
+          if needle not in text:
+              raise SystemExit("Expected constrained modal CSS block was not found")
+          path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+          Path(".github/workflows/patch-3211-constrained-centering.yml").unlink()
+
+      - name: Record implementation and push
+        run: |
+          git add frontend/taskdeck-web/src/components/board/CardModal.vue .github/workflows/patch-3211-constrained-centering.yml
+          git commit -m "fix(frontend): center keyboard-constrained tablet modal"
+          git push origin HEAD:fix/1746-tablet-visual-viewport
