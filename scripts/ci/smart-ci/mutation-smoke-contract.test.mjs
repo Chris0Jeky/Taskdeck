@@ -123,7 +123,7 @@ test('file-backed guard distinguishes unreadable and malformed receipts', async 
   }
 })
 
-test('manual workflow always attempts and uploads the advisory report before enforcing smoke', async () => {
+test('manual workflow preserves advisory diagnostics only after an uncancelled smoke attempt', async () => {
   const workflow = await import('node:fs/promises').then(({ readFile }) =>
     readFile(path.join(repositoryRoot, '.github/workflows/mutation-testing.yml'), 'utf8'),
   )
@@ -139,11 +139,19 @@ test('manual workflow always attempts and uploads the advisory report before enf
     /continue-on-error:\s*true/u,
     'smoke failure must not suppress the advisory run',
   )
-  assert.match(
-    workflow.slice(advisoryIndex, uploadIndex),
-    /if:\s*always\(\)/u,
-    'advisory run must execute after smoke failure',
-  )
+  const attemptedSmokeCondition =
+    "${{ !cancelled() && (steps.activation_smoke.outcome == 'success' || " +
+    "steps.activation_smoke.outcome == 'failure') }}"
+  for (const [label, block] of [
+    ['advisory run', workflow.slice(advisoryIndex, uploadIndex)],
+    ['smoke verdict', workflow.slice(enforcementIndex)],
+  ]) {
+    assert.equal(
+      block.match(/^\s*if:\s*(.+)$/mu)?.[1],
+      attemptedSmokeCondition,
+      `${label} must accept smoke success/failure but reject skipped setup and cancellation`,
+    )
+  }
   assert.match(
     workflow.slice(advisoryIndex, uploadIndex),
     /continue-on-error:\s*true/u,
