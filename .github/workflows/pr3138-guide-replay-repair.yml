@@ -1,0 +1,126 @@
+name: PR 3138 guide replay repair
+
+on:
+  push:
+    branches:
+      - fix/3124-guide-replay-placeholder
+    paths:
+      - .github/workflows/pr3138-guide-replay-repair.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr-3138-guide-replay-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/3124-guide-replay-placeholder
+          fetch-depth: 0
+
+      - name: Verify red-first seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "0ac0a5e3e6d598f1c928020379a86d5bc2f9338f"
+
+      - name: Apply bounded replay repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          store_path = Path('frontend/taskdeck-web/src/store/workspaceStore.ts')
+          store = store_path.read_text()
+          old = """        if (appliedOptimistic) {
+                    // Local intent stays applied; flag it unsaved so reads cannot
+                    // silently revert it (mirrors the failed-mode-save semantics).
+                    onboardingDirty = true
+                  }
+          """
+          new = """        if (adoptAuthoritativePayload && optimisticBase) {
+                    // A deferred placeholder has no usable active guide. Restore
+                    // the dismissed affordance so Replay remains reachable, and
+                    // leave it clean so a later summary can confirm a commit whose
+                    // response was lost.
+                    onboardingDirty = false
+                    syncOnboarding({ ...optimisticBase, visibility: 'dismissed' })
+                  } else if (appliedOptimistic) {
+                    // Ordinary local intent stays applied; flag it unsaved so reads
+                    // cannot silently revert it (mirrors failed mode-save semantics).
+                    onboardingDirty = true
+                  }
+          """
+          if store.count(old) != 1:
+              raise SystemExit('workspaceStore catch seam did not match exactly once')
+          store_path.write_text(store.replace(old, new))
+
+          test_path = Path('frontend/taskdeck-web/src/tests/store/workspaceStore.guideReplay.spec.ts')
+          tests = test_path.read_text()
+          marker = """  it('lets the latest overlapping replay adopt the authoritative payload', async () => {
+          """
+          addition = """  it('restores the dismissed affordance when the latest overlapping replay fails', async () => {
+              const store = useWorkspaceStore()
+              const firstResponse = createDeferred<{ data: WorkspaceOnboarding }>()
+              const secondResponse = createDeferred<{ data: WorkspaceOnboarding }>()
+              const deferred = makeDeferredPlaceholder()
+              store.onboarding = deferred
+              vi.mocked(http.put)
+                .mockReturnValueOnce(firstResponse.promise)
+                .mockReturnValueOnce(secondResponse.promise)
+
+              const firstReplay = store.updateOnboarding('replay')
+              const secondReplay = store.updateOnboarding('replay')
+              const secondOutcome = expect(secondReplay).rejects.toThrow('latest replay failed')
+
+              secondResponse.reject(new Error('latest replay failed'))
+              await secondOutcome
+              expect(store.onboarding).toEqual(deferred)
+
+              firstResponse.resolve({ data: makeGuide() })
+              await firstReplay
+              expect(store.onboarding).toEqual(deferred)
+            })
+
+          """
+          if tests.count(marker) != 1:
+              raise SystemExit('guide replay test insertion seam did not match exactly once')
+          test_path.write_text(tests.replace(marker, addition + marker))
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Verify focused frontend contract
+        shell: bash
+        working-directory: frontend/taskdeck-web
+        run: |
+          set -euo pipefail
+          npm ci
+          npx vitest --run src/tests/store/workspaceStore.guideReplay.spec.ts src/tests/views/HomeView.spec.ts src/tests/views/TodayView.spec.ts --maxWorkers=2
+          npm run typecheck
+
+      - name: Commit repair and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/pr3138-guide-replay-repair.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "Cristian Tcaci"
+          git config user.email "59696583+Chris0Jeky@users.noreply.github.com"
+          git commit -s -m "fix: restore guide replay after failed write"
+          git push origin HEAD:refs/heads/fix/3124-guide-replay-placeholder
