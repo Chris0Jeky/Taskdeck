@@ -60,6 +60,7 @@ param(
         "remote-default-head",
         "missing-base",
         "what-if",
+        "fsmonitor-fixture-cleanup",
         "git-add-failure",
         "target-artifact-smudge"
     )
@@ -2434,12 +2435,8 @@ finally {
         Test-FsmonitorFixtureCleanupLauncher -ProbeRoot $fsmonitorCleanupProbeRoot
         Complete-Test "fixture-owned fsmonitor shutdown precedes removal and preserves stop failures"
     }
-    if (Test-CaseSelected "git-add-failure") {
-        $fsmonitorCleanupProbeRoot = Join-Path $testRoot "fsmonitor-cleanup-probe"
-        New-Item -ItemType Directory -Path $fsmonitorCleanupProbeRoot | Out-Null
-        Test-FsmonitorFixtureCleanupLauncher -ProbeRoot $fsmonitorCleanupProbeRoot
-        Complete-Test "fixture-owned fsmonitor shutdown precedes removal and preserves stop failures"
 
+    if (Test-CaseSelected "git-add-failure") {
         $timeoutAttributesPath = Join-Path $seedPath ".gitattributes"
         Set-Content -LiteralPath $timeoutAttributesPath -Value "tracked.txt filter=taskdeck-timeout-gate" -Encoding Ascii
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitattributes")
