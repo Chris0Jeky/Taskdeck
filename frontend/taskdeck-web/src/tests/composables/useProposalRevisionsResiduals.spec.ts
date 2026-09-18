@@ -144,22 +144,23 @@ describe('useProposalRevisions residual hardening', () => {
 
     const activeProposal = ref<ApiProposal | null>(makeProposal('p-0'))
     const revisions = useProposalRevisions(activeProposal)
-    await vi.waitFor(() => expect(revisions.latestRevision.value?.proposalId).toBe('p-0'))
+    await flushMicrotasks()
+    expect(revisions.latestRevision.value?.proposalId).toBe('p-0')
 
     // The production cache retains 64 proposal histories. Walking one more
     // distinct proposal must evict p-0 rather than growing for the whole queue.
     for (let index = 1; index <= 64; index += 1) {
       const proposalId = `p-${index}`
       activeProposal.value = makeProposal(proposalId)
-      await vi.waitFor(() =>
-        expect(revisions.latestRevision.value?.proposalId).toBe(proposalId),
-      )
+      await flushMicrotasks()
+      expect(revisions.latestRevision.value?.proposalId).toBe(proposalId)
     }
 
     activeProposal.value = makeProposal('p-0')
-    await vi.waitFor(() => expect(callsByProposal.get('p-0')).toBe(2))
-    await vi.waitFor(() => expect(revisions.revisionsLoaded.value).toBe(true))
+    await flushMicrotasks()
 
+    expect(callsByProposal.get('p-0')).toBe(2)
+    expect(revisions.revisionsLoaded.value).toBe(true)
     expect(revisions.revisionCount.value).toBe(0)
     expect(revisions.latestRevision.value).toBeNull()
   })
