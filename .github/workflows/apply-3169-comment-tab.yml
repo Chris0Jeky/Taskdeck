@@ -65,31 +65,32 @@ jobs:
 
           path = Path('scripts/check-docs-governance.mjs')
           source = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+
           old_constant = "const FORBIDDEN_SCALAR_CONTROL = /[\\u0000-\\u001F\\u007F-\\u009F\\uFFFE\\uFFFF]/u\n"
           new_constant = old_constant + "const FORBIDDEN_COMMENT_CONTROL = /[\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F\\uFFFE\\uFFFF]/u\n"
           if source.count(old_constant) != 1:
               raise SystemExit(f'expected one scalar-control definition, found {source.count(old_constant)}')
           source = source.replace(old_constant, new_constant, 1)
 
-          old_check = """    if (FORBIDDEN_SCALAR_CONTROL.test(line)) {
+          old_check = '''    if (FORBIDDEN_SCALAR_CONTROL.test(line)) {
               structureErrors.push(
                 `${rulePath} front matter has a forbidden control or non-printable character, which this check cannot parse`,
               )
               continue
             }
-          """
+          '''
           old_check = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_check.splitlines()) + '\n'
-          new_check = """    const commentOnly = /^ *#/.test(line)
-            const forbiddenCharacter = commentOnly
-              ? FORBIDDEN_COMMENT_CONTROL
-              : FORBIDDEN_SCALAR_CONTROL
-            if (forbiddenCharacter.test(line)) {
-              structureErrors.push(
-                `${rulePath} front matter has a forbidden control or non-printable character, which this check cannot parse`,
-              )
-              continue
-            }
-          """
+          new_check = '''    const commentOnly = /^ *#/.test(line)
+              const forbiddenCharacter = commentOnly
+                ? FORBIDDEN_COMMENT_CONTROL
+                : FORBIDDEN_SCALAR_CONTROL
+              if (forbiddenCharacter.test(line)) {
+                structureErrors.push(
+                  `${rulePath} front matter has a forbidden control or non-printable character, which this check cannot parse`,
+                )
+                continue
+              }
+          '''
           new_check = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_check.splitlines()) + '\n'
           if source.count(old_check) != 1:
               raise SystemExit(f'expected one frontmatter control check, found {source.count(old_check)}')
@@ -99,7 +100,9 @@ jobs:
           new_skip = "    if (commentOnly) {\n      continue\n    }\n"
           if source.count(old_skip) != 1:
               raise SystemExit(f'expected one comment-only skip, found {source.count(old_skip)}')
-          path.write_text(source.replace(old_skip, new_skip, 1), encoding='utf-8', newline='\n')
+          source = source.replace(old_skip, new_skip, 1)
+
+          path.write_text(source, encoding='utf-8', newline='\n')
           PY
 
       - name: Verify complete docs-governance contracts
