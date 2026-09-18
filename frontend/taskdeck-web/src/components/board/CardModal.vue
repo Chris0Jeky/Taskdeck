@@ -107,6 +107,7 @@ function acceptInactiveArchiveCommit(committed: Card) {
 
   committedArchiveCard.value = committed
   archiveStateAfterChange.value = committed.isArchived === true
+  acceptCommittedWriteVersion(committed.updatedAt)
   if (hasUnsavedChanges.value) archiveCompletedWithDraft.value = true
 }
 
@@ -429,6 +430,7 @@ const {
   selectedLabelIds,
   isFormValid,
   hasUnsavedChanges: hasCardUnsavedChanges,
+  acceptCommittedWriteVersion,
   acceptAssignmentVersion,
   isSaving,
   saveError,
@@ -596,7 +598,7 @@ useEscapeToClose(
           <button ref="permissionRecoveryRefresh" type="button" data-testid="card-permission-refresh" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
         </div>
         <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :reads-blocked="readsBlocked" :disabled="isSaving || cardIsArchived" />
-        <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
+        <CardAssignmentField v-if="isOpen" :card="card" :committed-card="committedArchiveCard" :disabled="isSaving"
           :read-only="!boardCanWrite || cardIsArchived"
           :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
