@@ -154,7 +154,9 @@ class RefactorRankerUnitTests(unittest.TestCase):
 
 class RefactorRankerRepositoryTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temporary_directory = tempfile.TemporaryDirectory()
+        # Git metadata can remain in `.git` after the last command; a strict
+        # rmtree then fails tearDown (Errno 39) even when the test passed.
+        self.temporary_directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.repo = Path(self.temporary_directory.name).resolve()
         self.git("init", "--initial-branch=main")
         self.git("config", "user.name", "Taskdeck Tests")
