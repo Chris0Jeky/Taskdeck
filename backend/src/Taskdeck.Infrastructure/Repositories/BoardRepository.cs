@@ -185,6 +185,17 @@ public class BoardRepository : Repository<Board>, IBoardRepository
             .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
     }
 
+    public async Task<bool?> GetIsArchivedAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .Where(board => board.Id == id)
+            .Select(board => (bool?)board.IsArchived)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
     private IQueryable<Board> BuildSearchQuery(string? searchText, bool includeArchived)
     {
         var query = _dbSet.AsQueryable();
