@@ -7,6 +7,7 @@ import { cardsApi } from '../../api/cardsApi'
 import { boardsApi } from '../../api/boardsApi'
 import { useBoardStore } from '../../store/boardStore'
 import { useSessionStore } from '../../store/sessionStore'
+import { BOARD_LIFECYCLE_REFRESH_FAILURE_MESSAGE } from '../../utils/boardLifecycleRefresh'
 import type { Card, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
 
@@ -1364,7 +1365,10 @@ describe('CardModal', () => {
       await flushPromises()
 
       expect(wrapper.emitted('close')).toHaveLength(1)
-      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', {
+        intent: 'background',
+        backgroundFailureMessage: BOARD_LIFECYCLE_REFRESH_FAILURE_MESSAGE,
+      })
       wrapper.unmount()
     })
 
@@ -1398,7 +1402,10 @@ describe('CardModal', () => {
 
       expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
       expect(wrapper.emitted('close')).toHaveLength(1)
-      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', {
+        intent: 'background',
+        backgroundFailureMessage: BOARD_LIFECYCLE_REFRESH_FAILURE_MESSAGE,
+      })
       wrapper.unmount()
     })
 
@@ -1416,6 +1423,7 @@ describe('CardModal', () => {
       expect(titleValue(wrapper)).toBe(DRAFT)
       expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', {
         intent: 'background',
+        backgroundFailureMessage: BOARD_LIFECYCLE_REFRESH_FAILURE_MESSAGE,
         preserveCardComments: true,
       })
 
