@@ -12,6 +12,7 @@ import CardAssignmentField from './CardAssignmentField.vue'
 import CardDetachList from './CardDetachList.vue'
 import CardArchiveAction from './CardArchiveAction.vue'
 import { useBoardStore } from '../../store/boardStore'
+import { refreshBoardAfterLifecycleChange } from '../../utils/boardLifecycleRefresh'
 import {
   CardModalHeader,
   CardModalForm,
@@ -140,7 +141,9 @@ function handleArchiveChanged() {
   if (hasUnsavedChanges.value) {
     archiveStateAfterChange.value = !cardIsArchived.value
     archiveCompletedWithDraft.value = true
-    void boardStore.fetchBoard(props.card.boardId)
+    void refreshBoardAfterLifecycleChange(boardStore, props.card.boardId, {
+      preserveCardComments: true,
+    })
     return
   }
 
@@ -388,7 +391,9 @@ function closeWithoutPrompt() {
   forgetArchiveCompletion()
   emit('close')
   if (destination) void router.push(destination)
-  if (refreshBoard) void boardStore.fetchBoard(props.card.boardId)
+  if (refreshBoard) {
+    void refreshBoardAfterLifecycleChange(boardStore, props.card.boardId)
+  }
 }
 
 function openThinkingDeck() {
