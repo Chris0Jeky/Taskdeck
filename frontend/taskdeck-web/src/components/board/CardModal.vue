@@ -596,6 +596,19 @@ useEscapeToClose(
             v-model:selected-label-ids="selectedLabelIds"
           />
 
+        </fieldset>
+
+        <!--
+          The comment surface sits OUTSIDE the write-lock fieldset on purpose.
+          A disabled fieldset disables every control inside it, and the
+          comment-read retry is a READ, not a write: an archived card (or a
+          saving/blocked editor) must still be able to re-attempt a failed
+          comment load. The write controls in there stay locked through the
+          explicit `writes-disabled` prop, which carries the same condition the
+          fieldset applies. `CardModalMetadata` moves with it only to keep the
+          rendered order; it holds no form controls.
+        -->
+        <div class="mt-4 space-y-4">
           <CardModalComments
             :top-level-comments="topLevelComments"
             :editing-comment-id="editingCommentId"
@@ -603,6 +616,7 @@ useEscapeToClose(
             :reply-draft-by-parent="replyDraftByParent"
             :can-edit-comment-fn="canEditComment"
             :get-replies-fn="getReplies"
+            :writes-disabled="cardIsArchived || isSaving || editorWritesBlocked"
             v-model:new-comment-content="newCommentContent"
             @update:editing-comment-content="editingCommentContent = $event"
             @update:reply-draft-by-parent="replyDraftByParent = $event"
@@ -622,7 +636,7 @@ useEscapeToClose(
             :capture-href-fn="captureHref"
             :proposal-href-fn="proposalHref"
           />
-        </fieldset>
+        </div>
 
       <p v-if="assignmentSaving" role="status" class="text-sm">Saving assignments… the editor stays open until the server answers.</p>
       <p v-else-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
