@@ -14,6 +14,7 @@ import {
   type CaptureDraftVariant,
   type StashedCaptureDraft,
 } from '../../utils/captureDraftStash'
+import { shouldHandlePaperCaptureShortcut } from '../../utils/paperCaptureShortcut'
 import type { CaptureItem } from '../../types/capture'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
@@ -170,10 +171,10 @@ function setVariant(next: Variant) {
 
 function handleGlobalKeydown(event: KeyboardEvent) {
   // ⌘;  or Ctrl+;  toggles between the two capture variants.
-  if (!isArchivedHistory.value && (event.metaKey || event.ctrlKey) && event.key === ';') {
-    event.preventDefault()
-    toggleVariant()
-  }
+  if (isArchivedHistory.value || !shouldHandlePaperCaptureShortcut(event)) return
+
+  event.preventDefault()
+  toggleVariant()
 }
 
 async function dispatchCapture(
