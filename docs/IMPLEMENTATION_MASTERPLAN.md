@@ -1,6 +1,16 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-18
+
+## Source-launcher lazy-route readiness contract (#1900 candidate)
+
+Retain the current Vite graph traversal rather than adding a second parser. Vite 8.3 exposes both
+resolved static top-level imports and literal dynamic imports through `staticImportedUrls`; the
+real-Vite regression must keep a broken nested dependency behind a literal lazy route from producing
+the readiness marker. Keep computed runtime imports and plugin-added watch files explicitly outside
+this marker, with production build/typecheck/route tests owning those wider surfaces. Preserve marker
+schema version 1, exact URL/port validation and existing launcher failure/cleanup behavior. Complete
+Windows and Ubuntu hosted qualification and a fresh review before closing #1900.
 
 ## Relation navigation guidance candidate (2026-09-12, #3077)
 

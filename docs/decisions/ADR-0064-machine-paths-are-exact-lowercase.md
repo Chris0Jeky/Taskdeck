@@ -6,7 +6,7 @@
 - **Date**: 2026-08-30
 - **Deciders**: Chris0Jeky (maintainer)
 - **Related**: `#1992`, ADR-0059 (the 404/405 half of the same contract), `#1971`, `#2029`, `#2030`,
-  `#2065`, `#2079`
+  `#2065`, `#2079`, `#2279`
 
 ## Context
 
@@ -51,9 +51,26 @@ decision covers exactly them — it is not a general claim that every conceivabl
 handled. A newly discovered class (a further normalization in some layer, a proxy that rewrites) is
 a new slice against this ADR, not a silent gap in it.
 
+### Absolute-form scope clarification (`#2279`)
+
+HTTP/1.1 absolute-form request targets that reach Kestrel directly are inside this contract. Kestrel
+accepts a proxy-style target such as `GET http://host/%61pi/boards HTTP/1.1`, exposes the decoded
+`/api/boards` through `HttpRequest.Path`, and preserves the absolute raw target through
+`IHttpRequestFeature.RawTarget`. Excluding that request form would give the same client-visible path
+two different contracts depending only on whether the request line used origin form or absolute
+form.
+
+Taskdeck therefore supports canonical HTTP and HTTPS absolute-form targets, extracts only their
+still-escaped path-and-query component, and applies the same first-segment rule. It does not perform
+general URI normalization, inspect or rewrite the authority, or support unrelated URI schemes.
+Unsupported or malformed absolute forms contribute no extra raw evidence and remain subject to the
+parsed-path checks. This is an implementation-scope clarification of the existing exact-spelling
+ruling, not a new normalization policy.
+
 Concretely, and pinned end to end by `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` (run by
-required container CI before compose validation), `SpaFallbackRoutingApiTests` plus
-`MachinePathCanonicalFormTests`, and `PwaMachinePathDenylist.spec.ts`:
+required container CI before compose validation), `SpaFallbackRoutingApiTests`,
+`MachinePathCanonicalFormTests`, `MachinePathAbsoluteFormKestrelTests`, and
+`PwaMachinePathDenylist.spec.ts`:
 
 1. **Case variants** — `/API`, `/Api/boards`, `/Mcp`, `/HEALTH/live`. nginx declares the four exact
    lowercase locations first (they are case-sensitive, so they still match the real machine surface)
@@ -83,9 +100,11 @@ required container CI before compose validation), `SpaFallbackRoutingApiTests` p
    anywhere in the **first non-empty raw path segment after the leading separator run**
    (`~^/+[^/?]*%`) **and** a decoded path that is machine-facing. This includes the combined
    `//%61pi/boards` class after nginx merges the leading separators. The API applies the
-   single-separator form of the conjunction against `IHttpRequestFeature.RawTarget`; its existing
-   leading-separator guard rejects the combined form after Kestrel decodes the prefix letters. The
-   service worker cannot decode, so its denylist spells each prefix letter as itself or its escape
+   single-separator form of the conjunction against `IHttpRequestFeature.RawTarget`; for HTTP/HTTPS
+   absolute form it first locates the authority boundary and passes the unchanged raw path-and-query
+   suffix through the same check. Its existing leading-separator guard rejects the combined form
+   after Kestrel decodes the prefix letters. The service worker cannot decode, so its denylist spells
+   each prefix letter as itself or its escape
    (`(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)`), which matches every spelling that decodes to the
    prefix and nothing else. Scoping to machine-facing decoded paths is what keeps `/caf%C3%A9`
    working; scoping to the first segment is what keeps `/api/board%20s` ordinary route data.
@@ -111,6 +130,9 @@ guard still runs inside all three.
 - A client that reaches `/API/...` — a hand-typed URL, a case-mangling proxy, a client that upcases
   paths — gets `404` rather than the resource. This is the intended cost of A: exactly one spelling
   works, and it is the one every layer agrees on.
+- A direct HTTP/1.1 proxy-style client may use canonical absolute form (`http://host/api/...`), but an
+  encoded machine-prefix alias in that form gets the same `404` as origin form. The authority is
+  never reflected in the response and is not treated as routing input by this guard.
 - **One residual divergence is accepted rather than removed.** A double-encoded slash
   (`/mcp%252Fmessages`) reaches the API as `/mcp%2Fmessages`, because the host decodes `%25` and
   leaves `%2F` — the two spellings are one path there. nginx and the service worker see the raw form
@@ -122,8 +144,9 @@ guard still runs inside all three.
   worth a second error-page contract in the proxy for a path that does not exist.
 - Route existence is unchanged as a disclosure surface: a variant discloses nothing a canonical path
   did not already disclose under ADR-0059.
-- The guard runs on every request. It is four `StartsWithSegments` probes plus a bounded character
-  test on a string already in memory, ahead of any I/O.
+- The guard runs on every request. Origin-form requests retain the existing bounded first-segment
+  scan. Absolute-form requests add one bounded scan across the request-target authority to locate the
+  untouched path/query suffix, still ahead of any I/O.
 - Normalization (option B) stays rejected. It would put a second path parser in front of the router
   whose agreement with the first is a standing correctness obligation across three codebases —
   a class of defect this issue is itself an instance of.
@@ -133,6 +156,11 @@ guard still runs inside all three.
 **Normalize in all three layers (option B).** Rejected by the ruling. Beyond the standing-agreement
 cost above, it makes the alias *work*, so a caller can come to depend on `/API/boards` and any layer
 that later loses its rewrite becomes a silent behavior change rather than a `404`.
+
+**Exclude absolute-form direct requests from the raw-target rule.** Rejected in `#2279`. Real Kestrel
+accepts that HTTP/1.1 form and retains enough raw evidence to enforce the existing ruling. Ignoring it
+would not reduce parser complexity: it would deliberately preserve two meanings for the same decoded
+machine path based solely on request-line syntax.
 
 **Make ASP.NET routing case-sensitive instead of adding a guard.** Route matching is
 case-insensitive by framework default and there is no supported switch that changes it for literal
