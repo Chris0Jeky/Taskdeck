@@ -1477,9 +1477,16 @@ const activeRevisionReviewUnavailableReason = computed<RevisionReviewUnavailable
     const proposal = activeProposal.value
     if (!proposal || !isRevisionReviewUnavailableVisible(proposal)) return null
     const key = revisionReviewKey(proposal.id)
+    // Read the REACTIVE state first, unconditionally. `revisionReviewRefreshEpochs`
+    // is a plain Map, so returning early on it would leave this computed with no
+    // dependency on the guidance map at all: Vue would cache `null` from the
+    // first evaluation (taken before any barrier was armed) and never re-run
+    // when `setRevisionReviewUnavailable` later publishes a failed/timed-out
+    // receipt. The reviewer would then get no "no decision was made" note for
+    // exactly the barrier failures this guidance exists to report.
+    const unavailable = revisionReviewUnavailableStates.value.get(key)
     const requiredEpoch = revisionReviewRefreshEpochs.get(key)
     if (requiredEpoch === undefined) return null
-    const unavailable = revisionReviewUnavailableStates.value.get(key)
     return unavailable?.epoch === requiredEpoch ? unavailable.reason : null
   },
 )
