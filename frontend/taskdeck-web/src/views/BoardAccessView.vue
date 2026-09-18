@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { usePermissionsStore } from '../store/permissionsStore'
@@ -24,6 +25,7 @@ const toast = useToastStore()
 const activeBoardId = ref<string>(normalizeBoardIdQueryParam(props.boardId ?? route.query.boardId))
 const availableBoards = ref<Board[]>([])
 const loadingBoards = ref(false)
+const boardsLoadFailed = ref(false)
 const newIdentifier = ref('')
 const newRole = ref<BoardRole>('Viewer')
 const showGrantForm = ref(false)
@@ -69,12 +71,17 @@ const accessList = computed(() => {
 async function loadBoards() {
   try {
     loadingBoards.value = true
-    availableBoards.value = await boardsApi.getBoards()
+    availableBoards.value = await boardsApi.getBoards(undefined, false, {
+      timeout: BOARD_REQUEST_TIMEOUT_MS,
+      skipRetry: true,
+    })
+    boardsLoadFailed.value = false
 
     if (!activeBoardId.value.trim() && availableBoards.value.length > 0) {
       activeBoardId.value = availableBoards.value[0]!.id
     }
   } catch (e: unknown) {
+    boardsLoadFailed.value = true
     toast.error(getErrorDisplay(e, 'Failed to load boards for access management.').message)
   } finally {
     loadingBoards.value = false
@@ -233,6 +240,25 @@ function openRoute(path: string) {
         </div>
       </div>
 
+      <div
+        v-if="boardsLoadFailed"
+        class="paper-access__notice"
+        data-testid="board-access-boards-error"
+        role="alert"
+      >
+        <h3 class="tk-h3 paper-access__notice-title">Boards could not be loaded.</h3>
+        <p class="paper-access__panel-desc">
+          A selected or deep-linked board remains usable. Retry board discovery to refresh the selector.
+        </p>
+        <PaperHLBtn
+          data-testid="board-access-boards-retry"
+          :disabled="loadingBoards"
+          @click="loadBoards"
+        >
+          {{ loadingBoards ? 'Retrying boards...' : 'Retry boards' }}
+        </PaperHLBtn>
+      </div>
+
       <div v-if="showGrantForm" class="paper-access__grant-form">
         <div class="paper-access__form-group">
           <label for="grant-user" class="paper-access__label">Email or username</label>
@@ -259,16 +285,16 @@ function openRoute(path: string) {
       <div v-if="permissions.loading" class="paper-access__notice">Loading access entries...</div>
 
       <div v-else class="paper-access__list">
-        <div v-if="boardOptions.length === 0" class="paper-access__notice">
+        <div v-if="boardOptions.length === 0 && !boardsLoadFailed" class="paper-access__notice">
           <h3 class="tk-h3 paper-access__notice-title">No boards available yet</h3>
           <p class="paper-access__panel-desc">Create a board first, then come back here to manage access.</p>
           <PaperHLBtn variant="ember" @click="openRoute('/workspace/boards')">Create or Open Boards</PaperHLBtn>
         </div>
-        <div v-else-if="!activeBoardId.trim()" class="paper-access__notice">
+        <div v-else-if="!activeBoardId.trim() && !boardsLoadFailed" class="paper-access__notice">
           <h3 class="tk-h3 paper-access__notice-title">Select a board to manage access</h3>
           <p class="paper-access__panel-desc">Pick a board above to load current members and roles.</p>
         </div>
-        <div v-else-if="accessList.length === 0" class="paper-access__notice">
+        <div v-else-if="activeBoardId.trim() && accessList.length === 0" class="paper-access__notice">
           <h3 class="tk-h3 paper-access__notice-title">No extra members yet</h3>
           <p class="paper-access__panel-desc">This board currently only shows the owner path. Add a member when you are ready to share it.</p>
         </div>
