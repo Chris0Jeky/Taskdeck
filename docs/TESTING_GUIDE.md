@@ -2394,18 +2394,23 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 
-  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs in the independent
+  The focused launcher identity seam (`scripts/ci/dev-up-identity-seam.test.mjs`) and the broader
+  cross-launcher regression suite (`scripts/ci/dev-up.test.mjs`) run together in the independent
   `source-launcher` job of the reusable frontend workflow, reported as
-  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`.
-  It remains **Linux only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
-  cases therefore still run on every PR; the PowerShell launcher cases are local Windows evidence,
-  run from the repository root on Windows with
-  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`, until the
-  CI-04 `#2328` laptop runner is registered. On a Windows developer box that command is known to
-  red its `Bash:` cases under Git Bash (the local `#2378` cohort, recorded in `docs/STATUS.md`); the
-  `PowerShell:` cases are the evidence being asked for, so read the result per case rather than as
-  one pass/fail. The Windows leg keeps lint, typecheck, build and coverage unchanged.
-  `scripts/ci/smart-ci/launcher-suite-placement.test.mjs` pins that placement.
+  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`. The exact hosted
+  command, and the canonical Linux local reproduction command, is
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs`. The focused Bash seam runs first and pins the full TERM grace window, exact signal/PID
+  binding, and descendant-driven KILL escalation before the broader launcher scenarios execute.
+  Both suites remain **Linux only** in hosted CI (CI-07 `#2331`, SC-3: hosted minutes are Linux-only).
+  On a Windows developer box with Git Bash, the same combined command reproduces the complete lane;
+  the known local `#2378` cohort can still red individual `Bash:` cases, as recorded in
+  `docs/STATUS.md`. To isolate the PowerShell launcher evidence until the CI-04 `#2328` laptop runner
+  is registered, run
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs` and read the
+  result per case rather than treating unrelated Bash cases as PowerShell evidence. The Windows
+  frontend leg keeps lint, typecheck, build and coverage unchanged.
+  `scripts/ci/smart-ci/launcher-suite-placement.test.mjs` pins both hosted placement and the complete
+  documented command.
 - `container-images`
   - Runs `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` against all four machine prefixes,
     static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback
