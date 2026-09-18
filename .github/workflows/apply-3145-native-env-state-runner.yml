@@ -41,8 +41,8 @@ jobs:
 
           path = Path('scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1')
           text = path.read_text(encoding='utf-8')
-          needle = '              Add-Type -TypeDefinition @"'
-          replacement = '              $null = Add-Type -TypeDefinition @"'
+          needle = '    Add-Type -TypeDefinition @"'
+          replacement = '    $null = Add-Type -TypeDefinition @"'
           if text.count(needle) != 1:
               raise SystemExit('native environment type initializer boundary is not unique')
           path.write_text(text.replace(needle, replacement), encoding='utf-8', newline='\n')
@@ -53,6 +53,8 @@ jobs:
 
       - name: Commit the verified implementation and remove bootstrap files
         shell: bash
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -61,4 +63,4 @@ jobs:
           git rm .github/workflows/apply-3145-native-env-state-runner.yml
           git diff --cached --check
           git commit -m "fix(inventory): preserve exact native environment state"
-          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          git push origin "HEAD:${PR_HEAD_REF}"
