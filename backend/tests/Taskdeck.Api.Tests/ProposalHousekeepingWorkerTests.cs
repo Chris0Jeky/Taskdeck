@@ -460,6 +460,8 @@ public class ProposalHousekeepingWorkerTests
         }
 
         public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task BeginReadTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
