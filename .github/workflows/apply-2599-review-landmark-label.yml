@@ -1,0 +1,89 @@
+name: Apply issue 2599 review landmark label
+
+on:
+  push:
+    branches:
+      - fix/2599-review-focus-root-fallback
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-2599-review-landmark-label
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/2599-review-focus-root-fallback
+          fetch-depth: 0
+
+      - name: Separate Review surface and action labels
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = {
+              Path('frontend/taskdeck-web/src/views/ReviewView.vue'): [(
+                  ":aria-label=\"t('review.empty.unavailable.return')\"",
+                  ":aria-label=\"t('review.surfaceLabel')\"",
+                  2,
+              ), (
+                  "The\n * landmark reuses the localized return-to-Review label because this fallback is\n * reached only through that action, and the name must follow live locale changes.",
+                  "The landmark uses a dedicated localized surface name rather than the\n * return action's label, and that name follows live locale changes.",
+                  1,
+              )],
+              Path('frontend/taskdeck-web/src/locales/en/review.ts'): [(
+                  "export default {\n",
+                  "export default {\n  surfaceLabel: 'Proposal review',\n",
+                  1,
+              )],
+              Path('frontend/taskdeck-web/src/locales/it/review.ts'): [(
+                  "export default {\n",
+                  "export default {\n  surfaceLabel: 'Revisione delle proposte',\n",
+                  1,
+              )],
+              Path('frontend/taskdeck-web/src/locales/es/review.ts'): [(
+                  "export default {\n",
+                  "export default {\n  surfaceLabel: 'Revisión de propuestas',\n",
+                  1,
+              )],
+              Path('frontend/taskdeck-web/src/tests/views/ReviewView.landmarkLocale.spec.ts'): [(
+                  "      const english = i18n.global.t('review.empty.unavailable.return')\n      expect(landmark.attributes('aria-label')).toBe(english)",
+                  "      const english = i18n.global.t('review.surfaceLabel')\n      expect(english).not.toBe(i18n.global.t('review.empty.unavailable.return'))\n      expect(landmark.attributes('aria-label')).toBe(english)",
+                  1,
+              ), (
+                  "      const localized = i18n.global.t('review.empty.unavailable.return')\n      expect(localized).not.toBe(english)\n      expect(landmark.attributes('aria-label')).toBe(localized)",
+                  "      const localized = i18n.global.t('review.surfaceLabel')\n      expect(localized).not.toBe(english)\n      expect(localized).not.toBe(i18n.global.t('review.empty.unavailable.return'))\n      expect(landmark.attributes('aria-label')).toBe(localized)",
+                  1,
+              )],
+          }
+
+          for path, path_replacements in replacements.items():
+              text = path.read_text(encoding='utf-8')
+              for old, new, expected in path_replacements:
+                  count = text.count(old)
+                  if count != expected:
+                      raise RuntimeError(f'Expected {expected} anchor(s) in {path}, found {count}')
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+
+      - name: Commit landmark label and remove helper
+        run: |
+          git diff --check
+          git rm .github/workflows/apply-2599-review-landmark-label.yml
+          test "$(git diff HEAD --name-only | sort | tr '\n' ' ')" = ".github/workflows/apply-2599-review-landmark-label.yml frontend/taskdeck-web/src/locales/en/review.ts frontend/taskdeck-web/src/locales/es/review.ts frontend/taskdeck-web/src/locales/it/review.ts frontend/taskdeck-web/src/tests/views/ReviewView.landmarkLocale.spec.ts frontend/taskdeck-web/src/views/ReviewView.vue "
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/taskdeck-web/src/views/ReviewView.vue \
+            frontend/taskdeck-web/src/tests/views/ReviewView.landmarkLocale.spec.ts \
+            frontend/taskdeck-web/src/locales/en/review.ts \
+            frontend/taskdeck-web/src/locales/it/review.ts \
+            frontend/taskdeck-web/src/locales/es/review.ts
+          git commit -m 'fix: name the Review landmark as a surface'
+          git push origin 'HEAD:fix/2599-review-focus-root-fallback'
