@@ -123,7 +123,9 @@ actions. Never infer a human action from repository state or an issue comment.
 
 ## H. Pre-cutover nightly and release contract (CI-10 `#2334`)
 
-Sections A-I are prerequisites for the visibility change. This section proves that the release
+Sections A-J are prerequisites for the visibility change. Complete the provisioning in section J
+before executing this section's mirror dry run; section J is listed below for thematic grouping but
+is part of the pre-cutover gate. This section proves that the release
 mechanisms and evidence contract are ready; it does **not** require the real tag, post-cutover runner
 association, exact-tag qualification, or release publication. Those actions occur only in section L.
 

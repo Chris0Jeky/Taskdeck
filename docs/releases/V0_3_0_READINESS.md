@@ -104,7 +104,7 @@ a false red. What stands between here and that condition:
    must not be described as shipped or authorized before its evidence conditions are met.
 
 **The cutover checklist is also a clause-5 prerequisite, and it is wider than the chain above.**
-`OUTSTANDING_TASKS.md` SC-6 permits the visibility change only after sections A to I of
+`OUTSTANDING_TASKS.md` SC-6 permits the visibility change only after sections A to J of
 `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` are complete. Those sections name their owners, so every
 one of them is gate work:
 
@@ -119,6 +119,7 @@ one of them is gate work:
 | G. Supply chain | CI-11 `#2335` | Open, hands off to SC-5 |
 | H. Nightly and release | CI-10 `#2334` | Open, v0.3 since 2026-09-03 (Q1 ruled A), Priority I |
 | I. Rehearsal while still public | CI-13 `#2337` (checklist header) | Open, evidence recorded on `#2337` |
+| J. Public distribution preparation | CI-16 `#2439` | Open; provision and verify before the mirror rehearsal |
 
 **Section F is not a human gate, despite SC-7.** Its four boxes are isolated VMs, no host mounts or
 personal credentials with one job per host, a tested hosted override and offline-runner behaviour,
@@ -258,7 +259,7 @@ Refresh at each coordination cycle, from live state and not from this file:
 1. Re-read the v0.3 row of `docs/REVIVAL_PLAN.md` for the gate clauses.
 2. Re-read branch protection for the required contexts. Do not infer that the Smart CI gate is
    enforced from a green check.
-3. Re-read `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` sections A to I and their named owners. SC-6
+3. Re-read `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` sections A to J and their named owners. SC-6
    makes that whole list clause-5 work, so an issue moving in or out of it changes this file.
 4. Re-count the milestone and re-check the section 2 chain.
 5. Move anything that becomes shipped reality into `docs/STATUS.md`, not into this file.
