@@ -1,6 +1,6 @@
 name: PR 1837 stabilize absent evidence links
 
-'on':
+on:
   push:
     branches:
       - fix/1837-stable-evidence-sentinel
@@ -8,124 +8,181 @@ name: PR 1837 stabilize absent evidence links
 permissions:
   contents: write
 
+concurrency:
+  group: pr-1837-stable-evidence-sentinel-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   implement:
-    if: ${{ github.repository == 'Chris0Jeky/Taskdeck' }}
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact triggering head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: fix/1837-stable-evidence-sentinel
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Add the provided-to-absent regression
+      - name: Verify exact triggering head
         shell: bash
         run: |
           set -euo pipefail
-          python3 <<'PY'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.13.1"
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Add the provided-to-absent behavior regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
           from pathlib import Path
 
           path = Path('frontend/taskdeck-web/src/tests/views/paper/review/ReviewProvenance.spec.ts')
-          source = path.read_text(encoding='utf-8')
-
-          old_import = "import type { ProvenanceRow } from '../../../../composables/usePaperReviewSelectors'"
-          new_import = """import {
-            EMPTY_EVIDENCE_LINKS,
-            type ProvenanceRow,
-          } from '../../../../composables/usePaperReviewSelectors'"""
-          if source.count(old_import) != 1:
-              raise SystemExit(f'expected one selectors type import, found {source.count(old_import)}')
-          source = source.replace(old_import, new_import)
-
-          old_tail = """    await wrapper.setProps({ detailsExpanded: true })
+          source = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+          old = """    await wrapper.setProps({ detailsExpanded: true })
               expect(drawer()).toBe(providedReference)
               wrapper.unmount()
           """
-          new_tail = """    await wrapper.setProps({ detailsExpanded: true })
+          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines()) + '\n'
+          new = """    await wrapper.setProps({ detailsExpanded: true })
               expect(drawer()).toBe(providedReference)
 
               await wrapper.setProps({ evidenceLinks: undefined })
               const absentReference = drawer()
-              expect(toRaw(absentReference)).toBe(EMPTY_EVIDENCE_LINKS)
-              expect(Object.isFrozen(toRaw(absentReference))).toBe(true)
+              expect(
+                Object.isFrozen(toRaw(absentReference)),
+                'the absent reference must be the frozen canonical sentinel',
+              ).toBe(true)
 
               await wrapper.setProps({ metadata: DETERMINISTIC })
               expect(drawer()).toBe(absentReference)
               wrapper.unmount()
           """
-          if source.count(old_tail) != 1:
-              raise SystemExit(f'expected one stable-reference test tail, found {source.count(old_tail)}')
-          path.write_text(source.replace(old_tail, new_tail), encoding='utf-8')
+          new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines()) + '\n'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one stable-reference test tail, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8', newline='\n')
           PY
 
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add frontend/taskdeck-web/src/tests/views/paper/review/ReviewProvenance.spec.ts
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "test(review): cover evidence links returning to absent"
+          git commit -m 'test(review): cover evidence links returning to absent'
 
-      - name: Prove the contract is red before implementation
+      - name: Prove the behavior regression is red before implementation
         working-directory: frontend/taskdeck-web
         shell: bash
         run: |
-          set -euo pipefail
-          npm ci
           set +e
-          npx vitest run src/tests/views/paper/review/ReviewProvenance.spec.ts
+          npx vitest run src/tests/views/paper/review/ReviewProvenance.spec.ts -t "keeps an absent evidence-links reference stable across rerenders and preserves provided arrays" > /tmp/issue-1837-red.log 2>&1
           status=$?
           set -e
+          cat /tmp/issue-1837-red.log
           if [ "$status" -eq 0 ]; then
-            echo "Expected the new regression to fail before exporting the canonical sentinel."
+            echo 'Expected the canonical frozen-sentinel regression to fail before implementation.' >&2
             exit 1
           fi
+          grep -F 'the absent reference must be the frozen canonical sentinel' /tmp/issue-1837-red.log
 
-      - name: Reuse the frozen module-level sentinel
+      - name: Reuse and assert the frozen module-level sentinel
         shell: bash
         run: |
           set -euo pipefail
-          python3 <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
 
           selectors = Path('frontend/taskdeck-web/src/composables/usePaperReviewSelectors.ts')
-          source = selectors.read_text(encoding='utf-8')
-          old = "const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]"
-          new = "export const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]"
+          source = selectors.read_text(encoding='utf-8').replace('\r\n', '\n')
+          old = 'const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]'
+          new = 'export const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]'
           if source.count(old) != 1:
               raise SystemExit(f'expected one private evidence sentinel, found {source.count(old)}')
-          selectors.write_text(source.replace(old, new), encoding='utf-8')
+          selectors.write_text(source.replace(old, new, 1), encoding='utf-8', newline='\n')
 
           component = Path('frontend/taskdeck-web/src/views/paper/review/ReviewProvenance.vue')
-          source = component.read_text(encoding='utf-8')
+          source = component.read_text(encoding='utf-8').replace('\r\n', '\n')
           old_import = "import type { ProvenanceRow, ProvenanceWeight } from '../../../composables/usePaperReviewSelectors'"
           new_import = """import {
             EMPTY_EVIDENCE_LINKS,
             type ProvenanceRow,
             type ProvenanceWeight,
           } from '../../../composables/usePaperReviewSelectors'"""
+          new_import = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_import.splitlines())
           if source.count(old_import) != 1:
               raise SystemExit(f'expected one ReviewProvenance selectors import, found {source.count(old_import)}')
-          source = source.replace(old_import, new_import)
-
-          local = "\nconst EMPTY_EVIDENCE_LINKS: EvidenceLink[] = []\n"
+          source = source.replace(old_import, new_import, 1)
+          local = '\nconst EMPTY_EVIDENCE_LINKS: EvidenceLink[] = []\n'
           if source.count(local) != 1:
               raise SystemExit(f'expected one per-instance evidence sentinel, found {source.count(local)}')
-          component.write_text(source.replace(local, '\n'), encoding='utf-8')
+          component.write_text(source.replace(local, '\n', 1), encoding='utf-8', newline='\n')
+
+          test_path = Path('frontend/taskdeck-web/src/tests/views/paper/review/ReviewProvenance.spec.ts')
+          source = test_path.read_text(encoding='utf-8').replace('\r\n', '\n')
+          old_import = "import type { ProvenanceRow } from '../../../../composables/usePaperReviewSelectors'"
+          new_import = """import {
+            EMPTY_EVIDENCE_LINKS,
+            type ProvenanceRow,
+          } from '../../../../composables/usePaperReviewSelectors'"""
+          new_import = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_import.splitlines())
+          if source.count(old_import) != 1:
+              raise SystemExit(f'expected one selectors type import, found {source.count(old_import)}')
+          source = source.replace(old_import, new_import, 1)
+          old_assertion = """    const absentReference = drawer()
+              expect(
+                Object.isFrozen(toRaw(absentReference)),
+          """
+          old_assertion = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_assertion.splitlines())
+          new_assertion = """    const absentReference = drawer()
+              expect(toRaw(absentReference)).toBe(EMPTY_EVIDENCE_LINKS)
+              expect(
+                Object.isFrozen(toRaw(absentReference)),
+          """
+          new_assertion = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_assertion.splitlines())
+          if source.count(old_assertion) != 1:
+              raise SystemExit(f'expected one absent-reference assertion seam, found {source.count(old_assertion)}')
+          test_path.write_text(source.replace(old_assertion, new_assertion, 1), encoding='utf-8', newline='\n')
           PY
 
-      - name: Verify the focused provenance contract
+      - name: Verify the focused provenance and TypeScript contracts
         working-directory: frontend/taskdeck-web
         shell: bash
         run: |
           set -euo pipefail
           npx vitest run src/tests/views/paper/review/ReviewProvenance.spec.ts
-          npm run type-check
+          npm run typecheck
+          git -C ../.. diff --check
 
-      - name: Publish the implementation and remove this workflow
+      - name: Publish exact-head implementation and remove this workflow
         shell: bash
         run: |
           set -euo pipefail
+          branch='fix/1837-stable-evidence-sentinel'
+          trigger_head="$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          test -n "$remote_head"
+          test "$remote_head" = "$trigger_head"
+
           git rm .github/workflows/pr1837-stable-evidence-sentinel.yml
           git add frontend/taskdeck-web/src/composables/usePaperReviewSelectors.ts \
-            frontend/taskdeck-web/src/views/paper/review/ReviewProvenance.vue
+            frontend/taskdeck-web/src/views/paper/review/ReviewProvenance.vue \
+            frontend/taskdeck-web/src/tests/views/paper/review/ReviewProvenance.spec.ts
           git diff --cached --check
-          git commit -m "fix(review): reuse frozen evidence sentinel"
-          git push origin HEAD:fix/1837-stable-evidence-sentinel
+
+          expected_names=$'.github/workflows/pr1837-stable-evidence-sentinel.yml\nfrontend/taskdeck-web/src/composables/usePaperReviewSelectors.ts\nfrontend/taskdeck-web/src/tests/views/paper/review/ReviewProvenance.spec.ts\nfrontend/taskdeck-web/src/views/paper/review/ReviewProvenance.vue'
+          actual_names="$(git diff --cached --name-only | sort)"
+          test "$actual_names" = "$expected_names"
+
+          git commit -m 'fix(review): reuse frozen evidence sentinel'
+          git push --force-with-lease="refs/heads/$branch:$trigger_head" origin "HEAD:refs/heads/$branch"
