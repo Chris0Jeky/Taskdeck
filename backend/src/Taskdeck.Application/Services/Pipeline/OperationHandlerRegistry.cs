@@ -48,17 +48,11 @@ public class OperationHandlerRegistry
     {
         var actionType = operation.ActionType.ToLowerInvariant();
         var targetType = operation.TargetType.ToLowerInvariant();
-
-        if (!ProposalOperationVocabulary.IsSupported(targetType, actionType))
-        {
-            return Result.Failure(
-                ErrorCodes.ValidationError,
-                ProposalOperationVocabulary.GetUnsupportedMessage(targetType, actionType));
-        }
+        var isSupportedOperation = ProposalOperationVocabulary.IsSupported(targetType, actionType);
 
         try
         {
-            if (targetType == "card" && actionType == ProposalAssignmentContract.Action)
+            if (targetType == "card" && actionType == ProposalAssignmentContract.Action && isSupportedOperation)
             {
                 if (_assignments is null || !actorUserId.HasValue)
                     return Result.Failure(ErrorCodes.InvalidOperation, "Assignment execution needs an authenticated actor.");
@@ -72,7 +66,7 @@ public class OperationHandlerRegistry
                 if (result.IsSuccess) await _unitOfWork.SaveChangesAsync(cancellationToken);
                 return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
             }
-            if (targetType == "card" && actionType is "add-relation" or "remove-relation")
+            if (targetType == "card" && actionType is "add-relation" or "remove-relation" && isSupportedOperation)
             {
                 if (_relations is null || !actorUserId.HasValue)
                     return Result.Failure(ErrorCodes.InvalidOperation, "Relation execution needs an authenticated actor.");
@@ -146,6 +140,13 @@ public class OperationHandlerRegistry
     {
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
+
+        if (!ProposalOperationVocabulary.IsSupported("card", actionType))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                ProposalOperationVocabulary.GetUnsupportedMessage("card", actionType));
+        }
 
         var labelAction = CardLabelOperationVocabulary.Classify(actionType);
         if (labelAction == CardLabelOperationAction.Add)
@@ -522,6 +523,13 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
 
+        if (!ProposalOperationVocabulary.IsSupported("board", actionType))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                ProposalOperationVocabulary.GetUnsupportedMessage("board", actionType));
+        }
+
         switch (actionType)
         {
             case "update":
@@ -553,6 +561,13 @@ public class OperationHandlerRegistry
     {
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
+
+        if (!ProposalOperationVocabulary.IsSupported("column", actionType))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                ProposalOperationVocabulary.GetUnsupportedMessage("column", actionType));
+        }
 
         switch (actionType)
         {
