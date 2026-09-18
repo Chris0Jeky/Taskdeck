@@ -51,19 +51,23 @@ public sealed class ProposalConflictEvaluationGuard : IProposalConflictDetector
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        var result = await _inner.DetectConflictsAsync(proposalId, userId, cancellationToken);
-        if (!result.IsSuccess)
-            return result;
-
-        // The id-based compatibility path is retained for existing application callers and
-        // tests. The API review endpoint uses the effective ProposalDto overload, so revision
-        // resolution remains server-authoritative and does not incur this second repository read.
+        // Read the entity once and use the same immutable projection for both ordinary
+        // conflict analysis and fail-closed classification. A second read here could observe
+        // a different operation snapshot and make the guard disagree with the rows it guards.
         var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId, cancellationToken);
         if (proposal is null)
-            return result;
+        {
+            return Result.Failure<IReadOnlyList<ConflictRowDto>>(
+                ErrorCodes.NotFound,
+                "Proposal not found");
+        }
 
-        var operations = proposal.Operations.Select(ToDto).ToList();
-        return ApplyIncompleteEvaluationGuard(result, proposalId, operations);
+        var proposalSnapshot = ToDto(proposal);
+        var result = await _inner.DetectConflictsAsync(proposalSnapshot, userId, cancellationToken);
+        return ApplyIncompleteEvaluationGuard(
+            result,
+            proposalSnapshot.Id,
+            proposalSnapshot.Operations);
     }
 
     private Result<IReadOnlyList<ConflictRowDto>> ApplyIncompleteEvaluationGuard(
@@ -161,6 +165,30 @@ public sealed class ProposalConflictEvaluationGuard : IProposalConflictDetector
                property.ValueKind == JsonValueKind.String &&
                Guid.TryParse(property.GetString(), out value);
     }
+
+    private static ProposalDto ToDto(AutomationProposal proposal) => new(
+        proposal.Id,
+        proposal.SourceType,
+        proposal.SourceReferenceId,
+        proposal.BoardId,
+        proposal.RequestedByUserId,
+        proposal.Status,
+        proposal.RiskLevel,
+        proposal.Summary,
+        proposal.DiffPreview,
+        proposal.ValidationIssues,
+        proposal.CreatedAt,
+        proposal.UpdatedAt,
+        proposal.ExpiresAt,
+        proposal.DecidedAt,
+        proposal.DecidedByUserId,
+        proposal.AppliedAt,
+        proposal.FailureReason,
+        proposal.CorrelationId,
+        proposal.Operations
+            .OrderBy(operation => operation.Sequence)
+            .Select(ToDto)
+            .ToList());
 
     private static ProposalOperationDto ToDto(AutomationProposalOperation operation) => new(
         operation.Id,
