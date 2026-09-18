@@ -1,0 +1,34 @@
+name: Apply 3121 card-switch focus regression
+
+on:
+  push:
+    branches:
+      - fix/3121-permission-retry-card-focus
+    paths:
+      - .github/workflows/apply-3121-card-switch-focus-test.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/3121-permission-retry-card-focus
+          fetch-depth: 0
+
+      - name: Apply guarded regression patch
+        run: python3 scripts/ci/apply-3121-card-switch-focus-test.py
+
+      - name: Commit regression contract
+        shell: bash
+        run: |
+          git rm scripts/ci/apply-3121-card-switch-focus-test.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/taskdeck-web/src/tests/components/CardModalPermissionRecovery.spec.ts
+          git commit -m "test(frontend): pin permission retry card-switch focus"
+          git push origin HEAD:fix/3121-permission-retry-card-focus
