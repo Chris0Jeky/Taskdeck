@@ -82,6 +82,8 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   let generation = 0
   /** The board whose read is open right now, so a board change supersedes it rather than waiting. */
   let inFlightBoardId: string | null = null
+  /** Store payload generation visible when the direct read started. */
+  let inFlightPayloadGeneration: number | null = null
   // A superseded read is not merely ignored, it is cancelled: the editor can be closed or
   // moved to another card long before a slow read answers, and an unanswered request that
   // nothing is waiting for should not stay open.
@@ -169,6 +171,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     const request = new AbortController()
     inFlightRequest = request
     inFlightBoardId = boardId
+    inFlightPayloadGeneration = boardPayloadGeneration.value
     checking.value = true
     failedBoardId.value = null
     try {
@@ -224,6 +227,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     } finally {
       if (current === generation) {
         inFlightBoardId = null
+        inFlightPayloadGeneration = null
         inFlightRequest = null
         checking.value = false
       }
@@ -236,6 +240,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     inFlightRequest?.abort()
     inFlightRequest = null
     inFlightBoardId = null
+    inFlightPayloadGeneration = null
     checking.value = false
   }
   onScopeDispose(cancelRead)
@@ -309,15 +314,32 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   )
 
   watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
-    if (!permissionRecovery.value || value === null) return
+    if (value === null) return
+
+    const payloadAdvanced = payloadGeneration !== null &&
+      payloadGeneration !== previousPayloadGeneration
+
+    if (!permissionRecovery.value) {
+      const supersedesAutomaticProbe = inFlightBoardId === options.getBoardId() &&
+        inFlightPayloadGeneration !== null &&
+        payloadGeneration !== null &&
+        payloadGeneration > inFlightPayloadGeneration
+      if (payloadAdvanced && supersedesAutomaticProbe) {
+        // Newer committed server evidence owns the permission decision. Retire
+        // the older legacy-payload probe before a stale denial can replace it.
+        cancelRead()
+        failedBoardId.value = null
+        accessUnavailable.value = false
+      }
+      return
+    }
 
     // A direct false transition is safe to consume immediately: it can only
     // further restrict the editor. A later true needs the store's committed
     // server-payload marker, because a local patch must never re-authorize a
     // write the server just refused.
     const permissionWasRevoked = value === false && value !== previousValue
-    const hasFreshServerPayload = payloadGeneration !== null &&
-      payloadGeneration !== previousPayloadGeneration &&
+    const hasFreshServerPayload = payloadAdvanced &&
       (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
     if (!permissionWasRevoked && !hasFreshServerPayload) return
 

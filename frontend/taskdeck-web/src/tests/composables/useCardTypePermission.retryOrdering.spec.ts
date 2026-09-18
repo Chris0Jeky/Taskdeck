@@ -76,6 +76,34 @@ describe('useCardTypePermission explicit retry ordering', () => {
     vi.mocked(boardsApi.getBoard).mockReset()
   })
 
+  it('lets a newer authoritative board payload supersede a stale automatic probe 403', async () => {
+  const automaticProbe = deferred<BoardDetail>()
+  vi.mocked(boardsApi.getBoard).mockReturnValueOnce(automaticProbe.promise)
+  store.currentBoard = { ...board(true), canWrite: undefined } as Board
+  store.currentBoardRequestGeneration = 1
+  store.currentBoardPayloadGeneration = 1
+  const { api, wrapper } = create()
+  await flushPromises()
+
+  const probeSignal = vi.mocked(boardsApi.getBoard).mock.calls[0]![1]!.signal!
+  expect(api.permissionChecking.value).toBe(true)
+
+  store.currentBoardRequestGeneration = 2
+  store.currentBoard = board(true)
+  store.currentBoardPayloadGeneration = 2
+  await flushPromises()
+
+  automaticProbe.reject({ response: { status: 403 } })
+  await flushPromises()
+
+  expect(probeSignal.aborted).toBe(true)
+  expect(api.canWrite.value).toBe(true)
+  expect(api.permissionRecovery.value).toBe(false)
+  expect(api.accessUnavailable.value).toBe(false)
+  expect(api.readsBlocked.value).toBe(false)
+  wrapper.unmount()
+})
+
   it.each([403, 404])(
     'does not let an older successful board payload overrule a pending manual retry that returns %s',
     async status => {
