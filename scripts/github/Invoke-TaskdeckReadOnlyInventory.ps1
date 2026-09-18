@@ -777,11 +777,11 @@ function Assert-ReadOnlyInventoryCommand {
 function Resolve-InventoryExecutable {
     param([Parameter(Mandatory = $true)][string]$Tool)
 
-    $isWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+    $runningOnWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
     $command = Get-Command $Tool -CommandType Application -All -ErrorAction SilentlyContinue |
         Where-Object {
             $extension = [System.IO.Path]::GetExtension($_.Source)
-            $extension -notin @(".cmd", ".bat") -and (-not $isWindows -or $extension -eq ".exe")
+            $extension -notin @(".cmd", ".bat") -and (-not $runningOnWindows -or $extension -eq ".exe")
         } |
         Select-Object -First 1
     if ($null -eq $command) {
