@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 export const CI_POLICY_PATH = 'ci/policy.v1.json'
 export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
 const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F\uFFFE\uFFFF]/u
+const FORBIDDEN_COMMENT_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\uFFFE\uFFFF]/u
 
 function hasUnpairedUtf16Surrogate(value) {
   for (let index = 0; index < value.length; index += 1) {
@@ -231,7 +232,11 @@ function validateFrontMatterStructure(lines, rulePath) {
       structureErrors.push(`${rulePath} front matter has tab indentation, which this check cannot parse: ${line.trim()}`)
       continue
     }
-    if (FORBIDDEN_SCALAR_CONTROL.test(line)) {
+    const commentOnly = /^ *#/.test(line)
+    const forbiddenCharacter = commentOnly
+      ? FORBIDDEN_COMMENT_CONTROL
+      : FORBIDDEN_SCALAR_CONTROL
+    if (forbiddenCharacter.test(line)) {
       structureErrors.push(
         `${rulePath} front matter has a forbidden control or non-printable character, which this check cannot parse`,
       )
@@ -243,7 +248,7 @@ function validateFrontMatterStructure(lines, rulePath) {
       )
       continue
     }
-    if (/^ *#/.test(line)) {
+    if (commentOnly) {
       continue
     }
 
