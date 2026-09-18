@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "792fbcd11d69f13ab8021e59899c4195a50208a6"
+          test "$(git rev-parse HEAD^)" = "58fab2fd23d4049f17996979284f7b2dd0462ad8"
 
       - name: Add stale-probe regression
         shell: bash
@@ -41,35 +41,34 @@ jobs:
 
           path = Path('frontend/taskdeck-web/src/tests/composables/useCardTypePermission.retryOrdering.spec.ts')
           text = path.read_text()
-          marker = """  it.each([403, 404])(
-          """
+          marker = "  it.each([403, 404])(\n"
           addition = """  it('lets a newer authoritative board payload supersede a stale automatic probe 403', async () => {
-              const automaticProbe = deferred<BoardDetail>()
-              vi.mocked(boardsApi.getBoard).mockReturnValueOnce(automaticProbe.promise)
-              store.currentBoard = { ...board(true), canWrite: undefined } as Board
-              store.currentBoardRequestGeneration = 1
-              store.currentBoardPayloadGeneration = 1
-              const { api, wrapper } = create()
-              await flushPromises()
+            const automaticProbe = deferred<BoardDetail>()
+            vi.mocked(boardsApi.getBoard).mockReturnValueOnce(automaticProbe.promise)
+            store.currentBoard = { ...board(true), canWrite: undefined } as Board
+            store.currentBoardRequestGeneration = 1
+            store.currentBoardPayloadGeneration = 1
+            const { api, wrapper } = create()
+            await flushPromises()
 
-              const probeSignal = vi.mocked(boardsApi.getBoard).mock.calls[0]![1]!.signal!
-              expect(api.permissionChecking.value).toBe(true)
+            const probeSignal = vi.mocked(boardsApi.getBoard).mock.calls[0]![1]!.signal!
+            expect(api.permissionChecking.value).toBe(true)
 
-              store.currentBoardRequestGeneration = 2
-              store.currentBoard = board(true)
-              store.currentBoardPayloadGeneration = 2
-              await flushPromises()
+            store.currentBoardRequestGeneration = 2
+            store.currentBoard = board(true)
+            store.currentBoardPayloadGeneration = 2
+            await flushPromises()
 
-              automaticProbe.reject({ response: { status: 403 } })
-              await flushPromises()
+            automaticProbe.reject({ response: { status: 403 } })
+            await flushPromises()
 
-              expect(probeSignal.aborted).toBe(true)
-              expect(api.canWrite.value).toBe(true)
-              expect(api.permissionRecovery.value).toBe(false)
-              expect(api.accessUnavailable.value).toBe(false)
-              expect(api.readsBlocked.value).toBe(false)
-              wrapper.unmount()
-            })
+            expect(probeSignal.aborted).toBe(true)
+            expect(api.canWrite.value).toBe(true)
+            expect(api.permissionRecovery.value).toBe(false)
+            expect(api.accessUnavailable.value).toBe(false)
+            expect(api.readsBlocked.value).toBe(false)
+            wrapper.unmount()
+          })
 
           """
           if text.count(marker) != 1:
@@ -113,102 +112,78 @@ jobs:
           path = Path('frontend/taskdeck-web/src/composables/useCardTypePermission.ts')
           text = path.read_text()
 
-          replacements = [
-            (
-              """  let inFlightBoardId: string | null = null
-              // A superseded read is not merely ignored, it is cancelled: the editor can be closed or
-          """,
-              """  let inFlightBoardId: string | null = null
-              /** Store payload generation visible when the direct read started. */
-              let inFlightPayloadGeneration: number | null = null
-              // A superseded read is not merely ignored, it is cancelled: the editor can be closed or
-          """,
-            ),
-            (
-              """    inFlightRequest = request
-              inFlightBoardId = boardId
-              checking.value = true
-          """,
-              """    inFlightRequest = request
-              inFlightBoardId = boardId
-              inFlightPayloadGeneration = boardPayloadGeneration.value
-              checking.value = true
-          """,
-            ),
-            (
-              """        inFlightBoardId = null
-                inFlightRequest = null
-                checking.value = false
-          """,
-              """        inFlightBoardId = null
-                inFlightPayloadGeneration = null
-                inFlightRequest = null
-                checking.value = false
-          """,
-            ),
-            (
-              """    inFlightRequest = null
-              inFlightBoardId = null
-              checking.value = false
-          """,
-              """    inFlightRequest = null
-              inFlightBoardId = null
-              inFlightPayloadGeneration = null
-              checking.value = false
-          """,
-            ),
-          ]
-
-          for old, new in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit(f'source seam did not match exactly once: {old.splitlines()[0]!r}')
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} matched {count} times, expected exactly once')
               text = text.replace(old, new)
 
-          old_watch = """  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
-              if (!permissionRecovery.value || value === null) return
+          replace_once(
+              '  let inFlightBoardId: string | null = null\n',
+              '  let inFlightBoardId: string | null = null\n'
+              '  /** Store payload generation visible when the direct read started. */\n'
+              '  let inFlightPayloadGeneration: number | null = null\n',
+              'in-flight generation declaration',
+          )
+          replace_once(
+              '    inFlightBoardId = boardId\n    checking.value = true\n',
+              '    inFlightBoardId = boardId\n'
+              '    inFlightPayloadGeneration = boardPayloadGeneration.value\n'
+              '    checking.value = true\n',
+              'read start capture',
+          )
+          replace_once(
+              '        inFlightBoardId = null\n        inFlightRequest = null\n',
+              '        inFlightBoardId = null\n'
+              '        inFlightPayloadGeneration = null\n'
+              '        inFlightRequest = null\n',
+              'read completion cleanup',
+          )
+          replace_once(
+              '    inFlightRequest = null\n    inFlightBoardId = null\n    checking.value = false\n',
+              '    inFlightRequest = null\n'
+              '    inFlightBoardId = null\n'
+              '    inFlightPayloadGeneration = null\n'
+              '    checking.value = false\n',
+              'cancel cleanup',
+          )
 
-              // A direct false transition is safe to consume immediately: it can only
-              // further restrict the editor. A later true needs the store's committed
-              // server-payload marker, because a local patch must never re-authorize a
-              // write the server just refused.
-              const permissionWasRevoked = value === false && value !== previousValue
-              const hasFreshServerPayload = payloadGeneration !== null &&
-                payloadGeneration !== previousPayloadGeneration &&
-                (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
-          """
-          new_watch = """  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
-              if (value === null) return
+          watch_prefix = (
+              '  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], '
+              '[previousValue, previousPayloadGeneration]) => {\n'
+              '    if (!permissionRecovery.value || value === null) return\n'
+          )
+          watch_replacement = (
+              '  watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], '
+              '[previousValue, previousPayloadGeneration]) => {\n'
+              '    if (value === null) return\n\n'
+              '    const payloadAdvanced = payloadGeneration !== null &&\n'
+              '      payloadGeneration !== previousPayloadGeneration\n\n'
+              '    if (!permissionRecovery.value) {\n'
+              '      const supersedesAutomaticProbe = inFlightBoardId === options.getBoardId() &&\n'
+              '        inFlightPayloadGeneration !== null &&\n'
+              '        payloadGeneration !== null &&\n'
+              '        payloadGeneration > inFlightPayloadGeneration\n'
+              '      if (payloadAdvanced && supersedesAutomaticProbe) {\n'
+              '        // Newer committed server evidence owns the permission decision. Retire\n'
+              '        // the older legacy-payload probe before a stale denial can replace it.\n'
+              '        cancelRead()\n'
+              '        failedBoardId.value = null\n'
+              '        accessUnavailable.value = false\n'
+              '      }\n'
+              '      return\n'
+              '    }\n'
+          )
+          replace_once(watch_prefix, watch_replacement, 'permission watcher prefix')
+          replace_once(
+              '    const hasFreshServerPayload = payloadGeneration !== null &&\n'
+              '      payloadGeneration !== previousPayloadGeneration &&\n',
+              '    const hasFreshServerPayload = payloadAdvanced &&\n',
+              'recovery payload freshness',
+          )
 
-              const payloadAdvanced = payloadGeneration !== null &&
-                payloadGeneration !== previousPayloadGeneration
-
-              if (!permissionRecovery.value) {
-                const supersedesAutomaticProbe = inFlightBoardId === options.getBoardId() &&
-                  inFlightPayloadGeneration !== null &&
-                  payloadGeneration !== null &&
-                  payloadGeneration > inFlightPayloadGeneration
-                if (payloadAdvanced && supersedesAutomaticProbe) {
-                  // The board store committed newer server evidence while this legacy-payload
-                  // probe was pending. Retire the older direct request before a stale denial
-                  // can replace the authoritative store permission.
-                  cancelRead()
-                  failedBoardId.value = null
-                  accessUnavailable.value = false
-                }
-                return
-              }
-
-              // A direct false transition is safe to consume immediately: it can only
-              // further restrict the editor. A later true needs the store's committed
-              // server-payload marker, because a local patch must never re-authorize a
-              // write the server just refused.
-              const permissionWasRevoked = value === false && value !== previousValue
-              const hasFreshServerPayload = payloadAdvanced &&
-                (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
-          """
-          if text.count(old_watch) != 1:
-              raise SystemExit('permission watcher seam did not match exactly once')
-          path.write_text(text.replace(old_watch, new_watch))
+          path.write_text(text)
           PY
 
       - name: Verify permission contracts
