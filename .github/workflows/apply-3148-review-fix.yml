@@ -23,23 +23,53 @@ jobs:
           ref: fix/2676-fsmonitor-cleanup-residuals
           fetch-depth: 0
 
-      - name: Give the exhausted-retry probe a deterministic budget
+      - name: Stabilize and expose the focused cleanup regression
         shell: pwsh
         run: |
           $path = 'scripts/git/Test-New-CodexIssueWorktree.ps1'
-          $text = [System.IO.File]::ReadAllText($path)
-          $old = '-RemovalTimeoutMilliseconds 25 `'
-          $new = '-RemovalTimeoutMilliseconds 1000 `'
-          $count = ([regex]::Matches($text, [regex]::Escape($old))).Count
-          if ($count -ne 1) {
-              throw "Expected exactly one persistent-removal retry budget, found $count."
+          $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
+
+          $budgetOld = '-RemovalTimeoutMilliseconds 25 `'
+          $budgetNew = '-RemovalTimeoutMilliseconds 1000 `'
+          $budgetCount = ([regex]::Matches($text, [regex]::Escape($budgetOld))).Count
+          if ($budgetCount -ne 1) {
+              throw "Expected exactly one persistent-removal retry budget, found $budgetCount."
           }
-          $text = $text.Replace($old, $new)
+          $text = $text.Replace($budgetOld, $budgetNew)
+
+          $caseLine = '        "git-add-failure",'
+          $caseIndex = $text.IndexOf($caseLine, [System.StringComparison]::Ordinal)
+          if ($caseIndex -lt 0) {
+              throw 'Could not find the git-add-failure ValidateSet entry.'
+          }
+          if ($text.Contains('        "fsmonitor-fixture-cleanup",')) {
+              throw 'The focused fsmonitor cleanup case already exists unexpectedly.'
+          }
+          $text = $text.Insert($caseIndex, "        `"fsmonitor-fixture-cleanup`",`n")
+
+          $executionAnchor = '    if (Test-CaseSelected "git-add-failure") {'
+          $executionCount = ([regex]::Matches($text, [regex]::Escape($executionAnchor))).Count
+          if ($executionCount -ne 1) {
+              throw "Expected exactly one git-add-failure execution block, found $executionCount."
+          }
+          $focusedExecution = @'
+              if (Test-CaseSelected "fsmonitor-fixture-cleanup") {
+                  $fsmonitorCleanupProbeRoot = Join-Path $testRoot "fsmonitor-cleanup-probe"
+                  New-Item -ItemType Directory -Path $fsmonitorCleanupProbeRoot | Out-Null
+                  Test-FsmonitorFixtureCleanupLauncher -ProbeRoot $fsmonitorCleanupProbeRoot
+                  Complete-Test "fixture-owned fsmonitor shutdown precedes removal and preserves stop failures"
+              }
+
+          '@
+          $focusedExecution = $focusedExecution -replace '^ {12}', '' -replace "`r?`n {10}'@.*$", ''
+          $executionIndex = $text.IndexOf($executionAnchor, [System.StringComparison]::Ordinal)
+          $text = $text.Insert($executionIndex, $focusedExecution)
+
           [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
 
       - name: Verify focused cleanup regression
         shell: pwsh
-        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case git-add-failure
+        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case fsmonitor-fixture-cleanup
 
       - name: Publish review fix
         shell: pwsh
@@ -50,7 +80,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add scripts/git/Test-New-CodexIssueWorktree.ps1
-          git commit -m 'test: stabilize exhausted cleanup retry probe'
+          git commit -m 'test: stabilize fsmonitor cleanup retry probe'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git push origin HEAD:fix/2676-fsmonitor-cleanup-residuals
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
