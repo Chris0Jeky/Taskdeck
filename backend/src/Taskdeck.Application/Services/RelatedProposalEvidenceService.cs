@@ -93,13 +93,18 @@ public sealed class RelatedProposalEvidenceService(
         if (string.IsNullOrWhiteSpace(actionType) || limit <= 0)
             return Array.Empty<AutomationProposal>();
 
+        // The existing similar-past contract calls this with LookbackLimit=200.
+        // That value bounds terminal DECISIONS INSPECTED, not matching results:
+        // widening the scan until 200 matches would silently turn a bounded
+        // evidence read into an unbounded account-history traversal.
+        var inspected = 0;
         var matches = new List<AutomationProposal>(Math.Min(limit, CandidatePageSize));
-        var offset = 0;
-        while (matches.Count < limit)
+        while (inspected < limit)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var pageLimit = Math.Min(CandidatePageSize, limit - inspected);
             var page = await candidates.ReadTerminalPageAsync(
-                scope, offset, CandidatePageSize, cancellationToken);
+                scope, inspected, pageLimit, cancellationToken);
             if (page.Count == 0)
                 break;
 
@@ -111,17 +116,13 @@ public sealed class RelatedProposalEvidenceService(
                     continue;
 
                 var primaryAction = PrimaryAction(operations[proposal.Id]);
-                if (!string.Equals(primaryAction, actionType, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                matches.Add(proposal);
-                if (matches.Count == limit)
-                    break;
+                if (string.Equals(primaryAction, actionType, StringComparison.OrdinalIgnoreCase))
+                    matches.Add(proposal);
             }
 
-            if (page.Count < CandidatePageSize)
+            inspected += page.Count;
+            if (page.Count < pageLimit)
                 break;
-            offset += page.Count;
         }
 
         return matches;
