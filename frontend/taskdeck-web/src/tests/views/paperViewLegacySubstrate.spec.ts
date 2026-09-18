@@ -1,4 +1,5 @@
-import { NodeTypes, baseParse } from '@vue/compiler-dom'
+import { NodeTypes, parse as parseTemplate } from '@vue/compiler-dom'
+import { parse as parseSfc } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
 
 import { PAPER_VIEW_ROOTS } from './paperRootInventory'
@@ -74,19 +75,33 @@ function readRootRule(source: string, selector: string): string {
   return match[1]
 }
 
-function readTemplate(source: string): string {
-  const opening = /<template(?:\s[^>]*)?>/.exec(source)
-  const closingIndex = source.lastIndexOf('</template>')
-  if (opening === null || closingIndex <= opening.index) {
-    throw new Error('Could not locate the component template')
+function parserErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String(error.message)
   }
-  return source.slice(opening.index + opening[0].length, closingIndex)
+  return String(error)
+}
+
+function readTemplate(source: string, filename = '<inline SFC>'): string {
+  const parsed = parseSfc(source, { filename })
+  if (parsed.errors.length > 0) {
+    throw new Error(`Could not parse ${filename}: ${parserErrorMessage(parsed.errors[0])}`)
+  }
+  if (parsed.descriptor.template === null) {
+    throw new Error(`Could not locate the component template in ${filename}`)
+  }
+  return parsed.descriptor.template.content
 }
 
 /** Static `paper-*` classes on top-level template elements only. */
-function rootPaperSelectors(source: string): string[] {
+function rootPaperSelectors(source: string, filename = '<inline SFC>'): string[] {
   const selectors = new Set<string>()
-  const template = baseParse(readTemplate(source))
+  const template = parseTemplate(readTemplate(source, filename), {
+    onError: (error) => {
+      throw new Error(`Could not parse ${filename}: ${parserErrorMessage(error)}`)
+    },
+  })
 
   for (const child of template.children) {
     if (child.type !== NodeTypes.ELEMENT) continue
@@ -122,7 +137,7 @@ function compareRoots(left: DiscoveredRoot, right: DiscoveredRoot): number {
 function discoverPaperInkRoots(): DiscoveredRoot[] {
   return Object.entries(TOP_LEVEL_VIEW_SOURCES)
     .flatMap(([path, source]) =>
-      rootPaperSelectors(source).flatMap((selector) => {
+      rootPaperSelectors(source, path).flatMap((selector) => {
         try {
           return PAPER_INK.test(readRootRule(source, selector))
             ? [{ view: viewName(path), selector }]
@@ -163,6 +178,14 @@ describe('Paper view root inventory', () => {
       .sort(compareRoots)
 
     expect(discoverPaperInkRoots()).toEqual(declared)
+  })
+
+  it('parses native void elements in a discovered SFC template', () => {
+    expect(rootPaperSelectors(sourceForView('ApiKeySettingsView.vue'))).toContain('.paper-api-keys')
+  })
+
+  it('fails closed with a source name when template parsing fails', () => {
+    expect(() => rootPaperSelectors('<template><section></template>')).toThrow('<inline SFC>')
   })
 })
 
