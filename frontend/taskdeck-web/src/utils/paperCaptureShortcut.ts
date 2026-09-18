@@ -1,7 +1,7 @@
 import { isTextEntryTarget } from './appShellKeyboard'
 
 /**
- * Whether Paper's page-level Cmd/Ctrl+; capture shortcut may handle this event.
+ * Whether Paper's page-level mod+; capture shortcut may handle this event.
  *
  * AppShell deliberately leaves text-entry events alone so typing never pays for
  * a modal-surface scan. Paper Home and Inbox therefore have to enforce the same
