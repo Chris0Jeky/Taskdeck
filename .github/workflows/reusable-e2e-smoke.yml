@@ -25,6 +25,10 @@ jobs:
     name: E2E Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,21 +57,10 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ms-playwright-${{ runner.os }}-${{ hashFiles('frontend/taskdeck-web/package-lock.json') }}
-
-      - name: Install Playwright browser dependencies
-        timeout-minutes: 10
+      - name: Verify Playwright container browser
+        timeout-minutes: 1
         working-directory: frontend/taskdeck-web
-        run: npx playwright install-deps chromium
-
-      - name: Install Playwright Chromium browser
-        timeout-minutes: 5
-        working-directory: frontend/taskdeck-web
-        run: npx playwright install chromium
+        run: node -e "const { existsSync } = require('node:fs'); const { chromium } = require('@playwright/test'); const executable = chromium.executablePath(); if (!existsSync(executable)) throw new Error('Missing Playwright Chromium at ' + executable); console.log(executable);"
 
       - name: Remove stale E2E database
         working-directory: frontend/taskdeck-web
