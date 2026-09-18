@@ -1,5 +1,6 @@
 name: PR 3187 align Legacy fallback regression
 
+# One-shot branch repair. The final step deletes this workflow after the focused contract passes.
 on:
   push:
     branches:
