@@ -1,12 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   formatDisplayCalendarDate,
   formatDisplayDate,
   formatDisplayDateTime,
   formatDisplayTime,
+  resolveDisplayLocale,
 } from '../../utils/displayDate'
 
 const locales = ['en', 'it', 'es'] as const
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('display date adapter', () => {
   it.each(locales)('formats an instant using the selected %s locale', (locale) => {
@@ -74,6 +79,62 @@ describe('display date adapter', () => {
     expect(formatDisplayDate('2024-02-29', 'en', options)).toBeNull()
   })
 
+  it('accepts the persisted due-date wire form without projecting it through the caller timezone', () => {
+    const value = '2024-02-29T00:00:00.000Z'
+    const options: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'America/Los_Angeles',
+    }
+
+    const result = formatDisplayCalendarDate(value, 'en-GB', options)
+    const expected = new Intl.DateTimeFormat('en-GB', {
+      ...options,
+      timeZone: 'UTC',
+    }).format(new Date('2024-02-29T00:00:00.000Z'))
+    const projectedAsInstant = new Intl.DateTimeFormat('en-GB', options)
+      .format(new Date(value))
+
+    expect(result).toBe(expected)
+    expect(result).not.toBe(projectedAsInstant)
+  })
+
+  it('supports dateStyle without mixing it with component date fields', () => {
+    const options: Intl.DateTimeFormatOptions = { dateStyle: 'long' }
+
+    expect(formatDisplayCalendarDate('2024-02-29', 'en-GB', options)).toBe(
+      new Intl.DateTimeFormat('en-GB', {
+        ...options,
+        timeZone: 'UTC',
+      }).format(new Date('2024-02-29T00:00:00.000Z')),
+    )
+  })
+
+  it('preserves a matching browser region but never borrows one from another language', () => {
+    expect(resolveDisplayLocale('en', ['fr-FR', 'en-GB', 'en-US'])).toBe('en-GB')
+    expect(resolveDisplayLocale('it', ['en-GB', 'es-ES'])).toBe('it')
+    expect(resolveDisplayLocale('en-GB', ['en-US'])).toBe('en-GB')
+  })
+
+  it('uses the matching browser region when formatting a bare app locale', () => {
+    vi.stubGlobal('navigator', {
+      language: 'en-GB',
+      languages: ['en-GB', 'en'],
+    })
+    const value = '2024-03-01T12:00:00Z'
+    const options: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: 'UTC',
+    }
+
+    expect(formatDisplayDate(value, 'en', options)).toBe(
+      new Intl.DateTimeFormat('en-GB', options).format(new Date(value)),
+    )
+  })
+
   it.each([
     null,
     undefined,
@@ -86,8 +147,8 @@ describe('display date adapter', () => {
     expect(formatDisplayTime(value, 'en')).toBeNull()
   })
 
-  it('returns null for invalid calendar-only values', () => {
+  it('returns null for invalid calendar values', () => {
     expect(formatDisplayCalendarDate('2024-02-30', 'en')).toBeNull()
-    expect(formatDisplayCalendarDate('2024-02-29T00:00:00Z', 'en')).toBeNull()
+    expect(formatDisplayCalendarDate('not-a-date', 'en')).toBeNull()
   })
 })
