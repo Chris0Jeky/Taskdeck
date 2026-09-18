@@ -1,8 +1,10 @@
 # Taskdeck Claude Skills
 
 Claude Code skills live here and are the canonical Taskdeck workflow skills. `.codex/skills/` is the
-Codex adapter (different frontmatter and orientation order, plus per-skill `agents/` folders); when a
-shared workflow changes, update this tree first and port the change there.
+Codex adapter (different frontmatter and orientation order, plus per-skill `agents/` folders); Grok
+loads this tree via Claude compatibility (`grok inspect` labels them `project [claude]`). Do not copy
+them into `.grok/skills/`. When a shared workflow changes, update this tree first and port the change
+to the Codex adapter.
 
 Skills trigger by `description`; heavy workflow skills carry `disable-model-invocation: true` so they run
 only when you invoke them (`/name`). Region skills carry `paths:` so they activate only for matching files.
