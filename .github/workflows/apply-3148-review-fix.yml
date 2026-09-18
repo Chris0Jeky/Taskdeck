@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - fix/2676-fsmonitor-cleanup-residuals
+    paths:
+      - .github/workflows/apply-3148-review-fix.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-pr-3148-review-fix
+  group: apply-pr-3148-review-fix-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -17,11 +19,18 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: windows-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout exact triggering commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: fix/2676-fsmonitor-cleanup-residuals
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Verify exact checkout provenance
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) {
+              throw "Expected exact triggering commit $env:GITHUB_SHA, found $(git rev-parse HEAD)."
+          }
 
       - name: Stabilize and expose the focused cleanup regression
         shell: pwsh
@@ -74,6 +83,9 @@ jobs:
       - name: Publish review fix
         shell: pwsh
         run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) {
+              throw "Refusing stale publication: expected $env:GITHUB_SHA, found $(git rev-parse HEAD)."
+          }
           git diff --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git rm .github/workflows/apply-3148-review-fix.yml
