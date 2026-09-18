@@ -66,12 +66,11 @@ function assertGuardFailure(candidate, pattern) {
 }
 
 test('the shared range addresses the seam in the real tracked source', async () => {
-  assert.equal(
-    mutationSmokeRange,
-    `src/store/board/boardCrudStore.ts:${mutationSmokeContract.start.line}` +
-      `:${mutationSmokeContract.start.column}-` +
-      `${mutationSmokeContract.end.line}:${mutationSmokeContract.end.column}`,
-  )
+  // Literal, not derived from the same constants: Stryker's `mutate` columns
+  // are 0-based while the contract's are 1-based, so a derived assertion would
+  // pass whichever base `mutationSmokeRange` happened to use. Passing column 28
+  // starts the range inside the expression and drops its outermost mutant.
+  assert.equal(mutationSmokeRange, 'src/store/board/boardCrudStore.ts:653:27-653:77')
   assert.equal(mutationSmokeContract.source.length, 50)
 
   // Real payload, not a fabricated line: the contract must address the seam in
@@ -210,5 +209,10 @@ test('manual workflow preserves advisory diagnostics only after an uncancelled s
     workflow.slice(enforcementIndex),
     /steps\.activation_smoke\.outcome/u,
     'final verdict must bind the actual smoke outcome',
+  )
+  assert.match(
+    workflow.slice(enforcementIndex),
+    /exit 1/u,
+    'a failed smoke must actually fail the job, not merely be reported',
   )
 })
