@@ -102,6 +102,21 @@ test('fixture teardown surfaces the workspace deadline failure before envelope c
   assert.equal(envelopeRemovalAttempts, 0)
 })
 
+test('dev-up suite delegates full fixture teardown to the budgeted orchestrator', async () => {
+  const source = await readFile(new URL('./dev-up.test.mjs', import.meta.url), 'utf8')
+
+  assert.match(
+    source,
+    /\bremoveFixture,\s*\n}\s+from '\.\/dev-up-fixture-cleanup\.mjs'/,
+    'dev-up.test.mjs must import the complete fixture teardown orchestrator',
+  )
+  assert.doesNotMatch(
+    source,
+    /async function removeFixture\s*\(/,
+    'dev-up.test.mjs must not retain a duplicate unbudgeted envelope-removal path',
+  )
+})
+
 test('fixture PID evidence survives partial recursive removal of the workspace', async () => {
   const envelopeRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-cleanup-test-'))
   const layout = createFixtureLayout(envelopeRoot)
