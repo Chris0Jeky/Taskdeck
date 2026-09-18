@@ -54,6 +54,9 @@ export function validateApiIntegrationWorkflow(
     if (!/^        timeout-minutes: 45\s*$/m.test(testStep)) {
       errors.push('API integration tests must retain the calibrated 45-minute timeout')
     }
+    if (!/(?:^|\s)--blame-hang(?:\s|$)/m.test(testStep)) {
+      errors.push('API integration tests must retain the --blame-hang collection switch')
+    }
     if (!testStep.includes('--blame-hang-timeout 20m')) {
       errors.push('API integration tests must retain the 20-minute per-test hang timeout')
     }
