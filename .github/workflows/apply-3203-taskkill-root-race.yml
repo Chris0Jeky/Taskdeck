@@ -1,0 +1,546 @@
+name: Apply issue 3203 taskkill root-exit race
+
+on:
+  push:
+    branches:
+      - fix/3203-taskkill-root-exit-race
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-3203-taskkill-root-exit-race
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/3203-taskkill-root-exit-race
+          fetch-depth: 0
+
+      - name: Add deterministic non-zero taskkill regressions
+        shell: powershell
+        run: |
+          $path = 'scripts/git/Test-New-CodexIssueWorktree.ps1'
+          $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
+
+          function Replace-ExactlyOnce {
+              param(
+                  [Parameter(Mandatory = $true)][string]$Source,
+                  [Parameter(Mandatory = $true)][string]$Old,
+                  [Parameter(Mandatory = $true)][string]$New,
+                  [Parameter(Mandatory = $true)][string]$Description
+              )
+
+              $count = ([regex]::Matches($Source, [regex]::Escape($Old))).Count
+              if ($count -ne 1) {
+                  throw "Expected exactly one $Description anchor, found $count."
+              }
+              return $Source.Replace($Old, $New)
+          }
+
+          $helperReadAnchor = '    $fixtureHelperContent = [System.IO.File]::ReadAllText($fixtureHelperPath)'
+          $helperReadReplacement = @'
+              $fixtureHelperContent = [System.IO.File]::ReadAllText($fixtureHelperPath)
+              # Test fixture only: route the helper's argv-safe taskkill launch through a compiled
+              # executable so the suite can deterministically control the native exit code without
+              # changing the production helper's public contract.
+              $fixtureTaskkillAnchor = '        $taskkillPath = Join-Path $env:SystemRoot "System32/taskkill.exe"'
+              $fixtureTaskkillReplacement = @'
+                  $testTaskkillPath = [System.Environment]::GetEnvironmentVariable("TASKDECK_TEST_TASKKILL_EXECUTABLE", "Process")
+                  $taskkillPath = if ([string]::IsNullOrWhiteSpace($testTaskkillPath)) {
+                      Join-Path $env:SystemRoot "System32/taskkill.exe"
+                  }
+                  else {
+                      $testTaskkillPath
+                  }
+              '@
+              $fixtureTaskkillCount = ([regex]::Matches($fixtureHelperContent, [regex]::Escape($fixtureTaskkillAnchor))).Count
+              Assert-Equal 1 $fixtureTaskkillCount "Fixture helper taskkill anchor was missing or ambiguous."
+              $fixtureTaskkillReplacement = $fixtureTaskkillReplacement -replace "`r?`n", $(if ($fixtureHelperContent.Contains("`r`n")) { "`r`n" } else { "`n" })
+              $fixtureHelperContent = $fixtureHelperContent.Replace($fixtureTaskkillAnchor, $fixtureTaskkillReplacement.TrimEnd("`r", "`n"))
+          '@
+          $text = Replace-ExactlyOnce $text $helperReadAnchor $helperReadReplacement 'fixture-helper read'
+
+          $timeoutPathAnchor = @'
+                  $timeoutChildPidPath = Join-Path $timeoutProbeDirectory "child.pid"
+                  $timeoutChildStartPath = Join-Path $timeoutProbeDirectory "child.start"
+                  Set-Content -LiteralPath $timeoutRemoteScript -Encoding Ascii -Value @'
+          '@
+          $timeoutPathReplacement = @'
+                  $timeoutChildPidPath = Join-Path $timeoutProbeDirectory "child.pid"
+                  $timeoutChildStartPath = Join-Path $timeoutProbeDirectory "child.start"
+                  $taskkillRaceExecutablePath = Join-Path $timeoutProbeDirectory "taskkill-race.exe"
+                  $taskkillRaceTracePath = Join-Path $timeoutProbeDirectory "taskkill-race.trace"
+                  $taskkillRaceSource = @'
+              using System;
+              using System.Diagnostics;
+              using System.IO;
+
+              public static class TaskdeckTaskkillRace
+              {
+                  public static int Main(string[] args)
+                  {
+                      string tracePath = Environment.GetEnvironmentVariable("TASKDECK_TEST_TASKKILL_TRACE");
+                      if (!String.IsNullOrEmpty(tracePath))
+                      {
+                          File.WriteAllText(tracePath, String.Join(" ", args));
+                      }
+
+                      int rootPid = -1;
+                      for (int index = 0; index + 1 < args.Length; index++)
+                      {
+                          if (String.Equals(args[index], "/PID", StringComparison.OrdinalIgnoreCase))
+                          {
+                              Int32.TryParse(args[index + 1], out rootPid);
+                              break;
+                          }
+                      }
+                      if (rootPid <= 0)
+                      {
+                          Console.Error.WriteLine("TASKDECK_INVALID_TASKKILL_PID");
+                          return 91;
+                      }
+
+                      string mode = Environment.GetEnvironmentVariable("TASKDECK_TEST_TASKKILL_MODE") ?? "tree";
+                      if (String.Equals(mode, "root-only", StringComparison.Ordinal))
+                      {
+                          try
+                          {
+                              using (Process root = Process.GetProcessById(rootPid))
+                              {
+                                  root.Kill();
+                                  root.WaitForExit(5000);
+                              }
+                          }
+                          catch (ArgumentException)
+                          {
+                              // The race under test also permits the root to disappear before this wrapper observes it.
+                          }
+                      }
+                      else
+                      {
+                          string realTaskkill = Environment.GetEnvironmentVariable("TASKDECK_TEST_REAL_TASKKILL");
+                          if (String.IsNullOrEmpty(realTaskkill))
+                          {
+                              Console.Error.WriteLine("TASKDECK_REAL_TASKKILL_MISSING");
+                              return 92;
+                          }
+
+                          ProcessStartInfo startInfo = new ProcessStartInfo();
+                          startInfo.FileName = realTaskkill;
+                          startInfo.Arguments = String.Join(" ", args);
+                          startInfo.UseShellExecute = false;
+                          startInfo.CreateNoWindow = true;
+                          startInfo.RedirectStandardOutput = true;
+                          startInfo.RedirectStandardError = true;
+                          using (Process taskkill = Process.Start(startInfo))
+                          {
+                              string stdout = taskkill.StandardOutput.ReadToEnd();
+                              string stderr = taskkill.StandardError.ReadToEnd();
+                              taskkill.WaitForExit();
+                              Console.Out.Write(stdout);
+                              Console.Error.Write(stderr);
+                          }
+                      }
+
+                      // Deliberately non-English and non-semantic: production must decide from exact
+                      // process identities, not native prose or this wrapper's non-zero status.
+                      Console.Error.WriteLine("TASKDECK_NONZERO_AFTER_TASKKILL");
+                      return 255;
+                  }
+              }
+              '@
+                  Add-Type -TypeDefinition $taskkillRaceSource -Language CSharp -OutputAssembly $taskkillRaceExecutablePath -OutputType ConsoleApplication
+                  Set-Content -LiteralPath $timeoutRemoteScript -Encoding Ascii -Value @'
+          '@
+          $text = Replace-ExactlyOnce $text $timeoutPathAnchor $timeoutPathReplacement 'timeout fixture path'
+
+          $environmentAnchor = @'
+                      TASKDECK_TIMEOUT_CHILD_PID = $timeoutChildPidPath
+                      TASKDECK_TIMEOUT_CHILD_START = $timeoutChildStartPath
+                  }
+          '@
+          $environmentReplacement = @'
+                      TASKDECK_TIMEOUT_CHILD_PID = $timeoutChildPidPath
+                      TASKDECK_TIMEOUT_CHILD_START = $timeoutChildStartPath
+                      TASKDECK_TEST_TASKKILL_EXECUTABLE = $taskkillRaceExecutablePath
+                      TASKDECK_TEST_REAL_TASKKILL = (Join-Path $env:SystemRoot "System32/taskkill.exe")
+                      TASKDECK_TEST_TASKKILL_TRACE = $taskkillRaceTracePath
+                      TASKDECK_TEST_TASKKILL_MODE = "tree"
+                  }
+          '@
+          $text = Replace-ExactlyOnce $text $environmentAnchor $environmentReplacement 'timeout environment'
+
+          $successAnchor = @'
+                      Assert-True (-not $sameTimeoutRoot) "Timed-out Git command returned while its exact remote-helper root was still alive."
+                      Assert-True (-not $sameTimeoutChild) "Timed-out Git command returned while its exact remote-helper child was still alive."
+                      Assert-True (-not (Test-Path -LiteralPath $timeoutTarget)) "Timed-out remote lookup created a worktree target."
+          '@
+          $successReplacement = @'
+                      Assert-True (-not $sameTimeoutRoot) "Timed-out Git command returned while its exact remote-helper root was still alive."
+                      Assert-True (-not $sameTimeoutChild) "Timed-out Git command returned while its exact remote-helper child was still alive."
+                      Assert-True (Test-Path -LiteralPath $taskkillRaceTracePath -PathType Leaf) "Deterministic taskkill wrapper did not run."
+                      $taskkillRaceTrace = Get-Content -Raw -LiteralPath $taskkillRaceTracePath
+                      Assert-NormalizedContains $taskkillRaceTrace "/T /F" "Deterministic taskkill wrapper did not receive recursive forced-termination arguments."
+                      Assert-True (-not (Test-Path -LiteralPath $timeoutTarget)) "Timed-out remote lookup created a worktree target."
+          '@
+          $text = Replace-ExactlyOnce $text $successAnchor $successReplacement 'successful timeout assertions'
+
+          $survivorAnchor = @'
+                      Assert-Equal $timeoutRegistrationsBefore $timeoutRegistrationsAfter "Timed-out remote lookup changed worktree registrations."
+                      Assert-Equal $timeoutRefsBefore $timeoutRefsAfter "Timed-out remote lookup changed Git refs."
+                  }
+                  finally {
+          '@
+          $survivorReplacement = @'
+                      Assert-Equal $timeoutRegistrationsBefore $timeoutRegistrationsAfter "Timed-out remote lookup changed worktree registrations."
+                      Assert-Equal $timeoutRefsBefore $timeoutRefsAfter "Timed-out remote lookup changed Git refs."
+
+                      Remove-Item -LiteralPath $timeoutRootPidPath, $timeoutRootStartPath, $timeoutChildPidPath, $timeoutChildStartPath, $taskkillRaceTracePath -Force -ErrorAction SilentlyContinue
+                      $timeoutRootPid = $null
+                      $timeoutRootStart = $null
+                      $timeoutChildPid = $null
+                      $timeoutChildStart = $null
+                      [System.Environment]::SetEnvironmentVariable("TASKDECK_TEST_TASKKILL_MODE", "root-only", "Process")
+
+                      $survivorStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                      $survivorResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                          "-IssueNumber", "506",
+                          "-Slug", "taskkill-survivor",
+                          "-BaseBranch", "timeout-probe/main",
+                          "-GitCommandTimeoutSeconds", "5"
+                      )
+                      $survivorStopwatch.Stop()
+                      Assert-True ($survivorResult.ExitCode -ne 0) "A non-zero taskkill result with captured survivors must fail closed."
+                      Assert-NormalizedContains $survivorResult.Output "retained captured identities after termination" "Surviving descendants were not reported through exact-identity verification."
+                      Assert-True ($survivorStopwatch.Elapsed.TotalSeconds -lt 20) "Survivor proof exceeded its bounded cleanup deadline: $($survivorStopwatch.Elapsed.TotalSeconds) seconds."
+                      Assert-True (Test-Path -LiteralPath $timeoutRootPidPath -PathType Leaf) "Survivor fixture did not record its remote-helper root."
+                      Assert-True (Test-Path -LiteralPath $timeoutChildPidPath -PathType Leaf) "Survivor fixture did not record its remote-helper child."
+                      $timeoutRootPid = [int](Get-Content -Raw -LiteralPath $timeoutRootPidPath)
+                      $timeoutRootStart = [long](Get-Content -Raw -LiteralPath $timeoutRootStartPath)
+                      $timeoutChildPid = [int](Get-Content -Raw -LiteralPath $timeoutChildPidPath)
+                      $timeoutChildStart = [long](Get-Content -Raw -LiteralPath $timeoutChildStartPath)
+                      $liveSurvivorChild = Get-Process -Id $timeoutChildPid -ErrorAction SilentlyContinue
+                      $sameSurvivorChild = $null -ne $liveSurvivorChild -and $liveSurvivorChild.StartTime.ToUniversalTime().Ticks -eq $timeoutChildStart
+                      Assert-True $sameSurvivorChild "The deterministic survivor fixture did not leave its exact descendant alive for the fail-closed proof."
+                  }
+                  finally {
+          '@
+          $text = Replace-ExactlyOnce $text $survivorAnchor $survivorReplacement 'survivor regression'
+
+          [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
+
+      - name: Prove the regression is red before implementation
+        shell: powershell
+        run: |
+          $output = & powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case refresh-remote-base 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          Write-Host $output
+          if ($exitCode -eq 0) {
+              throw 'The taskkill root-exit regression unexpectedly passed before implementation.'
+          }
+          if (-not $output.Contains('taskkill.exe failed for timed-out Git PID') -or -not $output.Contains('TASKDECK_NONZERO_AFTER_TASKKILL')) {
+              throw 'The red run did not fail at the intended non-zero taskkill decision boundary.'
+          }
+
+      - name: Implement exact-identity taskkill proof
+        shell: powershell
+        run: |
+          $path = 'scripts/git/New-CodexIssueWorktree.ps1'
+          $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
+          $startAnchor = 'function Stop-HelperOwnedProcessTree {'
+          $endAnchor = 'function Invoke-GitCommand {'
+          $start = $text.IndexOf($startAnchor, [System.StringComparison]::Ordinal)
+          $secondStart = if ($start -ge 0) { $text.IndexOf($startAnchor, $start + 1, [System.StringComparison]::Ordinal) } else { -1 }
+          $end = if ($start -ge 0) { $text.IndexOf($endAnchor, $start, [System.StringComparison]::Ordinal) } else { -1 }
+          if ($start -lt 0 -or $secondStart -ge 0 -or $end -le $start) {
+              throw 'Process-tree helper anchors were missing, duplicated, or out of order.'
+          }
+
+          $replacement = @'
+              function Get-HelperOwnedWindowsProcessTreeIdentities {
+                  param(
+                      [Parameter(Mandatory = $true)]
+                      [System.Diagnostics.Process]$Process
+                  )
+
+                  $expectedProcessId = $Process.Id
+                  $expectedStartTimeUtcTicks = $Process.StartTime.ToUniversalTime().Ticks
+                  try {
+                      $processRows = @(Get-CimInstance -ClassName Win32_Process -Property ProcessId, ParentProcessId -ErrorAction Stop)
+                  }
+                  catch {
+                      throw "Could not snapshot descendants for timed-out Git PID ${expectedProcessId}: $($_.Exception.Message)"
+                  }
+
+                  $childrenByParent = @{}
+                  foreach ($row in $processRows) {
+                      $parentProcessId = [int]$row.ParentProcessId
+                      if (-not $childrenByParent.ContainsKey($parentProcessId)) {
+                          $childrenByParent[$parentProcessId] = [System.Collections.Generic.List[int]]::new()
+                      }
+                      $childrenByParent[$parentProcessId].Add([int]$row.ProcessId)
+                  }
+
+                  $pending = [System.Collections.Generic.Queue[int]]::new()
+                  $pending.Enqueue($expectedProcessId)
+                  $visited = [System.Collections.Generic.HashSet[int]]::new()
+                  $identities = [System.Collections.Generic.List[object]]::new()
+                  while ($pending.Count -gt 0) {
+                      $processId = $pending.Dequeue()
+                      if (-not $visited.Add($processId)) {
+                          continue
+                      }
+
+                      if ($childrenByParent.ContainsKey($processId)) {
+                          foreach ($childProcessId in $childrenByParent[$processId]) {
+                              $pending.Enqueue($childProcessId)
+                          }
+                      }
+
+                      $candidate = Get-Process -Id $processId -ErrorAction SilentlyContinue
+                      if ($null -eq $candidate) {
+                          if ($processId -eq $expectedProcessId) {
+                              $Process.WaitForExit()
+                              throw "Timed-out Git PID $expectedProcessId disappeared before descendant cleanup could be proven."
+                          }
+                          continue
+                      }
+
+                      try {
+                          $startTimeUtcTicks = $candidate.StartTime.ToUniversalTime().Ticks
+                      }
+                      catch {
+                          $stillLive = Get-Process -Id $processId -ErrorAction SilentlyContinue
+                          if ($null -eq $stillLive) {
+                              continue
+                          }
+                          throw "Could not capture the exact identity of helper-owned PID ${processId}: $($_.Exception.Message)"
+                      }
+                      finally {
+                          $candidate.Dispose()
+                      }
+
+                      if ($processId -eq $expectedProcessId -and $startTimeUtcTicks -ne $expectedStartTimeUtcTicks) {
+                          throw "Refusing to terminate recycled PID $expectedProcessId after a Git timeout."
+                      }
+
+                      $identities.Add([pscustomobject]@{
+                          Id = $processId
+                          StartTimeUtcTicks = $startTimeUtcTicks
+                      })
+                  }
+
+                  if (-not ($identities | Where-Object { $_.Id -eq $expectedProcessId -and $_.StartTimeUtcTicks -eq $expectedStartTimeUtcTicks })) {
+                      throw "Timed-out Git PID $expectedProcessId was not captured in its exact process-tree snapshot."
+                  }
+
+                  return @($identities)
+              }
+
+              function Wait-ForHelperOwnedWindowsProcessTreeReap {
+                  param(
+                      [Parameter(Mandatory = $true)]
+                      [System.Diagnostics.Process]$Process,
+
+                      [Parameter(Mandatory = $true)]
+                      [object[]]$Identities,
+
+                      [int]$ReapTimeoutMilliseconds = 5000
+                  )
+
+                  $expectedProcessId = $Process.Id
+                  $deadline = [DateTimeOffset]::UtcNow.AddMilliseconds($ReapTimeoutMilliseconds)
+                  $remainingMilliseconds = [Math]::Max(0, [int][Math]::Ceiling(($deadline - [DateTimeOffset]::UtcNow).TotalMilliseconds))
+                  if (-not $Process.WaitForExit($remainingMilliseconds)) {
+                      throw "Timed-out Git PID $expectedProcessId did not exit within $ReapTimeoutMilliseconds ms after process-tree termination."
+                  }
+                  $Process.WaitForExit()
+
+                  while ($true) {
+                      $survivors = [System.Collections.Generic.List[string]]::new()
+                      foreach ($identity in $Identities) {
+                          $candidate = Get-Process -Id $identity.Id -ErrorAction SilentlyContinue
+                          if ($null -eq $candidate) {
+                              continue
+                          }
+
+                          try {
+                              $actualStartTimeUtcTicks = $candidate.StartTime.ToUniversalTime().Ticks
+                          }
+                          catch {
+                              $stillLive = Get-Process -Id $identity.Id -ErrorAction SilentlyContinue
+                              if ($null -eq $stillLive) {
+                                  continue
+                              }
+                              throw "Could not verify cleanup of helper-owned PID $($identity.Id): $($_.Exception.Message)"
+                          }
+                          finally {
+                              $candidate.Dispose()
+                          }
+
+                          if ($actualStartTimeUtcTicks -ne $identity.StartTimeUtcTicks) {
+                              throw "Refusing to accept cleanup because captured PID $($identity.Id) was recycled during termination."
+                          }
+                          $survivors.Add("PID $($identity.Id)@$($identity.StartTimeUtcTicks)")
+                      }
+
+                      if ($survivors.Count -eq 0) {
+                          return
+                      }
+                      if ([DateTimeOffset]::UtcNow -ge $deadline) {
+                          throw "Timed-out Git process tree retained captured identities after termination: $($survivors -join ', ')."
+                      }
+                      Start-Sleep -Milliseconds 25
+                  }
+              }
+
+              function Stop-HelperOwnedProcessTree {
+                  param(
+                      [Parameter(Mandatory = $true)]
+                      [System.Diagnostics.Process]$Process,
+
+                      [int]$ReapTimeoutMilliseconds = 5000
+                  )
+
+                  if ($Process.HasExited) {
+                      $Process.WaitForExit()
+                      throw "Timed-out Git PID $($Process.Id) exited before descendant cleanup could be proven."
+                  }
+
+                  $expectedProcessId = $Process.Id
+                  $expectedStartTime = $Process.StartTime
+                  $liveProcess = Get-Process -Id $expectedProcessId -ErrorAction SilentlyContinue
+                  if ($null -eq $liveProcess) {
+                      $Process.WaitForExit()
+                      throw "Timed-out Git PID $expectedProcessId disappeared before descendant cleanup could be proven."
+                  }
+                  try {
+                      if ($liveProcess.StartTime -ne $expectedStartTime) {
+                          throw "Refusing to terminate recycled PID $expectedProcessId after a Git timeout."
+                      }
+                  }
+                  finally {
+                      $liveProcess.Dispose()
+                  }
+
+                  $isWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+                  if ($isWindows) {
+                      $processTreeIdentities = Get-HelperOwnedWindowsProcessTreeIdentities -Process $Process
+                      $taskkillPath = Join-Path $env:SystemRoot "System32/taskkill.exe"
+                      if (-not (Test-Path -LiteralPath $taskkillPath -PathType Leaf)) {
+                          throw "Cannot terminate the timed-out Git process tree because taskkill.exe was not found."
+                      }
+
+                      $taskkill = $null
+                      try {
+                          $taskkillStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+                          $taskkillStartInfo.FileName = $taskkillPath
+                          $taskkillStartInfo.UseShellExecute = $false
+                          $taskkillStartInfo.CreateNoWindow = $true
+                          $taskkillStartInfo.RedirectStandardOutput = $true
+                          $taskkillStartInfo.RedirectStandardError = $true
+                          $taskkillArguments = @("/PID", [string]$expectedProcessId, "/T", "/F")
+                          if ($null -ne $taskkillStartInfo.PSObject.Properties['ArgumentList']) {
+                              foreach ($argument in $taskkillArguments) {
+                                  $taskkillStartInfo.ArgumentList.Add($argument)
+                              }
+                          }
+                          else {
+                              $taskkillStartInfo.Arguments = (($taskkillArguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+                          }
+
+                          $taskkill = [System.Diagnostics.Process]::new()
+                          $taskkill.StartInfo = $taskkillStartInfo
+                          if (-not $taskkill.Start()) {
+                              throw "taskkill.exe did not start for timed-out Git PID $expectedProcessId."
+                          }
+                          $taskkillStdout = $taskkill.StandardOutput.ReadToEndAsync()
+                          $taskkillStderr = $taskkill.StandardError.ReadToEndAsync()
+                          if (-not $taskkill.WaitForExit($ReapTimeoutMilliseconds)) {
+                              try {
+                                  $taskkill.Kill()
+                              }
+                              catch {
+                                  throw "taskkill.exe did not finish within $ReapTimeoutMilliseconds ms and could not be terminated for timed-out Git PID ${expectedProcessId}: $($_.Exception.Message)"
+                              }
+                              if (-not $taskkill.WaitForExit($ReapTimeoutMilliseconds)) {
+                                  throw "taskkill.exe remained alive for $ReapTimeoutMilliseconds ms after termination was requested for timed-out Git PID $expectedProcessId."
+                              }
+                              $taskkill.WaitForExit()
+                              Wait-ForAsyncTask -Task $taskkillStdout -Description "terminated taskkill.exe stdout drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+                              Wait-ForAsyncTask -Task $taskkillStderr -Description "terminated taskkill.exe stderr drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+                              throw "taskkill.exe exceeded its $ReapTimeoutMilliseconds ms cleanup deadline and was terminated and reaped for timed-out Git PID $expectedProcessId."
+                          }
+                          $taskkill.WaitForExit()
+                          Wait-ForAsyncTask -Task $taskkillStdout -Description "taskkill.exe stdout drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+                          Wait-ForAsyncTask -Task $taskkillStderr -Description "taskkill.exe stderr drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+                          # A non-zero native status is not sufficient to classify cleanup. taskkill
+                          # can report failure after descendants have exited and the root disappears.
+                          # Exact PID/start-time identities below are the sole completion proof.
+                          $null = $taskkillStdout.GetAwaiter().GetResult()
+                          $null = $taskkillStderr.GetAwaiter().GetResult()
+                      }
+                      finally {
+                          if ($null -ne $taskkill) {
+                              $taskkill.Dispose()
+                          }
+                      }
+
+                      Wait-ForHelperOwnedWindowsProcessTreeReap `
+                          -Process $Process `
+                          -Identities $processTreeIdentities `
+                          -ReapTimeoutMilliseconds $ReapTimeoutMilliseconds
+                      return
+                  }
+
+                  $killTreeMethod = $Process.GetType().GetMethod("Kill", [Type[]]@([bool]))
+                  if ($null -eq $killTreeMethod) {
+                      try { $Process.Kill() } catch { }
+                      throw "This platform cannot guarantee descendant cleanup for timed-out Git PID $expectedProcessId."
+                  }
+                  $Process.Kill($true)
+                  if (-not $Process.WaitForExit($ReapTimeoutMilliseconds)) {
+                      throw "Timed-out Git PID $expectedProcessId did not exit within $ReapTimeoutMilliseconds ms after process-tree termination."
+                  }
+                  $Process.WaitForExit()
+              }
+
+          '@
+          $replacement = $replacement -replace "`r?`n", "`n"
+          $updated = $text.Substring(0, $start) + $replacement + $text.Substring($end)
+          [System.IO.File]::WriteAllText($path, $updated, [System.Text.UTF8Encoding]::new($false))
+
+      - name: Verify focused Windows regression
+        shell: powershell
+        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case refresh-remote-base
+
+      - name: Commit implementation and remove applicator
+        shell: powershell
+        run: |
+          Remove-Item -LiteralPath '.github/workflows/apply-3203-taskkill-root-race.yml'
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/git/New-CodexIssueWorktree.ps1 scripts/git/Test-New-CodexIssueWorktree.ps1 .github/workflows/apply-3203-taskkill-root-race.yml
+          $changed = @(git diff --cached --name-only | Sort-Object)
+          $expected = @(
+              '.github/workflows/apply-3203-taskkill-root-race.yml',
+              'scripts/git/New-CodexIssueWorktree.ps1',
+              'scripts/git/Test-New-CodexIssueWorktree.ps1'
+          )
+          if (($changed -join "`n") -cne ($expected -join "`n")) {
+              throw "Unexpected changed-file set: $($changed -join ', ')"
+          }
+          git commit -m 'fix: prove taskkill cleanup by exact process identities'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin 'HEAD:fix/3203-taskkill-root-exit-race'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
