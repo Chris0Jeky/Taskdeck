@@ -1,0 +1,146 @@
+name: Apply PR 3168 verification docs
+
+on:
+  push:
+    branches:
+      - ci/2136-launcher-identity-seam
+    paths:
+      - .github/workflows/apply-3168-verification-docs.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pr-3168-verification-docs
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ci/2136-launcher-identity-seam
+          fetch-depth: 0
+
+      - name: Document and pin the complete launcher command
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          command = (
+              'node --test --test-concurrency=1 --test-timeout=30000 '
+              'scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs'
+          )
+
+          lanes_path = Path('docs/ci/continuation/LANES.md')
+          lanes = lanes_path.read_text(encoding='utf-8')
+          old_lanes = (
+              'The exact launcher command remains '
+              '`node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`. '
+              "Its Linux guard and ten-minute step timeout are unchanged. The separate job has a fifteen-minute "
+              "ceiling for checkout/Node setup around the suite's own watchdog. Node uses the caller's version input. "
+              "The new checkout disables credential persistence; preserve concurrent checkout hardening during "
+              "integration. PowerShell cases remain governed by SC-3; this slice does not change #2858's cleanup "
+              'implementation.'
+          )
+          new_lanes = (
+              f'The exact hosted launcher command is `{command}`. It runs the focused Bash identity seam before the '
+              'broader cross-launcher suite, so local reproduction cannot omit the TERM/KILL grace-window, exact-PID, '
+              'and descendant-traversal contract. Its Linux guard and ten-minute step timeout are unchanged. The '
+              "separate job has a fifteen-minute ceiling for checkout/Node setup around the suites' own watchdogs. "
+              "Node uses the caller's version input. The new checkout disables credential persistence; preserve "
+              'concurrent checkout hardening during integration. PowerShell cases remain governed by SC-3; this slice '
+              "does not change #2858's cleanup implementation."
+          )
+          if lanes.count(old_lanes) != 1:
+              raise SystemExit(f'Expected one canonical LANES command paragraph, found {lanes.count(old_lanes)}.')
+          lanes_path.write_text(lanes.replace(old_lanes, new_lanes, 1), encoding='utf-8', newline='\n')
+
+          guide_path = Path('docs/TESTING_GUIDE.md')
+          guide = guide_path.read_text(encoding='utf-8')
+          old_guide = '''  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs in the independent
+  `source-launcher` job of the reusable frontend workflow, reported as
+  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`.
+  It remains **Linux only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
+  cases therefore still run on every PR; the PowerShell launcher cases are local Windows evidence,
+  run from the repository root on Windows with
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`, until the
+  CI-04 `#2328` laptop runner is registered. On a Windows developer box that command is known to
+  red its `Bash:` cases under Git Bash (the local `#2378` cohort, recorded in `docs/STATUS.md`); the
+  `PowerShell:` cases are the evidence being asked for, so read the result per case rather than as
+  one pass/fail. The Windows leg keeps lint, typecheck, build and coverage unchanged.
+  `scripts/ci/smart-ci/launcher-suite-placement.test.mjs` pins that placement.
+'''
+          new_guide = f'''  The focused launcher identity seam (`scripts/ci/dev-up-identity-seam.test.mjs`) and the broader
+  cross-launcher regression suite (`scripts/ci/dev-up.test.mjs`) run together in the independent
+  `source-launcher` job of the reusable frontend workflow, reported as
+  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`. The exact hosted
+  command, and the canonical Linux local reproduction command, is
+  `{command}`. The focused Bash seam runs first and pins the full TERM grace window, exact signal/PID
+  binding, and descendant-driven KILL escalation before the broader launcher scenarios execute.
+  Both suites remain **Linux only** in hosted CI (CI-07 `#2331`, SC-3: hosted minutes are Linux-only).
+  On a Windows developer box with Git Bash, the same combined command reproduces the complete lane;
+  the known local `#2378` cohort can still red individual `Bash:` cases, as recorded in
+  `docs/STATUS.md`. To isolate the PowerShell launcher evidence until the CI-04 `#2328` laptop runner
+  is registered, run
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs` and read the
+  result per case rather than treating unrelated Bash cases as PowerShell evidence. The Windows
+  frontend leg keeps lint, typecheck, build and coverage unchanged.
+  `scripts/ci/smart-ci/launcher-suite-placement.test.mjs` pins both hosted placement and the complete
+  documented command.
+'''
+          if guide.count(old_guide) != 1:
+              raise SystemExit(f'Expected one TESTING_GUIDE launcher section, found {guide.count(old_guide)}.')
+          guide_path.write_text(guide.replace(old_guide, new_guide, 1), encoding='utf-8', newline='\n')
+
+          test_path = Path('scripts/ci/smart-ci/launcher-suite-placement.test.mjs')
+          test_source = test_path.read_text(encoding='utf-8')
+          old_urls = "const policyUrl = new URL('../../../ci/policy.v1.json', import.meta.url)\n"
+          new_urls = old_urls + (
+              "const lanesDocUrl = new URL('../../../docs/ci/continuation/LANES.md', import.meta.url)\n"
+              "const testingGuideUrl = new URL('../../../docs/TESTING_GUIDE.md', import.meta.url)\n"
+          )
+          if test_source.count(old_urls) != 1:
+              raise SystemExit(f'Expected one policy URL declaration, found {test_source.count(old_urls)}.')
+          test_source = test_source.replace(old_urls, new_urls, 1)
+
+          anchor = "test('frontend semantics no longer execute launcher tests or wait for launcher results', async () => {\n"
+          docs_test = '''test('canonical docs reproduce the complete launcher command (#2136)', async () => {
+  const documents = [
+    ['docs/ci/continuation/LANES.md', await readFile(lanesDocUrl, 'utf8')],
+    ['docs/TESTING_GUIDE.md', await readFile(testingGuideUrl, 'utf8')],
+  ]
+  for (const [name, text] of documents) {
+    assert.ok(text.includes(``${LAUNCHER_COMMAND}``), `${name} must include the exact hosted launcher command`)
+    assert.ok(text.includes('scripts/ci/dev-up-identity-seam.test.mjs'), `${name} must name the identity seam`)
+    assert.ok(text.includes('scripts/ci/dev-up.test.mjs'), `${name} must name the broader launcher suite`)
+  }
+})
+'''.replace('``${LAUNCHER_COMMAND}``', '`' + '${LAUNCHER_COMMAND}' + '`')
+          if test_source.count(anchor) != 1:
+              raise SystemExit(f'Expected one placement-test anchor, found {test_source.count(anchor)}.')
+          test_source = test_source.replace(anchor, docs_test + anchor, 1)
+          test_path.write_text(test_source, encoding='utf-8', newline='\n')
+          PY
+
+      - name: Verify launcher placement and documentation contract
+        shell: bash
+        run: |
+          node --check scripts/ci/smart-ci/launcher-suite-placement.test.mjs
+          node --test scripts/ci/smart-ci/launcher-suite-placement.test.mjs
+          git diff --check
+
+      - name: Publish review repair and remove applicator
+        shell: bash
+        run: |
+          git rm .github/workflows/apply-3168-verification-docs.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/ci/continuation/LANES.md docs/TESTING_GUIDE.md scripts/ci/smart-ci/launcher-suite-placement.test.mjs
+          git commit -m 'docs(ci): include launcher identity seam in verification'
+          git push origin HEAD:ci/2136-launcher-identity-seam
