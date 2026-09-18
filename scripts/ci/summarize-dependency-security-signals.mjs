@@ -410,15 +410,17 @@ const SEVERITY_RANK = {
   critical: 4,
 }
 
-function mergeAdvisory(advisories, advisoryId, severity) {
-  if (!advisoryId) {
-    return
-  }
+// This value is deliberately outside the allowlist schema. An advisory whose
+// identity cannot be recovered must remain visible to the package-level
+// all-of check instead of disappearing beside an allowlisted sibling.
+const UNIDENTIFIED_NPM_ADVISORY_ID = '__UNIDENTIFIED_NPM_ADVISORY__'
 
+function mergeAdvisory(advisories, advisoryId, severity) {
+  const effectiveAdvisoryId = advisoryId ?? UNIDENTIFIED_NPM_ADVISORY_ID
   const normalizedSeverity = normalizeSeverity(severity)
-  const existing = advisories.get(advisoryId)
+  const existing = advisories.get(effectiveAdvisoryId)
   if (!existing || SEVERITY_RANK[normalizedSeverity] > SEVERITY_RANK[existing]) {
-    advisories.set(advisoryId, normalizedSeverity)
+    advisories.set(effectiveAdvisoryId, normalizedSeverity)
   }
 }
 
@@ -445,6 +447,13 @@ function collectFrontendAdvisories(packageName, vulnerabilities, cache, visiting
       for (const [advisoryId, severity] of nested) {
         mergeAdvisory(advisories, advisoryId, severity)
       }
+      if (nested.size === 0) {
+        // A missing, empty, or cyclic indirect vulnerability cannot be
+        // treated as clean when another advisory in the same package is
+        // allowlisted. Keep a high marker so the package-level all-of check
+        // fails closed.
+        mergeAdvisory(advisories, null, 'high')
+      }
       continue
     }
 
@@ -454,7 +463,7 @@ function collectFrontendAdvisories(packageName, vulnerabilities, cache, visiting
     }
 
     const advisoryId = advisoryIdFromNpmVia(via)
-    mergeAdvisory(advisories, advisoryId, advisorySeverity)
+    mergeAdvisory(advisories, advisoryId, advisoryId ? advisorySeverity : 'high')
   }
 
   cache.set(packageName, new Map(advisories))

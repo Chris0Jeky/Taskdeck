@@ -470,6 +470,92 @@ test('missing nested npm advisory severity does not fall back to the package sev
   assert.equal(summary.totals.hasEnforcementFailures, true)
 })
 
+test('unidentified nested npm advisories cannot be hidden by allowlisted siblings', async () => {
+  const frontendReport = {
+    vulnerabilities: {
+      'unidentified-advisory-package': {
+        name: 'unidentified-advisory-package',
+        severity: 'high',
+        isDirect: true,
+        fixAvailable: false,
+        via: [
+          {
+            source: 1004,
+            name: 'unidentified-advisory-package',
+            severity: 'high',
+            url: 'https://github.com/advisories/GHSA-2222-3333-4444',
+          },
+          {
+            name: 'unidentified-advisory-package',
+            severity: 'high',
+          },
+        ],
+      },
+      'missing-indirect-package': {
+        name: 'missing-indirect-package',
+        severity: 'high',
+        isDirect: true,
+        fixAvailable: false,
+        via: [
+          {
+            source: 1005,
+            name: 'missing-indirect-package',
+            severity: 'high',
+            url: 'https://github.com/advisories/GHSA-5555-6666-7777',
+          },
+          'missing-transitive-package',
+        ],
+      },
+    },
+    metadata: {
+      vulnerabilities: {
+        info: 0,
+        low: 0,
+        moderate: 0,
+        high: 2,
+        critical: 0,
+        total: 2,
+      },
+    },
+  }
+  const allowlist = {
+    schemaVersion: 1,
+    entries: [
+      {
+        advisoryId: 'GHSA-2222-3333-4444',
+        reason: 'Only the identified sibling is covered.',
+        owner: '@Chris0Jeky',
+        expiresOn: '2026-09-30',
+      },
+      {
+        advisoryId: 'GHSA-5555-6666-7777',
+        reason: 'Only the identified sibling is covered.',
+        owner: '@Chris0Jeky',
+        expiresOn: '2026-09-30',
+      },
+    ],
+  }
+
+  const { summary } = await buildFixture({
+    frontendReport,
+    frontendExitCode: 1,
+    allowlist,
+  })
+
+  assert.equal(summary.frontend.acceptedHighOrCriticalCount, 0)
+  assert.equal(summary.frontend.unresolvedHighOrCriticalCount, 2)
+  assert.equal(summary.totals.acceptedHighOrCriticalFindings, 0)
+  assert.equal(summary.totals.unresolvedHighOrCriticalFindings, 2)
+  assert.equal(summary.totals.hasEnforcementFailures, true)
+  assert.deepEqual(
+    summary.frontend.packages.map((pkg) => pkg.advisoryIds),
+    [
+      ['GHSA-5555-6666-7777', '__UNIDENTIFIED_NPM_ADVISORY__'],
+      ['GHSA-2222-3333-4444', '__UNIDENTIFIED_NPM_ADVISORY__'],
+    ],
+  )
+})
+
 test('frontend package indirection resolves to the underlying advisory identity', async () => {
   const frontendReport = {
     vulnerabilities: {
