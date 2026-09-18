@@ -25,16 +25,49 @@ jobs:
         run: python scripts/ci/pr-3202-apply.py
 
       - name: Verify focused backend contracts
+        shell: bash
         run: |
+          set +e
+          mkdir -p artifacts/pr-3202
+
           dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj \
             -c Release -m:1 \
-            --filter "FullyQualifiedName~ProposalConflictDetectorTests|FullyQualifiedName~CardHistoryServiceTests|FullyQualifiedName~SimilarDecisionServiceTests"
+            --filter "FullyQualifiedName~ProposalConflictDetectorTests|FullyQualifiedName~CardHistoryServiceTests|FullyQualifiedName~SimilarDecisionServiceTests" \
+            2>&1 | tee artifacts/pr-3202/application.log
+          application_status=${PIPESTATUS[0]}
+
           dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj \
             -c Release -m:1 \
-            --filter "FullyQualifiedName~RelatedProposalRevisionEvidenceTests"
+            --filter "FullyQualifiedName~RelatedProposalRevisionEvidenceTests" \
+            2>&1 | tee artifacts/pr-3202/api.log
+          api_status=${PIPESTATUS[0]}
+
           dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj \
-            -c Release -m:1
-          dotnet build backend/Taskdeck.sln -c Release --no-restore
+            -c Release -m:1 \
+            2>&1 | tee artifacts/pr-3202/architecture.log
+          architecture_status=${PIPESTATUS[0]}
+
+          dotnet build backend/Taskdeck.sln -c Release --no-restore \
+            2>&1 | tee artifacts/pr-3202/build.log
+          build_status=${PIPESTATUS[0]}
+
+          printf 'application=%s\napi=%s\narchitecture=%s\nbuild=%s\n' \
+            "$application_status" "$api_status" "$architecture_status" "$build_status" \
+            > artifacts/pr-3202/status.txt
+
+          if [ "$application_status" -ne 0 ] || [ "$api_status" -ne 0 ] \
+            || [ "$architecture_status" -ne 0 ] || [ "$build_status" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload focused verification output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-3202-focused-verification
+          path: artifacts/pr-3202/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Commit verified repair
         run: |
