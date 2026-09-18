@@ -69,7 +69,9 @@ describe('Review unavailable-return landmark locale (GH-2599)', () => {
       expect(localized).not.toBe(i18n.global.t('review.empty.unavailable.return'))
       expect(landmark.attributes('aria-label')).toBe(localized)
       expect(landmark.attributes('role')).toBe('region')
-      expect(landmark.attributes('tabindex')).toBe('-1')
+      // No PERSISTENT tabindex: a focusable root would swallow every click on
+      // inert review content and silence both skins' own focus handoffs.
+      expect(landmark.attributes('tabindex')).toBeUndefined()
     } finally {
       wrapper.unmount()
     }

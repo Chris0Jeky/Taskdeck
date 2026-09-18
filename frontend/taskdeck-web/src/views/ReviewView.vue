@@ -21,8 +21,16 @@ const reviewSurfaceRef = ref<ComponentPublicInstance | null>(null)
  * Keep this route wrapper as the last resort rather than teaching either skin
  * about the other's layout. The two ticks let their own queue/empty handoff win;
  * only a focus loss all the way to the document receives the stable, named
- * Review landmark. `tabindex="-1"` keeps it out of the ordinary Tab order. The landmark uses a dedicated localized surface name rather than the
- * return action's label, and that name follows live locale changes.
+ * Review landmark. The landmark uses a dedicated localized surface name rather
+ * than the return action's label, and that name follows live locale changes.
+ *
+ * `tabindex` is applied for this handoff only and removed when the landmark
+ * loses focus. A PERMANENT `tabindex="-1"` would make every click on inert
+ * review content focus this root (the HTML focusing steps walk up to the
+ * nearest focusable ancestor), and both skins' own handoffs read "activeElement
+ * is not the document" as "the reviewer moved focus deliberately" -
+ * PaperReviewView's unavailable-return handoff and ReviewMain's decision-receipt
+ * handoff would then stop firing for the rest of the visit.
  */
 watch(
   () => route.hash,
@@ -37,6 +45,8 @@ watch(
 
     const surface = reviewSurfaceRef.value?.$el as HTMLElement | undefined
     if (!surface?.isConnected) return
+    surface.setAttribute('tabindex', '-1')
+    surface.addEventListener('blur', () => surface.removeAttribute('tabindex'), { once: true })
     surface.focus()
   },
   { flush: 'post' },
@@ -49,13 +59,11 @@ watch(
     ref="reviewSurfaceRef"
     role="region"
     :aria-label="t('review.surfaceLabel')"
-    tabindex="-1"
   />
   <LegacyReviewView
     v-else
     ref="reviewSurfaceRef"
     role="region"
     :aria-label="t('review.surfaceLabel')"
-    tabindex="-1"
   />
 </template>

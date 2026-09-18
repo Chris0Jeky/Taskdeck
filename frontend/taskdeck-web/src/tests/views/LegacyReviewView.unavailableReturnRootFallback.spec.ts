@@ -190,6 +190,13 @@ describe('Legacy Review unavailable-return root fallback (GH-2599)', () => {
       expect(landmark.getAttribute('tabindex')).toBe('-1')
       expect(document.activeElement).toBe(landmark)
 
+      // The landmark is a transient focus target only. Once it loses focus the
+      // attribute goes with it, so an ordinary click on inert review content
+      // cannot land on this root and suppress the skins' own focus handoffs.
+      ;(landmark as HTMLElement).blur()
+      await wrapper.vm.$nextTick()
+      expect(landmark.getAttribute('tabindex')).toBeNull()
+
       reload.resolve([visible])
       await flushPromises()
     } finally {
