@@ -63,3 +63,12 @@ for (const [name, nonPrintable] of [
     )
   })
 }
+
+test('permits horizontal tabs in comment-only frontmatter content', () => {
+  const errors = collectControlPathMirrorErrors(
+    JSON.stringify({ controlPaths: ['ci/**'] }),
+    quotedRule('ci/**', ['# owner\tteam']),
+  )
+
+  assert.deepEqual(errors, [])
+})
