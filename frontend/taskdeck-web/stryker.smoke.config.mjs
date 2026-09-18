@@ -1,14 +1,14 @@
 import baseConfig from './stryker.config.mjs'
+import { mutationSmokeRange } from './stryker.smoke.contract.mjs'
 
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
   ...baseConfig,
   // Keep this probe cheap enough for local use and early CI failure. The
-  // selected line is the board-list deletion branch covered by the focused
-  // board CRUD suite; update the coordinates with that seam if it moves.
-  // `scripts/check-mutation-smoke.mjs` fails the command when the range no
-  // longer yields mutants, so a moved seam cannot pass silently.
-  mutate: ['src/store/board/boardCrudStore.ts:599:28-599:78'],
+  // shared contract binds these coordinates to the exact board-list deletion
+  // expression, and the receipt guard verifies the report's source text before
+  // accepting any non-empty all-Killed mutant set.
+  mutate: [mutationSmokeRange],
   // The smoke deliberately drives Vitest through Stryker's command runner
   // rather than `@stryker-mutator/vitest-runner`. With Stryker 10 and the
   // repository's Vitest 5 line the vitest-runner reports "0.00 tests per
