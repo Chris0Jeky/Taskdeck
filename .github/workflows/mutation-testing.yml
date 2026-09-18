@@ -97,7 +97,7 @@ jobs:
         run: npm run mutation:smoke
 
       - name: Run Stryker advisory report
-        if: always()
+        if: ${{ !cancelled() && (steps.activation_smoke.outcome == 'success' || steps.activation_smoke.outcome == 'failure') }}
         continue-on-error: true
         working-directory: frontend/taskdeck-web
         run: npx stryker run
@@ -111,7 +111,7 @@ jobs:
           retention-days: 30
 
       - name: Enforce mutation activation smoke verdict
-        if: always()
+        if: ${{ !cancelled() && (steps.activation_smoke.outcome == 'success' || steps.activation_smoke.outcome == 'failure') }}
         env:
           ACTIVATION_SMOKE_OUTCOME: ${{ steps.activation_smoke.outcome }}
         run: |
