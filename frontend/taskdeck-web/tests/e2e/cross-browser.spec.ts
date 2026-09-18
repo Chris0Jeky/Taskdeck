@@ -52,12 +52,12 @@ test('@cross-browser workspace navigation between views', async ({ page }) => {
   const mainNavigation = page.getByRole('navigation', { name: 'Main navigation' })
 
   // Boards
-  await mainNavigation.getByRole('link', { name: 'Boards', exact: true }).click()
+  await mainNavigation.getByRole('link', { name: /Boards$/ }).click()
   await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
 
   // Inbox
-  await mainNavigation.getByRole('link', { name: 'Inbox', exact: true }).click()
+  await mainNavigation.getByRole('link', { name: /Inbox$/ }).click()
   await expect(page).toHaveURL(/\/workspace\/inbox$/)
 
   // Back to Home through the registered workspace shortcut.
