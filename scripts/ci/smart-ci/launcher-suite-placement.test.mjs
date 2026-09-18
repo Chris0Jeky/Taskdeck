@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { test } from 'node:test'
 
 const frontendUnitWorkflowUrl = new URL('../../../.github/workflows/reusable-frontend-unit.yml', import.meta.url)
 const policyUrl = new URL('../../../ci/policy.v1.json', import.meta.url)
+const ciScriptsDirUrl = new URL('../', import.meta.url)
 const LAUNCHER_STEP_NAME = 'Run source launcher regression suite'
+// #3165: the step runs the whole `dev-up*.test.mjs` family, not just the launcher entry point, so
+// the fixture-teardown regressions are required-CI coverage rather than an opt-in local run.
+const LAUNCHER_SUITE_GLOB = 'scripts/ci/dev-up*.test.mjs'
+const LAUNCHER_SUITE_FILE_PATTERN = /^dev-up.*\.test\.mjs$/
 const UNCONDITIONAL_STEP_NAMES = [
   'Run frontend lint', 'Run frontend typecheck', 'Run frontend build', 'Run frontend tests with coverage thresholds',
 ]
@@ -35,10 +40,19 @@ test('source launcher remains Linux-only with the exact command and step budget 
   assert.ok(lines.includes('    runs-on: ubuntu-latest'))
   assert.ok(!lines.some(line => /^ {4}if:/.test(line)))
   const launcher = step(extractSteps(lines), LAUNCHER_STEP_NAME)
-  assert.match(launcher.body, /^ {8}run: node --test --test-concurrency=1 --test-timeout=30000 scripts\/ci\/dev-up\.test\.mjs$/m)
+  assert.match(launcher.body, /^ {8}run: node --test --test-concurrency=1 --test-timeout=30000 scripts\/ci\/dev-up\*\.test\.mjs$/m)
   assert.match(launcher.body, /^ {8}timeout-minutes: 10$/m)
   assert.equal(condition(launcher), "runner.os == 'Linux'")
-  assert.equal(text.split('scripts/ci/dev-up.test.mjs').length - 1, 1)
+  assert.equal(text.split(LAUNCHER_SUITE_GLOB).length - 1, 1)
+})
+test('the launcher glob is not vacuous and covers the whole dev-up suite family (#3165)', async () => {
+  const suiteFiles = (await readdir(ciScriptsDirUrl)).filter(name => LAUNCHER_SUITE_FILE_PATTERN.test(name)).sort()
+  assert.ok(suiteFiles.includes('dev-up.test.mjs'), 'the launcher entry point must stay in the glob')
+  assert.deepEqual(
+    suiteFiles,
+    ['dev-up-fixture-cleanup.test.mjs', 'dev-up-fixture-diagnostics.test.mjs', 'dev-up.test.mjs'],
+    'a new scripts/ci/dev-up*.test.mjs file joins the required Linux step: confirm it is bounded before widening this list',
+  )
 })
 test('frontend semantics no longer execute launcher tests or wait for launcher results', async () => {
   const lines = extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit')
