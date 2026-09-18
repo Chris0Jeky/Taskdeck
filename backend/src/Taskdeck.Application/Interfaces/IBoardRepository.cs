@@ -33,4 +33,10 @@ public interface IBoardRepository : IRepository<Board>
     Task<IEnumerable<Board>> GetByIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);
     Task<IEnumerable<Guid>> GetOwnedBoardIdsAsync(Guid userId, IEnumerable<Guid> candidateBoardIds, CancellationToken cancellationToken = default);
     Task<Board?> GetByIdWithDetailsAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads only the persisted archive flag without resolving through the change tracker.
+    /// Returns <c>null</c> when the board no longer exists.
+    /// </summary>
+    Task<bool?> GetIsArchivedAsync(Guid id, CancellationToken cancellationToken = default);
 }

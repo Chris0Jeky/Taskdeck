@@ -22,6 +22,10 @@
 //
 //   v<major>.<minor>.<patch>[-<prerelease>][+<build>]
 //
+// Numeric prerelease identifiers follow SemVer: only `0` or a non-zero
+// integer is accepted. Identifiers containing letters retain the existing
+// narrow alphanumeric contract.
+//
 // Anything else in the candidate list is skipped with a warning — an unrelated
 // tag in the repository must not fail a publish — but an unparseable TARGET is
 // refused, because the caller has already grammar-checked it and a mismatch
@@ -42,7 +46,7 @@ import { pathToFileURL } from 'node:url'
 
 /** Mirrors TAG_GRAMMAR in scripts/ci/validate-release-tag.sh. */
 export const RELEASE_TAG_GRAMMAR =
-  /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?(?:\+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?$/
+  /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:(?:0|[1-9][0-9]*)|(?:[0-9A-Za-z]*[A-Za-z][0-9A-Za-z]*))(?:\.(?:(?:0|[1-9][0-9]*)|(?:[0-9A-Za-z]*[A-Za-z][0-9A-Za-z]*)))*))?(?:\+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?$/
 
 /** The same 64-character ceiling the shell gate enforces. */
 export const MAX_TAG_LENGTH = 64

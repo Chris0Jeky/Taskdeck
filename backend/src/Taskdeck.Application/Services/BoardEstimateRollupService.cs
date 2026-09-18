@@ -24,12 +24,34 @@ public sealed class BoardEstimateRollupService(
         if (!permission.Value)
             return Result.Failure<BoardEstimateRollupDto>(ErrorCodes.Forbidden, "You do not have access to this board.");
 
-        var cards = (await unitOfWork.Cards.GetForEstimateRollupsAsync(boardId, cancellationToken))
-            .Where(card => card.BoardId == boardId && !card.IsArchived).ToArray();
-        var columns = (await unitOfWork.Columns.GetByBoardIdAsync(boardId, cancellationToken))
-            .Where(column => column.BoardId == boardId).OrderBy(column => column.Position).ThenBy(column => column.Id).ToArray();
-        // Existing active owner/member query; owners need no BoardAccess row.
-        var participants = await assignments.ReadParticipantsAsync(boardId, cancellationToken);
+        Card[] cards;
+        Column[] columns;
+        IReadOnlyList<User> participants;
+
+        await unitOfWork.BeginReadTransactionAsync(cancellationToken);
+        try
+        {
+            cards = (await unitOfWork.Cards.GetForEstimateRollupsAsync(boardId, cancellationToken))
+                .Where(card => card.BoardId == boardId && !card.IsArchived).ToArray();
+            columns = (await unitOfWork.Columns.GetByBoardIdAsync(boardId, cancellationToken))
+                .Where(column => column.BoardId == boardId)
+                .OrderBy(column => column.Position)
+                .ThenBy(column => column.Id)
+                .ToArray();
+            // Existing active owner/member query; owners need no BoardAccess row.
+            participants = await assignments.ReadParticipantsAsync(boardId, cancellationToken);
+
+            // All database-backed inputs are now materialised from one snapshot. Release
+            // it before the in-memory aggregation so a long board does not retain WAL pages.
+            await unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            // Cancellation must not prevent cleanup of the connection-scoped transaction.
+            await unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            throw;
+        }
+
         var eligibleIds = participants.Select(user => user.Id).ToHashSet();
         var cardsByColumn = cards.ToLookup(card => card.ColumnId);
         var participantCards = cards.SelectMany(card => card.Assignments
