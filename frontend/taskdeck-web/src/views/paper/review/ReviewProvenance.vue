@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ProvenanceRow, ProvenanceWeight } from '../../../composables/usePaperReviewSelectors'
+import {
+  EMPTY_EVIDENCE_LINKS,
+  type ProvenanceRow,
+  type ProvenanceWeight,
+} from '../../../composables/usePaperReviewSelectors'
 import ProvenanceDrawer from '../../../components/review/ProvenanceDrawer.vue'
 import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
 import { classifyProvenanceActor, formatProvenanceActorLabel } from './provenanceActor'
 
-const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = []
 
 const props = withDefaults(defineProps<{
   rows: ProvenanceRow[]
