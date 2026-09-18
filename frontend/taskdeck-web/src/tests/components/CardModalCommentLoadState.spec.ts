@@ -189,6 +189,32 @@ describe('CardModal comment load state', () => {
     wrapper.unmount()
   })
 
+  it('keeps archived-card retry operable while comment mutations remain locked', async () => {
+    fetchCardComments
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([])
+
+    const archivedCard: Card = { ...card, isArchived: true }
+    const wrapper = mount(CardModal, {
+      attachTo: document.body,
+      props: { card: archivedCard, isOpen: true, labels: [] },
+    })
+
+    await flushPromises()
+
+    const retry = wrapper.get<HTMLButtonElement>('[data-testid="card-comments-retry"]')
+    expect(retry.element.closest('fieldset:disabled')).toBeNull()
+    expect(wrapper.get<HTMLTextAreaElement>('#new-card-comment').attributes('disabled')).toBeDefined()
+
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(fetchCardComments).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="card-comments-empty"]').text()).toContain('No comments yet')
+
+    wrapper.unmount()
+  })
+
   it('does not let a stale read from the previous card replace the current card state', async () => {
     const firstRead = createDeferred<CardComment[]>()
     const secondRead = createDeferred<CardComment[]>()
