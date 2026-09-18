@@ -13,25 +13,25 @@ public sealed class LlmQuotaServiceReservationDenialTests
     [Theory]
     [InlineData(
         QuotaReservationDecision.RequestsExceeded,
-        12L,
+        12,
         34_000L,
         98_000L,
         "Per-user hourly request limit (12) exceeded")]
     [InlineData(
         QuotaReservationDecision.TokensExceeded,
-        12L,
+        12,
         34_000L,
         98_000L,
         "Per-user daily token budget (34000) exhausted")]
     [InlineData(
         QuotaReservationDecision.GlobalExceeded,
-        12L,
+        12,
         34_000L,
         98_000L,
         "Global daily token budget exhausted")]
     public async Task ReserveAsync_MapsRepositoryDenialToStableServiceContract(
         QuotaReservationDecision decision,
-        long requestsPerHour,
+        int requestsPerHour,
         long tokensPerDay,
         long globalBudgetCeilingTokens,
         string expectedReason)
