@@ -1,0 +1,58 @@
+name: PR 3177 repair stale archived-detail assertion
+
+on:
+  push:
+    branches:
+      - fix/2075-refresh-archived-capture-detail
+    paths:
+      - .github/workflows/pr3177-repair-stale-assertion.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.repository == 'Chris0Jeky/Taskdeck'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/2075-refresh-archived-capture-detail
+          fetch-depth: 0
+
+      - name: Update the existing archived-detail expectation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('frontend/taskdeck-web/src/tests/views/paper/PaperInboxView.spec.ts')
+          source = path.read_text(encoding='utf-8')
+          old = """    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('history-capture', {
+              recordError: false,
+              showToast: false,
+            })"""
+          new = """    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('history-capture', {
+              forceRefresh: true,
+              recordError: false,
+              showToast: false,
+            })"""
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale assertion, found {source.count(old)}')
+          path.write_text(source.replace(old, new), encoding='utf-8')
+
+      - name: Verify the focused Paper Inbox contract
+        working-directory: frontend/taskdeck-web
+        run: |
+          npm ci
+          npx vitest run src/tests/views/paper/PaperInboxView.spec.ts
+
+      - name: Publish the bounded repair and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/pr3177-repair-stale-assertion.yml
+          git add frontend/taskdeck-web/src/tests/views/paper/PaperInboxView.spec.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "test: align archived detail expectation"
+          git push origin HEAD:fix/2075-refresh-archived-capture-detail
