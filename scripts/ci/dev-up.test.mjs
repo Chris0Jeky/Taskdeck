@@ -23,7 +23,7 @@ import {
   createFixtureCleanupBudget,
   createFixtureLayout,
   describeLiveFixtureProcesses,
-  removeFixtureDirectory,
+  removeFixture,
 } from './dev-up-fixture-cleanup.mjs'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
@@ -511,36 +511,9 @@ async function readOptional(path) {
 
 // Standalone seam fixtures are small and do not own launcher processes. Keep their cleanup
 // bounded by Node's native retry count; full launcher fixtures use the absolute per-test budget
-// captured by removeFixtureDirectory below.
+// captured by the imported removeFixture orchestrator.
 async function removeDirectory(root) {
   await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
-}
-
-async function removeFixture(fixture) {
-  let teardownFailure = null
-  try {
-    await removeFixtureDirectory(fixture)
-  } catch (error) {
-    teardownFailure = error
-  }
-
-  try {
-    await rm(fixture.envelopeRoot, { recursive: true, force: true })
-  } catch (envelopeError) {
-    const liveProcesses = await describeLiveFixtureProcesses(fixture)
-    if (!teardownFailure) {
-      throw new Error(
-        `DEV_UP_FIXTURE_TEARDOWN_FAILED: fixture evidence envelope ${fixture.envelopeRoot} ` +
-          `could not be removed. Fixture processes still alive: ${liveProcesses}.`,
-        { cause: envelopeError },
-      )
-    }
-    teardownFailure.message +=
-      ` Evidence envelope cleanup also failed (${envelopeError?.code ?? envelopeError}); ` +
-      `fixture processes still alive: ${liveProcesses}.`
-  }
-
-  if (teardownFailure) throw teardownFailure
 }
 
 async function createFixture(platform) {
