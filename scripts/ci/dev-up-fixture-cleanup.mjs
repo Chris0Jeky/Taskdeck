@@ -88,6 +88,16 @@ export async function describeLiveFixtureProcesses(
   return alive.length > 0 ? alive.join(', ') : 'none still alive'
 }
 
+async function describeProcessesForTeardownFailure(fixture, dependencies) {
+  try {
+    return await describeLiveFixtureProcesses(fixture, dependencies)
+  } catch (error) {
+    // Diagnostic collection must not replace the original cleanup failure or
+    // turn unavailable evidence into a claim that no fixture processes remain.
+    return `unavailable (${error?.code ?? error})`
+  }
+}
+
 async function describeRemainingEntries(root, { listEntries = readdir } = {}) {
   try {
     const entries = await listEntries(root)
@@ -101,7 +111,7 @@ async function describeRemainingEntries(root, { listEntries = readdir } = {}) {
 async function createTeardownFailure(fixture, error, dependencies) {
   const { cleanupBudget, root } = fixture
   const nowMs = dependencies.now()
-  const liveProcesses = await describeLiveFixtureProcesses(fixture, dependencies)
+  const liveProcesses = await describeProcessesForTeardownFailure(fixture, dependencies)
   const remainingEntries = await describeRemainingEntries(root, dependencies)
   const elapsedMs = Math.max(0, nowMs - cleanupBudget.testStartedAtMs)
   const operation = [error?.code, error?.syscall, error?.path]
@@ -177,7 +187,7 @@ export async function removeFixture(fixture, options = {}) {
   try {
     await removeEnvelope(fixture.envelopeRoot)
   } catch (error) {
-    const liveProcesses = await describeLiveFixtureProcesses(fixture, options)
+    const liveProcesses = await describeProcessesForTeardownFailure(fixture, options)
     throw new Error(
       `DEV_UP_FIXTURE_TEARDOWN_FAILED: fixture evidence envelope ${fixture.envelopeRoot} ` +
         `could not be removed. Fixture processes still alive: ${liveProcesses}.`,
