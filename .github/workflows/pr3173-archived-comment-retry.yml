@@ -1,4 +1,4 @@
-name: PR 3173 keep archived comment retry operable
+name: Apply PR 3173 archived comment retry repair
 
 'on':
   push:
@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   repair:
-    if: ${{ github.repository == 'Chris0Jeky/Taskdeck' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,156 +25,51 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/taskdeck-web/package-lock.json
 
-      - name: Separate comment reads from write locking
+      - name: Move the comment surface outside the write-disabled fieldset
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
 
-          comments = Path('frontend/taskdeck-web/src/components/board/card-modal/CardModalComments.vue')
-          source = comments.read_text(encoding='utf-8')
+          path = Path('frontend/taskdeck-web/src/components/board/CardModal.vue')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          comments_start = next(i for i, line in enumerate(lines) if line.strip() == '<CardModalComments')
+          metadata_start = next(i for i, line in enumerate(lines[comments_start + 1:], comments_start + 1) if line.strip() == '<CardModalMetadata')
+          fieldset_close = next(i for i, line in enumerate(lines[metadata_start + 1:], metadata_start + 1) if line.strip() == '</fieldset>')
 
-          replacements = [
-              (
-                  "  getRepliesFn: (parentCommentId: string) => CardComment[]\n}",
-                  "  getRepliesFn: (parentCommentId: string) => CardComment[]\n  writesDisabled?: boolean\n}",
-                  'writes-disabled prop',
-              ),
-              (
-                  '        id="new-card-comment"\n        v-model="newCommentContent"',
-                  '        id="new-card-comment"\n        :disabled="writesDisabled"\n        v-model="newCommentContent"',
-                  'new-comment textarea guard',
-              ),
-              (
-                  ':disabled="newCommentContent.trim().length === 0"',
-                  ':disabled="writesDisabled || newCommentContent.trim().length === 0"',
-                  'new-comment button guard',
-              ),
-              (
-                  '              type="button"\n              class="text-primary hover:text-primary/80"',
-                  '              type="button"\n              :disabled="writesDisabled"\n              class="text-primary hover:text-primary/80 disabled:cursor-not-allowed disabled:opacity-40"',
-                  'edit guard',
-              ),
-              (
-                  '              type="button"\n              class="text-error hover:text-error/80"',
-                  '              type="button"\n              :disabled="writesDisabled"\n              class="text-error hover:text-error/80 disabled:cursor-not-allowed disabled:opacity-40"',
-                  'delete guard',
-              ),
-              (
-                  '            :value="editingCommentContent"\n            aria-label="Edit comment"',
-                  '            :value="editingCommentContent"\n            :disabled="writesDisabled"\n            aria-label="Edit comment"',
-                  'edit textarea guard',
-              ),
-              (
-                  '              type="button"\n              class="px-3 py-1.5 text-sm text-on-surface-variant border border-outline-variant/40 rounded-md hover:bg-surface-container-high transition-colors"\n              @click="$emit(\'cancel-edit-comment\')"',
-                  '              type="button"\n              :disabled="writesDisabled"\n              class="px-3 py-1.5 text-sm text-on-surface-variant border border-outline-variant/40 rounded-md hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-40 transition-colors"\n              @click="$emit(\'cancel-edit-comment\')"',
-                  'edit cancel guard',
-              ),
-              (
-                  ':disabled="editingCommentContent.trim().length === 0"',
-                  ':disabled="writesDisabled || editingCommentContent.trim().length === 0"',
-                  'edit save guard',
-              ),
-              (
-                  '              :value="replyDraftByParent[comment.id] ?? \'\'"\n              aria-label="Reply to comment"',
-                  '              :value="replyDraftByParent[comment.id] ?? \'\'"\n              :disabled="writesDisabled"\n              aria-label="Reply to comment"',
-                  'reply textarea guard',
-              ),
-              (
-                  ':disabled="!(replyDraftByParent[comment.id] ?? \'\').trim().length"',
-                  ':disabled="writesDisabled || !(replyDraftByParent[comment.id] ?? \'\').trim().length"',
-                  'reply button guard',
-              ),
+          comments = lines[comments_start:metadata_start]
+          if any('writes-disabled=' in line for line in comments):
+              raise SystemExit('CardModalComments already has the explicit write guard')
+          get_replies = next(i for i, line in enumerate(comments) if ':get-replies-fn=' in line)
+          comments.insert(get_replies + 1, '            :writes-disabled="cardIsArchived || isSaving || editorWritesBlocked"')
+          metadata = lines[metadata_start:fieldset_close]
+
+          replacement = [
+              '        </fieldset>',
+              '',
+              '        <div class="space-y-4">',
+              *comments,
+              *metadata,
+              '        </div>',
           ]
-
-          for old, new, label in replacements:
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected one match, found {count}')
-              source = source.replace(old, new)
-          comments.write_text(source, encoding='utf-8')
-
-          modal = Path('frontend/taskdeck-web/src/components/board/CardModal.vue')
-          source = modal.read_text(encoding='utf-8')
-          old = '''          <CardModalComments
-            :top-level-comments="topLevelComments"
-            :editing-comment-id="editingCommentId"
-            :editing-comment-content="editingCommentContent"
-            :reply-draft-by-parent="replyDraftByParent"
-            :can-edit-comment-fn="canEditComment"
-            :get-replies-fn="getReplies"
-            v-model:new-comment-content="newCommentContent"
-            @update:editing-comment-content="editingCommentContent = $event"
-            @update:reply-draft-by-parent="replyDraftByParent = $event"
-            @add-comment="handleAddComment($event)"
-            @start-edit-comment="handleStartEditComment($event)"
-            @cancel-edit-comment="handleCancelEditComment"
-            @save-edit-comment="handleSaveEditComment($event)"
-            @delete-comment="handleDeleteComment($event)"
-          />
-
-          <CardModalMetadata
-            :card="card"
-            :loading-capture-provenance="loadingCaptureProvenance"
-            :capture-provenance-error="captureProvenanceError"
-            :capture-provenance="captureProvenance"
-            :loaded-capture-provenance-card-id="loadedCaptureProvenanceCardId"
-            :capture-href-fn="captureHref"
-            :proposal-href-fn="proposalHref"
-          />
-        </fieldset>'''
-          new = '''        </fieldset>
-
-        <div class="space-y-4">
-          <CardModalComments
-            :top-level-comments="topLevelComments"
-            :editing-comment-id="editingCommentId"
-            :editing-comment-content="editingCommentContent"
-            :reply-draft-by-parent="replyDraftByParent"
-            :can-edit-comment-fn="canEditComment"
-            :get-replies-fn="getReplies"
-            :writes-disabled="cardIsArchived || isSaving || editorWritesBlocked"
-            v-model:new-comment-content="newCommentContent"
-            @update:editing-comment-content="editingCommentContent = $event"
-            @update:reply-draft-by-parent="replyDraftByParent = $event"
-            @add-comment="handleAddComment($event)"
-            @start-edit-comment="handleStartEditComment($event)"
-            @cancel-edit-comment="handleCancelEditComment"
-            @save-edit-comment="handleSaveEditComment($event)"
-            @delete-comment="handleDeleteComment($event)"
-          />
-
-          <CardModalMetadata
-            :card="card"
-            :loading-capture-provenance="loadingCaptureProvenance"
-            :capture-provenance-error="captureProvenanceError"
-            :capture-provenance="captureProvenance"
-            :loaded-capture-provenance-card-id="loadedCaptureProvenanceCardId"
-            :capture-href-fn="captureHref"
-            :proposal-href-fn="proposalHref"
-          />
-        </div>'''
-          count = source.count(old)
-          if count != 1:
-              raise SystemExit(f'CardModal comments/metadata block: expected one match, found {count}')
-          modal.write_text(source.replace(old, new), encoding='utf-8')
+          updated = lines[:comments_start] + replacement + lines[fieldset_close + 1:]
+          path.write_text('\n'.join(updated) + '\n', encoding='utf-8')
           PY
 
-      - name: Verify focused comment-load and type contracts
+      - name: Verify the focused comment-load and type contracts
         working-directory: frontend/taskdeck-web
         run: |
           npm ci
           npx vitest run src/tests/components/CardModalCommentLoadState.spec.ts
           npm run type-check
 
-      - name: Publish repair and remove helper
+      - name: Publish the layout repair and remove this helper
         shell: bash
         run: |
           set -euo pipefail
           git rm .github/workflows/pr3173-archived-comment-retry.yml
-          git add frontend/taskdeck-web/src/components/board/CardModal.vue \
-            frontend/taskdeck-web/src/components/board/card-modal/CardModalComments.vue
+          git add frontend/taskdeck-web/src/components/board/CardModal.vue
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
