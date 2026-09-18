@@ -1,6 +1,6 @@
 # Friends and family beta runbook
 
-Last Updated: 2026-09-15
+Last Updated: 2026-09-18
 
 **Status: operator runbook for a small, trusted cohort.** This document does not authorize open
 registration, a public hosted beta, new telemetry, or a new invite-code UI. It composes the shipped
@@ -210,7 +210,24 @@ Before enabling a live provider:
 
 1. follow section 7 of the Stage 1 runbook, including the token ceiling and provider budget alert;
 2. give the participant the disclosure above and record the acknowledgement date privately;
-3. show the participant the instance's `GET /api/privacy/egress` disclosure;
+3. in the participant's own authenticated same-origin browser session, open DevTools → Console and
+   run the following. This keeps the bearer token in that browser and makes the authorized request
+   that ordinary navigation to the raw endpoint cannot make:
+
+   ~~~javascript
+   const token = localStorage.getItem('taskdeck_token')
+   if (!token) throw new Error('No authenticated Taskdeck session token was found')
+   const response = await fetch('/api/privacy/egress', {
+     headers: { Authorization: 'Bearer ' + token },
+   })
+   const disclosure = await response.json()
+   console.log(response.status, disclosure)
+   ~~~
+
+   Require HTTP 200 and let the participant read the returned disclosure before continuing. Run
+   this only in their own Taskdeck tab; never paste the token into a shared note, message, issue, or
+   maintainer-controlled console. If the request is not 200, leave the live provider disabled and
+   resolve the access/session problem first;
 4. use a provider key created for this instance, never a personal all-purpose key;
 5. disable the provider and recreate the stack if the agreed spending threshold is breached.
 
@@ -407,7 +424,15 @@ Friends-and-family observations route through the standing dogfooding lane repre
    Keep the downloaded file private. It is account-scoped and does not include the full shared-board
    column/card/label/comment tree; do not send it to the maintainer unless the participant explicitly
    consents to that transfer.
-3. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
+3. Before requesting deletion, reconcile every board the participant owns. For each such board, the
+   participant opens **Workspace → Settings → Access**, grants the maintainer `Owner` access (or
+   promotes the maintainer's existing access from `Editor`/`Admin` to `Owner`), then reopens the
+   access list and verifies that another owner is present. The account-deletion service refuses to
+   proceed while the participant is the sole owner of any board. Do not rely on the deletion request
+   itself as the ownership inventory. If every participant-owned board cannot be given another
+   verified owner, stop and record deletion as blocked; remove perimeter and board access where
+   possible, but do not claim that the account was deleted.
+4. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
    must perform the supported authenticated request from their own session, using their current
    password and the exact confirmation phrase `DELETE MY ACCOUNT` at `POST /api/account/delete`.
    The participant can perform that request from their own authenticated same-origin browser session:
@@ -433,10 +458,10 @@ Friends-and-family observations route through the standing dogfooding lane repre
    MFA material can remain under the documented deletion gaps, and the Stage 1 schedule keeps up to
    12 weekly encrypted off-platform backups (about 90 days). Tell the participant these retention
    limits before deletion and do not claim that all linked records or backups disappeared.
-4. Take a final encrypted backup only when its retention was disclosed and agreed.
-5. Stop exposure or keep registration `Closed`; do not reopen registration while an unused invite is
+5. Take a final encrypted backup only when its retention was disclosed and agreed.
+6. Stop exposure or keep registration `Closed`; do not reopen registration while an unused invite is
    still valid.
-6. Record the exit reason and whether the participant would return after a named change.
+7. Record the exit reason and whether the participant would return after a named change.
 
 ### Normal end of a local Windows trial
 
@@ -464,6 +489,7 @@ The runbook is ready for a specific participant only when every applicable box i
 - [ ] Participant received the plain-language privacy note.
 - [ ] Private shared feedback note created; no secrets stored in it.
 - [ ] Hosted path: Stage 1 backup and fresh-volume restore drill passed.
+- [ ] Hosted path: daily host backup and weekly off-platform copy/retention schedule installed and recorded.
 - [ ] Hosted path: outside identity denied; first-owner and participant invites minted separately.
 - [ ] Hosted path: maintainer registered first; participant registered second.
 - [ ] Hosted path: registration changed to `Closed` and the valid 403 probe passed.
