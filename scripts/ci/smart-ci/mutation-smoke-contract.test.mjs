@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -15,15 +15,34 @@ import {
 } from '../../../frontend/taskdeck-web/stryker.smoke.contract.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
+const trackedSourcePath = path.join(
+  repositoryRoot,
+  'frontend/taskdeck-web',
+  mutationSmokeContract.file,
+)
 
-function sourceWithContractSeam(source = mutationSmokeContract.source) {
+/**
+ * The real tracked file, exactly as Stryker reports it. The positive fixtures
+ * use this rather than a synthetic line so a stale contract line or an
+ * off-by-one column cannot pass by construction: a hand-built line indented to
+ * the contract's own column matches any column convention and proves nothing.
+ */
+async function trackedSource() {
+  return readFile(trackedSourcePath, 'utf8')
+}
+
+/**
+ * Synthetic source for the NEGATIVE controls only. Columns are Stryker's
+ * 1-based coordinates, so the seam starts after `column - 1` padding.
+ */
+function sourceWithContractSeam(source = mutationSmokeContract.source, columnShift = 0) {
   const lines = Array.from({ length: mutationSmokeContract.start.line }, () => '')
   lines[mutationSmokeContract.start.line - 1] =
-    ' '.repeat(mutationSmokeContract.start.column) + source
+    ' '.repeat(mutationSmokeContract.start.column - 1 + columnShift) + source
   return lines.join('\n')
 }
 
-function report({
+async function report({
   mutants = [{ mutatorName: 'EqualityOperator', status: 'Killed' }],
   ...overrides
 } = {}) {
@@ -31,7 +50,7 @@ function report({
     schemaVersion: mutationSmokeContract.schemaVersion,
     files: {
       [mutationSmokeContract.file]: {
-        source: sourceWithContractSeam(),
+        source: await trackedSource(),
         mutants,
       },
     },
@@ -46,19 +65,31 @@ function assertGuardFailure(candidate, pattern) {
   )
 }
 
-test('shared mutation range selects the exact contracted source seam', () => {
+test('the shared range addresses the seam in the real tracked source', async () => {
   assert.equal(
     mutationSmokeRange,
-    'src/store/board/boardCrudStore.ts:599:28-599:78',
+    `src/store/board/boardCrudStore.ts:${mutationSmokeContract.start.line}` +
+      `:${mutationSmokeContract.start.column}-` +
+      `${mutationSmokeContract.end.line}:${mutationSmokeContract.end.column}`,
   )
   assert.equal(mutationSmokeContract.source.length, 50)
+
+  // Real payload, not a fabricated line: the contract must address the seam in
+  // the file Stryker actually mutates, or `npm run mutation:smoke` fails on
+  // every run. Base drift moved this expression once already (#2931).
+  const line = (await trackedSource()).split(/\r?\n/u)[mutationSmokeContract.start.line - 1]
+  assert.equal(
+    line?.slice(mutationSmokeContract.start.column - 1, mutationSmokeContract.end.column - 1),
+    mutationSmokeContract.source,
+    'move the shared range in stryker.smoke.contract.mjs with the expression',
+  )
 })
 
-test('guard accepts any non-zero mutator count when the seam matches and every mutant is killed', () => {
-  assert.match(validateMutationSmokeReport(report()), /1 mutant killed/u)
+test('guard accepts any non-zero mutator count when the seam matches and every mutant is killed', async () => {
+  assert.match(validateMutationSmokeReport(await report()), /1 mutant killed/u)
   assert.match(
     validateMutationSmokeReport(
-      report({
+      await report({
         mutants: Array.from({ length: 7 }, (_, index) => ({
           mutatorName: `Mutator${index}`,
           status: 'Killed',
@@ -69,15 +100,15 @@ test('guard accepts any non-zero mutator count when the seam matches and every m
   )
 })
 
-test('guard rejects malformed schema, file inventory, source seam, empty mutants, and survivors', () => {
-  assertGuardFailure(report({ schemaVersion: '2.0' }), /unsupported smoke report schema/u)
+test('guard rejects malformed schema, file inventory, source seam, empty mutants, and survivors', async () => {
+  assertGuardFailure(await report({ schemaVersion: '2.0' }), /unsupported smoke report schema/u)
   assertGuardFailure({ schemaVersion: '1.0' }, /no valid "files" section/u)
   assertGuardFailure(
-    report({ files: { 'src/other.ts': { source: '', mutants: [] } } }),
+    await report({ files: { 'src/other.ts': { source: '', mutants: [] } } }),
     /no entry for src\/store\/board\/boardCrudStore\.ts/u,
   )
   assertGuardFailure(
-    report({
+    await report({
       files: {
         [mutationSmokeContract.file]: {
           source: sourceWithContractSeam('state.boards.value'),
@@ -87,9 +118,23 @@ test('guard rejects malformed schema, file inventory, source seam, empty mutants
     }),
     /no longer selects the expected source seam/u,
   )
-  assertGuardFailure(report({ mutants: [] }), /produced zero mutants/u)
+  // Negative control for the column convention: the same expression one column
+  // to the right must be rejected. Slicing with Stryker's raw 1-based columns
+  // would accept this shifted line and reject the real file (#2931).
   assertGuardFailure(
-    report({ mutants: [{ mutatorName: 'EqualityOperator', status: 'Survived' }] }),
+    await report({
+      files: {
+        [mutationSmokeContract.file]: {
+          source: sourceWithContractSeam(mutationSmokeContract.source, 1),
+          mutants: [{ mutatorName: 'x', status: 'Killed' }],
+        },
+      },
+    }),
+    /no longer selects the expected source seam/u,
+  )
+  assertGuardFailure(await report({ mutants: [] }), /produced zero mutants/u)
+  assertGuardFailure(
+    await report({ mutants: [{ mutatorName: 'EqualityOperator', status: 'Survived' }] }),
     /EqualityOperator=Survived/u,
   )
 })
@@ -116,7 +161,7 @@ test('file-backed guard distinguishes unreadable and malformed receipts', async 
     )
 
     const valid = path.join(fixtureRoot, 'valid.json')
-    await writeFile(valid, JSON.stringify(report()), 'utf8')
+    await writeFile(valid, JSON.stringify(await report()), 'utf8')
     await assert.doesNotReject(runMutationSmokeGuard(valid))
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true })

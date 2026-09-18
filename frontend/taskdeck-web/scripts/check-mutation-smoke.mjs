@@ -31,7 +31,7 @@ function sourceSlice(source, contract) {
   if (
     contract.start.line !== contract.end.line ||
     contract.start.line < 1 ||
-    contract.start.column < 0 ||
+    contract.start.column < 1 ||
     contract.end.column <= contract.start.column
   ) {
     fail('the mutation smoke source contract has an unsupported or invalid range')
@@ -42,7 +42,11 @@ function sourceSlice(source, contract) {
     return null
   }
 
-  return line.slice(contract.start.column, contract.end.column)
+  // Contract columns are Stryker's 1-based, end-exclusive coordinates; `slice`
+  // takes 0-based offsets, so both ends shift by one. Slicing with the raw
+  // Stryker columns silently selects a window one character to the right, which
+  // matches a fabricated fixture but never the real file.
+  return line.slice(contract.start.column - 1, contract.end.column - 1)
 }
 
 export function validateMutationSmokeReport(report, contract = mutationSmokeContract) {
