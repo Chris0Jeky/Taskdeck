@@ -1330,7 +1330,29 @@ function Invoke-ReadOnlyInventorySelfTest {
         }
     }
 
-    foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
+    $environmentProbeNames = @(
+        $environmentProbeName,
+        $missingEnvironmentProbeName,
+        $emptyEnvironmentProbeName
+    )
+    $originalEnvironmentProbeStates = @{}
+    foreach ($probeName in $environmentProbeNames) {
+        $originalEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+    }
+
+    try {
+        # Exercise the exact caller-state shapes named by the regression while the outer
+        # finally remains responsible for restoring whatever the invoking process supplied.
+        Set-InventoryProcessEnvironmentVariable -Name $environmentProbeName -Value "caller-non-empty"
+        Set-InventoryProcessEnvironmentVariable -Name $missingEnvironmentProbeName -Value $null
+        Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
+
+        $selfTestEnvironmentProbeStates = @{}
+        foreach ($probeName in $environmentProbeNames) {
+            $selfTestEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+        }
+
+        try {            foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
         Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
     }
 
@@ -1391,6 +1413,30 @@ function Invoke-ReadOnlyInventorySelfTest {
         }
     }
 
+        }
+        finally {
+            Restore-InventoryEnvironment -Saved $selfTestEnvironmentProbeStates
+        }
+
+        Assert-InventoryEnvironmentState `
+            -Name $environmentProbeName `
+            -Present $true `
+            -Value "caller-non-empty" `
+            -Message "The self-test must restore a caller's non-empty probe value."
+        Assert-InventoryEnvironmentState `
+            -Name $missingEnvironmentProbeName `
+            -Present $false `
+            -Message "The self-test must preserve a caller's missing probe state."
+        Assert-InventoryEnvironmentState `
+            -Name $emptyEnvironmentProbeName `
+            -Present $true `
+            -Value "" `
+            -Message "The self-test must restore a caller's present-empty probe value."
+        $state.Checks++
+    }
+    finally {
+        Restore-InventoryEnvironment -Saved $originalEnvironmentProbeStates
+    }
     $pathspecLaunch = Get-GitLaunchArguments -Arguments @("diff", "--name-only", "HEAD", "--", "scripts")
     if ($pathspecLaunch -cnotcontains "--") {
         throw "Local subcommands must keep their -- pathspec separator."
