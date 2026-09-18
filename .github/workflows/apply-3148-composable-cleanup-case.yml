@@ -1,0 +1,66 @@
+name: Apply PR 3148 composable cleanup-case fix
+
+on:
+  push:
+    branches:
+      - fix/2676-fsmonitor-cleanup-residuals
+    paths:
+      - .github/workflows/apply-3148-composable-cleanup-case.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Remove duplicated probe from git-add-failure
+        shell: pwsh
+        run: |
+          $path = 'scripts/git/Test-New-CodexIssueWorktree.ps1'
+          $text = Get-Content -LiteralPath $path -Raw
+          $duplicate = @'
+              $fsmonitorCleanupProbeRoot = Join-Path $testRoot "fsmonitor-cleanup-probe"
+              New-Item -ItemType Directory -Path $fsmonitorCleanupProbeRoot | Out-Null
+              Test-FsmonitorFixtureCleanupLauncher -ProbeRoot $fsmonitorCleanupProbeRoot
+              Complete-Test "fixture-owned fsmonitor shutdown precedes removal and preserves stop failures"
+
+          '@
+          $gitAddMarker = '    if (Test-CaseSelected "git-add-failure") {'
+          $markerIndex = $text.IndexOf($gitAddMarker, [StringComparison]::Ordinal)
+          if ($markerIndex -lt 0) {
+              throw 'git-add-failure marker was not found.'
+          }
+          $duplicateIndex = $text.IndexOf($duplicate, $markerIndex, [StringComparison]::Ordinal)
+          if ($duplicateIndex -lt 0) {
+              throw 'The duplicated fsmonitor cleanup probe was not found inside git-add-failure.'
+          }
+          if ($text.IndexOf($duplicate, $duplicateIndex + $duplicate.Length, [StringComparison]::Ordinal) -ge 0) {
+              throw 'More than one duplicated probe was found after git-add-failure.'
+          }
+          $text = $text.Remove($duplicateIndex, $duplicate.Length)
+          Set-Content -LiteralPath $path -Value $text -NoNewline
+
+          git diff --check
+          & ./scripts/git/Test-New-CodexIssueWorktree.ps1 -Case @('fsmonitor-fixture-cleanup', 'git-add-failure')
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Commit verified fix and remove bootstrap workflow
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/git/Test-New-CodexIssueWorktree.ps1
+          git rm .github/workflows/apply-3148-composable-cleanup-case.yml
+          git diff --cached --check
+          git commit -m 'test(worktree): keep cleanup cases composable'
+          git push origin "HEAD:${{ github.ref_name }}"
