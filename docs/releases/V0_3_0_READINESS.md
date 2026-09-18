@@ -131,9 +131,10 @@ section F is unbuilt.
 
 **Section H is a prerequisite in full (Q1 on `#2337`, ruled A by the maintainer 2026-09-03).** CI-10
 `#2334` moved from v0.4 to v0.3 and is a release blocker: the nightly coordinator with its honest
-no-change receipt and weekly sweep, mutation kept manual, and the clean-from-tag hosted-only release
-qualification all land before cutover. The agent's recommendation to split the section (keep nightly
-consolidation on v0.4, carve out release qualification) was declined. `#2334` depends on CI-01 (closed),
+no-change receipt and weekly sweep, mutation kept manual, and the pre-cutover release contract plus
+public/no-publish rehearsals all land before cutover. Exact-tag qualification and publication remain
+in section L after privacy and runner association. The agent's recommendation to split the section
+(keep nightly consolidation on v0.4, carve out release qualification) was declined. `#2334` depends on CI-01 (closed),
 CI-03 `#2327` and CI-05 `#2329`, both already v0.3, so nothing else moves milestone; its scope also
 triages `#1210` and `#2180`, which carry no milestone.
 
