@@ -90,6 +90,10 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
+      - name: Validate mutation source-text guard isolation
+        working-directory: frontend/taskdeck-web
+        run: node --test scripts/stryker-source-text-guards.test.mjs
+
       - name: Run Stryker
         working-directory: frontend/taskdeck-web
         run: npx stryker run
