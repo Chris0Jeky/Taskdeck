@@ -185,7 +185,13 @@ fi
 
 _wt_expect_head="${WT_EXPECT_HEAD:-any}"
 _wt_expect_branch="${WT_EXPECT_BRANCH:-}"
-if [ -n "$_wt_expect_branch" ] && [[ "$_wt_expect_branch" =~ ^[[:space:]]+$ ]]; then
+# Reject an expectation made only of ASCII whitespace. The class is spelled out
+# instead of [[:space:]] because that class is locale- and platform-dependent:
+# MSYS2/Git-for-Windows classifies U+00A0 NBSP as space while glibc does not, so
+# the same branch name would be a setup error on one runner and a branch name on
+# another. Git branch names are byte-preserving Unicode, so only ASCII
+# whitespace is treated as "no branch was really given".
+if [ -n "$_wt_expect_branch" ] && [ -z "${_wt_expect_branch//[$' \t\n\r\v\f']/}" ]; then
     echo "ERROR [worktree_guard]: WT_EXPECT_BRANCH cannot be whitespace-only." >&2
     _wt_cleanup
     return 2 2>/dev/null || exit 2
