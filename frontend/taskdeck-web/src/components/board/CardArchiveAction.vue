@@ -79,6 +79,19 @@ onBeforeUnmount(() => {
   confirmationGeneration++
 })
 const archived = computed(() => props.archived ?? props.card.isArchived === true)
+// A host-provided archive state that disagrees with the card snapshot is a
+// deliberate safety boundary, not an ordinary dirty form. CardModal uses it
+// after a lifecycle request commits over a retained draft: once that draft later
+// becomes clean, the old card version is still not safe for another mutation.
+const archiveStateRequiresReopen = computed(() => props.disabled === true
+  && props.archived !== undefined
+  && props.archived !== (props.card.isArchived === true))
+// Closing after an archive removes the card from the active board, so a bare
+// “reopen” instruction would strand the user. After a restore, the card is
+// already active and the shorter close/reopen path is sufficient.
+const archiveStateRecoveryGuidance = computed(() => archived.value
+  ? 'This card was archived while the editor was open. Close the editor, restore it from Archived cards, then reopen it before changing its archive state again.'
+  : 'This card was restored while the editor was open. Close and reopen the editor before changing its archive state again.')
 const confirming = computed(() => preview.value !== null)
 const allowed = computed(() => props.canWrite ?? (boardStore.currentBoard?.id === props.card.boardId
   && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived))
@@ -209,6 +222,7 @@ async function change() {
 <template>
   <div class="my-3 space-y-2">
     <p v-if="!allowed" class="text-sm text-on-surface-variant">Archive and restore require an active board with edit access.</p>
+    <p v-else-if="archiveStateRequiresReopen" role="status" data-testid="card-archive-reopen-required" class="text-sm text-on-surface-variant">{{ archiveStateRecoveryGuidance }}</p>
     <p v-else-if="disabled" class="text-sm text-on-surface-variant">Save or discard your changes before archiving.</p>
     <button type="button" class="rounded border border-outline-variant/40 px-3 py-2 text-sm disabled:opacity-40"
       :disabled="!allowed || disabled || busy || !!error" @click="requestChange">
