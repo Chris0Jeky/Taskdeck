@@ -172,4 +172,23 @@ describe('BoardView demo archive history', () => {
     expect(wrapper.find('[data-testid="legacy-board"]').exists()).toBe(false)
     expectOfflineArchiveExplanation(wrapper)
   })
+
+  it.each([
+    ['Legacy', false],
+    ['Paper', true],
+  ])('preserves the lazy archive affordance for an authenticated %s board', async (_skin, paper) => {
+    demoModeFlag.value = false
+    sessionStore.isDemo = false
+    routeMock.params.id = 'real-board'
+    boardStore.currentBoard.id = 'real-board'
+    if (paper) usePaperThemeStore().enable()
+
+    const wrapper = await render()
+    const archive = wrapper.get('[aria-label="Card archive"]')
+
+    expect(archive.get('button').text()).toContain('Archived cards')
+    expect(archive.text()).not.toContain('not available in this demo')
+    expect(cardsApi.getArchivedCards).not.toHaveBeenCalled()
+    expect(cardsApi.setArchived).not.toHaveBeenCalled()
+  })
 })
