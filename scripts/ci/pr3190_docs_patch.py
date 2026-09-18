@@ -1,4 +1,16 @@
+import os
+import subprocess
 from pathlib import Path
+
+expected_sha = os.environ.get("GITHUB_SHA")
+actual_sha = subprocess.check_output(
+    ["git", "rev-parse", "HEAD"],
+    text=True,
+).strip()
+if not expected_sha or actual_sha != expected_sha:
+    raise SystemExit(
+        f"Refusing to publish proof from a non-exact checkout: expected {expected_sha!r}, got {actual_sha!r}"
+    )
 
 path = Path("docs/testing/MUTATION_TESTING_POLICY.md")
 source = path.read_text(encoding="utf-8")

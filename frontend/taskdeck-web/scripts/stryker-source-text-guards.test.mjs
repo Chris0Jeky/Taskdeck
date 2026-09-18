@@ -27,7 +27,7 @@ test('registered source-text guards are excluded only from the mutation test set
 test('the board mutation parity source guard stays explicitly registered', async () => {
   const source = await readFile(new URL(`../${parityGuard}`, import.meta.url), 'utf8')
 
-  assert.match(source, /query:\s*['"]\?raw['"]/) 
+  assert.match(source, /query:\s*['"]\?raw['"]/)
   assert.match(source, /store\/boardStore\.ts/)
   assert.ok(
     sourceTextGuardTests.includes(parityGuard),
