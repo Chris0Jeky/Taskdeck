@@ -1,0 +1,124 @@
+name: Apply issue 1607 starter-pack result admission
+
+on:
+  push:
+    branches:
+      - test/1607-admit-starter-pack-result-spec
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-1607-starter-pack-result
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: test/1607-admit-starter-pack-result-spec
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Prove the quarantined spec currently fails typecheck for the two unsafe casts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/taskdeck-web/tsconfig.vitest.json')
+          text = path.read_text(encoding='utf-8')
+          entry = '    "src/tests/composables/useStarterPackResult.spec.ts",\n'
+          if text.count(entry) != 1:
+              raise SystemExit('expected one useStarterPackResult quarantine entry')
+          path.write_text(text.replace(entry, '', 1), encoding='utf-8')
+          PY
+
+          set +e
+          (cd frontend/taskdeck-web && npm run typecheck) > /tmp/typecheck-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/typecheck-red.log
+          if [ "$status" -eq 0 ]; then
+            echo '::error::Expected the unmodified quarantined spec to fail typecheck.'
+            exit 1
+          fi
+          count=$(grep -c 'useStarterPackResult.spec.ts.*TS2352' /tmp/typecheck-red.log || true)
+          if [ "$count" -ne 2 ]; then
+            echo "::error::Expected exactly two TS2352 diagnostics in useStarterPackResult.spec.ts, found $count."
+            exit 1
+          fi
+
+      - name: Replace unsafe casts and update quarantine accounting
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          spec_path = Path('frontend/taskdeck-web/src/tests/composables/useStarterPackResult.spec.ts')
+          spec = spec_path.read_text(encoding='utf-8')
+          old = 'delete (r as Record<string, unknown>).hasBlockingConflicts'
+          if spec.count(old) != 2:
+              raise SystemExit(f'expected two unsafe delete casts, found {spec.count(old)}')
+          spec_path.write_text(spec.replace(old, 'delete r.hasBlockingConflicts'), encoding='utf-8')
+
+          config_path = Path('frontend/taskdeck-web/tsconfig.vitest.json')
+          config = config_path.read_text(encoding='utf-8')
+          replacements = {
+              '// CURRENT: **39 files remain** (BoardCanvas.spec.ts admitted 2026-09-06 under #1607, its two fixture fields fixed). The 24 files that carried exactly one error each were fixed and':
+                  '// CURRENT: **38 files remain** (useStarterPackResult.spec.ts admitted 2026-09-18 under #1607 by removing two unnecessary unsafe casts; BoardCanvas.spec.ts was admitted 2026-09-06). The 24 files that carried exactly one error each were fixed and',
+              '// un-quarantined in #1607 (24 of the 415 errors cleared; 389 remain across the 39). That leaves':
+                  '// un-quarantined in #1607 (24 of the 415 errors cleared; 387 remain across the 38). That leaves',
+              '// **263 of the 326 spec files Vitest runs** type-checked (re-measured 2026-08-22: 302 src-tree':
+                  '// **264 of the 326 spec files Vitest runs** type-checked (re-measured 2026-08-22: 302 src-tree',
+              '// specs minus the 40 quarantined, plus zero of the 24 frontend-root specs); the 64 that are not':
+                  '// specs minus the 38 quarantined, plus zero of the 24 frontend-root specs); the 62 that are not',
+              '// are these 40 plus the 24 in the frontend-root `tests/` directory.':
+                  '// are these 38 plus the 24 in the frontend-root `tests/` directory.',
+          }
+          for old_text, new_text in replacements.items():
+              if config.count(old_text) != 1:
+                  raise SystemExit(f'expected one accounting anchor: {old_text}')
+              config = config.replace(old_text, new_text, 1)
+          config_path.write_text(config, encoding='utf-8')
+
+          workflow = Path('.github/workflows/apply-1607-starter-pack-result.yml')
+          workflow.unlink()
+          PY
+
+      - name: Verify admitted spec and runtime behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd frontend/taskdeck-web
+          npm run typecheck
+          npx vitest --run --maxWorkers=2 src/tests/composables/useStarterPackResult.spec.ts
+          cd ../..
+          git diff --check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/taskdeck-web/src/tests/composables/useStarterPackResult.spec.ts \
+            frontend/taskdeck-web/tsconfig.vitest.json \
+            .github/workflows/apply-1607-starter-pack-result.yml
+          git commit -m 'test: admit starter-pack result spec to typecheck'
+          git push origin 'HEAD:test/1607-admit-starter-pack-result-spec'
