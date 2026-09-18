@@ -44,20 +44,25 @@ test('@cross-browser board creation and card workflow', async ({ page }) => {
 })
 
 test('@cross-browser workspace navigation between views', async ({ page }) => {
-  // Home
+  // Establish the authenticated shell once, then exercise its client-side
+  // navigation contracts rather than repeatedly reloading the document.
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
+  const mainNavigation = page.getByRole('navigation', { name: 'Main navigation' })
+
   // Boards
-  await page.goto('/workspace/boards')
+  await mainNavigation.getByRole('link', { name: 'Boards', exact: true }).click()
+  await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
 
   // Inbox
-  await page.goto('/workspace/inbox')
+  await mainNavigation.getByRole('link', { name: 'Inbox', exact: true }).click()
   await expect(page).toHaveURL(/\/workspace\/inbox$/)
 
-  // Back to Home
-  await page.goto('/workspace/home')
+  // Back to Home through the registered workspace shortcut.
+  await page.keyboard.press('h')
+  await expect(page).toHaveURL(/\/workspace\/home$/)
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 })
 
