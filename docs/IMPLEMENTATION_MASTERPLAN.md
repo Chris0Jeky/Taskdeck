@@ -1,10 +1,20 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-17
+Last Updated: 2026-09-19
 
 ## GitHub Pages static demo (2026-09-17)
 
 Pages stays a backend-less Vue demo until website+infra land. The SPA now detects empty `VITE_API_BASE_URL`, `VITE_DEMO_MODE`, or a Pages origin still aimed at loopback, and serves mock review/chat/card metadata instead of `localhost:5000`. Local-dev `.env` is unchanged. Do not treat this as the hosted production API.
+
+## Source-launcher lazy-route readiness contract (#1900 candidate)
+
+Retain the current Vite graph traversal rather than adding a second parser. Vite 8.3 exposes both
+resolved static top-level imports and literal dynamic imports through `staticImportedUrls`; the
+real-Vite regression must keep a broken nested dependency behind a literal lazy route from producing
+the readiness marker. Keep computed runtime imports and plugin-added watch files explicitly outside
+this marker, with production build/typecheck/route tests owning those wider surfaces. Preserve marker
+schema version 1, exact URL/port validation and existing launcher failure/cleanup behavior. Complete
+Windows and Ubuntu hosted qualification and a fresh review before closing #1900.
 
 ## Relation navigation guidance candidate (2026-09-12, #3077)
 

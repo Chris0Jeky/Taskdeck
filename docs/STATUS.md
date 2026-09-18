@@ -1,8 +1,19 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-17
+Last Updated: 2026-09-19
 
 GitHub Pages (`https://chris0jeky.github.io/Taskdeck/`) now runs as a static demo: empty `VITE_API_BASE_URL` plus `VITE_DEMO_MODE=true`, runtime Pages+loopback detection, and an axios demo adapter so review, chat, and card parent/assignee reads never call `localhost:5000`. Home and Review share the same one pending demo proposal. Local Vite with `.env` still uses the real local API. This is not a hosted backend; that remains later work. Detection: `frontend/taskdeck-web/src/utils/apiBaseUrl.ts`. Operator notes: `docs/product/DEMO_PLAYBOOK.md`.
+
+## Source-launcher literal-import readiness (#1900)
+
+The source Vite launcher now has a real-provider regression for router-style literal lazy imports.
+A missing dependency behind `import('./lazy-route')` must fail startup before
+`TASKDECK_DEV_FRONTEND_READY`, close the Vite listener and write no production bundle. Under the
+pinned Vite 8.3 contract, `ModuleNode.staticImportedUrls` contains resolved static top-level imports
+and literal dynamic imports while excluding plugin watch files, so the existing traversal already
+covers those lazy routes. Computed runtime imports are not enumerable and remain outside the marker;
+production build, typecheck and route tests are separate evidence. Marker schema version 1 and both
+launcher consumers are unchanged.
 
 Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
 Starting a relation proposal still prevents departure while the request is unsettled, but the

@@ -131,17 +131,20 @@ public partial class CardService
     public async Task<Result<CardDto>> CreateCardAsync(
         CreateCardDto dto,
         Guid? cardId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IBoardRealtimeNotifier? notificationSink = null)
     {
-        return await CreateCardAsync(dto, cardId, actorUserId: null, cancellationToken);
+        return await CreateCardAsync(dto, cardId, actorUserId: null, cancellationToken, notificationSink);
     }
 
     public async Task<Result<CardDto>> CreateCardAsync(
         CreateCardDto dto,
         Guid? cardId,
         Guid? actorUserId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IBoardRealtimeNotifier? notificationSink = null)
     {
+        var notifier = notificationSink ?? _realtimeNotifier;
         try
         {
             var staged = await StageCardCreationAsync(dto, cardId, cancellationToken);
@@ -156,7 +159,7 @@ public partial class CardService
                 await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Created, actorUserId,
                     creationSummary), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _realtimeNotifier.NotifyBoardMutationAsync(
+            await notifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
             if (!stageCreationAudit) await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, creationSummary);

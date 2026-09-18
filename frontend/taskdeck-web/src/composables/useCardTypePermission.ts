@@ -42,9 +42,10 @@ export interface UseCardTypePermissionOptions {
  * the permission, read the board back from the server once and gate on what that read
  * says. Client-derived ownership is never consulted — `permissionsStore.canEdit` reads
  * `BoardAccess` rows, which board owners do not have — and the write itself stays
- * server-authoritative regardless of what this control offers. When the read fails,
- * the state stays unknown and the caller offers an explicit "Refresh permission"
- * recovery instead of a silently disabled control.
+ * server-authoritative regardless of what this control offers. A transient read failure
+ * stays unknown and offers an explicit "Refresh permission" recovery; a 403 instead enters
+ * the editor's existing access-loss recovery because the server has authoritatively denied
+ * this caller.
  *
  * A payload that already states the permission costs no request at all, which is every
  * board loaded from the current server.
@@ -81,6 +82,8 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   let generation = 0
   /** The board whose read is open right now, so a board change supersedes it rather than waiting. */
   let inFlightBoardId: string | null = null
+  /** Store payload generation visible when the direct read started. */
+  let inFlightPayloadGeneration: number | null = null
   // A superseded read is not merely ignored, it is cancelled: the editor can be closed or
   // moved to another card long before a slow read answers, and an unanswered request that
   // nothing is waiting for should not stay open.
@@ -167,6 +170,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     const request = new AbortController()
     inFlightRequest = request
     inFlightBoardId = boardId
+    inFlightPayloadGeneration = boardPayloadGeneration.value
     checking.value = true
     failedBoardId.value = null
     try {
@@ -206,13 +210,15 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
       accessUnavailable.value = false
       return 'authoritative'
     } catch (cause) {
-      // A failed read grants nothing. The unknown state stands and the caller offers the
-      // explicit retry; the server still refuses any write this control should not allow.
       if (current !== generation) return 'superseded'
       confirmed.value = null
       failedBoardId.value = boardId
       const status = (cause as { response?: { status?: number } })?.response?.status
       accessUnavailable.value = status === 403 || status === 404
+      // A 403 is permission evidence, not an unknown transport failure. Route an
+      // automatic legacy-payload probe into the same draft-preserving recovery UI
+      // used after a refused write; existing explicit retries are already in it.
+      if (status === 403) permissionRecovery.value = true
       if (permissionRecovery.value && accessUnavailable.value) {
         recoveryRequestGeneration = explicitRetryStartGeneration ?? boardRequestGeneration.value
       }
@@ -220,6 +226,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     } finally {
       if (current === generation) {
         inFlightBoardId = null
+        inFlightPayloadGeneration = null
         inFlightRequest = null
         checking.value = false
       }
@@ -232,6 +239,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
     inFlightRequest?.abort()
     inFlightRequest = null
     inFlightBoardId = null
+    inFlightPayloadGeneration = null
     checking.value = false
   }
   onScopeDispose(cancelRead)
@@ -305,15 +313,32 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
   )
 
   watch([statedPermission, boardPayloadGeneration], ([value, payloadGeneration], [previousValue, previousPayloadGeneration]) => {
-    if (!permissionRecovery.value || value === null) return
+    if (value === null) return
+
+    const payloadAdvanced = payloadGeneration !== null &&
+      payloadGeneration !== previousPayloadGeneration
+
+    if (!permissionRecovery.value) {
+      const supersedesAutomaticProbe = inFlightBoardId === options.getBoardId() &&
+        inFlightPayloadGeneration !== null &&
+        payloadGeneration !== null &&
+        payloadGeneration > inFlightPayloadGeneration
+      if (payloadAdvanced && supersedesAutomaticProbe) {
+        // Newer committed server evidence owns the permission decision. Retire
+        // the older legacy-payload probe before a stale denial can replace it.
+        cancelRead()
+        failedBoardId.value = null
+        accessUnavailable.value = false
+      }
+      return
+    }
 
     // A direct false transition is safe to consume immediately: it can only
     // further restrict the editor. A later true needs the store's committed
     // server-payload marker, because a local patch must never re-authorize a
     // write the server just refused.
     const permissionWasRevoked = value === false && value !== previousValue
-    const hasFreshServerPayload = payloadGeneration !== null &&
-      payloadGeneration !== previousPayloadGeneration &&
+    const hasFreshServerPayload = payloadAdvanced &&
       (recoveryRequestGeneration === null || payloadGeneration > recoveryRequestGeneration)
     if (!permissionWasRevoked && !hasFreshServerPayload) return
 
