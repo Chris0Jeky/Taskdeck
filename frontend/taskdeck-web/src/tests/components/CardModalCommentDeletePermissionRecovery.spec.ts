@@ -195,7 +195,7 @@ describe('CardModal comment-delete permission recovery', () => {
     expect(document.body.textContent).toContain('Board write permission confirmed')
     expect(document.querySelector<HTMLButtonElement>('[data-testid="card-comment-delete-confirm"]')?.disabled)
       .toBe(false)
-    expect(document.body.textContent).toContain('Delete this comment?')
+    expect(document.body.textContent).toContain('Delete comment?')
     wrapper.unmount()
   })
 })
