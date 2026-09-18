@@ -1,0 +1,128 @@
+name: Apply PR 3201 Legacy assignment navigation repair
+
+on:
+  push:
+    branches:
+      - fix/2999-legacy-assignment-navigation
+    paths:
+      - .github/workflows/pr-3201-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/2999-legacy-assignment-navigation
+          fetch-depth: 0
+
+      - name: Apply the event and navigation boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              source = file.read_text(encoding='utf-8')
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one anchor, found {count}: {old[:100]!r}')
+              file.write_text(source.replace(old, new), encoding='utf-8', newline='\n')
+
+          column_lane = 'frontend/taskdeck-web/src/components/board/ColumnLane.vue'
+          replace_once(
+              column_lane,
+              """const emit = defineEmits<{\n  (e: 'card-drag-start', card: Card): void\n  (e: 'card-drag-end'): void\n}>()""",
+              """const emit = defineEmits<{\n  (e: 'card-drag-start', card: Card): void\n  (e: 'card-drag-end'): void\n  (e: 'card-editor-saving-change', saving: boolean): void\n}>()""",
+          )
+          replace_once(
+              column_lane,
+              """function handleModalClose() {\n  showCardModal.value = false\n  selectedCard.value = null\n}""",
+              """function handleModalClose() {\n  // CardModal refuses every close while an assignment PUT is in flight. A\n  // close therefore proves the editor has settled and cannot leave the host\n  // latched in its navigation-refusal state.\n  emit('card-editor-saving-change', false)\n  showCardModal.value = false\n  selectedCard.value = null\n}""",
+          )
+          replace_once(
+              column_lane,
+              """      @close=\"handleModalClose\"\n      @updated=\"handleModalClose\"\n    />""",
+              """      @close=\"handleModalClose\"\n      @updated=\"handleModalClose\"\n      @saving-change=\"emit('card-editor-saving-change', $event)\"\n    />""",
+          )
+
+          board_canvas = 'frontend/taskdeck-web/src/components/board/BoardCanvas.vue'
+          replace_once(
+              board_canvas,
+              """  cardDragStart: [card: Card]\n  cardDragEnd: []\n}>()""",
+              """  cardDragStart: [card: Card]\n  cardDragEnd: []\n  cardEditorSavingChange: [saving: boolean]\n}>()""",
+          )
+          replace_once(
+              board_canvas,
+              """          @card-drag-start=\"$emit('cardDragStart', $event)\"\n          @card-drag-end=\"$emit('cardDragEnd')\"\n        />""",
+              """          @card-drag-start=\"$emit('cardDragStart', $event)\"\n          @card-drag-end=\"$emit('cardDragEnd')\"\n          @card-editor-saving-change=\"$emit('cardEditorSavingChange', $event)\"\n        />""",
+          )
+
+          board_view = 'frontend/taskdeck-web/src/views/BoardView.vue'
+          replace_once(
+              board_view,
+              """import { usePerformanceMark } from '../composables/usePerformanceMark'\nimport BoardToolbar""",
+              """import { usePerformanceMark } from '../composables/usePerformanceMark'\nimport { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspaceNavigation'\nimport BoardToolbar""",
+          )
+          replace_once(
+              board_view,
+              """import { TdSkeleton } from '../components/ui'\nimport type { Card }""",
+              """import { TdSkeleton } from '../components/ui'\nimport TdDialog from '../components/ui/TdDialog.vue'\nimport type { Card }""",
+          )
+          replace_once(
+              board_view,
+              """const showFilterPanel = ref(false)\nconst showBoardCaptureModal = ref(false)\nconst presenceMembers = ref<BoardPresenceMember[]>([])""",
+              """const showFilterPanel = ref(false)\nconst showBoardCaptureModal = ref(false)\n\n// Legacy owns its card modal inside ColumnLane rather than PaperBoardView. Carry\n// the already-submitted assignment-save state up to the route boundary so shell\n// navigation cannot unmount the only surface that can report its settlement.\nconst legacyCardEditorSaving = ref(false)\nconst legacySavePendingNotice = ref(false)\nconst {\n  leaveRequested: legacyLeaveRequested,\n  decide: decideLegacyLeave,\n} = useUnsavedWorkspaceNavigation(() => !paperOn.value && legacyCardEditorSaving.value)\n\nwatch(legacyLeaveRequested, (requested) => {\n  if (!requested) return\n  legacySavePendingNotice.value = true\n  // A submitted PUT cannot be discarded. Refuse this navigation attempt\n  // immediately rather than leave a pending route promise behind a notice.\n  decideLegacyLeave(false)\n}, { flush: 'sync' })\n\nwatch(paperOn, (isPaper) => {\n  if (!isPaper) return\n  legacyCardEditorSaving.value = false\n  legacySavePendingNotice.value = false\n  decideLegacyLeave(false)\n})\n\nfunction handleLegacyCardEditorSavingChange(saving: boolean) {\n  legacyCardEditorSaving.value = saving\n  if (!saving) legacySavePendingNotice.value = false\n}\n\nconst presenceMembers = ref<BoardPresenceMember[]>([])""",
+          )
+          replace_once(
+              board_view,
+              """      @card-drag-start=\"handleCardDragStart\"\n      @card-drag-end=\"handleCardDragEnd\"\n    />\n\n    <!-- Dialog Host -->""",
+              """      @card-drag-start=\"handleCardDragStart\"\n      @card-drag-end=\"handleCardDragEnd\"\n      @card-editor-saving-change=\"handleLegacyCardEditorSavingChange\"\n    />\n\n    <TdDialog\n      v-if=\"legacySavePendingNotice\"\n      :open=\"true\"\n      title=\"Saving assignments…\"\n      description=\"This assignment change was already sent to the server, so it cannot be discarded or cancelled. Wait for the save to finish, then try again.\"\n      :close-on-backdrop=\"true\"\n      @close=\"legacySavePendingNotice = false\"\n    >\n      <template #footer>\n        <button\n          type=\"button\"\n          class=\"td-btn td-btn--primary\"\n          data-testid=\"legacy-card-save-pending-dismiss\"\n          @click=\"legacySavePendingNotice = false\"\n        >\n          Keep editing\n        </button>\n      </template>\n    </TdDialog>\n\n    <!-- Dialog Host -->""",
+          )
+
+          docs = 'docs/product/CARD_ASSIGNMENTS.md'
+          replace_once(
+              docs,
+              """The shared Paper inspector and Legacy card editor show the current assignees and\noffer a multiple-selection control, Clear, Cancel, and Save assignments. Other card\ndrafts survive assignment saves. A submitted set replacement cannot be recalled, so\nwhile one is in flight the editor never offers a discard: closing, Escape, the\nbackdrop, the header close, switching card and leaving the board all answer that the\nchange was already sent and must be waited out, and an open discard confirmation is\nwithdrawn. Settlement shows either the committed assignees or the failure with the\nkept draft, and restores every control except after a refusal for lost edit\npermission.""",
+              """The shared Paper inspector and Legacy card editor show the current assignees and\noffer a multiple-selection control, Clear, Cancel, and Save assignments. Other card\ndrafts survive assignment saves. A submitted set replacement cannot be recalled, so\nwhile one is in flight neither skin offers a discard: closing, Escape, backdrop and\nheader-close requests stay in the editor; Paper also refuses card switches; and both\nPaper and Legacy refuse route navigation or page unload with truthful saving guidance.\nAn open discard confirmation is withdrawn. Settlement shows either the committed\nassignees or the failure with the kept draft, releases navigation, and restores every\ncontrol except after a refusal for lost edit permission.""",
+          )
+          replace_once(
+              docs,
+              """- In-flight save honesty: `CardModalAssignmentSave.spec.ts` (Paper and Legacy,\n  delayed success and failure, Escape/backdrop/header/confirmation) and the\n  card-switch, route-leave and unload refusals in `PaperBoardView.spec.ts`.""",
+              """- In-flight save honesty: `CardModalAssignmentSave.spec.ts` (Paper and Legacy,\n  delayed success and failure, Escape/backdrop/header/confirmation), the Paper\n  card-switch/route/unload refusals in `PaperBoardView.spec.ts`, and Legacy event\n  propagation plus route/unload refusal in `LegacyAssignmentSaveNavigation.spec.ts`.""",
+          )
+
+          Path('.github/workflows/pr-3201-apply.yml').unlink()
+          PY
+
+      - name: Verify focused frontend contract
+        working-directory: frontend/taskdeck-web
+        shell: bash
+        run: |
+          npm ci
+          npx vitest --run src/tests/views/LegacyAssignmentSaveNavigation.spec.ts \
+            src/tests/components/CardModalAssignmentSave.spec.ts \
+            src/tests/views/paper/PaperBoardView.spec.ts \
+            --maxWorkers=2 --maxConcurrency=1
+          npm run typecheck
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            frontend/taskdeck-web/src/components/board/ColumnLane.vue \
+            frontend/taskdeck-web/src/components/board/BoardCanvas.vue \
+            frontend/taskdeck-web/src/views/BoardView.vue \
+            docs/product/CARD_ASSIGNMENTS.md \
+            .github/workflows/pr-3201-apply.yml
+          git diff --cached --check
+          git commit -m "fix(frontend): guard Legacy assignment save navigation"
+          git push origin HEAD:fix/2999-legacy-assignment-navigation
