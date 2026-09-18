@@ -128,6 +128,8 @@ public class AutomationExecutorAssignmentPostCommitBoundaryTests
         proposals
             .Setup(value => value.GetByIdAsync(proposalId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposalEntity);
+        // The assignment operation reads the card once before commit. The post-commit
+        // notification tail then reloads it independently and this second read fails.
         cards
             .SetupSequence(value => value.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card)
@@ -191,6 +193,6 @@ public class AutomationExecutorAssignmentPostCommitBoundaryTests
             Times.Never);
         cards.Verify(
             value => value.GetByIdAsync(card.Id, CancellationToken.None),
-            Times.Once);
+            Times.Exactly(2));
     }
 }
