@@ -346,7 +346,7 @@ public class LlmCaptureTriageExtractorTests
             "Prepare the agenda",
             "Send the summary");
         result.EvidenceSpans.Should().HaveCount(2)
-            .And.OnlyContain(span => span == (0, transcript.Length));
+            .And.OnlyContain(span => span.HasValue && span.Value == (0, transcript.Length));
     }
 
     [Fact]
