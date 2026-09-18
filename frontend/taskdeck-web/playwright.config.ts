@@ -130,7 +130,9 @@ export default defineConfig({
    *   @mobile         — mobile viewport scenarios (nightly / manual)
    *
    * CI behaviour:
-   *   PR (ci-required)     → "chromium" project only (grep excludes @mobile)
+   *   PR (ci-required)     → playwright.required.config.ts reuses the complete
+   *                          "chromium" project and adds one bounded Pixel 7
+   *                          VisualViewport geometry journey.
    *   Nightly / manual     → all projects via reusable-e2e-cross-browser.yml
    * -----------------------------------------------------------------------*/
   projects: [
