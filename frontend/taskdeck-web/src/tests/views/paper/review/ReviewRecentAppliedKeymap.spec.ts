@@ -73,6 +73,7 @@ describe('ReviewRecentApplied keymap boundary', () => {
 
     expect(onReject).toHaveBeenCalledOnce()
     expect(event.defaultPrevented).toBe(true)
+    wrapper.unmount()
   })
 
   it('keeps every non-filing review shortcut blocked on the active applied-row button', () => {
