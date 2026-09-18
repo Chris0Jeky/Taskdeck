@@ -1,0 +1,80 @@
+diff --git a/frontend/taskdeck-web/src/composables/useReviewProposals.ts b/frontend/taskdeck-web/src/composables/useReviewProposals.ts
+--- a/frontend/taskdeck-web/src/composables/useReviewProposals.ts
++++ b/frontend/taskdeck-web/src/composables/useReviewProposals.ts
+@@
+   let backgroundQueueReadCount = 0
+   let queueRecoveryRaisedAtBackgroundRead: number | null = null
++  type QueueRecoveryReceipt = Readonly<{ id: number }>
++  let nextQueueRecoveryReceiptId = 0
++  let activeQueueRecoveryReceipt: QueueRecoveryReceipt | null = null
+ 
+-  function raiseQueueRecovery(kind: QueueRecoveryKind, source: 'poll' | 'explicit') {
++  function raiseQueueRecovery(
++    kind: QueueRecoveryKind,
++    source: 'poll' | 'explicit',
++  ): QueueRecoveryReceipt {
++    const receipt = { id: ++nextQueueRecoveryReceiptId }
++    activeQueueRecoveryReceipt = receipt
+     queueRefreshRecoveredKind.value = kind
+     queueRecoveryRaisedAtBackgroundRead =
+       source === 'poll' ? backgroundQueueReadCount : backgroundQueueReadCount + 1
++    return receipt
+   }
+ 
+   function retireQueueRecovery() {
+     queueRefreshRecoveredKind.value = null
+     queueRecoveryRaisedAtBackgroundRead = null
++    activeQueueRecoveryReceipt = null
+   }
+@@
+-  function recordQueueListReadSucceeded(source: 'poll' | 'explicit'): boolean {
++  function recordQueueListReadSucceeded(
++    source: 'poll' | 'explicit',
++  ): QueueRecoveryReceipt | null {
+     consecutiveQueueRefreshRefusals = 0
+-    if (!currentQueueRefreshRefused.value) return false
++    if (!currentQueueRefreshRefused.value) return null
+     currentQueueRefreshRefused.value = false
+@@
+-    raiseQueueRecovery('refused', source)
+-    return true
++    return raiseQueueRecovery('refused', source)
+   }
+@@
+-   * `recoveryAlreadyRaised` is passed by the poll when
++   * `recoveryReceipt` is passed by the poll when
+    * `recordQueueListReadSucceeded` already announced a recovery earlier in this
+-   * same read, so the retirement branch below cannot retire the sentence its
+-   * own read just raised (#2694). The read counter states the same fact for
+-   * every kind of read; both are kept because they answer different questions —
+-   * "did THIS read raise it" and "was it raised by an EARLIER read".
++   * same read. It counts as delivered only while that exact receipt is still
++   * active: retained-health reactivity may retire the preliminary sentence
++   * during a delayed pin, in which case the final landing must announce the
++   * now-truthful recovery again (#2930). The read counter still answers the
++   * separate question of whether a standing sentence belongs to an earlier
++   * background read and is old enough to retire.
+    */
+   function recordQueueRefreshSuccess(options?: {
+     source?: 'poll' | 'explicit'
+-    recoveryAlreadyRaised?: boolean
++    recoveryReceipt?: QueueRecoveryReceipt | null
+   }) {
+     const source = options?.source ?? 'explicit'
+     const wasRefused = queueRefreshRefused.value
+     consecutiveQueueRefreshFailures = 0
+     // Idempotent: a no-op when the poll already ran it at the list-success
+     // point, and the whole clear when an explicit load lands.
++    const listRecoveryReceipt = recordQueueListReadSucceeded(source)
+     const recoveryRaisedThisRead =
+-      recordQueueListReadSucceeded(source) || options?.recoveryAlreadyRaised === true
++      listRecoveryReceipt !== null
++      || (options?.recoveryReceipt != null
++        && activeQueueRecoveryReceipt === options.recoveryReceipt)
+     if (wasRefused && !recoveryRaisedThisRead) raiseQueueRecovery('refused', source)
+@@
+-      const listRecoveryRaised = recordQueueListReadSucceeded('poll')
++      const listRecoveryReceipt = recordQueueListReadSucceeded('poll')
+@@
+-      recordQueueRefreshSuccess({ source: 'poll', recoveryAlreadyRaised: listRecoveryRaised })
++      recordQueueRefreshSuccess({ source: 'poll', recoveryReceipt: listRecoveryReceipt })
