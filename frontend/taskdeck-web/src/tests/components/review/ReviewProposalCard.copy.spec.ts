@@ -82,8 +82,11 @@ describe('ReviewProposalCard fallback copy (#1434)', () => {
     await flushPromises()
 
     const banner = wrapper.get('[data-testid="review-diff-banner"]')
-    expect(banner.text().toLowerCase()).toContain('no stored preview was captured')
     expect(banner.text().toLowerCase()).toContain('recorded operations')
+    expect(
+      wrapper.get('[data-testid="review-diff-wrapper"]').text().toLowerCase().match(/recorded operations/g)
+        ?? [],
+    ).toHaveLength(1)
     expect(wrapper.find('[data-testid="review-diff-stored-ops-note"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="review-diff-stored-operations"]').text()).toContain(
       'Create Card Card',
