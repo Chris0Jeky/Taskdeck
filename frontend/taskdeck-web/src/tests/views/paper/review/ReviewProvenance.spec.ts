@@ -134,6 +134,16 @@ describe('ReviewProvenance footnote', () => {
 
     await wrapper.setProps({ detailsExpanded: true })
     expect(drawer()).toBe(providedReference)
+
+    await wrapper.setProps({ evidenceLinks: undefined })
+    const absentReference = drawer()
+    expect(
+      Object.isFrozen(toRaw(absentReference)),
+      'the absent reference must be the frozen canonical sentinel',
+    ).toBe(true)
+
+    await wrapper.setProps({ metadata: DETERMINISTIC })
+    expect(drawer()).toBe(absentReference)
     wrapper.unmount()
   })
 
