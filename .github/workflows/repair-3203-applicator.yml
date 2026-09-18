@@ -1,0 +1,74 @@
+name: Repair issue 3203 applicator
+
+on:
+  push:
+    branches:
+      - fix/3203-taskkill-root-exit-race
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-3203-applicator
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/3203-taskkill-root-exit-race
+          fetch-depth: 0
+
+      - name: Normalize multiline splice operands
+        shell: powershell
+        run: |
+          $path = '.github/workflows/apply-3203-taskkill-root-race.yml'
+          $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
+
+          $countAnchor = '              $count = ([regex]::Matches($Source, [regex]::Escape($Old))).Count'
+          $countReplacement = @'
+              $Old = $Old.Replace("`r`n", "`n")
+              $New = $New.Replace("`r`n", "`n")
+              $count = ([regex]::Matches($Source, [regex]::Escape($Old))).Count
+          '@.TrimEnd("`r", "`n")
+          if (([regex]::Matches($text, [regex]::Escape($countAnchor))).Count -ne 1) {
+              throw 'Applicator replacement helper anchor was missing or ambiguous.'
+          }
+          $text = $text.Replace($countAnchor, $countReplacement)
+
+          $actorGuard = "    if: github.actor != 'github-actions[bot]'`n"
+          if (([regex]::Matches($text, [regex]::Escape($actorGuard))).Count -ne 1) {
+              throw 'Applicator bot-run guard was missing or ambiguous.'
+          }
+          # This one bot-authored repair commit must trigger the corrected applicator. The
+          # applicator removes itself in its successful implementation commit, preventing a loop.
+          $text = $text.Replace($actorGuard, '')
+
+          [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
+
+      - name: Commit repaired applicator and remove repair workflow
+        shell: powershell
+        run: |
+          Remove-Item -LiteralPath '.github/workflows/repair-3203-applicator.yml'
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/apply-3203-taskkill-root-race.yml .github/workflows/repair-3203-applicator.yml
+          $changed = @(git diff --cached --name-only | Sort-Object)
+          $expected = @(
+              '.github/workflows/apply-3203-taskkill-root-race.yml',
+              '.github/workflows/repair-3203-applicator.yml'
+          )
+          if (($changed -join "`n") -cne ($expected -join "`n")) {
+              throw "Unexpected repair changed-file set: $($changed -join ', ')"
+          }
+          git commit -m 'fix(ci): normalize issue 3203 applicator splices'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin 'HEAD:fix/3203-taskkill-root-exit-race'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
