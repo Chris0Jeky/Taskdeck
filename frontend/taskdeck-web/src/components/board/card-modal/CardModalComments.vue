@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed, inject } from 'vue'
 import type { CardComment } from '../../../types/comments'
+import { cardCommentLoadContextKey } from '../../../composables/cardCommentLoadContext'
 
 const props = defineProps<{
   topLevelComments: CardComment[]
@@ -21,6 +23,13 @@ const emit = defineEmits<{
 }>()
 
 const newCommentContent = defineModel<string>('newCommentContent', { required: true })
+const commentLoad = inject(cardCommentLoadContextKey, null)
+const commentsLoading = computed(() => commentLoad?.loading.value ?? false)
+const commentsLoadError = computed(() => commentLoad?.error.value ?? null)
+
+function retryComments() {
+  commentLoad?.retry()
+}
 
 function updateReplyDraft(commentId: string, value: string) {
   const updated = { ...props.replyDraftByParent, [commentId]: value }
@@ -52,11 +61,44 @@ function updateReplyDraft(commentId: string, value: string) {
       </div>
     </div>
 
-    <div v-if="topLevelComments.length === 0" class="text-sm text-on-surface-variant italic">
+    <p
+      v-if="commentsLoading"
+      role="status"
+      class="text-sm text-on-surface-variant"
+      data-testid="card-comments-loading"
+    >
+      Loading comments…
+    </p>
+
+    <div v-else-if="commentsLoadError" class="space-y-2">
+      <p
+        id="card-comments-load-error"
+        role="alert"
+        class="text-sm text-error"
+        data-testid="card-comments-load-error"
+      >
+        {{ commentsLoadError }}
+      </p>
+      <button
+        type="button"
+        class="px-3 py-1.5 text-sm font-medium text-on-surface border border-outline-variant/40 rounded-md hover:bg-surface-container-high transition-colors"
+        aria-describedby="card-comments-load-error"
+        data-testid="card-comments-retry"
+        @click="retryComments"
+      >
+        Retry comments
+      </button>
+    </div>
+
+    <div
+      v-if="!commentsLoading && !commentsLoadError && topLevelComments.length === 0"
+      class="text-sm text-on-surface-variant italic"
+      data-testid="card-comments-empty"
+    >
       No comments yet.
     </div>
 
-    <div v-else class="space-y-3">
+    <div v-if="topLevelComments.length > 0" class="space-y-3">
       <div
         v-for="comment in topLevelComments"
         :key="comment.id"
