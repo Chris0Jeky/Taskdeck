@@ -164,7 +164,7 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
             SourceReferenceId: null,
             BoardId: _boardId,
             RequestedByUserId: _userId,
-            Status: ProposalStatus.Pending,
+            Status: ProposalStatus.PendingReview,
             RiskLevel: riskLevel,
             Summary: "Review operation evaluability",
             DiffPreview: null,
