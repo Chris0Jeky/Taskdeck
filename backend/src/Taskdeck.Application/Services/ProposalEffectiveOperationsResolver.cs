@@ -1,6 +1,7 @@
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
@@ -43,8 +44,10 @@ internal static class ProposalEffectiveOperationsResolver
     /// <summary>
     /// Resolves a bounded page in two phases: payload-free refs select at most
     /// one winner per proposal, then only those winner payloads are loaded. Every
-    /// supplied proposal appears in the result; missing or malformed winners
-    /// degrade to the persisted original operations, matching proposal DTO reads.
+    /// supplied proposal appears in the result. A winner row that vanishes between
+    /// the two reads degrades to originals, matching the existing proposal DTO
+    /// read. A present but malformed winner fails closed with the same validation
+    /// error class as current-proposal preview and Apply materialization.
     /// </summary>
     internal static async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProposalOperationDto>>> ResolveAsync(
         IProposalRevisionRepository revisions,
@@ -89,14 +92,18 @@ internal static class ProposalEffectiveOperationsResolver
         foreach (var proposal in candidates)
         {
             if (!winners.TryGetValue(proposal.Id, out var revisionId)
-                || !byRevisionId.TryGetValue(revisionId, out var revision)
-                || !ProposalRevisionPayload.TryParseOperations(
+                || !byRevisionId.TryGetValue(revisionId, out var revision))
+            {
+                continue;
+            }
+
+            if (!ProposalRevisionPayload.TryParseOperations(
                     proposal.Id,
                     revision.RevisedPayload,
                     out var revisedOperations,
-                    out _))
+                    out var errorMessage))
             {
-                continue;
+                throw new DomainException(ErrorCodes.ValidationError, errorMessage);
             }
 
             resolved[proposal.Id] = revisedOperations
