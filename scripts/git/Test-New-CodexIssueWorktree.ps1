@@ -24,6 +24,7 @@ param(
         "base-missing-handoff-artifacts",
         "fully-qualified-ref",
         "refresh-remote-base",
+        "taskkill-root-exit-race",
         "askpass-suppression",
         "remote-default-head",
         "missing-base",
@@ -55,6 +56,7 @@ param(
         "base-missing-handoff-artifacts",
         "fully-qualified-ref",
         "refresh-remote-base",
+        "taskkill-root-exit-race",
         "askpass-suppression",
         "remote-default-head",
         "missing-base",
@@ -685,6 +687,25 @@ try {
     $fixtureHelperContent = $fixtureHelperContent.Insert(
         $fixtureTimeoutAnchorIndex,
         "$fixtureTimeoutControl$fixtureTimeoutNewline")
+
+    # #3203: route the fixture helper's taskkill launch through a test-controlled shim so the
+    # non-zero-exit decision boundary can be exercised deterministically. Instrument only the
+    # committed fixture copy; the production helper always launches System32/taskkill.exe and has
+    # no test hook of its own.
+    $fixtureTaskkillAnchor = '        $taskkillPath = Join-Path $env:SystemRoot "System32/taskkill.exe"'
+    $fixtureTaskkillReplacement = @'
+        $testTaskkillPath = [System.Environment]::GetEnvironmentVariable("TASKDECK_TEST_TASKKILL_EXECUTABLE", "Process")
+        $taskkillPath = if ([string]::IsNullOrWhiteSpace($testTaskkillPath)) {
+            Join-Path $env:SystemRoot "System32/taskkill.exe"
+        }
+        else {
+            $testTaskkillPath
+        }
+'@
+    Assert-Equal 1 ([regex]::Matches($fixtureHelperContent, [regex]::Escape($fixtureTaskkillAnchor)).Count) "Fixture helper taskkill anchor was missing or ambiguous."
+    $fixtureTaskkillReplacement = ($fixtureTaskkillReplacement -replace "`r?`n", $fixtureTimeoutNewline).TrimEnd("`r", "`n")
+    $fixtureHelperContent = $fixtureHelperContent.Replace($fixtureTaskkillAnchor, $fixtureTaskkillReplacement)
+
     [System.IO.File]::WriteAllText(
         $fixtureHelperPath,
         $fixtureHelperContent,
@@ -934,6 +955,177 @@ finally {
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "protocol.ext.allow")
         }
         Complete-Test "complete remote names are safely refreshed and non-responsive Git process trees are bounded and reaped"
+    }
+
+    if (Test-CaseSelected "taskkill-root-exit-race") {
+        # #3203: `taskkill /T /F` reports a non-zero exit when the timed-out root exits on its own
+        # before the final root operation, even though the helper-owned tree is already reaped.
+        # Two shims make that boundary deterministic: one that really terminates the tree and then
+        # reports failure, and one that reports the same failure while terminating nothing.
+        $raceProbeDirectory = Join-Path $testRoot "taskkill-race-probe"
+        New-Item -ItemType Directory -Path $raceProbeDirectory | Out-Null
+        $raceRemoteScript = Join-Path $raceProbeDirectory "remote-helper.ps1"
+        $raceRootPidPath = Join-Path $raceProbeDirectory "root.pid"
+        $raceRootStartPath = Join-Path $raceProbeDirectory "root.start"
+        $raceChildPidPath = Join-Path $raceProbeDirectory "child.pid"
+        $raceChildStartPath = Join-Path $raceProbeDirectory "child.start"
+        Set-Content -LiteralPath $raceRemoteScript -Encoding Ascii -Value @'
+$ErrorActionPreference = "Stop"
+$self = Get-Process -Id $PID
+[System.IO.File]::WriteAllText($env:TASKDECK_RACE_ROOT_PID, [string]$PID)
+[System.IO.File]::WriteAllText($env:TASKDECK_RACE_ROOT_START, [string]$self.StartTime.ToUniversalTime().Ticks)
+$childStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$childStartInfo.FileName = $self.Path
+$childStartInfo.UseShellExecute = $false
+$childStartInfo.CreateNoWindow = $true
+$childArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30")
+if ($null -ne $childStartInfo.PSObject.Properties['ArgumentList']) {
+    foreach ($argument in $childArguments) {
+        $childStartInfo.ArgumentList.Add($argument)
+    }
+}
+else {
+    $childStartInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 30"'
+}
+$child = [System.Diagnostics.Process]::new()
+try {
+    $child.StartInfo = $childStartInfo
+    if (-not $child.Start()) {
+        throw "Taskkill-race child process did not start."
+    }
+    [System.IO.File]::WriteAllText($env:TASKDECK_RACE_CHILD_PID, [string]$child.Id)
+    [System.IO.File]::WriteAllText($env:TASKDECK_RACE_CHILD_START, [string]$child.StartTime.ToUniversalTime().Ticks)
+    $child.WaitForExit()
+}
+finally {
+    $child.Dispose()
+}
+'@
+
+        # Terminates the real tree, then reports the exact failure Windows reports when the root
+        # has already gone. Localized prose must never be what decides the outcome.
+        $raceReapingShim = Join-Path $raceProbeDirectory "taskkill-reaping.cmd"
+        Set-Content -LiteralPath $raceReapingShim -Encoding Ascii -Value @'
+@echo off
+"%SystemRoot%\System32\taskkill.exe" %*
+echo ERROR: The process "1" not found. 1>&2
+exit /b 255
+'@
+
+        # Reports the same failure while terminating nothing at all.
+        $raceInertShim = Join-Path $raceProbeDirectory "taskkill-inert.cmd"
+        Set-Content -LiteralPath $raceInertShim -Encoding Ascii -Value @'
+@echo off
+echo ERROR: The process "1" not found. 1>&2
+exit /b 255
+'@
+
+        $raceEnvironment = @{
+            TASKDECK_RACE_ROOT_PID = $raceRootPidPath
+            TASKDECK_RACE_ROOT_START = $raceRootStartPath
+            TASKDECK_RACE_CHILD_PID = $raceChildPidPath
+            TASKDECK_RACE_CHILD_START = $raceChildStartPath
+        }
+        $previousRaceEnvironment = @{}
+        foreach ($environmentName in @($raceEnvironment.Keys) + @("TASKDECK_TEST_TASKKILL_EXECUTABLE")) {
+            $previousRaceEnvironment[$environmentName] = [System.Environment]::GetEnvironmentVariable($environmentName, "Process")
+        }
+        foreach ($environmentName in $raceEnvironment.Keys) {
+            [System.Environment]::SetEnvironmentVariable($environmentName, $raceEnvironment[$environmentName], "Process")
+        }
+
+        $raceRecordedIdentities = [System.Collections.Generic.List[pscustomobject]]::new()
+        $racePowerShellArgument = $powerShellExecutable.Replace('\', '/').Replace('%', '%%').Replace(' ', '% ')
+        $raceScriptArgument = $raceRemoteScript.Replace('\', '/').Replace('%', '%%').Replace(' ', '% ')
+        $raceRemoteUrl = "ext::$racePowerShellArgument -NoLogo -NoProfile -NonInteractive -File $raceScriptArgument"
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "protocol.ext.allow", "always")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "add", "taskkill-race-probe", $raceRemoteUrl)
+        try {
+            foreach ($markerPath in @($raceRootPidPath, $raceRootStartPath, $raceChildPidPath, $raceChildStartPath)) {
+                if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $markerPath -Force
+                }
+            }
+            [System.Environment]::SetEnvironmentVariable("TASKDECK_TEST_TASKKILL_EXECUTABLE", $raceReapingShim, "Process")
+            $raceReapingResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "499",
+                "-Slug", "taskkill-root-exit-race",
+                "-BaseBranch", "taskkill-race-probe/main",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            Assert-True (Test-Path -LiteralPath $raceRootPidPath -PathType Leaf) "Reaping-race probe did not record its root process."
+            Assert-True (Test-Path -LiteralPath $raceChildPidPath -PathType Leaf) "Reaping-race probe did not record its child process."
+            $raceReapingRootPid = [int](Get-Content -Raw -LiteralPath $raceRootPidPath)
+            $raceReapingRootStart = [long](Get-Content -Raw -LiteralPath $raceRootStartPath)
+            $raceReapingChildPid = [int](Get-Content -Raw -LiteralPath $raceChildPidPath)
+            $raceReapingChildStart = [long](Get-Content -Raw -LiteralPath $raceChildStartPath)
+            $raceRecordedIdentities.Add([pscustomobject]@{ Id = $raceReapingRootPid; Start = $raceReapingRootStart })
+            $raceRecordedIdentities.Add([pscustomobject]@{ Id = $raceReapingChildPid; Start = $raceReapingChildStart })
+
+            Assert-True ($raceReapingResult.ExitCode -ne 0) "A non-responsive remote helper must fail closed."
+            Assert-NormalizedContains $raceReapingResult.Output "Git command timed out after 5 seconds; its helper-owned process tree was terminated and reaped." "A non-zero taskkill exit over an already-reaped tree must keep the successful timeout diagnostic."
+            Assert-NormalizedNotContains $raceReapingResult.Output "helper-owned process-tree cleanup failed" "A reaped tree must not be reported as a cleanup failure just because taskkill exited non-zero."
+            foreach ($identity in $raceRecordedIdentities) {
+                $liveRaceProcess = Get-Process -Id $identity.Id -ErrorAction SilentlyContinue
+                $sameRaceProcess = $null -ne $liveRaceProcess -and $liveRaceProcess.StartTime.ToUniversalTime().Ticks -eq $identity.Start
+                Assert-True (-not $sameRaceProcess) "Accepting a non-zero taskkill exit left helper-owned PID $($identity.Id) alive."
+            }
+
+            foreach ($markerPath in @($raceRootPidPath, $raceRootStartPath, $raceChildPidPath, $raceChildStartPath)) {
+                if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $markerPath -Force
+                }
+            }
+            [System.Environment]::SetEnvironmentVariable("TASKDECK_TEST_TASKKILL_EXECUTABLE", $raceInertShim, "Process")
+            $raceInertResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "500",
+                "-Slug", "taskkill-inert-failure",
+                "-BaseBranch", "taskkill-race-probe/main",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            Assert-True (Test-Path -LiteralPath $raceRootPidPath -PathType Leaf) "Inert-shim probe did not record its root process."
+            $raceInertRootPid = [int](Get-Content -Raw -LiteralPath $raceRootPidPath)
+            $raceInertRootStart = [long](Get-Content -Raw -LiteralPath $raceRootStartPath)
+            $raceRecordedIdentities.Add([pscustomobject]@{ Id = $raceInertRootPid; Start = $raceInertRootStart })
+            if ((Test-Path -LiteralPath $raceChildPidPath -PathType Leaf) -and (Test-Path -LiteralPath $raceChildStartPath -PathType Leaf)) {
+                $raceRecordedIdentities.Add([pscustomobject]@{
+                        Id = [int](Get-Content -Raw -LiteralPath $raceChildPidPath)
+                        Start = [long](Get-Content -Raw -LiteralPath $raceChildStartPath)
+                    })
+            }
+
+            Assert-True ($raceInertResult.ExitCode -ne 0) "A taskkill that terminates nothing must fail closed."
+            Assert-NormalizedContains $raceInertResult.Output "helper-owned process-tree cleanup failed" "A surviving helper-owned tree must be reported as a cleanup failure."
+            Assert-NormalizedContains $raceInertResult.Output "these helper-owned processes are still alive: PID " "The cleanup failure must enumerate the surviving helper-owned identities."
+            Assert-NormalizedContains $raceInertResult.Output "PID $raceInertRootPid" "The cleanup failure must name the surviving remote-helper identity."
+            Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-500-taskkill-inert-failure"))) "A failed cleanup created a worktree target."
+        }
+        finally {
+            foreach ($environmentName in $previousRaceEnvironment.Keys) {
+                [System.Environment]::SetEnvironmentVariable($environmentName, $previousRaceEnvironment[$environmentName], "Process")
+            }
+            foreach ($identity in $raceRecordedIdentities) {
+                $recordedProcess = Get-Process -Id $identity.Id -ErrorAction SilentlyContinue
+                if ($null -eq $recordedProcess) {
+                    continue
+                }
+                try {
+                    if ($recordedProcess.StartTime.ToUniversalTime().Ticks -eq $identity.Start -and -not $recordedProcess.HasExited) {
+                        $recordedProcess.Kill()
+                        if (-not $recordedProcess.WaitForExit(5000)) {
+                            throw "Taskkill-race fixture process $($recordedProcess.Id) did not exit during test cleanup."
+                        }
+                        $recordedProcess.WaitForExit()
+                    }
+                }
+                finally {
+                    $recordedProcess.Dispose()
+                }
+            }
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "remove", "taskkill-race-probe")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "protocol.ext.allow")
+        }
+        Complete-Test "a non-zero taskkill exit is accepted only when every recorded helper-owned identity is proven gone"
     }
 
     if (Test-CaseSelected "askpass-suppression") {
