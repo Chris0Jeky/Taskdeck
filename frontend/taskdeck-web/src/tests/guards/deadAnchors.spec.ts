@@ -249,7 +249,7 @@ const BINDING_PREFIX = /^(?::|v-bind:)/i
  *
  * On a component whose declared emit is `click` this really can wire
  * activation, so it redeems a call site — unlike on a native control, where the
- * compiler-backed scan reports it as a proven click handler.
+ * compiler-backed scan reports it as unproven.
  */
 const VON_OBJECT_BINDING = /(?:^|\s)v-on\s*=\s*(?:"([^"]*)"|'([^']*)')/i
 
