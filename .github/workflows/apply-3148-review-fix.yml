@@ -28,16 +28,8 @@ jobs:
         run: |
           $path = 'scripts/git/Test-New-CodexIssueWorktree.ps1'
           $text = [System.IO.File]::ReadAllText($path)
-          $old = @'
-              -RemovalInvoker $persistentRemovalInvoker `
-              -RemovalTimeoutMilliseconds 25 `
-              -RemovalRetryDelayMilliseconds 1
-          '@
-          $new = @'
-              -RemovalInvoker $persistentRemovalInvoker `
-              -RemovalTimeoutMilliseconds 1000 `
-              -RemovalRetryDelayMilliseconds 1
-          '@
+          $old = '-RemovalTimeoutMilliseconds 25 `'
+          $new = '-RemovalTimeoutMilliseconds 1000 `'
           $count = ([regex]::Matches($text, [regex]::Escape($old))).Count
           if ($count -ne 1) {
               throw "Expected exactly one persistent-removal retry budget, found $count."
