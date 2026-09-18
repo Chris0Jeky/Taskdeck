@@ -72,7 +72,7 @@ assert_named_branch_mismatch() {
 
     if [ "$code" -ne 1 ]; then
         printf '%s\n' "$output" >&2
-        fail "$name must treat the Unicode value as a named branch expectation (got $code)"
+        fail "$name must treat the value as a named branch expectation (got $code)"
     fi
 
     normalized_output="$(normalize_assertion_output "$output")"
@@ -80,7 +80,7 @@ assert_named_branch_mismatch() {
         printf '%s\n' "$output" >&2
         fail "$name did not reach the ordinary named-branch mismatch"
     fi
-    pass "$name treats Unicode whitespace as a named branch character"
+    pass "$name treats the value as a named branch expectation"
 }
 
 assert_setup_error "formatter-wrapped setup error" \
@@ -133,6 +133,37 @@ set -e
 assert_named_branch_mismatch "shell guard Unicode branch" \
     "$sh_unicode_code" "$sh_unicode_output"
 
+# The space character alone cannot distinguish a correctly built ASCII-whitespace
+# class from a mis-built one, so exercise a non-space member (tab) and a control
+# made only of the letters that a literally-taken "\t\n\r\v\f" escape would
+# contain. A guard whose class degraded to those letters rejects "fnrtv" as
+# whitespace-only, which the two cases below catch in opposite directions.
+tab_branch=$'\t'
+literal_escape_branch="fnrtv"
+set +e
+sh_tab_output="$(
+    cd -- "$FIXTURE_ROOT/detached"
+    WT_EXPECT_HEAD=any \
+    WT_EXPECT_BRANCH="$tab_branch" \
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
+sh_tab_code=$?
+set -e
+assert_setup_error "shell guard tab-only branch" \
+    "$sh_tab_code" "$sh_tab_output" "cannot be whitespace-only"
+
+set +e
+sh_literal_escape_output="$(
+    cd -- "$FIXTURE_ROOT/detached"
+    WT_EXPECT_HEAD=any \
+    WT_EXPECT_BRANCH="$literal_escape_branch" \
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
+sh_literal_escape_code=$?
+set -e
+assert_named_branch_mismatch "shell guard escape-letter branch" \
+    "$sh_literal_escape_code" "$sh_literal_escape_output"
+
 if [ -z "$PS_EXE" ]; then
     printf '  SKIP: PowerShell guard contract (no powershell/pwsh on PATH)\n'
 else
@@ -171,6 +202,30 @@ else
     set -e
     assert_named_branch_mismatch "PowerShell guard Unicode branch" \
         "$ps_unicode_code" "$ps_unicode_output"
+
+    set +e
+    ps_tab_output="$(
+        cd -- "$FIXTURE_ROOT/detached"
+        "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
+            -ExpectHead Any \
+            -ExpectedBranch "$tab_branch" 2>&1
+    )"
+    ps_tab_code=$?
+    set -e
+    assert_setup_error "PowerShell guard tab-only branch" \
+        "$ps_tab_code" "$ps_tab_output" "cannot be whitespace-only"
+
+    set +e
+    ps_literal_escape_output="$(
+        cd -- "$FIXTURE_ROOT/detached"
+        "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
+            -ExpectHead Any \
+            -ExpectedBranch "$literal_escape_branch" 2>&1
+    )"
+    ps_literal_escape_code=$?
+    set -e
+    assert_named_branch_mismatch "PowerShell guard escape-letter branch" \
+        "$ps_literal_escape_code" "$ps_literal_escape_output"
 fi
 
 printf 'worktree_guard expectation contract passed.\n'
