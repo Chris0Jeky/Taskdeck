@@ -30,44 +30,20 @@ jobs:
 
           replacements = {
               Path('frontend/taskdeck-web/src/views/paper/PaperInboxView.vue'): [(
-                  """                : $t(
-                    'inbox.eyebrow',
-                    { pending: pendingTriageCount, total: capturedCount },
-                    capturedCount,
-                  )""",
-                  """                : $t(
-                    activeBoardId ? 'inbox.eyebrowScoped' : 'inbox.eyebrow',
-                    {
-                      board: activeBoardName,
-                      pending: pendingTriageCount,
-                      total: capturedCount,
-                    },
-                    capturedCount,
-                  )""",
+                  "                : $t(\n                    'inbox.eyebrow',\n                    { pending: pendingTriageCount, total: capturedCount },\n                    capturedCount,\n                  )",
+                  "                : $t(\n                    activeBoardId ? 'inbox.eyebrowScoped' : 'inbox.eyebrow',\n                    {\n                      board: activeBoardName,\n                      pending: pendingTriageCount,\n                      total: capturedCount,\n                    },\n                    capturedCount,\n                  )",
               )],
               Path('frontend/taskdeck-web/src/locales/en/inbox.ts'): [(
-                  """  eyebrow:
-    'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',""",
-                  """  eyebrow:
-    'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
-  eyebrowScoped:
-    'Inbox · {board} · {pending} awaiting triage · {total} captured on this board | Inbox · {board} · {pending} awaiting triage · {total} captured on this board',""",
+                  "  eyebrow:\n    'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',",
+                  "  eyebrow:\n    'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',\n  eyebrowScoped:\n    'Inbox · {board} · {pending} awaiting triage · {total} captured on this board | Inbox · {board} · {pending} awaiting triage · {total} captured on this board',",
               )],
               Path('frontend/taskdeck-web/src/locales/it/inbox.ts'): [(
-                  """  eyebrow:
-    'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',""",
-                  """  eyebrow:
-    'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
-  eyebrowScoped:
-    'Inbox · {board} · {pending} da smistare · {total} catturato in questa bacheca | Inbox · {board} · {pending} da smistare · {total} catturati in questa bacheca',""",
+                  "  eyebrow:\n    'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',",
+                  "  eyebrow:\n    'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',\n  eyebrowScoped:\n    'Inbox · {board} · {pending} da smistare · {total} catturato in questa bacheca | Inbox · {board} · {pending} da smistare · {total} catturati in questa bacheca',",
               )],
               Path('frontend/taskdeck-web/src/locales/es/inbox.ts'): [(
-                  """  eyebrow:
-    'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',""",
-                  """  eyebrow:
-    'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
-  eyebrowScoped:
-    'Inbox · {board} · {pending} por clasificar · {total} capturada en este tablero | Inbox · {board} · {pending} por clasificar · {total} capturadas en este tablero',""",
+                  "  eyebrow:\n    'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',",
+                  "  eyebrow:\n    'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',\n  eyebrowScoped:\n    'Inbox · {board} · {pending} por clasificar · {total} capturada en este tablero | Inbox · {board} · {pending} por clasificar · {total} capturadas en este tablero',",
               )],
           }
 
