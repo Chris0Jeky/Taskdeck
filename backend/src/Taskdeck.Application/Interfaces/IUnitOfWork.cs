@@ -48,6 +48,12 @@ public interface IUnitOfWork
     /// </summary>
     Task CheckpointWalAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Begins a repeatable read snapshot without reserving SQLite's WAL writer slot.
+    /// Use this for multi-query read models that must describe one database instant.
+    /// </summary>
+    Task BeginReadTransactionAsync(CancellationToken cancellationToken = default);
+
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
