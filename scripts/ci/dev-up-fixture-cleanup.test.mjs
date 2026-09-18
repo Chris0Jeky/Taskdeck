@@ -8,6 +8,7 @@ import test from 'node:test'
 import {
   createFixtureCleanupBudget,
   createFixtureLayout,
+  removeFixture,
   removeFixtureDirectory,
 } from './dev-up-fixture-cleanup.mjs'
 
@@ -60,6 +61,45 @@ test('fixture teardown consumes only the remaining cleanup budget and preserves 
   assert.deepEqual(delays, [50])
   assert.equal(now, cleanupBudget.cleanupDeadlineMs)
   assert.equal(cleanupBudget.testDeadlineMs - now, 250)
+})
+
+test('fixture teardown surfaces the workspace deadline failure before envelope cleanup', async () => {
+  const cleanupBudget = createFixtureCleanupBudget({
+    testStartedAtMs: 0,
+    testTimeoutMs: 1_000,
+    diagnosticMarginMs: 100,
+  })
+  const fixture = {
+    envelopeRoot: '/synthetic',
+    root: '/synthetic/workspace',
+    livePidFile: '/synthetic/live-pids.log',
+    cleanupBudget,
+  }
+  let envelopeRemovalAttempts = 0
+
+  await assert.rejects(
+    removeFixture(fixture, {
+      now: () => cleanupBudget.cleanupDeadlineMs,
+      remove: async (path) => {
+        throw lockedDirectoryError(path)
+      },
+      removeEnvelope: async () => {
+        envelopeRemovalAttempts += 1
+        throw new Error('the evidence envelope must not be retried after the workspace deadline')
+      },
+      readText: async () => `node ${process.pid}\n`,
+      listEntries: async () => [],
+      isProcessAlive: () => true,
+    }),
+    (error) => {
+      assert.match(error.message, /^DEV_UP_FIXTURE_TEARDOWN_FAILED:/)
+      assert.match(error.message, /100ms was reserved for teardown diagnostics/)
+      assert.doesNotMatch(error.message, /evidence envelope must not be retried/)
+      return true
+    },
+  )
+
+  assert.equal(envelopeRemovalAttempts, 0)
 })
 
 test('fixture PID evidence survives partial recursive removal of the workspace', async () => {
