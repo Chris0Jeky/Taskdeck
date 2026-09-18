@@ -4,14 +4,14 @@ using Taskdeck.Domain.Common;
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// Host-facing proposal-service decorator that makes typed relation validation producer-neutral.
+/// Proposal-service decorator that makes typed relation validation producer-neutral.
 ///
 /// MCP and chat may still preflight relation operations to return transport-specific explanations,
 /// but every producer ultimately crosses this write bar before a proposal row is staged. Non-relation
 /// proposals retain the existing generic admission contract unchanged.
 /// </summary>
 public sealed class RelationProposalAdmissionService(
-    ProposalExpiryGuardedService inner,
+    AutomationProposalService inner,
     IAutomationPolicyEngine policyEngine) : IAutomationProposalService
 {
     public async Task<Result<ProposalDto>> CreateProposalAsync(
