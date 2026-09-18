@@ -9,7 +9,6 @@ import ProvenanceDrawer from '../../../components/review/ProvenanceDrawer.vue'
 import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
 import { classifyProvenanceActor, formatProvenanceActorLabel } from './provenanceActor'
 
-
 const props = withDefaults(defineProps<{
   rows: ProvenanceRow[]
   metadata?: ProvenanceMetadata | null
