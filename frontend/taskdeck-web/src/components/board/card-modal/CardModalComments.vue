@@ -10,6 +10,7 @@ const props = defineProps<{
   replyDraftByParent: Record<string, string>
   canEditCommentFn: (comment: CardComment) => boolean
   getRepliesFn: (parentCommentId: string) => CardComment[]
+  writesDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -44,8 +45,9 @@ function updateReplyDraft(commentId: string, value: string) {
       <textarea
         id="new-card-comment"
         v-model="newCommentContent"
+        :disabled="writesDisabled"
         rows="2"
-        class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
+        class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
         placeholder="Write a comment... Use @username to mention teammates."
       ></textarea>
       <div class="flex justify-end">
@@ -53,7 +55,7 @@ function updateReplyDraft(commentId: string, value: string) {
           id="add-card-comment"
           type="button"
           class="px-3 py-1.5 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
-          :disabled="newCommentContent.trim().length === 0"
+          :disabled="writesDisabled || newCommentContent.trim().length === 0"
           @click="$emit('add-comment')"
         >
           Add Comment
@@ -114,14 +116,16 @@ function updateReplyDraft(commentId: string, value: string) {
           <div v-if="canEditCommentFn(comment) && !comment.isDeleted" class="flex gap-2 text-xs">
             <button
               type="button"
-              class="text-primary hover:text-primary/80"
+              :disabled="writesDisabled"
+              class="text-primary hover:text-primary/80 disabled:cursor-not-allowed disabled:opacity-40"
               @click="$emit('start-edit-comment', comment)"
             >
               Edit
             </button>
             <button
               type="button"
-              class="text-error hover:text-error/80"
+              :disabled="writesDisabled"
+              class="text-error hover:text-error/80 disabled:cursor-not-allowed disabled:opacity-40"
               @click="$emit('delete-comment', comment)"
             >
               Delete
@@ -132,23 +136,25 @@ function updateReplyDraft(commentId: string, value: string) {
         <div v-if="editingCommentId === comment.id" class="space-y-2">
           <textarea
             :value="editingCommentContent"
+            :disabled="writesDisabled"
             aria-label="Edit comment"
             rows="2"
-            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
             @input="$emit('update:editingCommentContent', ($event.target as HTMLTextAreaElement).value)"
           ></textarea>
           <div class="flex justify-end gap-2">
             <button
               type="button"
-              class="px-3 py-1.5 text-sm text-on-surface-variant border border-outline-variant/40 rounded-md hover:bg-surface-container-high transition-colors"
+              :disabled="writesDisabled"
+              class="px-3 py-1.5 text-sm text-on-surface-variant border border-outline-variant/40 rounded-md hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
               @click="$emit('cancel-edit-comment')"
             >
               Cancel
             </button>
             <button
               type="button"
-              class="px-3 py-1.5 text-sm text-on-primary-container bg-primary-container rounded-md hover:brightness-110 disabled:opacity-40"
-              :disabled="editingCommentContent.trim().length === 0"
+              class="px-3 py-1.5 text-sm text-on-primary-container bg-primary-container rounded-md hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+              :disabled="writesDisabled || editingCommentContent.trim().length === 0"
               @click="$emit('save-edit-comment', comment.id)"
             >
               Save
@@ -186,9 +192,10 @@ function updateReplyDraft(commentId: string, value: string) {
           <div v-if="!comment.isDeleted" class="space-y-2 pt-1">
             <textarea
               :value="replyDraftByParent[comment.id] ?? ''"
+              :disabled="writesDisabled"
               aria-label="Reply to comment"
               rows="2"
-              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               placeholder="Reply..."
               @input="updateReplyDraft(comment.id, ($event.target as HTMLTextAreaElement).value)"
             ></textarea>
@@ -196,7 +203,7 @@ function updateReplyDraft(commentId: string, value: string) {
               <button
                 type="button"
                 class="px-3 py-1.5 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
-                :disabled="!(replyDraftByParent[comment.id] ?? '').trim().length"
+                :disabled="writesDisabled || !(replyDraftByParent[comment.id] ?? '').trim().length"
                 @click="$emit('add-comment', comment.id)"
               >
                 Reply
