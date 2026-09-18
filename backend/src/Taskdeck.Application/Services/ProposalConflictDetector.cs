@@ -397,16 +397,14 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
     private static bool CanEvaluateOperation(ProposalOperationDto operation)
     {
+        if (!ProposalOperationVocabulary.IsSupported(operation.TargetType, operation.ActionType))
+            return false;
+
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out _))
             return false;
 
-        if (string.IsNullOrWhiteSpace(operation.ActionType) || string.IsNullOrWhiteSpace(operation.TargetType))
-            return false;
-
-        var action = operation.ActionType.Trim().ToLowerInvariant();
-        var targetType = operation.TargetType.Trim().ToLowerInvariant();
-        if (targetType is not ("card" or "column" or "board"))
-            return false;
+        var action = operation.ActionType.ToLowerInvariant();
+        var targetType = operation.TargetType.ToLowerInvariant();
 
         if (!string.IsNullOrWhiteSpace(operation.TargetId) && !Guid.TryParse(operation.TargetId, out _))
             return false;
