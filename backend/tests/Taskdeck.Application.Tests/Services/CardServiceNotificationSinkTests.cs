@@ -51,7 +51,7 @@ public sealed class CardServiceNotificationSinkTests
         var service = new CardService(unit.Object, constructorNotifier.Object);
 
         var result = await service.CreateCardAsync(
-            new CreateCardDto(board.Id, column.Id, "Created inside proposal"),
+            new CreateCardDto(board.Id, column.Id, "Created inside proposal", null, null, null),
             cardId,
             cancellationToken: CancellationToken.None,
             notificationSink: deferred);
