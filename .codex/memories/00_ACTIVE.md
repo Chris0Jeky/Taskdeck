@@ -18,6 +18,7 @@ This file is the active-gate pointer for every implementation agent on Taskdeck:
 - MCP/tool usage: `docs/MCP_TOOLING_GUIDE.md`
 - High-autonomy Codex workflow: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`
 - Fast agent seam map: `autodoc/AGENT_INDEX.md`
+- Grok routing: `.grok/README.md` (Grok loads `.claude/skills/`; no third skill tree)
 - Agentic protocols: `docs/agentic/QUESTION_PROTOCOL.md`, `docs/agentic/FAILURE_LEDGER.md`, `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`, `docs/agentic/SKILL_REGISTRY.md`, `docs/agentic/AGENT_TOOL_PARITY.md`
 
 ## v0.3.0 north star (maintainer-issued 2026-08-30, for the v0.3 lane)
