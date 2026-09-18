@@ -40,13 +40,13 @@ jobs:
           $tryAnchor = "    try {`n"
           $tryIndex = $oldBlock.IndexOf($tryAnchor, [System.StringComparison]::Ordinal)
           $finallyAnchor = @'
-    finally {
-        foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
-            Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
-        }
-    }
+              finally {
+                  foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
+                      Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
+                  }
+              }
 
-'@
+          '@
           $finallyIndex = $oldBlock.LastIndexOf($finallyAnchor, [System.StringComparison]::Ordinal)
           if ($tryIndex -lt 0 -or $finallyIndex -le $tryIndex) {
             throw 'Environment self-test try/finally shape did not match the reviewed source.'
@@ -59,58 +59,58 @@ jobs:
             }) -join "`n"
 
           $replacementPrefix = @'
-    $environmentProbeNames = @(
-        $environmentProbeName,
-        $missingEnvironmentProbeName,
-        $emptyEnvironmentProbeName
-    )
-    $originalEnvironmentProbeStates = @{}
-    foreach ($probeName in $environmentProbeNames) {
-        $originalEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
-    }
+              $environmentProbeNames = @(
+                  $environmentProbeName,
+                  $missingEnvironmentProbeName,
+                  $emptyEnvironmentProbeName
+              )
+              $originalEnvironmentProbeStates = @{}
+              foreach ($probeName in $environmentProbeNames) {
+                  $originalEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+              }
 
-    try {
-        # Seed all three caller-state shapes, then make the environment-helper exercise preserve
-        # them. The outer finally restores whatever the invoking process actually supplied.
-        Set-InventoryProcessEnvironmentVariable -Name $environmentProbeName -Value "caller-non-empty"
-        Set-InventoryProcessEnvironmentVariable -Name $missingEnvironmentProbeName -Value $null
-        Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
+              try {
+                  # Seed all three caller-state shapes, then make the environment-helper exercise preserve
+                  # them. The outer finally restores whatever the invoking process actually supplied.
+                  Set-InventoryProcessEnvironmentVariable -Name $environmentProbeName -Value "caller-non-empty"
+                  Set-InventoryProcessEnvironmentVariable -Name $missingEnvironmentProbeName -Value $null
+                  Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
 
-        $selfTestEnvironmentProbeStates = @{}
-        foreach ($probeName in $environmentProbeNames) {
-            $selfTestEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
-            Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
-        }
+                  $selfTestEnvironmentProbeStates = @{}
+                  foreach ($probeName in $environmentProbeNames) {
+                      $selfTestEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+                      Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
+                  }
 
-        try {
-'@
+                  try {
+          '@
           $replacementSuffix = @'
-        }
-        finally {
-            Restore-InventoryEnvironment -Saved $selfTestEnvironmentProbeStates
-        }
+                  }
+                  finally {
+                      Restore-InventoryEnvironment -Saved $selfTestEnvironmentProbeStates
+                  }
 
-        Assert-InventoryEnvironmentState `
-            -Name $environmentProbeName `
-            -Present $true `
-            -Value "caller-non-empty" `
-            -Message "The self-test must restore a caller's non-empty probe value."
-        Assert-InventoryEnvironmentState `
-            -Name $missingEnvironmentProbeName `
-            -Present $false `
-            -Message "The self-test must preserve a caller's missing probe state."
-        Assert-InventoryEnvironmentState `
-            -Name $emptyEnvironmentProbeName `
-            -Present $true `
-            -Value "" `
-            -Message "The self-test must restore a caller's present-empty probe value."
-        $state.Checks++
-    }
-    finally {
-        Restore-InventoryEnvironment -Saved $originalEnvironmentProbeStates
-    }
+                  Assert-InventoryEnvironmentState `
+                      -Name $environmentProbeName `
+                      -Present $true `
+                      -Value "caller-non-empty" `
+                      -Message "The self-test must restore a caller's non-empty probe value."
+                  Assert-InventoryEnvironmentState `
+                      -Name $missingEnvironmentProbeName `
+                      -Present $false `
+                      -Message "The self-test must preserve a caller's missing probe state."
+                  Assert-InventoryEnvironmentState `
+                      -Name $emptyEnvironmentProbeName `
+                      -Present $true `
+                      -Value "" `
+                      -Message "The self-test must restore a caller's present-empty probe value."
+                  $state.Checks++
+              }
+              finally {
+                  Restore-InventoryEnvironment -Saved $originalEnvironmentProbeStates
+              }
 
-'@
+          '@
           $replacement = $replacementPrefix + $indentedBody + $replacementSuffix
           $updated = $text.Substring(0, $start) + $replacement + $text.Substring($end)
           if ($updated -ceq $text) {
