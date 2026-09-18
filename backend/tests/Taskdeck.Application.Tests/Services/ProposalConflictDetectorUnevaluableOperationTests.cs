@@ -135,6 +135,42 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
     }
 
     [Fact]
+    public async Task DetectConflictsAsync_UnsupportedIdentifierAction_FailsClosedWithoutPayloadLeak()
+    {
+        const string privatePayload = "unsupported-action-private-payload";
+        var proposalId = Guid.NewGuid();
+        var proposal = CreateProposal(
+            RiskLevel.Low,
+            new ProposalOperationDto(
+                Id: Guid.NewGuid(),
+                ProposalId: proposalId,
+                Sequence: 0,
+                ActionType: "future-card-action",
+                TargetType: "card",
+                TargetId: _cardId.ToString("D"),
+                Parameters: JsonSerializer.Serialize(new { cardId = _cardId, privatePayload }),
+                IdempotencyKey: $"unsupported-{Guid.NewGuid():N}",
+                ExpectedVersion: null));
+
+        var result = await _detector.DetectConflictsAsync(proposal, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(row =>
+            row.Tone == ConflictTone.Warn
+            && row.Key == "unable-to-evaluate-operation"
+            && row.Value.Contains("1", StringComparison.Ordinal));
+        result.Value.Should().NotContain(row => row.Tone == ConflictTone.Ok);
+        result.Value.Should().NotContain(row =>
+            row.Key == "status" && row.Value == "No conflicts detected");
+        result.Value.Should().NotContain(row => row.Value.Contains(privatePayload, StringComparison.Ordinal));
+
+        var entry = _logger.Entries.Should().ContainSingle(log => log.Level == LogLevel.Warning).Subject;
+        entry.Properties.Should().ContainKey("UnevaluatedOperationCount")
+            .WhoseValue.Should().Be(1);
+        entry.Message.Should().NotContain(privatePayload);
+    }
+
+    [Fact]
     public async Task DetectConflictsAsync_ValidMove_RetainsExistingNoConflictResult()
     {
         var proposal = CreateProposal(
