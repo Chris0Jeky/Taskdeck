@@ -89,7 +89,7 @@ public class DatabaseResilienceTests : IClassFixture<TestWebApplicationFactory>
             "an archive already committed by the competing request satisfies both DELETE calls");
     }
 
-    // ── Database Write Validation ──────────────────────────────────────
+    // ── Database Write Validation ─────────────────────────────────────
 
     [Fact]
     public async Task CreateBoard_WithInvalidData_ReturnsValidationError()
@@ -102,10 +102,10 @@ public class DatabaseResilienceTests : IClassFixture<TestWebApplicationFactory>
             new CreateBoardDto("", "Empty name board"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "invalid data should return 400, not a database crash");
+            "invalid data should return 400, not a DB crash");
 
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         body.TryGetProperty("errorCode", out _).Should().BeTrue(
-            "400 response should follow error contract");
+            "400 response should follow the error contract");
     }
 }
