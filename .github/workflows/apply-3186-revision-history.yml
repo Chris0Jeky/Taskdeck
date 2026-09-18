@@ -1,0 +1,422 @@
+name: Apply PR 3186 revision-history hardening
+
+on:
+  push:
+    branches:
+      - fix/2579-revision-history-residuals
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pr-3186-revision-history
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend/taskdeck-web
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/2579-revision-history-residuals
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.2.0
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Prove the residual regressions fail before implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npx vitest run src/tests/composables/useProposalRevisionsResiduals.spec.ts > /tmp/revision-history-red.log 2>&1; then
+            cat /tmp/revision-history-red.log
+            echo 'Expected at least one #2579 residual regression to fail before implementation.' >&2
+            exit 1
+          fi
+          cat /tmp/revision-history-red.log
+
+      - name: Apply bounded authority-aware history state
+        working-directory: .
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('frontend/taskdeck-web/src/composables/useProposalRevisions.ts')
+          text = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected one match, found {count}')
+              text = text.replace(old, new)
+
+          replace_once(
+              '''type RevisionHistory = {
+            revisions: Map<number, ProposalRevision>
+            loaded: boolean
+            invalid: boolean
+          }
+          ''',
+              '''const REVISION_HISTORY_LIMIT = 64
+
+          type RevisionHistory = {
+            revisions: Map<number, ProposalRevision>
+            loaded: boolean
+            invalid: boolean
+            disputedRevisionNumbers: Set<number>
+          }
+          ''',
+              'history type',
+          )
+
+          replace_once(
+              '''  let loadGeneration = 0
+            let saveGeneration = 0
+
+            // Successful save responses survive A -> B -> A navigation so a delayed
+          ''',
+              '''  let loadGeneration = 0
+            let saveGeneration = 0
+            let revisionMetadataSource: 'load' | 'save' | null = null
+
+            // Successful save responses survive A -> B -> A navigation so a delayed
+          ''',
+              'metadata source state',
+          )
+
+          replace_once(
+              '''  const revisionHistoryByProposal = new Map<string, RevisionHistory>()
+
+            function getRevisionHistory(proposalId: string): RevisionHistory {
+              const existing = revisionHistoryByProposal.get(proposalId)
+              if (existing) return existing
+              const created: RevisionHistory = {
+                revisions: new Map(),
+                loaded: false,
+                invalid: false,
+              }
+              revisionHistoryByProposal.set(proposalId, created)
+              return created
+            }
+          ''',
+              '''  const revisionHistoryByProposal = new Map<string, RevisionHistory>()
+
+            function touchRevisionHistory(proposalId: string, history: RevisionHistory) {
+              revisionHistoryByProposal.delete(proposalId)
+              revisionHistoryByProposal.set(proposalId, history)
+              while (revisionHistoryByProposal.size > REVISION_HISTORY_LIMIT) {
+                const oldestProposalId = revisionHistoryByProposal.keys().next().value
+                if (oldestProposalId === undefined) break
+                revisionHistoryByProposal.delete(oldestProposalId)
+              }
+            }
+
+            function getRevisionHistory(proposalId: string): RevisionHistory {
+              const existing = revisionHistoryByProposal.get(proposalId)
+              if (existing) {
+                touchRevisionHistory(proposalId, existing)
+                return existing
+              }
+              const created: RevisionHistory = {
+                revisions: new Map(),
+                loaded: false,
+                invalid: false,
+                disputedRevisionNumbers: new Set(),
+              }
+              touchRevisionHistory(proposalId, created)
+              return created
+            }
+          ''',
+              'bounded history cache',
+          )
+
+          replace_once(
+              '''  function mergeRevision(
+              history: RevisionHistory,
+              proposalId: string,
+              revision: ProposalRevision,
+            ) {
+              if (!isUsableRevision(revision, proposalId)) {
+                history.invalid = true
+                return
+              }
+
+              const existing = history.revisions.get(revision.revisionNumber)
+              if (existing && existing.id !== revision.id) {
+                history.invalid = true
+                return
+              }
+              history.revisions.set(revision.revisionNumber, revision)
+            }
+          ''',
+              '''  function recordRevisionInconsistency(
+              history: RevisionHistory,
+              revision: ProposalRevision,
+            ) {
+              history.invalid = true
+              if (Number.isInteger(revision.revisionNumber) && revision.revisionNumber >= 1) {
+                history.disputedRevisionNumbers.add(revision.revisionNumber)
+              }
+            }
+
+            function mergeRevision(
+              history: RevisionHistory,
+              proposalId: string,
+              revision: ProposalRevision,
+            ) {
+              if (!isUsableRevision(revision, proposalId)) {
+                recordRevisionInconsistency(history, revision)
+                return
+              }
+
+              const existing = history.revisions.get(revision.revisionNumber)
+              if (existing && existing.id !== revision.id) {
+                recordRevisionInconsistency(history, revision)
+                return
+              }
+              history.revisions.set(revision.revisionNumber, revision)
+            }
+          ''',
+              'revision inconsistency helper',
+          )
+
+          replace_once(
+              '''    for (const revision of revisions) {
+              if (!isUsableRevision(revision, proposalId)) {
+                history.invalid = true
+                history.loaded = true
+                return
+              }
+              const conflicting = loaded.get(revision.revisionNumber)
+              if (conflicting && conflicting.id !== revision.id) {
+                history.invalid = true
+                history.loaded = true
+                return
+              }
+              loaded.set(revision.revisionNumber, revision)
+              if (revision.revisionNumber > highestLoaded) highestLoaded = revision.revisionNumber
+            }
+
+            if (loaded.size === highestLoaded) history.invalid = false
+            for (const [revisionNumber, revision] of loaded) {
+          ''',
+              '''    for (const revision of revisions) {
+              if (!isUsableRevision(revision, proposalId)) {
+                recordRevisionInconsistency(history, revision)
+                history.loaded = true
+                return
+              }
+              const conflicting = loaded.get(revision.revisionNumber)
+              if (conflicting && conflicting.id !== revision.id) {
+                recordRevisionInconsistency(history, revision)
+                history.loaded = true
+                return
+              }
+              loaded.set(revision.revisionNumber, revision)
+              if (revision.revisionNumber > highestLoaded) highestLoaded = revision.revisionNumber
+            }
+
+            const isCompleteResponse = loaded.size === highestLoaded
+            const coversEveryDisputedNumber = [...history.disputedRevisionNumbers].every(
+              (revisionNumber) => loaded.has(revisionNumber),
+            )
+            if (isCompleteResponse && coversEveryDisputedNumber) {
+              history.invalid = false
+              history.disputedRevisionNumbers.clear()
+            }
+            for (const [revisionNumber, revision] of loaded) {
+          ''',
+              'loaded revision authority gate',
+          )
+
+          replace_once(
+              '''  function getCompleteRevisionMetadata(proposalId: string): RevisionMetadata | null {
+              const history = revisionHistoryByProposal.get(proposalId)
+              if (!history || history.invalid) return null
+
+              const revisionNumbers = [...history.revisions.keys()].sort((a, b) => a - b)
+          ''',
+              '''  function getCompleteRevisionMetadata(proposalId: string): RevisionMetadata | null {
+              const history = revisionHistoryByProposal.get(proposalId)
+              if (!history || history.invalid) return null
+              touchRevisionHistory(proposalId, history)
+
+              const revisionNumbers = [...history.revisions.keys()].sort((a, b) => a - b)
+          ''',
+              'history read touch',
+          )
+
+          replace_once(
+              '''    if (!metadata) {
+              revisionCount.value = 0
+              latestRevision.value = null
+              revisionsLoaded.value = false
+              return false
+            }
+            revisionCount.value = metadata.count
+            latestRevision.value = metadata.latest
+            revisionsLoaded.value = true
+            return true
+          }
+          ''',
+              '''    if (!metadata) {
+              revisionCount.value = 0
+              latestRevision.value = null
+              revisionsLoaded.value = false
+              revisionMetadataSource = null
+              return false
+            }
+            revisionCount.value = metadata.count
+            latestRevision.value = metadata.latest
+            revisionsLoaded.value = true
+            revisionMetadataSource = 'save'
+            return true
+          }
+          ''',
+              'save metadata source',
+          )
+
+          replace_once(
+              '''    revisionCount.value = 0
+            latestRevision.value = null
+            revisionsLoaded.value = false
+            return true
+          }
+          ''',
+              '''    revisionCount.value = 0
+            latestRevision.value = null
+            revisionsLoaded.value = false
+            revisionMetadataSource = null
+            return true
+          }
+          ''',
+              'active metadata invalidation',
+          )
+
+          replace_once(
+              '''      if (!metadata) {
+                revisionCount.value = 0
+                latestRevision.value = null
+                revisionsLoaded.value = false
+                return
+              }
+              revisionCount.value = metadata.count
+              latestRevision.value = metadata.latest
+              revisionsLoaded.value = true
+            } catch (e: unknown) {
+          ''',
+              '''      if (!metadata) {
+                revisionCount.value = 0
+                latestRevision.value = null
+                revisionsLoaded.value = false
+                revisionMetadataSource = null
+                return
+              }
+              revisionCount.value = metadata.count
+              latestRevision.value = metadata.latest
+              revisionsLoaded.value = true
+              revisionMetadataSource = 'load'
+            } catch (e: unknown) {
+          ''',
+              'load metadata source',
+          )
+
+          replace_once(
+              '''      if (!revisionsLoaded.value) {
+                revisionCount.value = 0
+                latestRevision.value = null
+              }
+              if (!options?.silent) {
+                toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
+              }
+          ''',
+              '''      const saveAlreadyProvedMetadata =
+                revisionsLoaded.value && revisionMetadataSource === 'save'
+              if (!revisionsLoaded.value) {
+                revisionCount.value = 0
+                latestRevision.value = null
+                revisionMetadataSource = null
+              }
+              if (!options?.silent && !saveAlreadyProvedMetadata) {
+                toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
+              }
+          ''',
+              'stale load toast gate',
+          )
+
+          replace_once(
+              '''        revisionsLoaded.value = false
+            // Silent: this load is driven by a background poll the reviewer never
+          ''',
+              '''        revisionsLoaded.value = false
+              revisionMetadataSource = null
+            // Silent: this load is driven by a background poll the reviewer never
+          ''',
+              'same proposal revision reset',
+          )
+
+          replace_once(
+              '''      revisionCount.value = 0
+            latestRevision.value = null
+            revisionsLoaded.value = false
+            if (id) {
+          ''',
+              '''      revisionCount.value = 0
+            latestRevision.value = null
+            revisionsLoaded.value = false
+            revisionMetadataSource = null
+            if (id) {
+          ''',
+              'proposal switch reset',
+          )
+
+          for fragment in [
+              'const REVISION_HISTORY_LIMIT = 64',
+              'disputedRevisionNumbers: Set<number>',
+              "revisionMetadataSource: 'load' | 'save' | null",
+              'const coversEveryDisputedNumber',
+              'saveAlreadyProvedMetadata',
+          ]:
+              if fragment not in text:
+                  raise RuntimeError(f'Missing post-patch fragment: {fragment}')
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Verify focused revision state machine
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/tests/composables/useProposalRevisions.spec.ts \
+            src/tests/composables/useProposalRevisionsResiduals.spec.ts
+          npm run typecheck
+          npx eslint \
+            src/composables/useProposalRevisions.ts \
+            src/tests/composables/useProposalRevisionsResiduals.spec.ts
+
+      - name: Publish implementation
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git rm .github/workflows/apply-3186-revision-history.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/taskdeck-web/src/composables/useProposalRevisions.ts
+          git commit -m 'fix: bound revision history authority state'
+          git push origin HEAD:fix/2579-revision-history-residuals
