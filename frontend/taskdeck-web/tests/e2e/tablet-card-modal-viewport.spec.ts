@@ -111,6 +111,12 @@ test('@mobile CardModal follows a contracted visual viewport above the desktop b
     return { top: Math.round(box.layoutTop), height: Math.round(box.height) }
   }).toEqual({ top: contractedTop, height: contractedHeight })
 
+  const horizontalBounds = await editModal.boundingBox()
+  expect(horizontalBounds).not.toBeNull()
+  expect(Math.abs(
+    horizontalBounds!.x * 2 + horizontalBounds!.width - viewport!.width,
+  )).toBeLessThanOrEqual(2)
+
   await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
   const scrollMetrics = await scrollRegion.evaluate((element) => ({
     clientHeight: element.clientHeight,
