@@ -113,6 +113,31 @@ test('reference definitions inside blockquote and list containers are checked', 
   )
 })
 
+test('escaped backtick runs after an unmatched opener cannot mask a visible link', () => {
+  withFixture(
+    {
+      'docs/index.md': 'Before ```unmatched \\` [visible](./missing.md) \\` end\n',
+    },
+    (root) => {
+      assert.deepEqual(compact(findMaskingDiagnostics(root)), [
+        {
+file: 'docs/index.md',
+line: 1,
+target: '```',
+reason: 'unbalanced inline code span',
+        },
+      ])
+      assert.deepEqual(compact(findBrokenLinks(root)), [
+        {
+file: 'docs/index.md',
+line: 1,
+target: './missing.md',
+reason: 'missing',
+        },
+      ])
+    },
+  )
+})
 test(
   'adversarial unmatched delimiter and label input stays within a bounded scan time',
   { timeout: 20_000 },

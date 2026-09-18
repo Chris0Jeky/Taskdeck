@@ -108,20 +108,17 @@ function isEscaped(text, index) {
 function collectBacktickRuns(text, start, end) {
   const runs = []
   let cursor = start
-  let openLength = null
 
   while (cursor < end) {
     const candidate = text.indexOf('`', cursor)
     if (candidate === -1 || candidate >= end) break
-    if (isEscaped(text, candidate) && openLength === null) {
-      cursor = candidate + 1
-      continue
-    }
 
     const length = backtickRunLength(text, candidate)
-    runs.push({ start: candidate, length })
-    if (openLength === null) openLength = length
-    else if (openLength === length) openLength = null
+    runs.push({
+      start: candidate,
+      length,
+      escaped: isEscaped(text, candidate),
+    })
     cursor = candidate + length
   }
 
@@ -144,6 +141,14 @@ function maskInlineCodeBlock(buffer, source, searchable, start, end, diagnostics
   let index = 0
   while (index < runs.length) {
     const opening = runs[index]
+    // Outside a code span, a backslash-escaped run is literal and cannot open one.
+    // Once an unescaped opener exists, nextSameLength may still select an escaped-looking
+    // equal-length run as its closer because backslashes are literal inside code spans.
+    if (opening.escaped) {
+      index += 1
+      continue
+    }
+
     const closingIndex = nextSameLength[index]
     if (closingIndex === -1) {
       diagnostics.push({
