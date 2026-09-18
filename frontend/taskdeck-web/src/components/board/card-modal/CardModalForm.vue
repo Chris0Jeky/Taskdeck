@@ -41,6 +41,16 @@ function isCurrentCard(owner: RetryFocusOwner): boolean {
   return owner.boardId === props.card.boardId && owner.cardId === props.card.id
 }
 
+function clearRetryFocusOwnership() {
+  retryOwnedFocus.value = false
+  retryFocusOwner.value = null
+}
+
+watch(
+  () => [props.card.boardId, props.card.id] as const,
+  clearRetryFocusOwnership,
+)
+
 watch(
   () => [props.typePermissionChecking, props.typePermissionUnknown, props.canEditType] as const,
   async ([checking, unknown, canEdit], [wasChecking, wasUnknown]) => {
@@ -55,13 +65,14 @@ watch(
     const activeElement = document.activeElement
     const shouldRestoreFocus = activeElement === typePermissionRefresh.value
       || (retryOwnedFocus.value && (activeElement === document.body || activeElement === null))
-    const focusOwner = retryOwnedFocus.value
-      ? retryFocusOwner.value
-      : activeElement === typePermissionRefresh.value
-        ? currentCardIdentity()
+    // A retry that is visibly focused now belongs to the current card and must
+    // outrank any in-flight ownership captured before a same-instance card swap.
+    const focusOwner = activeElement === typePermissionRefresh.value
+      ? currentCardIdentity()
+      : retryOwnedFocus.value
+        ? retryFocusOwner.value
         : null
-    retryOwnedFocus.value = false
-    retryFocusOwner.value = null
+    clearRetryFocusOwnership()
     if (!canEdit || !shouldRestoreFocus || !focusOwner || !isCurrentCard(focusOwner)) return
 
     await nextTick()
