@@ -1364,7 +1364,7 @@ describe('CardModal', () => {
       await flushPromises()
 
       expect(wrapper.emitted('close')).toHaveLength(1)
-      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1')
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
       wrapper.unmount()
     })
 
@@ -1398,7 +1398,7 @@ describe('CardModal', () => {
 
       expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
       expect(wrapper.emitted('close')).toHaveLength(1)
-      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1')
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
       wrapper.unmount()
     })
 
@@ -1414,7 +1414,10 @@ describe('CardModal', () => {
       // must not emit it either.
       expect(wrapper.emitted('updated')).toBeUndefined()
       expect(titleValue(wrapper)).toBe(DRAFT)
-      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1')
+      expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1', {
+        intent: 'background',
+        preserveCardComments: true,
+      })
 
       // The notice describes what is actually possible from here: no save, and
       // no restore from this editor while it still holds unsaved work.
