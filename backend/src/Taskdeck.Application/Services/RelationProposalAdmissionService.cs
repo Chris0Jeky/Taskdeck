@@ -45,6 +45,14 @@ public sealed class RelationProposalAdmissionService(
             return Result.Success();
         }
 
+        // The host-facing decorator sits outside AutomationProposalService's longstanding defensive
+        // input validator. Run that exact validator before mapping relation plans so a null operation,
+        // malformed token or invalid JSON remains a stable 400 rather than becoming a wrapper NRE or
+        // parser-specific exception. Non-relation proposals still bypass this decorator unchanged.
+        var input = ProposalOperationInputValidator.Validate(operations);
+        if (!input.IsSuccess)
+            return input;
+
         // Map the complete ordered plan, not only the relation rows. The shared contract validator
         // uses preceding create-card operations to admit references to endpoints that will exist by
         // the time Apply reaches the relation operation. Empty ids are safe here: admission reasons
@@ -74,10 +82,11 @@ public sealed class RelationProposalAdmissionService(
             cancellationToken);
     }
 
-    private static bool IsTypedRelationOperation(CreateProposalOperationDto operation) =>
-        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-        (operation.ActionType.Equals("add-relation", StringComparison.OrdinalIgnoreCase) ||
-         operation.ActionType.Equals("remove-relation", StringComparison.OrdinalIgnoreCase));
+    private static bool IsTypedRelationOperation(CreateProposalOperationDto? operation) =>
+        operation is not null &&
+        string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(operation.ActionType, "add-relation", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(operation.ActionType, "remove-relation", StringComparison.OrdinalIgnoreCase));
 
     public Task<Result<ProposalDto>> GetProposalByIdAsync(
         Guid id,
