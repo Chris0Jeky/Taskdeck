@@ -7,7 +7,7 @@
  * must be registered here, otherwise Stryker gives it the instrumented sandbox
  * copy rather than repository source and the dry run can fail before any mutant
  * executes. These specs remain mandatory in ordinary Vitest and required CI;
- * the exclusion applies only to Stryker's test selection.
+ * only their sandbox copies are omitted; repository sources remain untouched.
  */
 export const sourceTextGuardTests = [
   'src/tests/views/paper/boardMutationCapabilityParity.spec.ts',
@@ -32,10 +32,10 @@ const config = {
     'src/store/boardStore.ts',
     'src/store/board/*.ts',
   ],
-  testFiles: [
-    '**/*.{spec,test}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
-    ...sourceTextGuardTests.map((file) => `!${file}`),
-  ],
+  // Stryker's testFiles negations did not exclude these specs in the hosted
+  // dry run (#3009). Omit only their literal sandbox copies instead; a leading
+  // slash anchors each pattern at the frontend project root.
+  ignorePatterns: sourceTextGuardTests.map((file) => `/${file}`),
   tempDirName: 'stryker-tmp',
   cleanTempDir: 'always',
   timeoutMS: 60000,
