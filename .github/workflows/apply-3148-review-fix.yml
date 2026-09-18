@@ -1,0 +1,64 @@
+name: Apply PR 3148 review fix
+
+on:
+  push:
+    branches:
+      - fix/2676-fsmonitor-cleanup-residuals
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pr-3148-review-fix
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/2676-fsmonitor-cleanup-residuals
+          fetch-depth: 0
+
+      - name: Give the exhausted-retry probe a deterministic budget
+        shell: pwsh
+        run: |
+          $path = 'scripts/git/Test-New-CodexIssueWorktree.ps1'
+          $text = [System.IO.File]::ReadAllText($path)
+          $old = @'
+              -RemovalInvoker $persistentRemovalInvoker `
+              -RemovalTimeoutMilliseconds 25 `
+              -RemovalRetryDelayMilliseconds 1
+          '@
+          $new = @'
+              -RemovalInvoker $persistentRemovalInvoker `
+              -RemovalTimeoutMilliseconds 1000 `
+              -RemovalRetryDelayMilliseconds 1
+          '@
+          $count = ([regex]::Matches($text, [regex]::Escape($old))).Count
+          if ($count -ne 1) {
+              throw "Expected exactly one persistent-removal retry budget, found $count."
+          }
+          $text = $text.Replace($old, $new)
+          [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
+
+      - name: Verify focused cleanup regression
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case git-add-failure
+
+      - name: Publish review fix
+        shell: pwsh
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git rm .github/workflows/apply-3148-review-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/git/Test-New-CodexIssueWorktree.ps1
+          git commit -m 'test: stabilize exhausted cleanup retry probe'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin HEAD:fix/2676-fsmonitor-cleanup-residuals
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
