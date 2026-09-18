@@ -104,6 +104,7 @@ function Get-HelperOwnedTreeIdentity {
     $identities = [System.Collections.Generic.List[pscustomobject]]::new()
     $childrenByParent = @{}
     $enumerated = $true
+    $enumerationFailure = $null
     try {
         foreach ($entry in (Get-CimInstance -ClassName Win32_Process -Property ProcessId, ParentProcessId -ErrorAction Stop)) {
             $parentProcessId = [int]$entry.ParentProcessId
@@ -114,6 +115,9 @@ function Get-HelperOwnedTreeIdentity {
         }
     }
     catch {
+        # Keep the cause: without it a broken WMI repository or a policy-blocked Win32_Process
+        # turns every Git timeout into an undiagnosable hard failure.
+        $enumerationFailure = $_.Exception.Message
         $enumerated = $false
         $childrenByParent = @{}
     }
@@ -156,6 +160,7 @@ function Get-HelperOwnedTreeIdentity {
 
     return [pscustomobject]@{
         Enumerated = $enumerated
+        EnumerationFailure = $enumerationFailure
         Identities = $identities.ToArray()
     }
 }
@@ -300,7 +305,7 @@ function Stop-HelperOwnedProcessTree {
                 # identity captured before termination must be provably gone. Everything else —
                 # including an unreadable descendant table — stays fail-closed.
                 if (-not $treeIdentity.Enumerated) {
-                    throw "taskkill.exe failed for timed-out Git PID $expectedProcessId (exit $($taskkill.ExitCode)) and its helper-owned descendants could not be enumerated, so cleanup cannot be proven. $taskkillOutput"
+                    throw "taskkill.exe failed for timed-out Git PID $expectedProcessId (exit $($taskkill.ExitCode)) and its helper-owned descendants could not be enumerated, so cleanup cannot be proven ($($treeIdentity.EnumerationFailure)). $taskkillOutput"
                 }
                 $survivors = @(Wait-ForHelperOwnedTreeExit -Identities $treeIdentity.Identities -TimeoutMilliseconds $ReapTimeoutMilliseconds)
                 if ($survivors.Count -gt 0) {
