@@ -1097,12 +1097,30 @@ exit /b 255
             Assert-True ($raceInertResult.ExitCode -ne 0) "A taskkill that terminates nothing must fail closed."
             Assert-NormalizedContains $raceInertResult.Output "helper-owned process-tree cleanup failed" "A surviving helper-owned tree must be reported as a cleanup failure."
             Assert-NormalizedContains $raceInertResult.Output "these helper-owned processes are still alive: PID " "The cleanup failure must enumerate the surviving helper-owned identities."
-            Assert-NormalizedContains $raceInertResult.Output "PID $raceInertRootPid" "The cleanup failure must name the surviving remote-helper identity."
+            # Anchor on the list delimiter: a bare substring would also be satisfied by any longer
+            # PID that merely starts with these digits, which is the very miss this assertion guards.
+            $normalizedInertOutput = $raceInertResult.Output -replace '\s+', ' '
+            Assert-True ($normalizedInertOutput -match ("PID " + $raceInertRootPid + "[,.]")) "The cleanup failure must name the surviving remote-helper identity."
             Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-500-taskkill-inert-failure"))) "A failed cleanup created a worktree target."
         }
         finally {
             foreach ($environmentName in $previousRaceEnvironment.Keys) {
                 [System.Environment]::SetEnvironmentVariable($environmentName, $previousRaceEnvironment[$environmentName], "Process")
+            }
+            # The probe writes its identities before the helper returns, so recover them from the
+            # marker files too: a throw between the probe starting and the in-band record would
+            # otherwise orphan the sleeping fixture processes. Duplicates are harmless.
+            foreach ($markerPair in @(
+                [pscustomobject]@{ Pid = $raceRootPidPath; Start = $raceRootStartPath },
+                [pscustomobject]@{ Pid = $raceChildPidPath; Start = $raceChildStartPath }
+            )) {
+                if ((Test-Path -LiteralPath $markerPair.Pid -PathType Leaf) -and
+                    (Test-Path -LiteralPath $markerPair.Start -PathType Leaf)) {
+                    $raceRecordedIdentities.Add([pscustomobject]@{
+                            Id = [int](Get-Content -Raw -LiteralPath $markerPair.Pid)
+                            Start = [long](Get-Content -Raw -LiteralPath $markerPair.Start)
+                        })
+                }
             }
             foreach ($identity in $raceRecordedIdentities) {
                 $recordedProcess = Get-Process -Id $identity.Id -ErrorAction SilentlyContinue
