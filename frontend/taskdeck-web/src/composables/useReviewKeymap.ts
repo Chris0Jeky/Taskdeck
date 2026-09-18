@@ -14,6 +14,9 @@ import { onBeforeUnmount, onMounted } from 'vue'
  *  - When the focused element is a text input, textarea, contenteditable
  *    region, or `select`, NO shortcut fires. The user is typing — do not
  *    apply on ⏎ from within the defer-reason or edit composer.
+ *  - Interactive controls reject page-level shortcuts by default. A control
+ *    may opt into named handler actions through `data-review-keymap-allow`
+ *    when the displayed control and the shortcut represent the same action.
  *  - When `enabled` returns false (e.g. modal open, view not visible) the
  *    handler is a no-op.
  *  - All handlers run with `event.preventDefault()` so the host page does
@@ -49,6 +52,8 @@ const TEXT_INPUT_TYPES = new Set([
   'number',
 ])
 
+const INTERACTIVE_ACTION_ALLOW_ATTRIBUTE = 'data-review-keymap-allow'
+
 /**
  * Returns true when the event originated inside an editable surface where
  * the keystroke must be left to the input rather than dispatched to a
@@ -77,7 +82,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return false
 }
 
-export function isInteractiveTarget(target: EventTarget | null): boolean {
+export function isInteractiveTarget(target: EventTarget | null): target is Element {
   if (!(target instanceof Element)) return false
   return !!target.closest(
     [
@@ -98,6 +103,21 @@ export function isInteractiveTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * An interactive control may opt into only the page-level actions it owns.
+ * The value is a whitespace-separated list of `ReviewKeymapHandlers` keys so
+ * descendants of a compound control inherit the same explicit boundary.
+ */
+function interactiveTargetAllowsAction(
+  target: Element,
+  action: keyof ReviewKeymapHandlers,
+): boolean {
+  const allowed = target
+    .closest<HTMLElement>(`[${INTERACTIVE_ACTION_ALLOW_ATTRIBUTE}]`)
+    ?.getAttribute(INTERACTIVE_ACTION_ALLOW_ATTRIBUTE)
+  return allowed?.trim().split(/\s+/u).includes(action) ?? false
+}
+
+/**
  * Attach the keymap. Returns the underlying handler so tests can invoke it
  * directly without going through `dispatchEvent`.
  */
@@ -114,12 +134,15 @@ export function useReviewKeymap(
     // Don't fire while the user is typing or composing in an IME.
     if (event.isComposing) return
     if (isEditableTarget(event.target)) return
-    if (isInteractiveTarget(event.target)) return
     // Platform modifier keys (Command/Control/Alt) belong to other shortcut layers.
     if (event.metaKey || event.ctrlKey || event.altKey) return
 
     const action = matchAction(event)
     if (!action) return
+    if (
+      isInteractiveTarget(event.target) &&
+      !interactiveTargetAllowsAction(event.target, action)
+    ) return
     if (!isActionEnabled(action)) return
 
     const fn = handlers[action]

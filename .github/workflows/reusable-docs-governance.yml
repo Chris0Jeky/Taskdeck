@@ -28,6 +28,15 @@ jobs:
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
 
+      - name: Validate read-only inventory environment contract on PowerShell 7
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
+
+      - name: Validate read-only inventory launch on PowerShell 7
+        shell: pwsh
+        run: |
+          & ./scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @("git", "status", "--short")
+
       - name: Validate checkout fingerprint guard
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1
@@ -74,7 +83,10 @@ jobs:
         run: python -m unittest discover -s scripts/analysis -p "test_rank_refactor_candidates.py"
 
       - name: Validate docs governance invariants
-        run: node scripts/check-docs-governance.mjs
+        run: |
+          node --test scripts/check-docs-governance*.test.mjs
+          node --test scripts/check-doc-links*.test.mjs
+          node scripts/check-docs-governance.mjs
 
       - name: Validate golden principles invariants
         run: node scripts/check-golden-principles.mjs

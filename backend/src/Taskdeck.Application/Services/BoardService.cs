@@ -362,8 +362,28 @@ public class BoardService
             if (board == null)
                 return Result.Failure(ErrorCodes.NotFound, $"Board with ID {id} not found");
 
+            // DELETE is a desired-state operation. Avoid advancing the token or duplicating
+            // archive side effects when that state is already present.
+            if (board.IsArchived)
+                return Result.Success();
+
             board.Archive(); // Soft delete
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            catch (DomainException ex) when (ex.ErrorCode == ErrorCodes.Conflict)
+            {
+                // The tracked board still contains this request's desired local state after an
+                // EF concurrency failure, so it cannot prove what committed. Read only the
+                // persisted flag through the repository's no-tracking projection.
+                var persistedIsArchived = await _unitOfWork.Boards.GetIsArchivedAsync(id, cancellationToken);
+                if (persistedIsArchived == true)
+                    return Result.Success();
+
+                return Result.Failure(ex.ErrorCode, ex.Message);
+            }
+
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);

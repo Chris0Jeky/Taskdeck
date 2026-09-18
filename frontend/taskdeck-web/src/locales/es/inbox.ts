@@ -171,15 +171,14 @@ export default {
     // accesibles llevan la etiqueta visible delante (WCAG 2.5.3) y solo se
     // distinguen por lo que dicen después.
     //
-    // `composerAria` no puede decir que la captura LLEGUE al tablero elegido:
-    // toda captura llega al Inbox, y el tablero solo la VINCULA para que el
-    // triage proponga sobre él; nada llega al tablero sin aprobar y ejecutar
-    // (ADR-0003). Es lo mismo que dicen el pie del Composer y `nib.destination*`,
-    // así que este nombre dice "se vincula ... para el triage" y el de la fila
-    // conserva "a dónde va esta captura", que es lo que hace ese selector.
+    // El selector del Composer VINCULA una captura nueva a un tablero para el
+    // triage. El selector de la fila elige el tablero al que se dirige la
+    // propuesta resultante; no mueve la captura fuera del Inbox. Ninguno puede
+    // decir que la captura LLEGUE al tablero: nada llega allí sin revisar,
+    // aprobar y ejecutar la propuesta (ADR-0003).
     label: 'Tablero',
     composerAria: 'Tablero: elige a qué tablero se vincula esta captura para el triage',
-    triageAria: 'Tablero: elige a dónde va esta captura',
+    triageAria: 'Tablero: elige el tablero al que se dirige la propuesta de triage',
     noBoardOption: 'Sin tablero · llega al Inbox',
     selectPlaceholder: 'Selecciona un tablero…',
     viewOnlyOption: '{name} · solo lectura',
