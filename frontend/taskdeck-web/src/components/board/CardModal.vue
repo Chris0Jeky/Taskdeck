@@ -203,7 +203,24 @@ const editorWritesBlocked = computed(() => permissionRecovery.value && !boardCan
 
 const dialogRef = ref<HTMLElement | null>(null)
 const permissionRecoveryRefresh = ref<HTMLButtonElement | null>(null)
+const commentDeleteCancel = ref<HTMLButtonElement | null>(null)
+const commentDeletePermissionRefresh = ref<HTMLButtonElement | null>(null)
 const permissionRetryOwnedFocus = ref(false)
+const permissionRecoveryMessage = computed(() => {
+  if (typePermissionChecking.value) {
+    return 'Checking current board access. Your unsaved changes are kept.'
+  }
+  if (accessUnavailable.value) {
+    return 'This board is no longer available to this editor. Your unsaved changes are kept. Ask a board admin to check your access, then refresh permission.'
+  }
+  if (typePermissionUnknown.value) {
+    return 'Could not confirm current board permission. Editing stays locked. Your unsaved changes are kept; refresh permission to try again.'
+  }
+  if (!boardCanWrite.value) {
+    return 'This board is read-only for you. Your unsaved changes are kept. Ask a board admin to restore write access, then refresh permission.'
+  }
+  return 'Board write permission confirmed. Your unsaved changes are kept.'
+})
 
 watch(
   () => [typePermissionChecking.value, typePermissionUnknown.value, boardCanWrite.value, permissionRecovery.value] as const,
@@ -466,6 +483,32 @@ const {
   onPermissionDenied: recoverFromPermissionDenied,
 })
 
+watch(
+  [showCommentDeleteConfirm, permissionRecovery, editorWritesBlocked, typePermissionChecking],
+  async ([open, recovering, blocked, checking]) => {
+    if (!open || !recovering || !blocked) return
+
+    await nextTick()
+    if (!showCommentDeleteConfirm.value || !permissionRecovery.value || !editorWritesBlocked.value) return
+
+    const active = document.activeElement
+    const activeIsDisabledButton = active instanceof HTMLButtonElement && active.disabled
+    if (
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active.isConnected &&
+      !activeIsDisabledButton
+    ) {
+      return
+    }
+
+    const target = checking
+      ? commentDeleteCancel.value
+      : commentDeletePermissionRefresh.value ?? commentDeleteCancel.value
+    target?.focus()
+  },
+)
+
 watch(hasUnsavedChanges, (dirty) => {
   emit('dirty-change', dirty)
 }, { immediate: true })
@@ -548,14 +591,8 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
-        <div v-if="permissionRecovery" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
-          <p role="status">
-            <template v-if="typePermissionChecking">Checking current board access. Your unsaved changes are kept.</template>
-            <template v-else-if="accessUnavailable">This board is no longer available to this editor. Your unsaved changes are kept. Ask a board admin to check your access, then refresh permission.</template>
-            <template v-else-if="typePermissionUnknown">Could not confirm current board permission. Editing stays locked. Your unsaved changes are kept; refresh permission to try again.</template>
-            <template v-else-if="!boardCanWrite">This board is read-only for you. Your unsaved changes are kept. Ask a board admin to restore write access, then refresh permission.</template>
-            <template v-else>Board write permission confirmed. Your unsaved changes are kept.</template>
-          </p>
+        <div v-if="permissionRecovery && !showCommentDeleteConfirm" class="my-3 space-y-2 text-sm" data-testid="card-permission-recovery">
+          <p role="status">{{ permissionRecoveryMessage }}</p>
           <button ref="permissionRecoveryRefresh" type="button" data-testid="card-permission-refresh" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
         </div>
         <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :reads-blocked="readsBlocked" :disabled="isSaving || cardIsArchived" />
@@ -727,8 +764,25 @@ useEscapeToClose(
     :close-on-backdrop="!isDeletingComment"
     @close="handleCommentDeleteCancel"
   >
+    <div
+      v-if="permissionRecovery"
+      class="space-y-2 text-sm"
+      data-testid="card-comment-delete-permission-recovery"
+    >
+      <p role="status">{{ permissionRecoveryMessage }}</p>
+      <button
+        ref="commentDeletePermissionRefresh"
+        type="button"
+        data-testid="card-comment-delete-permission-refresh"
+        :disabled="typePermissionChecking"
+        @click="refreshTypePermission"
+      >
+        Refresh board permission
+      </button>
+    </div>
     <template #footer>
       <button
+        ref="commentDeleteCancel"
         type="button"
         :disabled="isDeletingComment"
         class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
