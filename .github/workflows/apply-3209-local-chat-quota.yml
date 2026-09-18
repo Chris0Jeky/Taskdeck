@@ -59,7 +59,8 @@ jobs:
             exit 1
           fi
           grep -F 'ChatServiceLocalQuotaBypassTests.SendMessageAsync_ChecklistBootstrapWithoutBoard_DoesNotReserveLlmQuota' /tmp/pr-3209-red.log
-          grep -F 'ILlmQuotaService.ReserveAsync' /tmp/pr-3209-red.log
+          grep -F 'MockException' /tmp/pr-3209-red.log
+          grep -F 'ReserveAsync' /tmp/pr-3209-red.log
 
       - name: Reserve only when the request can reach an LLM
         shell: bash
@@ -97,11 +98,15 @@ jobs:
               '            {\n'
               '                var usedToolCalling = false;\n'
           )
+          indented_quota_block = ''.join(
+              ('    ' + line if line.strip() else line)
+              for line in quota_block.splitlines(keepends=True)
+          )
           replacement = (
               '            else\n'
               '            {\n'
               '                // Only requests that can reach a provider consume an LLM quota slot.\n'
-              + quota_block.replace('            ', '                ', 1)
+              + indented_quota_block
               + '                var usedToolCalling = false;\n'
           )
           if service.count(else_marker) != 1:
@@ -111,87 +116,58 @@ jobs:
 
           tests_path = Path('backend/tests/Taskdeck.Application.Tests/Services/ChatServiceTests.cs')
           tests = tests_path.read_text(encoding='utf-8').replace('\r\n', '\n')
-          old_test = '''    [Fact]
-              public async Task SendMessageAsync_ShouldReleaseReservation_WhenChecklistBootstrapMakesNoLlmCall()
-              {
-                  // #1427 re-review: the checklist-bootstrap branch bypasses the LLM entirely, so the reserved
-                  // slot was never billed — the finally must RELEASE it (no quota consumed by a no-LLM request).
-                  var userId = Guid.NewGuid();
-                  var session = new ChatSession(userId, "Bootstrap no-board quota test"); // no BoardId
-          
-                  _chatSessionRepoMock
-                      .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
-                      .ReturnsAsync(session);
-          
-                  var reservationId = Guid.NewGuid();
-                  var quotaMock = new Mock<ILlmQuotaService>();
-                  quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
-                      .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));
-          
-                  var serviceWithQuota = new ChatService(
-                      _unitOfWorkMock.Object,
-                      _llmProviderMock.Object,
-                      _plannerMock.Object,
-                      _proposalServiceMock.Object,
-                      _policyEngineMock.Object,
-                      _notificationServiceMock.Object,
-                      _authorizationServiceMock.Object,
-                      quotaService: quotaMock.Object);
-          
-                  var result = await serviceWithQuota.SendMessageAsync(
-                      session.Id, userId,
-                      new SendChatMessageDto("- [ ] first item\\n- [ ] second item", RequestProposal: true),
-                      default);
-          
-                  result.IsSuccess.Should().BeTrue();
-                  _llmProviderMock.Verify(
-                      p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-                  quotaMock.Verify(
-                      q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
-                  quotaMock.Verify(
-                      q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
-                      Times.Never);
-              }
-          '''
-          old_test = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_test.splitlines()) + '\n'
-          new_test = '''    [Fact]
-              public async Task SendMessageAsync_ShouldNotReserve_WhenChecklistBootstrapMakesNoLlmCall()
-              {
-                  // #1431 L3: the checklist-bootstrap branch is fully local. It must not transiently
-                  // occupy an LLM quota slot before returning its deterministic result.
-                  var userId = Guid.NewGuid();
-                  var session = new ChatSession(userId, "Bootstrap no-board quota test"); // no BoardId
-          
-                  _chatSessionRepoMock
-                      .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
-                      .ReturnsAsync(session);
-          
-                  var quotaMock = new Mock<ILlmQuotaService>(MockBehavior.Strict);
-                  var serviceWithQuota = new ChatService(
-                      _unitOfWorkMock.Object,
-                      _llmProviderMock.Object,
-                      _plannerMock.Object,
-                      _proposalServiceMock.Object,
-                      _policyEngineMock.Object,
-                      _notificationServiceMock.Object,
-                      _authorizationServiceMock.Object,
-                      quotaService: quotaMock.Object);
-          
-                  var result = await serviceWithQuota.SendMessageAsync(
-                      session.Id, userId,
-                      new SendChatMessageDto("- [ ] first item\\n- [ ] second item", RequestProposal: true),
-                      default);
-          
-                  result.IsSuccess.Should().BeTrue();
-                  _llmProviderMock.Verify(
-                      p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-                  quotaMock.VerifyNoOtherCalls();
-              }
-          '''
-          new_test = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_test.splitlines()) + '\n'
-          if tests.count(old_test) != 1:
-              raise SystemExit(f'expected one legacy checklist quota test, found {tests.count(old_test)}')
-          tests_path.write_text(tests.replace(old_test, new_test, 1), encoding='utf-8', newline='\n')
+          start_marker = (
+              '    [Fact]\n'
+              '    public async Task SendMessageAsync_ShouldReleaseReservation_WhenChecklistBootstrapMakesNoLlmCall()\n'
+          )
+          end_marker = (
+              '\n    [Fact]\n'
+              '    public async Task StreamResponseAsync_FinalTokenEvent_ShouldCarryUsageFields()\n'
+          )
+          start = tests.find(start_marker)
+          end = tests.find(end_marker, start)
+          if start < 0 or end <= start:
+              raise SystemExit('legacy checklist quota test boundaries were not found')
+          block = tests[start:end]
+
+          replacements = [
+              (
+                  '    public async Task SendMessageAsync_ShouldReleaseReservation_WhenChecklistBootstrapMakesNoLlmCall()\n',
+                  '    public async Task SendMessageAsync_ShouldNotReserve_WhenChecklistBootstrapMakesNoLlmCall()\n',
+                  'legacy checklist test name',
+              ),
+              (
+                  '        // #1427 re-review: the checklist-bootstrap branch bypasses the LLM entirely, so the reserved\n'
+                  '        // slot was never billed — the finally must RELEASE it (no quota consumed by a no-LLM request).\n',
+                  '        // #1431 L3: the checklist-bootstrap branch is fully local. It must not transiently\n'
+                  '        // occupy an LLM quota slot before returning its deterministic result.\n',
+                  'legacy checklist test comment',
+              ),
+              (
+                  '        var reservationId = Guid.NewGuid();\n'
+                  '        var quotaMock = new Mock<ILlmQuotaService>();\n'
+                  '        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))\n'
+                  '            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));\n',
+                  '        var quotaMock = new Mock<ILlmQuotaService>(MockBehavior.Strict);\n',
+                  'legacy checklist quota setup',
+              ),
+              (
+                  '        quotaMock.Verify(\n'
+                  '            q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);\n'
+                  '        quotaMock.Verify(\n'
+                  '            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),\n'
+                  '            Times.Never);\n',
+                  '        quotaMock.VerifyNoOtherCalls();\n',
+                  'legacy checklist quota verification',
+              ),
+          ]
+          for old, new, label in replacements:
+              count = block.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one {label}, found {count}')
+              block = block.replace(old, new, 1)
+
+          tests_path.write_text(tests[:start] + block + tests[end:], encoding='utf-8', newline='\n')
           PY
 
           git diff --check
