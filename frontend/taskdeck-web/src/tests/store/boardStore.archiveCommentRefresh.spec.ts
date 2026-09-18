@@ -77,6 +77,10 @@ describe('archive hierarchy refresh comment ownership', () => {
       child: [{ id: 'comment-child', content: 'Loaded child discussion' }],
     } as any
     store.cardCommentsByCardId = cachedComments
+    // Pinia exposes the assigned object through its reactive store proxy. Capture
+    // that installed reference so the assertion proves reconciliation itself did
+    // not replace the cache, rather than comparing a proxy with its raw source.
+    const installedCommentCache = store.cardCommentsByCardId
 
     await store.setCardArchived(
       'board-1',
@@ -90,7 +94,7 @@ describe('archive hierarchy refresh comment ownership', () => {
       id: 'child',
       parentCardId: null,
     })])
-    expect(store.cardCommentsByCardId).toBe(cachedComments)
+    expect(store.cardCommentsByCardId).toBe(installedCommentCache)
     expect(warning).not.toHaveBeenCalled()
     expect(error).not.toHaveBeenCalled()
   })
