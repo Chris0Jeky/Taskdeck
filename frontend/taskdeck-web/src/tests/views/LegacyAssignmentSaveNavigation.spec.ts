@@ -311,7 +311,7 @@ describe('Legacy assignment-save event propagation', () => {
 })
 
 describe('Legacy assignment-save navigation boundary', () => {
-  it.each(['successful', 'failed'])('refuses route and page exit until a %s save settles', async () => {
+  it('refuses route leave and page exit until the save settles', async () => {
     const wrapper = mountLegacyBoardView()
     await flushPromises()
 
@@ -339,5 +339,27 @@ describe('Legacy assignment-save navigation boundary', () => {
     const cleanUnload = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(cleanUnload)
     expect(cleanUnload.defaultPrevented).toBe(false)
+  })
+
+  it('refuses a same-view board route update until the save settles', async () => {
+    const wrapper = mountLegacyBoardView()
+    await flushPromises()
+
+    expect(routeGuards.update).toEqual(expect.any(Function))
+
+    await wrapper.get('[data-testid="begin-assignment-save"]').trigger('click')
+    const to = { fullPath: '/workspace/boards/board-2' }
+    const from = { fullPath: '/workspace/boards/board-1' }
+    const navigation = routeGuards.update!(to, from)
+    await nextTick()
+
+    await expect(Promise.resolve(navigation)).resolves.toBe(false)
+    expect(wrapper.get('[role="dialog"]').text()).toContain('cannot be discarded or cancelled')
+
+    await wrapper.get('[data-testid="settle-assignment-save"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(routeGuards.update!(to, from)).toBe(true)
   })
 })
