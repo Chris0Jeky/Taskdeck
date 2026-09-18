@@ -1,0 +1,156 @@
+name: Apply PR 3169 comment-tab repair
+
+on:
+  push:
+    branches:
+      - fix/3006-yaml-nonprintable-residuals
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-3169-comment-tab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact triggering head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact triggering head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.13.1"
+
+      - name: Add the YAML-comment regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/check-docs-governance.review-residuals.test.mjs')
+          source = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+          if not source.endswith('\n'):
+              raise SystemExit('review residual suite must end with one newline')
+          regression = r"""
+          test('permits horizontal tabs in comment-only frontmatter content', () => {
+            const errors = collectControlPathMirrorErrors(
+              JSON.stringify({ controlPaths: ['ci/**'] }),
+              quotedRule('ci/**', ['# owner\tteam']),
+            )
+
+            assert.deepEqual(errors, [])
+          })
+          """
+          regression = '\n'.join(line[10:] if line.startswith('          ') else line for line in regression.splitlines()).strip('\n')
+          path.write_text(source + '\n' + regression + '\n', encoding='utf-8', newline='\n')
+          PY
+          git diff --check
+
+      - name: Prove the regression is red
+        shell: bash
+        run: |
+          set +e
+          node --test --test-name-pattern="permits horizontal tabs in comment-only frontmatter content" scripts/check-docs-governance.review-residuals.test.mjs > /tmp/pr-3169-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/pr-3169-red.log
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected the comment-tab regression to fail before the validator repair.' >&2
+            exit 1
+          fi
+          grep -F 'forbidden control or non-printable character' /tmp/pr-3169-red.log
+
+      - name: Exempt horizontal tabs only in comment content
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/check-docs-governance.mjs')
+          source = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+          old_constant = "const FORBIDDEN_SCALAR_CONTROL = /[\\u0000-\\u001F\\u007F-\\u009F\\uFFFE\\uFFFF]/u\n"
+          new_constant = old_constant + "const FORBIDDEN_COMMENT_CONTROL = /[\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F\\uFFFE\\uFFFF]/u\n"
+          if source.count(old_constant) != 1:
+              raise SystemExit(f'expected one scalar-control definition, found {source.count(old_constant)}')
+          source = source.replace(old_constant, new_constant, 1)
+
+          old_check = """    if (FORBIDDEN_SCALAR_CONTROL.test(line)) {
+              structureErrors.push(
+                `${rulePath} front matter has a forbidden control or non-printable character, which this check cannot parse`,
+              )
+              continue
+            }
+          """
+          old_check = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_check.splitlines()) + '\n'
+          new_check = """    const commentOnly = /^ *#/.test(line)
+            const forbiddenCharacter = commentOnly
+              ? FORBIDDEN_COMMENT_CONTROL
+              : FORBIDDEN_SCALAR_CONTROL
+            if (forbiddenCharacter.test(line)) {
+              structureErrors.push(
+                `${rulePath} front matter has a forbidden control or non-printable character, which this check cannot parse`,
+              )
+              continue
+            }
+          """
+          new_check = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_check.splitlines()) + '\n'
+          if source.count(old_check) != 1:
+              raise SystemExit(f'expected one frontmatter control check, found {source.count(old_check)}')
+          source = source.replace(old_check, new_check, 1)
+
+          old_skip = "    if (/^ *#/.test(line)) {\n      continue\n    }\n"
+          new_skip = "    if (commentOnly) {\n      continue\n    }\n"
+          if source.count(old_skip) != 1:
+              raise SystemExit(f'expected one comment-only skip, found {source.count(old_skip)}')
+          path.write_text(source.replace(old_skip, new_skip, 1), encoding='utf-8', newline='\n')
+          PY
+
+      - name: Verify complete docs-governance contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/check-docs-governance*.test.mjs
+          node scripts/check-docs-governance.mjs
+          git diff --check
+
+      - name: Publish the exact-parent repair and remove this applicator
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='fix/3006-yaml-nonprintable-residuals'
+          trigger_head="$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$trigger_head"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          test -n "$remote_head"
+          test "$remote_head" = "$trigger_head"
+
+          git rm .github/workflows/apply-3169-comment-tab.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/check-docs-governance.mjs scripts/check-docs-governance.review-residuals.test.mjs
+          git diff --cached --check
+
+          expected_names=$'.github/workflows/apply-3169-comment-tab.yml\nscripts/check-docs-governance.mjs\nscripts/check-docs-governance.review-residuals.test.mjs'
+          actual_names="$(git diff --cached --name-only | sort)"
+          test "$actual_names" = "$expected_names"
+
+          tree="$(git write-tree)"
+          repair_commit="$(printf '%s\n' 'fix(docs): permit tabs in frontmatter comments' | git commit-tree "$tree" -p "$trigger_head")"
+          test "$(git rev-parse "$repair_commit^")" = "$trigger_head"
+          git push --force-with-lease="refs/heads/$branch:$trigger_head" origin "$repair_commit:refs/heads/$branch"
