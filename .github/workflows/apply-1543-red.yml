@@ -1,0 +1,48 @@
+name: Apply issue 1543 red regression
+
+on:
+  push:
+    branches:
+      - fix/1543-secrets-verdict-evidence
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-1543-red
+  cancel-in-progress: true
+
+jobs:
+  red:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/1543-secrets-verdict-evidence
+          fetch-depth: 0
+
+      - name: Prove the current skill violates the secrets evidence contract
+        shell: bash
+        run: |
+          set +e
+          node --test scripts/check-pre-merge-gate-secrets.test.mjs 2>&1 | tee /tmp/issue-1543-red.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected the regression to fail before implementation, but it passed.' >&2
+            exit 1
+          fi
+          grep -F 'the evidence template must render a derived verdict rather than hard-code CLEAN' /tmp/issue-1543-red.log
+
+      - name: Publish the red contract
+        shell: bash
+        run: |
+          git diff --check
+          git rm .github/workflows/apply-1543-red.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test: record red pre-merge secrets evidence contract'
+          git push origin HEAD:fix/1543-secrets-verdict-evidence
