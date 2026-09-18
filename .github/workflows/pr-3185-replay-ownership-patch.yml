@@ -30,6 +30,12 @@ jobs:
           source = source_path.read_text(encoding='utf-8')
           replacement_path = Path('.github/patches/pr-3185-reconciliation-block.txt')
           replacement = replacement_path.read_text(encoding='utf-8')
+          replacement = replacement.replace(
+              '? Result.Success(originalOperations)',
+              '? Result.Success<IReadOnlyList<ProposalOperationDto>>(originalOperations)')
+          replacement = replacement.replace(
+              'return Result.Success(originalOperations);',
+              'return Result.Success<IReadOnlyList<ProposalOperationDto>>(originalOperations);')
           start_marker = '    /// <summary>\n    /// Repairs the narrow proposal-persisted / capture-provenance-not-stamped crash window.'
           end_marker = '    private static string SerializeRevisionPayload(IReadOnlyList<ProposalOperationDto> operations) =>\n'
           start = source.find(start_marker)
