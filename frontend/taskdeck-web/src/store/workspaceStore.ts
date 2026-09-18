@@ -487,9 +487,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return nextOnboarding
     } catch (e: unknown) {
       if (onboardingRequestVersion === requestVersion) {
-        if (appliedOptimistic) {
-          // Local intent stays applied; flag it unsaved so reads cannot
-          // silently revert it (mirrors the failed-mode-save semantics).
+        if (adoptAuthoritativePayload && optimisticBase) {
+          // A deferred placeholder has no usable active guide. Restore
+          // the dismissed affordance so Replay remains reachable, and
+          // leave it clean so a later summary can confirm a commit whose
+          // response was lost.
+          onboardingDirty = false
+          syncOnboarding({ ...optimisticBase, visibility: 'dismissed' })
+        } else if (appliedOptimistic) {
+          // Ordinary local intent stays applied; flag it unsaved so reads
+          // cannot silently revert it (mirrors failed mode-save semantics).
           onboardingDirty = true
         }
         preferenceError.value = getErrorMessage(e, "We couldn't update the setup guide")

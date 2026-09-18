@@ -133,6 +133,29 @@ describe('workspaceStore guide replay payload adoption (#3124)', () => {
     expect(store.homeSummary?.onboarding).toEqual(replayed)
   })
 
+  it('restores the dismissed affordance when the latest overlapping replay fails', async () => {
+    const store = useWorkspaceStore()
+    const firstResponse = createDeferred<{ data: WorkspaceOnboarding }>()
+    const secondResponse = createDeferred<{ data: WorkspaceOnboarding }>()
+    const deferred = makeDeferredPlaceholder()
+    store.onboarding = deferred
+    vi.mocked(http.put)
+      .mockReturnValueOnce(firstResponse.promise)
+      .mockReturnValueOnce(secondResponse.promise)
+
+    const firstReplay = store.updateOnboarding('replay')
+    const secondReplay = store.updateOnboarding('replay')
+    const secondOutcome = expect(secondReplay).rejects.toThrow('latest replay failed')
+
+    secondResponse.reject(new Error('latest replay failed'))
+    await secondOutcome
+    expect(store.onboarding).toEqual(deferred)
+
+    firstResponse.resolve({ data: makeGuide() })
+    await firstReplay
+    expect(store.onboarding).toEqual(deferred)
+  })
+
   it('lets the latest overlapping replay adopt the authoritative payload', async () => {
     const store = useWorkspaceStore()
     const firstResponse = createDeferred<{ data: WorkspaceOnboarding }>()
