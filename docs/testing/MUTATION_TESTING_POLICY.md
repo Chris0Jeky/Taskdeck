@@ -47,7 +47,7 @@ negative test pattern. The mutation workflow runs that inexpensive contract befo
 Qualify changes to this boundary with all three commands, from `frontend/taskdeck-web`:
 
 ```bash
-node --test scripts/stryker-source-text-guards.test.mjs
+node --test scripts/stryker-source-text-guards.contract.mjs
 npx vitest --run src/tests/views/paper/boardMutationCapabilityParity.spec.ts --maxWorkers=1 --maxConcurrency=1
 npx stryker run --dryRunOnly
 ```

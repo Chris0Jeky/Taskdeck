@@ -40,7 +40,7 @@ test('registered source-text guards still exist in the ordinary test tree', asyn
 test('the board mutation parity source guard stays explicitly registered', async () => {
   const source = await readFile(new URL(`../${parityGuard}`, import.meta.url), 'utf8')
 
-  assert.match(source, /query:\s*['"]\?raw['"]/) 
+  assert.match(source, /query:\s*['"]\?raw['"]/)
   assert.match(source, /store\/boardStore\.ts/)
   assert.ok(
     sourceTextGuardTests.includes(parityGuard),
