@@ -5,7 +5,7 @@ import BoardView from '../../views/BoardView.vue'
 import BoardCanvas from '../../components/board/BoardCanvas.vue'
 import ColumnLane from '../../components/board/ColumnLane.vue'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
-import type { Board, Card, Column } from '../../types/board'
+import type { BoardDetail, Card, Column } from '../../types/board'
 
 const routeGuards = vi.hoisted(() => ({
   leave: null as null | (() => boolean | Promise<boolean>),
@@ -50,6 +50,7 @@ const column: Column = {
   name: 'Todo',
   position: 0,
   wipLimit: null,
+  cardCount: 1,
   createdAt: '2026-09-18T00:00:00Z',
   updatedAt: '2026-09-18T00:00:00Z',
 }
@@ -71,17 +72,18 @@ const card = {
   updatedAt: '2026-09-18T00:00:00Z',
 } as Card
 
-const board = {
+const board: BoardDetail = {
   id: 'board-1',
   name: 'Legacy board',
   description: '',
+  isArchived: false,
   columns: [column],
   createdAt: '2026-09-18T00:00:00Z',
   updatedAt: '2026-09-18T00:00:00Z',
-} as Board
+}
 
 const boardStore = reactive({
-  currentBoard: board as Board | null,
+  currentBoard: board as BoardDetail | null,
   currentBoardLabels: [],
   currentBoardCards: [card] as Card[],
   cardsByColumn: new Map<string, Card[]>([[column.id, [card]]]),
