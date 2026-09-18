@@ -37,25 +37,11 @@ jobs:
           }
 
           $oldBlock = $text.Substring($start, $end - $start)
-          $tryAnchor = "    try {`n"
-          $tryIndex = $oldBlock.IndexOf($tryAnchor, [System.StringComparison]::Ordinal)
-          $finallyAnchor = @'
-              finally {
-                  foreach ($probeName in @($environmentProbeName, $missingEnvironmentProbeName, $emptyEnvironmentProbeName)) {
-                      Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
-                  }
-              }
-
-          '@
-          $finallyIndex = $oldBlock.LastIndexOf($finallyAnchor, [System.StringComparison]::Ordinal)
-          if ($tryIndex -lt 0 -or $finallyIndex -le $tryIndex) {
-            throw 'Environment self-test try/finally shape did not match the reviewed source.'
+          if ($oldBlock.Contains('$originalEnvironmentProbeStates')) {
+            throw 'Caller-state preservation is already present; refusing to apply the repair twice.'
           }
-
-          $bodyStart = $tryIndex + $tryAnchor.Length
-          $body = $oldBlock.Substring($bodyStart, $finallyIndex - $bodyStart)
-          $indentedBody = (($body -split "`n", -1) | ForEach-Object {
-              if ($_.Length -eq 0) { '' } else { "    $_" }
+          $indentedBlock = (($oldBlock -split "`n", -1) | ForEach-Object {
+              if ($_.Length -eq 0) { '' } else { "        $_" }
             }) -join "`n"
 
           $replacementPrefix = @'
@@ -70,8 +56,8 @@ jobs:
               }
 
               try {
-                  # Seed all three caller-state shapes, then make the environment-helper exercise preserve
-                  # them. The outer finally restores whatever the invoking process actually supplied.
+                  # Exercise the exact caller-state shapes named by the regression while the outer
+                  # finally remains responsible for restoring whatever the invoking process supplied.
                   Set-InventoryProcessEnvironmentVariable -Name $environmentProbeName -Value "caller-non-empty"
                   Set-InventoryProcessEnvironmentVariable -Name $missingEnvironmentProbeName -Value $null
                   Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
@@ -79,7 +65,6 @@ jobs:
                   $selfTestEnvironmentProbeStates = @{}
                   foreach ($probeName in $environmentProbeNames) {
                       $selfTestEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
-                      Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
                   }
 
                   try {
@@ -111,7 +96,7 @@ jobs:
               }
 
           '@
-          $replacement = $replacementPrefix + $indentedBody + $replacementSuffix
+          $replacement = $replacementPrefix + $indentedBlock + $replacementSuffix
           $updated = $text.Substring(0, $start) + $replacement + $text.Substring($end)
           if ($updated -ceq $text) {
             throw 'Probe restoration repair produced no source change.'
