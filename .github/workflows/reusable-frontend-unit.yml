@@ -35,7 +35,7 @@ jobs:
       - name: Run source launcher regression suite
         if: runner.os == 'Linux'
         timeout-minutes: 10
-        run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
+        run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up*.test.mjs
 
   frontend-unit:
     name: Frontend Unit (${{ matrix.os }})
