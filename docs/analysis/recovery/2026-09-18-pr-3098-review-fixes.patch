@@ -1,0 +1,126 @@
+diff --git a/docs/ops/FRIENDS_FAMILY_BETA.md b/docs/ops/FRIENDS_FAMILY_BETA.md
+--- a/docs/ops/FRIENDS_FAMILY_BETA.md
++++ b/docs/ops/FRIENDS_FAMILY_BETA.md
+@@ -58,14 +58,16 @@ Related safety references:
+ 
+ ### A1. Complete the host preflight
+ 
+-Before contacting the participant, complete sections 1 through 5 of
++Before contacting the participant, complete sections 1 through 5 and section 8 of
+ [`STAGE1_PRIVATE_INSTANCE_RUNBOOK.md`](STAGE1_PRIVATE_INSTANCE_RUNBOOK.md):
+ 
+ 1. create the instance secrets and a separate backup key;
+ 2. start the production Compose stack;
+ 3. create an encrypted backup;
+ 4. place the instance behind an identity policy, not a public quick tunnel;
+-5. restore the backup into a fresh throwaway volume and record `integrity=ok`.
++5. restore the backup into a fresh throwaway volume and record `integrity=ok`;
++6. configure the daily host backup and weekly off-platform copy/retention jobs from section 8,
++   then record their schedule, destination class, retention rule, and key custodian.
+ 
+ The hosted path is **not ready to invite** when any of these are true:
+ 
+@@ -76,5 +79,7 @@ The hosted path is **not ready to invite** when any of these are true:
+ - the archive has not restored successfully into a fresh volume;
+ - the backup or connector key is stored beside the database or archive;
++- the recurring daily backup or twelve-weekly-copy retention jobs are not configured and recorded;
++- the off-platform archive destination or backup-key custodian is not recorded;
+ - registration is `Open`;
+ - demo credentials or demo data are being presented as the participant's workspace.
+ 
+@@ -201,7 +206,24 @@ Before enabling a live provider:
+ 
+ 1. follow section 7 of the Stage 1 runbook, including the token ceiling and provider budget alert;
+ 2. give the participant the disclosure above and record the acknowledgement date privately;
+-3. show the participant the instance's `GET /api/privacy/egress` disclosure;
++3. in the participant's own authenticated same-origin browser session, open DevTools → Console and
++   run the following. This keeps the bearer token in that browser and makes the authorized request
++   that ordinary navigation to the raw endpoint cannot make:
++
++   ~~~javascript
++   const token = localStorage.getItem('taskdeck_token')
++   if (!token) throw new Error('No authenticated Taskdeck session token was found')
++   const response = await fetch('/api/privacy/egress', {
++     headers: { Authorization: 'Bearer ' + token },
++   })
++   const disclosure = await response.json()
++   console.log(response.status, disclosure)
++   ~~~
++
++   Require HTTP 200 and let the participant read the returned disclosure before continuing. Run
++   this only in their own Taskdeck tab; never paste the token into a shared note, message, issue, or
++   maintainer-controlled console. If the request is not 200, leave the live provider disabled and
++   resolve the access/session problem first;
+ 4. use a provider key created for this instance, never a personal all-purpose key;
+ 5. disable the provider and recreate the stack if the agreed spending threshold is breached.
+ 
+@@ -244,7 +267,8 @@ Use this path for a Windows 10/11 x64 participant who should own the data locally
+ > **Try the review gate**
+ >
+ > 1. Create a blank synthetic board.
+-> 2. Open **Inbox** and capture: `Please create a card called local family beta check.`
++> 2. Open **Inbox**, select that blank synthetic board in the board picker, and then capture:
++>    `Please create a card called local family beta check.`
+ > 3. Select the capture and choose **Start Triage** (shown as **Ask AI** in Paper mode).
+ > 4. Open **Review**, inspect the proposal, and choose **Approve**.
+ > 5. Confirm the board is still unchanged.
+@@ -391,8 +415,16 @@ This cohort uses manual, consented observation. Do not claim invisible telemetry.
+ 
+    Keep the downloaded file private. It is account-scoped and does not include the full shared-board
+    column/card/label/comment tree; do not send it to the maintainer unless the participant explicitly
+    consents to that transfer.
+-3. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
++3. Before requesting deletion, reconcile every board the participant owns. For each such board, the
++   participant opens **Workspace → Settings → Access**, grants the maintainer `Owner` access (or
++   promotes the maintainer's existing access from `Editor`/`Admin` to `Owner`), then reopens the
++   access list and verifies that another owner is present. The account-deletion service refuses to
++   proceed while the participant is the sole owner of any board. Do not rely on the deletion request
++   itself as the ownership inventory. If every participant-owned board cannot be given another
++   verified owner, stop and record deletion as blocked; remove perimeter and board access where
++   possible, but do not claim that the account was deleted.
++4. Do not treat account deletion as a maintainer action. If the participant requests deletion, they
+    must perform the supported authenticated request from their own session, using their current
+    password and the exact confirmation phrase `DELETE MY ACCOUNT` at `POST /api/account/delete`.
+    The participant can perform that request from their own authenticated same-origin browser session:
+@@ -422,10 +456,10 @@ This cohort uses manual, consented observation. Do not claim invisible telemetry.
+    up to
+    12 weekly encrypted off-platform backups (about 90 days). Tell the participant these retention
+    limits before deletion and do not claim that all linked records or backups disappeared.
+-4. Take a final encrypted backup only when its retention was disclosed and agreed.
+-5. Stop exposure or keep registration `Closed`; do not reopen registration while an unused invite is
++5. Take a final encrypted backup only when its retention was disclosed and agreed.
++6. Stop exposure or keep registration `Closed`; do not reopen registration while an unused invite is
+    still valid.
+-6. Record the exit reason and whether the participant would return after a named change.
++7. Record the exit reason and whether the participant would return after a named change.
+ 
+ ### Normal end of a local Windows trial
+ 
+diff --git a/docs/ops/STAGE1_PRIVATE_INSTANCE_RUNBOOK.md b/docs/ops/STAGE1_PRIVATE_INSTANCE_RUNBOOK.md
+--- a/docs/ops/STAGE1_PRIVATE_INSTANCE_RUNBOOK.md
++++ b/docs/ops/STAGE1_PRIVATE_INSTANCE_RUNBOOK.md
+@@ -196,16 +196,20 @@ Also reconcile every unconsumed, unexpired registration invite in the second que
+    collaborator over a channel you already trust; they register.
+ 3. **Close registration:** set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
+    `up -d` command from step 2 (or the two-file command from step 7 if live providers are already on)
+-   so the container is recreated, then prove it with a **syntactically valid** throwaway registration
+-   that also carries the invite code minted in 6.2 (an empty body only proves model validation, which
+-   answers 400 in every mode):
++   so the container is recreated. Then, from the host, prove the application state against the local
++   bind with a **syntactically valid** throwaway registration that also carries the invite code
++   minted in 6.2. The local probe reaches Taskdeck directly, so Cloudflare Access cannot intercept it
++   before the application returns the required closure response. An empty body only proves model
++   validation, which answers 400 in every mode:
+ 
+    ```bash
+-   curl -s -w '\n%{http_code}\n' -X POST https://<url>/api/auth/register -H 'Content-Type: application/json' \
++   curl -s -w '\n%{http_code}\n' -X POST http://localhost:8080/api/auth/register -H 'Content-Type: application/json' \
+      -d '{"username":"closure-probe","email":"closure-probe@example.invalid","password":"Closure-Probe-Passw0rd!","inviteCode":"<the 6.2 code>"}'
+    ```
+ 
+    Required: HTTP **403** and the body text `Registration is closed by this Taskdeck instance.`
+    (`RegistrationPolicyService.RegistrationClosedMessage`). `InviteOnly` answers a different forbidden
+    message (`A valid registration invite is required.`) or, with a live invite, succeeds; either means the
+    container was not recreated with `Closed`, and the invite can still create a third account.
++   Section 4's outside-the-policy test separately proves the identity perimeter; do not substitute an
++   unauthenticated request through Cloudflare Access for this application-level closure proof.
