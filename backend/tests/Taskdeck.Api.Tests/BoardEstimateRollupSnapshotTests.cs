@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
@@ -76,17 +77,17 @@ public sealed class BoardEstimateRollupSnapshotTests : IDisposable
         writerBlocked.Should().BeNull(
             "the read-only snapshot must use SQLite's deferred BEGIN and not reserve the WAL writer slot");
         result.IsSuccess.Should().BeTrue();
-        result.Value.Board.Should().Be(new(1, 60, 0));
+        result.Value.Board.Should().Be(new EstimateTotalsDto(1, 60, 0));
         result.Value.Columns.Should().HaveCount(2);
         result.Value.Columns.Single(row => row.ColumnId == fixture.OriginalColumnId).Totals
-            .Should().Be(new(1, 60, 0));
+            .Should().Be(new EstimateTotalsDto(1, 60, 0));
         result.Value.Columns.Single(row => row.ColumnId == fixture.NewColumnId).Totals
-            .Should().Be(new(0, 0, 0));
+            .Should().Be(new EstimateTotalsDto(0, 0, 0));
         result.Value.Participants.Single(row => row.UserId == fixture.MemberId).Totals
-            .Should().Be(new(1, 60, 0));
+            .Should().Be(new EstimateTotalsDto(1, 60, 0));
         result.Value.Participants.Single(row => row.UserId == fixture.OwnerId).Totals
-            .Should().Be(new(0, 0, 0));
-        result.Value.Unassigned.Should().Be(new(0, 0, 0));
+            .Should().Be(new EstimateTotalsDto(0, 0, 0));
+        result.Value.Unassigned.Should().Be(new EstimateTotalsDto(0, 0, 0));
 
         await using var verifyScope = provider.CreateAsyncScope();
         var verify = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
