@@ -97,9 +97,9 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
         {
             var graph = new BoardDependencies(boardId);
             graph.ReplaceRelations([stored]);
-            var db = seed.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            db.Add(graph);
-            await db.SaveChangesAsync();
+            var seedDb = seed.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            seedDb.Add(graph);
+            await seedDb.SaveChangesAsync();
         }
 
         var preview = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
