@@ -1,4 +1,8 @@
-import { formatCalendarDate, isCalendarDateKey } from './dueDates'
+import {
+  calendarDateKeyToUtcDate,
+  isCalendarDateKey,
+  toCalendarDateKey,
+} from './dueDates'
 
 export type DisplayDateInput = string | Date | null | undefined
 
@@ -18,6 +22,40 @@ const DISPLAY_TIME_DEFAULTS: Intl.DateTimeFormatOptions = {
 const DISPLAY_DATE_TIME_DEFAULTS: Intl.DateTimeFormatOptions = {
   ...DISPLAY_DATE_DEFAULTS,
   ...DISPLAY_TIME_DEFAULTS,
+}
+
+function browserPreferredLocales(): readonly string[] {
+  if (typeof navigator === 'undefined') return []
+  if (navigator.languages?.length) return navigator.languages
+  return navigator.language ? [navigator.language] : []
+}
+
+function canonicalLocale(locale: string): string | null {
+  try {
+    return Intl.getCanonicalLocales(locale.trim())[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Preserve a browser region only when it belongs to the active app language.
+ * An explicitly regional app locale remains authoritative.
+ */
+export function resolveDisplayLocale(
+  activeLocale: string,
+  preferredLocales: readonly string[] = browserPreferredLocales(),
+): string {
+  const active = canonicalLocale(activeLocale) ?? activeLocale
+  if (active.includes('-')) return active
+
+  const activeLanguage = active.toLowerCase()
+  for (const preferredLocale of preferredLocales) {
+    const preferred = canonicalLocale(preferredLocale)
+    if (preferred?.toLowerCase().split('-')[0] === activeLanguage) return preferred
+  }
+
+  return active
 }
 
 function toInstantDate(value: DisplayDateInput): Date | null {
@@ -52,7 +90,10 @@ function formatInstant(
   if (!date) return null
 
   try {
-    return new Intl.DateTimeFormat(locale, withDefaults(defaults, options)).format(date)
+    return new Intl.DateTimeFormat(
+      resolveDisplayLocale(locale),
+      withDefaults(defaults, options),
+    ).format(date)
   } catch {
     return null
   }
@@ -88,19 +129,40 @@ export function formatDisplayTime(
   return formatInstant(value, locale, DISPLAY_TIME_DEFAULTS, options)
 }
 
+function calendarKeyFromDisplayInput(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  if (!normalized) return null
+
+  // Keep malformed calendar keys from being normalized by Date into another day.
+  if (CALENDAR_DATE_KEY.test(normalized)) {
+    return isCalendarDateKey(normalized) ? normalized : null
+  }
+
+  return toCalendarDateKey(normalized)
+}
+
 /**
- * Format a persisted calendar-only YYYY-MM-DD key without projecting it through
- * the browser timezone. The existing due-date utility owns the UTC semantics.
+ * Format a persisted calendar date without projecting it through the browser
+ * timezone. Both the canonical YYYY-MM-DD key and the API's ISO DateTimeOffset
+ * compatibility form are accepted, then normalized back to a UTC calendar key.
  */
 export function formatDisplayCalendarDate(
   value: string | null | undefined,
   locale: string,
   options: Intl.DateTimeFormatOptions = {},
 ): string | null {
-  if (typeof value !== 'string' || !CALENDAR_DATE_KEY.test(value.trim()) || !isCalendarDateKey(value.trim())) return null
+  const key = calendarKeyFromDisplayInput(value)
+  const date = key ? calendarDateKeyToUtcDate(key) : null
+  if (!date) return null
 
   try {
-    return formatCalendarDate(value, withDefaults(DISPLAY_DATE_DEFAULTS, options), locale) || null
+    return new Intl.DateTimeFormat(resolveDisplayLocale(locale), {
+      ...withDefaults(DISPLAY_DATE_DEFAULTS, options),
+      // Calendar dates are days, not instants. Caller timezone options must not
+      // move midnight UTC into the previous or next local day.
+      timeZone: 'UTC',
+    }).format(date)
   } catch {
     return null
   }
