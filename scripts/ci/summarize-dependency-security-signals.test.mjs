@@ -345,6 +345,29 @@ test('schema-invalid advisory IDs cannot activate dependency exceptions', async 
   assert.equal(summary.totals.hasEnforcementFailures, true)
 })
 
+test('non-string allowlist rationale and owner cannot activate exceptions', async () => {
+  const allowlist = {
+    schemaVersion: 1,
+    entries: [
+      {
+        advisoryId: 'GHSA-aaaa-bbbb-cccc',
+        reason: 42,
+        owner: {},
+        expiresOn: '2026-09-30',
+      },
+    ],
+  }
+
+  const { summary } = await buildFixture({ allowlist })
+
+  assert.equal(summary.allowlist.valid, false)
+  assert.equal(summary.allowlist.activeEntryCount, 0)
+  assert.equal(summary.totals.allowlistFailures, 1)
+  assert.equal(summary.totals.hasEnforcementFailures, true)
+  assert.match(summary.allowlist.errors.join('\n'), /reason must be a string/)
+  assert.match(summary.allowlist.errors.join('\n'), /owner must be a string/)
+})
+
 test('malformed npm severity counts fail closed instead of becoming NaN', async () => {
   const frontendReport = {
     ...emptyFrontendReport(),

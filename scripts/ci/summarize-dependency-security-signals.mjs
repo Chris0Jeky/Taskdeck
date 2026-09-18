@@ -213,8 +213,8 @@ function validateAllowlistDocument(document, path, today) {
         const advisoryIdText = typeof rawAdvisoryId === 'string' ? rawAdvisoryId.trim() : ''
         const advisoryId = normalizeAdvisoryId(rawAdvisoryId)
         const supportedAdvisoryId = isSupportedAdvisoryId(rawAdvisoryId)
-        const reason = String(rawEntry.reason ?? '').trim()
-        const owner = String(rawEntry.owner ?? '').trim()
+        const reason = typeof rawEntry.reason === 'string' ? rawEntry.reason.trim() : ''
+        const owner = typeof rawEntry.owner === 'string' ? rawEntry.owner.trim() : ''
         const expiresOn = String(rawEntry.expiresOn ?? '').trim()
         let entryValid = true
 
@@ -231,11 +231,17 @@ function validateAllowlistDocument(document, path, today) {
           errors.push(`${prefix}.advisoryId duplicates ${advisoryId}`)
           entryValid = false
         }
-        if (!reason) {
+        if (typeof rawEntry.reason !== 'string') {
+          errors.push(`${prefix}.reason must be a string`)
+          entryValid = false
+        } else if (!reason) {
           errors.push(`${prefix}.reason must be non-empty`)
           entryValid = false
         }
-        if (!owner) {
+        if (typeof rawEntry.owner !== 'string') {
+          errors.push(`${prefix}.owner must be a string`)
+          entryValid = false
+        } else if (!owner) {
           errors.push(`${prefix}.owner must be non-empty`)
           entryValid = false
         }
