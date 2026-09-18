@@ -179,7 +179,7 @@ jobs:
             backend/tests/Taskdeck.Api.Tests/UnitOfWorkTransactionLifecycleTests.cs
           git diff --cached --check
 
-          expected_names=$'.github/workflows/apply-3166-post-commit-disposal.yml\nbackend/src/Taskdeck.Infrastructure/Repositories/UnitOfWork.cs\nbackend/tests/Taskdeck.Api.Tests/UnitOfWorkTransactionLifecycleTests.cs'
+          expected_names=$'.github/workflows/apply-3166-post-commit-disposal.yml\nbackend/src/Taskdeck.Infrastructure/Repositories/UnitOfWork.cs'
           actual_names="$(git diff --cached --name-only | sort)"
           test "$actual_names" = "$expected_names"
 
