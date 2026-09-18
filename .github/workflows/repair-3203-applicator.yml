@@ -16,7 +16,7 @@ jobs:
   repair:
     if: github.actor != 'github-actions[bot]'
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     steps:
       - name: Checkout exact branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -24,11 +24,12 @@ jobs:
           ref: fix/3203-taskkill-root-exit-race
           fetch-depth: 0
 
-      - name: Normalize multiline splice operands
+      - name: Execute corrected test-first applicator in memory
         shell: powershell
         run: |
-          $path = '.github/workflows/apply-3203-taskkill-root-race.yml'
-          $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
+          $ErrorActionPreference = 'Stop'
+          $workflowPath = '.github/workflows/apply-3203-taskkill-root-race.yml'
+          $workflow = [System.IO.File]::ReadAllText($workflowPath).Replace("`r`n", "`n")
 
           $countAnchor = '              $count = ([regex]::Matches($Source, [regex]::Escape($Old))).Count'
           $countReplacement = @'
@@ -36,39 +37,83 @@ jobs:
               $New = $New.Replace("`r`n", "`n")
               $count = ([regex]::Matches($Source, [regex]::Escape($Old))).Count
           '@.TrimEnd("`r", "`n")
-          if (([regex]::Matches($text, [regex]::Escape($countAnchor))).Count -ne 1) {
-              throw 'Applicator replacement helper anchor was missing or ambiguous.'
+          $countMatches = ([regex]::Matches($workflow, [regex]::Escape($countAnchor))).Count
+          if ($countMatches -ne 1) {
+              throw "Expected exactly one applicator replacement helper, found $countMatches."
           }
-          $text = $text.Replace($countAnchor, $countReplacement)
+          $workflow = $workflow.Replace($countAnchor, $countReplacement)
 
-          $actorGuard = "    if: github.actor != 'github-actions[bot]'`n"
-          if (([regex]::Matches($text, [regex]::Escape($actorGuard))).Count -ne 1) {
-              throw 'Applicator bot-run guard was missing or ambiguous.'
+          function Get-WorkflowRunBlock {
+              param(
+                  [Parameter(Mandatory = $true)][string]$Workflow,
+                  [Parameter(Mandatory = $true)][string]$StepName
+              )
+
+              $anchor = "      - name: $StepName`n        shell: powershell`n        run: |`n"
+              $start = $Workflow.IndexOf($anchor, [System.StringComparison]::Ordinal)
+              $secondStart = if ($start -ge 0) {
+                  $Workflow.IndexOf($anchor, $start + 1, [System.StringComparison]::Ordinal)
+              }
+              else {
+                  -1
+              }
+              if ($start -lt 0 -or $secondStart -ge 0) {
+                  throw "Workflow run block '$StepName' was missing or ambiguous."
+              }
+
+              $contentStart = $start + $anchor.Length
+              $nextStep = $Workflow.IndexOf("      - name:", $contentStart, [System.StringComparison]::Ordinal)
+              $contentEnd = if ($nextStep -ge 0) { $nextStep } else { $Workflow.Length }
+              $rawBlock = $Workflow.Substring($contentStart, $contentEnd - $contentStart).TrimEnd("`n")
+              $lines = @($rawBlock -split "`n", -1)
+              $dedented = foreach ($line in $lines) {
+                  if ([string]::IsNullOrEmpty($line)) {
+                      ''
+                  }
+                  elseif ($line.StartsWith('          ', [System.StringComparison]::Ordinal)) {
+                      $line.Substring(10)
+                  }
+                  else {
+                      throw "Workflow run block '$StepName' contains an unexpected indentation boundary: <$line>"
+                  }
+              }
+              return ($dedented -join "`n")
           }
-          # This one bot-authored repair commit must trigger the corrected applicator. The
-          # applicator removes itself in its successful implementation commit, preventing a loop.
-          $text = $text.Replace($actorGuard, '')
 
-          [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
+          foreach ($stepName in @(
+              'Add deterministic non-zero taskkill regressions',
+              'Prove the regression is red before implementation',
+              'Implement exact-identity taskkill proof'
+          )) {
+              Write-Host "Executing applicator step: $stepName"
+              $scriptText = Get-WorkflowRunBlock -Workflow $workflow -StepName $stepName
+              $scriptBlock = [scriptblock]::Create($scriptText)
+              & $scriptBlock
+          }
 
-      - name: Commit repaired applicator and remove repair workflow
+          Write-Host 'Executing focused Windows regression after implementation.'
+          & powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1 -Case refresh-remote-base
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Commit source and regression only
         shell: powershell
         run: |
-          Remove-Item -LiteralPath '.github/workflows/repair-3203-applicator.yml'
           git diff --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/apply-3203-taskkill-root-race.yml .github/workflows/repair-3203-applicator.yml
+          git add scripts/git/New-CodexIssueWorktree.ps1 scripts/git/Test-New-CodexIssueWorktree.ps1
           $changed = @(git diff --cached --name-only | Sort-Object)
           $expected = @(
-              '.github/workflows/apply-3203-taskkill-root-race.yml',
-              '.github/workflows/repair-3203-applicator.yml'
+              'scripts/git/New-CodexIssueWorktree.ps1',
+              'scripts/git/Test-New-CodexIssueWorktree.ps1'
           )
           if (($changed -join "`n") -cne ($expected -join "`n")) {
-              throw "Unexpected repair changed-file set: $($changed -join ', ')"
+              throw "Unexpected source changed-file set: $($changed -join ', ')"
           }
-          git commit -m 'fix(ci): normalize issue 3203 applicator splices'
+          git commit -m 'fix: prove taskkill cleanup by exact process identities'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git push origin 'HEAD:fix/3203-taskkill-root-exit-race'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
