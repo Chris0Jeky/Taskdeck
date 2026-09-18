@@ -1,18 +1,16 @@
 name: PR 1837 stabilize absent evidence links
 
-on:
+'on':
   push:
     branches:
       - fix/1837-stable-evidence-sentinel
-    paths:
-      - .github/workflows/pr1837-stable-evidence-sentinel.yml
 
 permissions:
   contents: write
 
 jobs:
   implement:
-    if: github.repository == 'Chris0Jeky/Taskdeck'
+    if: ${{ github.repository == 'Chris0Jeky/Taskdeck' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,9 +18,11 @@ jobs:
           ref: fix/1837-stable-evidence-sentinel
           fetch-depth: 0
 
-      - name: Add the provided-to-absent regression first
-        shell: python
+      - name: Add the provided-to-absent regression
+        shell: bash
         run: |
+          set -euo pipefail
+          python3 <<'PY'
           from pathlib import Path
 
           path = Path('frontend/taskdeck-web/src/tests/views/paper/review/ReviewProvenance.spec.ts')
@@ -34,13 +34,13 @@ jobs:
             type ProvenanceRow,
           } from '../../../../composables/usePaperReviewSelectors'"""
           if source.count(old_import) != 1:
-              raise SystemExit('expected one selectors type import')
+              raise SystemExit(f'expected one selectors type import, found {source.count(old_import)}')
           source = source.replace(old_import, new_import)
 
           old_tail = """    await wrapper.setProps({ detailsExpanded: true })
               expect(drawer()).toBe(providedReference)
               wrapper.unmount()
-"""
+          """
           new_tail = """    await wrapper.setProps({ detailsExpanded: true })
               expect(drawer()).toBe(providedReference)
 
@@ -52,21 +52,18 @@ jobs:
               await wrapper.setProps({ metadata: DETERMINISTIC })
               expect(drawer()).toBe(absentReference)
               wrapper.unmount()
-"""
+          """
           if source.count(old_tail) != 1:
-              raise SystemExit('expected one stable-reference test tail')
+              raise SystemExit(f'expected one stable-reference test tail, found {source.count(old_tail)}')
           path.write_text(source.replace(old_tail, new_tail), encoding='utf-8')
+          PY
 
-      - name: Commit the red contract
-        shell: bash
-        run: |
-          set -euo pipefail
           git add frontend/taskdeck-web/src/tests/views/paper/review/ReviewProvenance.spec.ts
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "test(review): cover evidence links returning to absent"
 
-      - name: Prove the new contract fails before implementation
+      - name: Prove the contract is red before implementation
         working-directory: frontend/taskdeck-web
         shell: bash
         run: |
@@ -77,13 +74,15 @@ jobs:
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then
-            echo "Expected the new contract to fail before exporting the canonical sentinel."
+            echo "Expected the new regression to fail before exporting the canonical sentinel."
             exit 1
           fi
 
       - name: Reuse the frozen module-level sentinel
-        shell: python
+        shell: bash
         run: |
+          set -euo pipefail
+          python3 <<'PY'
           from pathlib import Path
 
           selectors = Path('frontend/taskdeck-web/src/composables/usePaperReviewSelectors.ts')
@@ -91,7 +90,7 @@ jobs:
           old = "const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]"
           new = "export const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]"
           if source.count(old) != 1:
-              raise SystemExit('expected one private evidence sentinel')
+              raise SystemExit(f'expected one private evidence sentinel, found {source.count(old)}')
           selectors.write_text(source.replace(old, new), encoding='utf-8')
 
           component = Path('frontend/taskdeck-web/src/views/paper/review/ReviewProvenance.vue')
@@ -99,32 +98,28 @@ jobs:
           old_import = "import type { ProvenanceRow, ProvenanceWeight } from '../../../composables/usePaperReviewSelectors'"
           new_import = """import {
             EMPTY_EVIDENCE_LINKS,
-            type EvidenceLink,
             type ProvenanceRow,
             type ProvenanceWeight,
           } from '../../../composables/usePaperReviewSelectors'"""
           if source.count(old_import) != 1:
-              raise SystemExit('expected one ReviewProvenance selectors import')
+              raise SystemExit(f'expected one ReviewProvenance selectors import, found {source.count(old_import)}')
           source = source.replace(old_import, new_import)
-
-          old_drawer_import = "import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'"
-          new_drawer_import = "import type { ProvenanceMetadata } from '../../../components/review/ProvenanceDrawer.vue'"
-          if source.count(old_drawer_import) != 1:
-              raise SystemExit('expected one ReviewProvenance drawer type import')
-          source = source.replace(old_drawer_import, new_drawer_import)
 
           local = "\nconst EMPTY_EVIDENCE_LINKS: EvidenceLink[] = []\n"
           if source.count(local) != 1:
-              raise SystemExit('expected one per-instance evidence sentinel')
-          component.write_text(source.replace(local, ''), encoding='utf-8')
+              raise SystemExit(f'expected one per-instance evidence sentinel, found {source.count(local)}')
+          component.write_text(source.replace(local, '\n'), encoding='utf-8')
+          PY
 
       - name: Verify the focused provenance contract
         working-directory: frontend/taskdeck-web
+        shell: bash
         run: |
+          set -euo pipefail
           npx vitest run src/tests/views/paper/review/ReviewProvenance.spec.ts
           npm run type-check
 
-      - name: Publish implementation and remove this workflow
+      - name: Publish the implementation and remove this workflow
         shell: bash
         run: |
           set -euo pipefail
