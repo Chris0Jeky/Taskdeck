@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -13,8 +14,6 @@ namespace Taskdeck.Application.Tests.Services;
 
 public sealed class ProposalConflictDetectorUnevaluableOperationTests
 {
-    private static readonly Guid UnsupportedShapeColumnId = Guid.Parse("72fd92f9-4253-4f38-8cda-2110467ba941");
-
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _boardId = Guid.NewGuid();
     private readonly Guid _cardId = Guid.NewGuid();
@@ -27,6 +26,7 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
     private readonly Mock<ICardCommentRepository> _comments = new();
     private readonly Mock<IOutboundWebhookSubscriptionRepository> _webhooks = new();
     private readonly Mock<IAuthorizationService> _authorization = new();
+    private readonly RecordingLogger<ProposalConflictDetector> _logger = new();
     private readonly ProposalConflictDetector _detector;
 
     public ProposalConflictDetectorUnevaluableOperationTests()
@@ -44,15 +44,18 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
             .ReturnsAsync(new Column(_boardId, "Target", 1, wipLimit: 5));
         _proposals.Setup(repository => repository.GetPendingByOperationTargetAsync(
                 "card", _cardId.ToString("D"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
+            .ReturnsAsync(new List<AutomationProposal>());
         _comments.Setup(repository => repository.CountByCardIdAsync(_cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
         _webhooks.Setup(repository => repository.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
         _authorization.Setup(service => service.CanReadBoardAsync(_userId, _boardId))
             .ReturnsAsync(Result.Success(true));
 
-        _detector = new ProposalConflictDetector(_unitOfWork.Object, _authorization.Object);
+        _detector = new ProposalConflictDetector(
+            _unitOfWork.Object,
+            _authorization.Object,
+            _logger);
     }
 
     [Theory]
@@ -113,6 +116,25 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
     }
 
     [Fact]
+    public async Task DetectConflictsAsync_IncompleteReview_RecordsStructuredCountWithoutPayloadContent()
+    {
+        var proposalId = Guid.NewGuid();
+        var proposal = CreateProposal(
+            RiskLevel.Low,
+            CreateMoveOperation(proposalId, 0, "not-json{"),
+            CreateMoveOperation(proposalId, 1, "[]"));
+
+        await _detector.DetectConflictsAsync(proposal, _userId);
+
+        var entry = _logger.Entries.Should().ContainSingle(log => log.Level == LogLevel.Warning).Subject;
+        entry.Properties.Should().ContainKey("UnevaluatedOperationCount")
+            .WhoseValue.Should().Be(2);
+        entry.Message.Should().Contain("unevaluated_operation_count=2");
+        entry.Message.Should().NotContain("not-json");
+        entry.Message.Should().NotContain("[]");
+    }
+
+    [Fact]
     public async Task DetectConflictsAsync_ValidMove_RetainsExistingNoConflictResult()
     {
         var proposal = CreateProposal(
@@ -130,6 +152,7 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
             && row.Key == "status"
             && row.Value == "No conflicts detected");
         result.Value.Should().NotContain(row => row.Key == "unable-to-evaluate-operation");
+        _logger.Entries.Should().BeEmpty();
     }
 
     private ProposalDto CreateProposal(RiskLevel riskLevel, params ProposalOperationDto[] operations)
@@ -159,7 +182,6 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
 
     private ProposalOperationDto CreateMoveOperation(Guid proposalId, int sequence, string parameters)
     {
-        _ = UnsupportedShapeColumnId;
         return new ProposalOperationDto(
             Id: Guid.NewGuid(),
             ProposalId: proposalId,
@@ -171,4 +193,31 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
             IdempotencyKey: $"move-{sequence}-{Guid.NewGuid():N}",
             ExpectedVersion: null);
     }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var properties = state is IEnumerable<KeyValuePair<string, object?>> structuredState
+                ? structuredState.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+                : new Dictionary<string, object?>(StringComparer.Ordinal);
+            Entries.Add(new LogEntry(logLevel, formatter(state, exception), properties));
+        }
+    }
+
+    private sealed record LogEntry(
+        LogLevel Level,
+        string Message,
+        IReadOnlyDictionary<string, object?> Properties);
 }
