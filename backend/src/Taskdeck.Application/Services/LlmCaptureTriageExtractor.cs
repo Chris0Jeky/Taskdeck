@@ -572,8 +572,8 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             // only when the structured metadata matches and the titles share a substantial,
             // contiguous lexical identity. Same-chunk rows and ambiguous/null spans stay distinct.
             if (candidate.Span is { } span &&
-                acceptedEvidenceTasks.TryGetValue(span, out var acceptedForSpan) &&
-                acceptedForSpan.Any(accepted =>
+                acceptedEvidenceTasks.TryGetValue(span, out var priorAcceptedForSpan) &&
+                priorAcceptedForSpan.Any(accepted =>
                     accepted.ChunkIndex != chunkIndex &&
                     HasStableTaskIdentity(accepted.Task, candidate.Task)))
             {
