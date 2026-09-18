@@ -7,7 +7,7 @@ import {
 export type DisplayDateInput = string | Date | null | undefined
 
 const CALENDAR_DATE_KEY = /^\d{4}-\d{2}-\d{2}$/
-const ISO_CALENDAR_PREFIX = /^(\d{4}-\d{2}-\d{2})T/
+const ISO_DATE_TIME_OFFSET = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,7})?(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00))$/
 
 const DISPLAY_DATE_DEFAULTS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -140,11 +140,14 @@ function calendarKeyFromDisplayInput(value: string | null | undefined): string |
     return isCalendarDateKey(normalized) ? normalized : null
   }
 
-  // V8 normalizes impossible ISO components (for example, February 30) into a
-  // different valid instant. Validate the wire form's stated calendar day
-  // before Date parsing so the adapter preserves its invalid-input contract.
-  const isoCalendarPrefix = ISO_CALENDAR_PREFIX.exec(normalized)?.[1]
-  if (isoCalendarPrefix && !isCalendarDateKey(isoCalendarPrefix)) return null
+  // Accept only the documented DateTimeOffset compatibility form. Passing
+  // arbitrary parseable strings to Date would normalize impossible dates, accept
+  // offset-less local datetimes, and reintroduce timezone-dependent calendar days.
+  const isoDateTimeOffset = ISO_DATE_TIME_OFFSET.exec(normalized)
+  if (!isoDateTimeOffset) return null
+
+  const statedCalendarKey = isoDateTimeOffset[1]
+  if (!statedCalendarKey || !isCalendarDateKey(statedCalendarKey)) return null
 
   return toCalendarDateKey(normalized)
 }
