@@ -1,0 +1,85 @@
+name: Apply PR 3171 teardown integration
+
+on:
+  push:
+    branches:
+      - fix/3165-dev-up-teardown-budget
+    paths:
+      - .github/workflows/apply-3171-teardown-integration.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pr-3171-teardown-integration
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/3165-dev-up-teardown-budget
+          fetch-depth: 0
+
+      - name: Wire the budgeted fixture orchestrator
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('scripts/ci/dev-up.test.mjs')
+          source = path.read_text(encoding='utf-8')
+
+          old_import = '  removeFixtureDirectory,\n'
+          new_import = '  removeFixture,\n'
+          if source.count(old_import) != 1:
+              raise SystemExit(
+                  f'Expected one removeFixtureDirectory import, found {source.count(old_import)}.'
+              )
+          source = source.replace(old_import, new_import, 1)
+
+          old_comment = (
+              "// captured by removeFixtureDirectory below.\n"
+          )
+          new_comment = (
+              "// captured by the imported removeFixture orchestrator.\n"
+          )
+          if source.count(old_comment) != 1:
+              raise SystemExit(
+                  f'Expected one fixture-cleanup comment, found {source.count(old_comment)}.'
+              )
+          source = source.replace(old_comment, new_comment, 1)
+
+          pattern = re.compile(
+              r'\nasync function removeFixture\(fixture\) \{\n.*?\n\}\n\nasync function createFixture',
+              re.DOTALL,
+          )
+          source, count = pattern.subn('\nasync function createFixture', source, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one local removeFixture implementation, found {count}.')
+
+          path.write_text(source, encoding='utf-8', newline='\n')
+          PY
+
+      - name: Verify focused teardown contracts
+        shell: bash
+        run: |
+          node --check scripts/ci/dev-up.test.mjs
+          node --test scripts/ci/dev-up-fixture-cleanup.test.mjs
+
+      - name: Publish integration and remove applicator
+        shell: bash
+        run: |
+          git diff --check
+          git rm .github/workflows/apply-3171-teardown-integration.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/dev-up.test.mjs
+          git commit -m 'fix(ci): use budgeted fixture teardown orchestrator'
+          git push origin HEAD:fix/3165-dev-up-teardown-budget
