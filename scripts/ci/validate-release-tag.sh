@@ -16,7 +16,8 @@
 #   v<major>.<minor>.<patch>[-<prerelease>][+<build>]
 #
 #   * major/minor/patch: digits only
-#   * prerelease/build:  dot-separated alphanumeric identifiers
+#   * prerelease/build:  dot-separated alphanumeric identifiers; numeric
+#     prerelease identifiers are either `0` or have no leading zeroes
 #   * total length:      1..64 characters
 #
 # Everything else is refused, including: path separators, whitespace, quotes,
@@ -32,7 +33,7 @@
 set -euo pipefail
 
 readonly MAX_TAG_LENGTH=64
-readonly TAG_GRAMMAR='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+readonly TAG_GRAMMAR='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|([0-9A-Za-z]*[A-Za-z][0-9A-Za-z]*))(\.((0|[1-9][0-9]*)|([0-9A-Za-z]*[A-Za-z][0-9A-Za-z]*)))*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
 
 if [ "$#" -ne 1 ]; then
     printf 'usage: validate-release-tag.sh <tag>\n' >&2

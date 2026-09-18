@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useQueueStore } from '../store/queueStore'
 import { useToastStore } from '../store/toastStore'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import InputAssistField from '../components/common/InputAssistField.vue'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
@@ -24,6 +25,7 @@ const showComposer = ref(false)
 const submitting = ref(false)
 const availableBoards = ref<Board[]>([])
 const loadingBoards = ref(false)
+const boardOptionsFailed = ref(false)
 
 const boardOptions = computed(() =>
   buildInputAssistOptions(
@@ -168,9 +170,14 @@ function statusClass(status: QueueStatus | number): string {
 async function loadBoardOptions() {
   try {
     loadingBoards.value = true
-    availableBoards.value = await boardsApi.getBoards(undefined, true)
+    const boards = await boardsApi.getBoards(undefined, true, {
+      timeout: BOARD_REQUEST_TIMEOUT_MS,
+      skipRetry: true,
+    })
+    availableBoards.value = boards
+    boardOptionsFailed.value = false
   } catch {
-    // Board options are non-critical.
+    boardOptionsFailed.value = true
   } finally {
     loadingBoards.value = false
   }
@@ -284,6 +291,24 @@ onMounted(() => {
             @update:model-value="handleBoardInput"
             @select="handleBoardSelect"
           />
+          <div v-if="boardOptionsFailed" class="paper-queue__board-error">
+            <p
+              id="queue-boards-error-message"
+              class="paper-queue__board-error-message"
+              role="alert"
+              data-testid="queue-boards-error-message"
+            >
+              Board suggestions could not be loaded. Enter a board ID manually or retry discovery.
+            </p>
+            <PaperHLBtn
+              data-testid="queue-boards-retry"
+              :disabled="loadingBoards"
+              aria-describedby="queue-boards-error-message"
+              @click="loadBoardOptions"
+            >
+              {{ loadingBoards ? 'Retrying boards...' : 'Retry boards' }}
+            </PaperHLBtn>
+          </div>
           <div class="paper-queue__helper">
             Board-scoped instructions (create card, move column, etc.) require a board selection.
           </div>
@@ -530,6 +555,25 @@ onMounted(() => {
 .paper-queue__helper {
   color: var(--mute, #635c4e);
   font-size: var(--t-xs, 10.5px);
+  line-height: 1.5;
+}
+
+.paper-queue__board-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2, 8px);
+  padding: var(--s-3, 12px);
+  border: 1px solid var(--overdue, #8c4a26);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper-card, #fbf7ee);
+}
+
+.paper-queue__board-error-message {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--overdue, #8c4a26);
+  font-size: var(--t-md, 13.5px);
   line-height: 1.5;
 }
 

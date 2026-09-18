@@ -12,13 +12,29 @@ old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputCon
 is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
 
 
-Last Updated: 2026-09-10
+Last Updated: 2026-09-18
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Source-launcher literal lazy routes (#1900)
+
+Run the real-provider readiness seam from `frontend/taskdeck-web`:
+
+```powershell
+npx vitest run tests/run-vite-dev.spec.ts --maxWorkers=1
+```
+
+The suite proves nested static imports and router-style literal `import()` dependencies are
+transformed before `TASKDECK_DEV_FRONTEND_READY`; a missing dependency withholds the marker, closes
+the listener and writes no bundle. This relies on the pinned Vite 8.3 contract that
+`staticImportedUrls` contains both resolved static top-level and literal dynamic imports. It does
+not prove computed runtime imports, arbitrary user-driven import specifiers or plugin watch files.
+Keep typecheck, production build and route/component tests as separate gates. The marker remains
+schema version 1 and the Bash/PowerShell launchers retain their exact URL/port validation.
 
 ## Card archive/restore (#2920)
 
@@ -1384,7 +1400,7 @@ Playwright config expanded with 5 projects: `chromium` (all tests), `firefox`/`w
 Run commands:
 ```bash
 cd frontend/taskdeck-web
-npx playwright test --project=chromium               # PR gate (default)
+npx playwright test --config=playwright.required.config.ts --reporter=line  # Required PR gate
 npx playwright test --project=firefox                 # Firefox cross-browser
 npx playwright test --grep @mobile                    # All mobile tests
 npx playwright test                                   # Full matrix (nightly)
@@ -1392,7 +1408,7 @@ npx playwright test                                   # Full matrix (nightly)
 
 Tagging convention: `@smoke` (quick CI), `@cross-browser` (multi-browser), `@mobile` (viewport), `@quarantine` (flaky, excluded). See `docs/testing/FLAKY_TEST_POLICY.md`.
 
-CI: `reusable-e2e-cross-browser.yml` in nightly + extended (testing label/manual). PR gate stays Chromium-only.
+CI: `reusable-e2e-smoke.yml` runs the full desktop Chromium project plus one bounded Pixel 7 contracted-VisualViewport journey in required PR checks. `reusable-e2e-cross-browser.yml` retains the complete mobile Chrome/Safari matrix for nightly and extended runs (testing label/manual).
 
 ### Visual Regression Testing (TST-03, `#88`/`#797`)
 
@@ -2072,7 +2088,7 @@ npx playwright test --grep="@mobile" --reporter=line
 
 ### CI Configuration
 
-- **PR gate** (`ci-required.yml`): calls `reusable-e2e-smoke.yml` which installs and runs chromium only. This keeps PR feedback fast (~12 min timeout).
+- **PR gate** (`ci-required.yml`): calls `reusable-e2e-smoke.yml`, which runs full desktop Chromium plus one bounded Pixel 7 contracted-VisualViewport journey from `playwright.required.config.ts`. This keeps the mobile exception inside the existing ~12 minute smoke budget.
 - **Nightly** (`ci-nightly.yml`): calls `reusable-e2e-cross-browser.yml` which runs all 5 projects in a matrix with `fail-fast: false`.
 - **Extended/manual** (`ci-extended.yml`): calls `reusable-e2e-cross-browser.yml` on `testing` label or manual dispatch.
 
@@ -2080,7 +2096,7 @@ npx playwright test --grep="@mobile" --reporter=line
 
 1. **Default tests** (no tag): run on chromium in PR gate. Use for most new tests.
 2. **Critical journeys** that must work cross-browser: add `@cross-browser` tag. These will also run on chromium in PR gate.
-3. **Mobile-specific behavior** (viewport responsiveness, touch targets, overflow): add `@mobile` tag. These only run on mobile projects.
+3. **Mobile-specific behavior** (viewport responsiveness, touch targets, overflow): add `@mobile`. The full mobile Chrome/Safari matrix remains nightly/manual; only the explicitly contracted Pixel 7 VisualViewport journey is additionally selected by the required PR gate.
 4. **Flaky or unstable tests**: add `@quarantine` tag and file an issue. See `docs/testing/FLAKY_TEST_POLICY.md`.
 
 ### Flaky Test Policy
@@ -2394,18 +2410,23 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 
-  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs in the independent
+  The focused launcher identity seam (`scripts/ci/dev-up-identity-seam.test.mjs`) and the broader
+  cross-launcher regression suite (`scripts/ci/dev-up.test.mjs`) run together in the independent
   `source-launcher` job of the reusable frontend workflow, reported as
-  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`.
-  It remains **Linux only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
-  cases therefore still run on every PR; the PowerShell launcher cases are local Windows evidence,
-  run from the repository root on Windows with
-  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`, until the
-  CI-04 `#2328` laptop runner is registered. On a Windows developer box that command is known to
-  red its `Bash:` cases under Git Bash (the local `#2378` cohort, recorded in `docs/STATUS.md`); the
-  `PowerShell:` cases are the evidence being asked for, so read the result per case rather than as
-  one pass/fail. The Windows leg keeps lint, typecheck, build and coverage unchanged.
-  `scripts/ci/smart-ci/launcher-suite-placement.test.mjs` pins that placement.
+  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`. The exact hosted
+  command, and the canonical Linux local reproduction command, is
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs`. The focused Bash seam runs first and pins the full TERM grace window, exact signal/PID
+  binding, and descendant-driven KILL escalation before the broader launcher scenarios execute.
+  Both suites remain **Linux only** in hosted CI (CI-07 `#2331`, SC-3: hosted minutes are Linux-only).
+  On a Windows developer box with Git Bash, the same combined command reproduces the complete lane;
+  the known local `#2378` cohort can still red individual `Bash:` cases, as recorded in
+  `docs/STATUS.md`. To isolate the PowerShell launcher evidence until the CI-04 `#2328` laptop runner
+  is registered, run
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs` and read the
+  result per case rather than treating unrelated Bash cases as PowerShell evidence. The Windows
+  frontend leg keeps lint, typecheck, build and coverage unchanged.
+  `scripts/ci/smart-ci/launcher-suite-placement.test.mjs` pins both hosted placement and the complete
+  documented command.
 - `container-images`
   - Runs `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` against all four machine prefixes,
     static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback
