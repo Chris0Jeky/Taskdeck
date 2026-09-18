@@ -86,6 +86,9 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
         _logger.Messages.Should().ContainSingle(message =>
             message.Contains("unevaluated_operation_count=1", StringComparison.Ordinal));
         _logger.Messages.Single().Should().NotContain(parameters);
+        _proposals.Verify(
+            repository => repository.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
