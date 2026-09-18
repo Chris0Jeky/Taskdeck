@@ -70,4 +70,40 @@ describe('ordinary demo seed collaborator preflight', () => {
     expect(productWrites).toEqual([])
     expect(boards).toEqual(originalBoards)
   })
+
+  it('keeps successful collaborator provisioning outside later product preparation failure', async () => {
+    const events: string[] = []
+    const provisionedAccounts: string[] = []
+
+    await expect(
+      seedDemo(
+        { reset: false },
+        {
+          ensureUser: async (account) => {
+            events.push(`auth:${account.username}`)
+            provisionedAccounts.push(account.username)
+            return {
+              token: `${account.username}-token`,
+              user: {
+                id: `${account.username}-id`,
+                username: account.username,
+                email: account.email,
+              },
+            }
+          },
+          listBoards: async () => {
+            events.push('list boards')
+            return []
+          },
+          prepareBoardsForSeed: async () => {
+            events.push('prepare boards')
+            throw new Error('Canonical board preparation failed after account provisioning.')
+          },
+        },
+      ),
+    ).rejects.toThrow(/board preparation failed/i)
+
+    expect(events).toEqual(['auth:demo', 'list boards', 'auth:collab', 'prepare boards'])
+    expect(provisionedAccounts).toEqual(['demo', 'collab'])
+  })
 })
