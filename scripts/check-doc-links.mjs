@@ -108,17 +108,20 @@ function isEscaped(text, index) {
 function collectBacktickRuns(text, start, end) {
   const runs = []
   let cursor = start
+  let openLength = null
 
   while (cursor < end) {
     const candidate = text.indexOf('`', cursor)
     if (candidate === -1 || candidate >= end) break
-    if (isEscaped(text, candidate)) {
+    if (isEscaped(text, candidate) && openLength === null) {
       cursor = candidate + 1
       continue
     }
 
     const length = backtickRunLength(text, candidate)
     runs.push({ start: candidate, length })
+    if (openLength === null) openLength = length
+    else if (openLength === length) openLength = null
     cursor = candidate + length
   }
 
