@@ -42,14 +42,39 @@ function maskRange(buffer, source, start, end) {
   }
 }
 
-function maskHtmlComments(buffer, source) {
+function maskHtmlComments(buffer, source, diagnostics) {
   let cursor = 0
   while (cursor < source.length) {
     const start = source.indexOf('<!--', cursor)
     if (start === -1) break
+    // Fenced code was already masked in the shared buffer, so a comment marker
+    // hidden there is illustrative text rather than Markdown structure.
+    if (
+      buffer[start] !== '<' ||
+      buffer[start + 1] !== '!' ||
+      buffer[start + 2] !== '-' ||
+      buffer[start + 3] !== '-'
+    ) {
+      cursor = start + 4
+      continue
+    }
+
     const close = source.indexOf('-->', start + 4)
-    const end = close === -1 ? source.length : close + 3
+    if (close !== -1) {
+      const end = close + 3
+      maskRange(buffer, source, start, end)
+      cursor = end
+      continue
+    }
+
+    const blankLine = firstBlankLineAtOrAfter(source, start + 4)
+    const end = blankLine === -1 ? source.length : blankLine + 1
     maskRange(buffer, source, start, end)
+    diagnostics.push({
+      line: lineNumberAt(source, start),
+      target: '<!--',
+      reason: 'unterminated HTML comment',
+    })
     cursor = end
   }
 }
@@ -72,6 +97,56 @@ function firstBlankLineAtOrAfter(text, start) {
   const pattern = /\n[ \t\r]*\n/g
   pattern.lastIndex = start
   return pattern.exec(text)?.index ?? -1
+}
+
+function indexBacktickRuns(text) {
+  const runs = []
+  let lineStart = 0
+  let line = 1
+  let paragraph = 0
+
+  while (lineStart < text.length) {
+    const newline = text.indexOf('\n', lineStart)
+    const lineEnd = newline === -1 ? text.length : newline
+    let cursor = lineStart
+    while (cursor < lineEnd) {
+      if (text[cursor] !== '`') {
+        cursor += 1
+        continue
+      }
+      const length = backtickRunLength(text, cursor)
+      runs.push({
+        start: cursor,
+        end: cursor + length,
+        length,
+        line,
+        paragraph,
+        escaped: isEscaped(text, cursor),
+        nextSameLength: -1,
+      })
+      cursor += length
+    }
+
+    const rawLine = text.slice(lineStart, lineEnd)
+    const comparableLine = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    if (comparableLine.trim() === '') paragraph += 1
+    if (newline === -1) break
+    lineStart = newline + 1
+    line += 1
+  }
+
+  const nextByParagraph = new Map()
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const run = runs[index]
+    let nextByLength = nextByParagraph.get(run.paragraph)
+    if (!nextByLength) {
+      nextByLength = new Map()
+      nextByParagraph.set(run.paragraph, nextByLength)
+    }
+    run.nextSameLength = nextByLength.get(run.length) ?? -1
+    nextByLength.set(run.length, index)
+  }
+  return runs
 }
 
 /**
@@ -132,49 +207,26 @@ export function maskCodeWithDiagnostics(markdown) {
     })
   }
 
-  maskHtmlComments(buffer, markdown)
+  maskHtmlComments(buffer, markdown, diagnostics)
   const fenceMasked = buffer.join('')
-  let cursor = 0
-  while (cursor < fenceMasked.length) {
-    if (fenceMasked[cursor] !== '`' || isEscaped(fenceMasked, cursor)) {
-      cursor += 1
-      continue
-    }
+  const backtickRuns = indexBacktickRuns(fenceMasked)
+  let maskedThrough = -1
 
-    const runLength = backtickRunLength(fenceMasked, cursor)
-    const marker = '`'.repeat(runLength)
-    const contentStart = cursor + runLength
-    const blankLine = firstBlankLineAtOrAfter(fenceMasked, contentStart)
-    const searchLimit = blankLine === -1 ? fenceMasked.length : blankLine
-    let search = contentStart
-    let closing = -1
+  for (const run of backtickRuns) {
+    if (run.start < maskedThrough || run.escaped) continue
 
-    while (search < searchLimit) {
-      const candidate = fenceMasked.indexOf('`', search)
-      if (candidate === -1 || candidate >= searchLimit) break
-      const candidateLength = backtickRunLength(fenceMasked, candidate)
-      // Backslashes are literal inside a code span, so they do not escape the
-      // matching closing delimiter.
-      if (candidateLength === runLength) {
-        closing = candidate
-        break
-      }
-      search = candidate + candidateLength
-    }
-
-    if (closing === -1) {
+    if (run.nextSameLength === -1) {
       diagnostics.push({
-        line: lineNumberAt(markdown, cursor),
-        target: marker,
+        line: run.line,
+        target: '`'.repeat(run.length),
         reason: 'unbalanced inline code span',
       })
-      cursor = blankLine === -1 ? contentStart : blankLine + 1
       continue
     }
 
-    const end = closing + runLength
-    maskRange(buffer, markdown, cursor, end)
-    cursor = end
+    const closing = backtickRuns[run.nextSameLength]
+    maskRange(buffer, markdown, run.start, closing.end)
+    maskedThrough = closing.end
   }
 
   return { masked: buffer.join(''), diagnostics }
@@ -195,20 +247,20 @@ export function isExternalTarget(target) {
   )
 }
 
-function findLabelEnd(markdown, start) {
-  let depth = 1
-  for (let index = start + 1; index < markdown.length; index += 1) {
+function indexBalancedLabels(markdown) {
+  const stack = []
+  const ends = new Map()
+  for (let index = 0; index < markdown.length; index += 1) {
     if (markdown[index] === '\\') {
       index += 1
       continue
     }
-    if (markdown[index] === '[') depth += 1
-    else if (markdown[index] === ']') {
-      depth -= 1
-      if (depth === 0) return index
+    if (markdown[index] === '[') stack.push(index)
+    else if (markdown[index] === ']' && stack.length > 0) {
+      ends.set(stack.pop(), index)
     }
   }
-  return -1
+  return ends
 }
 
 function skipWhitespace(text, start) {
@@ -325,9 +377,45 @@ function parseReferenceDestination(text) {
   return text.slice(start, cursor)
 }
 
+function stripReferenceContainerPrefix(line, { allowIndented = false } = {}) {
+  let cursor = 0
+  for (;;) {
+    let indentation = 0
+    while (
+      cursor < line.length &&
+      (line[cursor] === ' ' || line[cursor] === '\t') &&
+      indentation < 3
+    ) {
+      cursor += 1
+      indentation += 1
+    }
+
+    if (line[cursor] === '>') {
+      cursor += 1
+      if (line[cursor] === ' ' || line[cursor] === '\t') cursor += 1
+      continue
+    }
+
+    const listMarker = /^(?:[-+*]|\d{1,9}[.)])[ \t]+/.exec(line.slice(cursor))
+    if (listMarker) {
+      cursor += listMarker[0].length
+      continue
+    }
+
+    if (allowIndented) {
+      while (line[cursor] === ' ' || line[cursor] === '\t') cursor += 1
+    } else if (line[cursor] === ' ' || line[cursor] === '\t') {
+      return null
+    }
+    return { text: line.slice(cursor), offset: cursor }
+  }
+}
+
+
 function extractLocalTargetsFromMasked(masked) {
   const found = []
   let sequence = 0
+  const labelEnds = indexBalancedLabels(masked)
 
   const push = (rawTarget, index) => {
     let target = rawTarget.trim()
@@ -347,85 +435,134 @@ function extractLocalTargetsFromMasked(masked) {
     else if (masked[index] === '[' && masked[index - 1] !== '!') bracketStart = index
     if (bracketStart === -1) continue
 
-    const labelEnd = findLabelEnd(masked, bracketStart)
+    const labelEnd = labelEnds.get(bracketStart) ?? -1
     if (labelEnd === -1 || masked[labelEnd + 1] !== '(') continue
     const destination = parseInlineDestination(masked, labelEnd + 1)
     if (destination) push(destination.target, index)
   }
 
   // A reference-style link's path lives in its definition, so validating every
-  // local definition covers both links and images without resolving labels.
-  const definitionPattern = /^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(.*)$/gm
-  let definition
-  while ((definition = definitionPattern.exec(masked)) !== null) {
-    let destinationText = definition[1]
-    let destinationIndex = definition.index
-    if (destinationText.trim() === '') {
-      const lineBreak = masked.indexOf('\n', definition.index)
-      if (lineBreak !== -1) {
-        const nextLineStart = lineBreak + 1
-        const nextLineEnd = masked.indexOf('\n', nextLineStart)
-        const continuation = /^[ \t]*(\S.*)$/.exec(
-          masked.slice(nextLineStart, nextLineEnd === -1 ? masked.length : nextLineEnd),
-        )
-        if (continuation) {
-          destinationText = continuation[1]
-          destinationIndex = nextLineStart + continuation[0].indexOf(destinationText)
+  // local definition covers both links and images without resolving labels. Markdown
+  // container prefixes are structural and do not make a definition part of a code block.
+  let definitionLineStart = 0
+  while (definitionLineStart <= masked.length) {
+    const newline = masked.indexOf('\n', definitionLineStart)
+    const lineEnd = newline === -1 ? masked.length : newline
+    const rawLine = masked.slice(definitionLineStart, lineEnd)
+    const lineText = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    const container = stripReferenceContainerPrefix(lineText)
+    if (container) {
+      const definition = /^\[(?!\^)[^\]\n]+\]:[ \t]*(.*)$/.exec(container.text)
+      if (definition) {
+        let destinationText = definition[1]
+        let destinationIndex = definitionLineStart + container.offset
+        if (destinationText.trim() === '' && newline !== -1) {
+          const nextLineStart = newline + 1
+          const nextNewline = masked.indexOf('\n', nextLineStart)
+          const nextLineEnd = nextNewline === -1 ? masked.length : nextNewline
+          const nextRawLine = masked.slice(nextLineStart, nextLineEnd)
+          const nextLine = nextRawLine.endsWith('\r')
+            ? nextRawLine.slice(0, -1)
+            : nextRawLine
+          const continuation = stripReferenceContainerPrefix(nextLine, {
+            allowIndented: true,
+          })
+          if (continuation && continuation.text !== '') {
+            destinationText = continuation.text
+            destinationIndex = nextLineStart + continuation.offset
+          }
         }
+        const target = parseReferenceDestination(destinationText)
+        if (target !== null) push(target, destinationIndex)
       }
     }
-    const target = parseReferenceDestination(destinationText)
-    if (target !== null) push(target, destinationIndex)
+
+    if (newline === -1) break
+    definitionLineStart = newline + 1
   }
 
   const findTagEnd = (start) => {
-    let quote = null
-    for (let cursor = start + 1; cursor < masked.length; cursor += 1) {
-      const character = masked[cursor]
-      if (quote) {
-        if (character === quote) quote = null
-      } else if (character === '"' || character === "'") {
-        quote = character
-      } else if (character === '>') {
-        return cursor
-      }
+  let quote = null
+  for (let cursor = start + 1; cursor < masked.length; cursor += 1) {
+    const character = masked[cursor]
+    if (quote) {
+      if (character === quote) quote = null
+    } else if (character === '"' || character === "'") {
+      quote = character
+    } else if (character === '>') {
+      return cursor
     }
-    return -1
   }
+  return -1
+}
 
-  let cursor = 0
-  while (cursor < masked.length) {
-    if (masked[cursor] !== '<') {
+const findHtmlAttribute = (tag, tagNameEnd, expectedName) => {
+  let cursor = tagNameEnd
+  while (cursor < tag.length) {
+    while (/\s/.test(tag[cursor] ?? '')) cursor += 1
+    if (cursor >= tag.length || tag[cursor] === '>') return null
+    if (tag[cursor] === '/') {
       cursor += 1
       continue
     }
-    const end = findTagEnd(cursor)
-    if (end === -1) {
+
+    const nameStart = cursor
+    while (cursor < tag.length && !/[\s=/>]/.test(tag[cursor])) cursor += 1
+    if (cursor === nameStart) {
       cursor += 1
       continue
     }
-    const tag = masked.slice(cursor, end + 1)
-    const opening = /^<(a|img)\b/i.exec(tag)
-    if (!opening) {
-      cursor = end + 1
-      continue
+    const name = tag.slice(nameStart, cursor)
+    while (/\s/.test(tag[cursor] ?? '')) cursor += 1
+    if (tag[cursor] !== '=') continue
+    cursor += 1
+    while (/\s/.test(tag[cursor] ?? '')) cursor += 1
+
+    let valueStart = cursor
+    let valueEnd = cursor
+    if (tag[cursor] === '"' || tag[cursor] === "'") {
+      const quote = tag[cursor]
+      valueStart = cursor + 1
+      cursor = valueStart
+      while (cursor < tag.length && tag[cursor] !== quote) cursor += 1
+      valueEnd = cursor
+      if (cursor < tag.length) cursor += 1
+    } else {
+      while (cursor < tag.length && !/[\s>]/.test(tag[cursor])) cursor += 1
+      valueEnd = cursor
     }
 
-    const attributeName = opening[1].toLowerCase() === 'a' ? 'href' : 'src'
-    const attributePattern = new RegExp(
-      `\\s${attributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
-      'i',
-    )
-    const attribute = attributePattern.exec(tag)
-    if (!attribute) {
-      cursor = end + 1
-      continue
+    if (name.toLowerCase() === expectedName) {
+      return { value: tag.slice(valueStart, valueEnd), valueOffset: valueStart }
     }
-    const target = attribute[1] ?? attribute[2] ?? attribute[3] ?? ''
-    const valueOffset = attribute[0].indexOf(target)
-    push(target, cursor + attribute.index + Math.max(0, valueOffset))
-    cursor = end + 1
   }
+  return null
+}
+
+let cursor = 0
+while (cursor < masked.length) {
+  if (masked[cursor] !== '<') {
+    cursor += 1
+    continue
+  }
+
+  const opening = /^<(a|img)\b/i.exec(masked.slice(cursor, cursor + 8))
+  if (!opening) {
+    cursor += 1
+    continue
+  }
+
+  const end = findTagEnd(cursor)
+  if (end === -1) {
+    cursor += 1
+    continue
+  }
+  const tag = masked.slice(cursor, end + 1)
+  const attributeName = opening[1].toLowerCase() === 'a' ? 'href' : 'src'
+  const attribute = findHtmlAttribute(tag, opening[0].length, attributeName)
+  if (attribute) push(attribute.value, cursor + attribute.valueOffset)
+  cursor = end + 1
+}
 
   return found
     .sort((left, right) => left.index - right.index || left.sequence - right.sequence)
