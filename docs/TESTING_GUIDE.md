@@ -12,13 +12,29 @@ old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputCon
 is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
 
 
-Last Updated: 2026-09-10
+Last Updated: 2026-09-18
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Source-launcher literal lazy routes (#1900)
+
+Run the real-provider readiness seam from `frontend/taskdeck-web`:
+
+```powershell
+npx vitest run tests/run-vite-dev.spec.ts --maxWorkers=1
+```
+
+The suite proves nested static imports and router-style literal `import()` dependencies are
+transformed before `TASKDECK_DEV_FRONTEND_READY`; a missing dependency withholds the marker, closes
+the listener and writes no bundle. This relies on the pinned Vite 8.3 contract that
+`staticImportedUrls` contains both resolved static top-level and literal dynamic imports. It does
+not prove computed runtime imports, arbitrary user-driven import specifiers or plugin watch files.
+Keep typecheck, production build and route/component tests as separate gates. The marker remains
+schema version 1 and the Bash/PowerShell launchers retain their exact URL/port validation.
 
 ## Card archive/restore (#2920)
 

@@ -131,6 +131,27 @@ describe('Taskdeck Vite development readiness', () => {
     await expect(pathExists(path.join(fixtureRoot, 'dist'))).resolves.toBe(false)
   }, 20_000)
 
+  it('withholds the marker when a literal lazy route has a broken nested import', async () => {
+    const fixtureRoot = await createFixture({
+      'src/main.ts': "export const loadLazyRoute = () => import('./lazy-route.ts')\n",
+      'src/lazy-route.ts': "import 'taskdeck-missing-lazy-route-dependency'\n",
+    })
+    const port = await findAvailablePort()
+    const logs: string[] = []
+
+    await expect(
+      runViteDev({
+        args: [fixtureRoot, '--host', '127.0.0.1', '--port', String(port)],
+        env: {},
+        logger: captureLogger(logs),
+      }),
+    ).rejects.toThrow(/taskdeck-missing-lazy-route-dependency/)
+
+    expect(logs.some((line) => line.startsWith('TASKDECK_DEV_FRONTEND_READY '))).toBe(false)
+    expect(await canBindPort(port)).toBe(true)
+    await expect(pathExists(path.join(fixtureRoot, 'dist'))).resolves.toBe(false)
+  }, 20_000)
+
   it('loads the root Vite config and retains proxy settings in a healthy graph', async () => {
     const fixtureRoot = await createFixture({
       'src/main.ts': "import './nested.ts'\n",
