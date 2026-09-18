@@ -13,174 +13,32 @@ permissions:
 jobs:
   patch:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: fix/2181-headless-data-contract
           fetch-depth: 0
 
       - name: Apply bounded implementation and documentation patch
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          bootstrap_path = Path('backend/src/Taskdeck.Api/FirstRun/FirstRunBootstrapper.cs')
-          bootstrap = bootstrap_path.read_text(encoding='utf-8')
-          replacements = [
-              (
-                  '    internal const string MissingConnectorEncryptionKeyMessagePrefix =\n'
-                  '        "SECURITY: The Connectors:EncryptionKey is not configured.";\n\n'
-                  '    private const string LocalConfigFileName = "appsettings.local.json";',
-                  '    internal const string MissingConnectorEncryptionKeyMessagePrefix =\n'
-                  '        "SECURITY: The Connectors:EncryptionKey is not configured.";\n\n'
-                  '    internal const string ExistingDatabaseMissingConnectorEncryptionKeyMessagePrefix =\n'
-                  '        "First-run: An existing database was found";\n\n'
-                  '    internal const string ConnectorEncryptionKeyPersistenceFailureMessagePrefix =\n'
-                  '        "First-run: Could not persist the connector encryption key";\n\n'
-                  '    private const string LocalConfigFileName = "appsettings.local.json";',
-              ),
-              (
-                  '                $"First-run: An existing database was found at {databasePath}, but no supplied or " +\n',
-                  '                ExistingDatabaseMissingConnectorEncryptionKeyMessagePrefix +\n'
-                  '                $" at {databasePath}, but no supplied or " +\n',
-              ),
-              (
-                  '                    $"First-run: Could not persist the connector encryption key to {localConfigPath} " +\n',
-                  '                    ConnectorEncryptionKeyPersistenceFailureMessagePrefix +\n'
-                  '                    $" to {localConfigPath} " +\n',
-              ),
-          ]
-          for old, new in replacements:
-              count = bootstrap.count(old)
-              if count != 1:
-                  raise SystemExit(f'Expected one FirstRunBootstrapper replacement, found {count}: {old[:90]!r}')
-              bootstrap = bootstrap.replace(old, new, 1)
-          bootstrap_path.write_text(bootstrap, encoding='utf-8', newline='\n')
-
-          runtime_path = Path('backend/src/Taskdeck.Api/FirstRun/DesktopRuntime.cs')
-          runtime = runtime_path.read_text(encoding='utf-8')
-          marker = '        if (exception is RetiredLlmProviderConfigurationException)\n'
-          if runtime.count(marker) != 1:
-              raise SystemExit('Could not locate the DesktopRuntime retired-provider classifier.')
-          classifiers = '\n'.join([
-              '        if (exception is InvalidOperationException existingDataFailure',
-              '            && existingDataFailure.Message.StartsWith(',
-              '                FirstRunBootstrapper.ExistingDatabaseMissingConnectorEncryptionKeyMessagePrefix,',
-              '                StringComparison.Ordinal))',
-              '        {',
-              '            return',
-              '            [',
-              '                "TASKDECK_DESKTOP_FATAL code=connector_encryption_key_unrecoverable",',
-              '                "Taskdeck found existing data but could not recover its connector encryption key. Restore the original key " +',
-              '                "or set the matching Connectors__EncryptionKey value before restarting. Do not generate a replacement key " +',
-              '                "for this data. No paths or settings were printed."',
-              '            ];',
-              '        }',
-              '',
-              '        if (exception is InvalidOperationException persistenceFailure',
-              '            && persistenceFailure.Message.StartsWith(',
-              '                FirstRunBootstrapper.ConnectorEncryptionKeyPersistenceFailureMessagePrefix,',
-              '                StringComparison.Ordinal))',
-              '        {',
-              '            return',
-              '            [',
-              '                "TASKDECK_DESKTOP_FATAL code=connector_encryption_key_persistence_failed",',
-              '                "Taskdeck could not securely persist its connector encryption key. Make the local-config directory writable " +',
-              '                "on a filesystem that supports owner-only permissions, or set a stable Connectors__EncryptionKey value and " +',
-              '                "restart. No paths or settings were printed."',
-              '            ];',
-              '        }',
-              '',
-          ])
-          runtime = runtime.replace(marker, classifiers + marker, 1)
-          runtime_path.write_text(runtime, encoding='utf-8', newline='\n')
-
-          config_path = Path('docs/platform/CONFIGURATION_REFERENCE.md')
-          config = config_path.read_text(encoding='utf-8')
-          old_config = '\n'.join([
-              '- Development, Test/Staging, and headless Production: the historical',
-              '  executable-local path, preserving development and container compatibility.',
-              '',
-              'For MCP stdio, `DOTNET_ENVIRONMENT` is authoritative when it is nonblank;',
-          ])
-          new_config = '\n'.join([
-              '- Development, Test/Staging, and headless Production: the historical',
-              '  executable-local path, preserving development and container compatibility.',
-              '',
-              '| Environment variable | Interpretation | Storage effect | Required? |',
-              '| --- | --- | --- | --- |',
-              '| `TASKDECK_HEADLESS` | Presence-based (`1`, `true`, or any other nonblank value all enable it) | Disables desktop-style connector-key generation and automatic per-user database relocation. It does **not** choose a data directory. | Set explicitly for server/container or packaged automation runs; leave unset for normal desktop use. |',
-              '',
-              '`TASKDECK_HEADLESS` changes bootstrap identity policy, not the storage root. There is no separate',
-              'headless app-data-root override. To keep a packaged automation run from writing state beside the',
-              'executable, supply stable `Jwt__SecretKey` and `Connectors__EncryptionKey` values on every start and',
-              'set `ConnectionStrings__DefaultConnection` to an absolute SQLite path. With both identities supplied,',
-              'the bootstrapper has no generated secret to persist. `FirstRun__ResolveAppDataDbPath` does not relocate',
-              'a headless database; container and automation operators must make the database path explicit. Reuse the',
-              'same connector key after restart because replacing it makes stored connector credentials unreadable.',
-              '',
-              'For MCP stdio, `DOTNET_ENVIRONMENT` is authoritative when it is nonblank;',
-          ])
-          if config.count(old_config) != 1:
-              raise SystemExit('Could not locate the generated local-config headless paragraph.')
-          config = config.replace(old_config, new_config, 1)
-          config_path.write_text(config, encoding='utf-8', newline='\n')
-
-          quick_path = Path('docs/releases/WINDOWS_QUICK_START.md')
-          quick = quick_path.read_text(encoding='utf-8')
-          old_data = '\n'.join([
-              'The console prints the effective data directory on every packaged start. An explicit absolute',
-              '`ConnectionStrings__DefaultConnection` override can move the database; if you use one, back up that',
-              'exact path instead.',
-          ])
-          new_data = '\n'.join([
-              'The console prints the effective data directory on every packaged start. An explicit absolute',
-              '`ConnectionStrings__DefaultConnection` override can move the database; if you use one, back up that',
-              'exact path instead.',
-              '',
-              '`TASKDECK_HEADLESS` is an advanced server/automation switch, not an alternate desktop data-root',
-              'selector. It leaves local configuration executable-local and disables automatic per-user database',
-              'relocation. A packaged headless run that must keep all writable state outside the extracted release',
-              'folder must provide stable `Jwt__SecretKey` and `Connectors__EncryptionKey` values on every start and',
-              'an absolute `ConnectionStrings__DefaultConnection` path. See the',
-              '[generated local-configuration contract](https://github.com/Chris0Jeky/Taskdeck/blob/main/docs/platform/CONFIGURATION_REFERENCE.md#generated-local-configuration-file).',
-          ])
-          if quick.count(old_data) != 1:
-              raise SystemExit('Could not locate the Windows data-location paragraph.')
-          quick = quick.replace(old_data, new_data, 1)
-
-          retired_marker = '- `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the\n'
-          if quick.count(retired_marker) != 1:
-              raise SystemExit('Could not locate the Windows troubleshooting insertion point.')
-          diagnostic_rows = '\n'.join([
-              '- **Unreleased (`main` after this repair)** `TASKDECK_DESKTOP_FATAL',
-              '  code=connector_encryption_key_unrecoverable`: Taskdeck found an existing database but could not',
-              '  recover the connector key that protects stored credentials. Restore the original key or set that',
-              '  exact value through `Connectors__EncryptionKey`; do not generate a replacement for the existing data.',
-              '- **Unreleased (`main` after this repair)** `TASKDECK_DESKTOP_FATAL',
-              '  code=connector_encryption_key_persistence_failed`: normal desktop startup could not securely persist',
-              '  its generated connector key. Use a writable local-config directory on NTFS or another filesystem',
-              '  supporting owner-only permissions, or supply a stable `Connectors__EncryptionKey` and restart.',
-          ]) + '\n'
-          quick = quick.replace(retired_marker, diagnostic_rows + retired_marker, 1)
-          quick_path.write_text(quick, encoding='utf-8', newline='\n')
-
-          Path('.github/workflows/pr-3182-headless-contract-patch.yml').unlink()
-          PY
+        run: python scripts/ci/pr-3182-apply.py
 
       - name: Verify focused FirstRun contracts
-        shell: bash
-        run: |
-          dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~DesktopRuntimeConnectorKeyFailureTests|FullyQualifiedName~DesktopRuntimeTests"
+        run: >-
+          dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj
+          -c Release -m:1
+          --filter "FullyQualifiedName~DesktopRuntimeConnectorKeyFailureTests|FullyQualifiedName~DesktopRuntimeTests"
 
       - name: Commit bounded repair
         shell: bash
         run: |
+          set -euo pipefail
+          rm scripts/ci/pr-3182-apply.py
+          rm .github/workflows/pr-3182-headless-contract-patch.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/src/Taskdeck.Api/FirstRun backend/tests/Taskdeck.Api.Tests/FirstRun docs/platform/CONFIGURATION_REFERENCE.md docs/releases/WINDOWS_QUICK_START.md .github/workflows/pr-3182-headless-contract-patch.yml
+          git add -A
           git diff --cached --check
           git commit -m "fix(first-run): classify connector identity failures"
           git push origin HEAD:fix/2181-headless-data-contract
