@@ -812,6 +812,10 @@ useEscapeToClose(
     padding: 1rem;
   }
 
+  .card-modal-viewport--visual-constrained {
+    justify-content: center;
+  }
+
   .card-modal-viewport--visual-constrained .card-modal-scroll-region {
     display: flex;
     flex: 1 1 auto;
