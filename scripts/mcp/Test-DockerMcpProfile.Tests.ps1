@@ -87,11 +87,15 @@ function Convert-ToBashPath {
     if ($null -eq $bashCommand) {
         return ''
     }
+    if ($WindowsPath -notmatch '^[A-Za-z]:\\') {
+        throw "Bash fixture path must be an absolute Windows drive path: $WindowsPath"
+    }
+
+    $driveName = $WindowsPath.Substring(0, 1).ToLowerInvariant()
     if ($bashCommand.Source -like "$env:SystemRoot\System32\*") {
-        $driveName = $WindowsPath.Substring(0, 1).ToLowerInvariant()
         return "/mnt/$driveName/$($WindowsPath.Substring(3).Replace('\', '/'))"
     }
-    return $WindowsPath.Replace('\', '/')
+    return "/$driveName/$($WindowsPath.Substring(3).Replace('\', '/'))"
 }
 
 function Convert-ToBashLiteral {
@@ -546,7 +550,7 @@ try {
         Assert-True (-not $baselineFailure.Output.Contains('[drill-mcp-invalid-credentials] PASS')) 'The failed drill emitted its terminal PASS marker.'
 
         $baselineSuccess = Invoke-DrillFixture -BaselineMode 'pass'
-        Assert-Equal 0 $baselineSuccess.ExitCode 'The drill should pass when positive validation succeeds and the nonexistent server is rejected.'
+        Assert-Equal 0 $baselineSuccess.ExitCode "The drill should pass when positive validation succeeds and the nonexistent server is rejected.`n$($baselineSuccess.Output)"
         Assert-Contains $baselineSuccess.Output 'Read-only profile validation succeeded (expected)' 'The drill did not prove its positive baseline.'
         Assert-Contains $baselineSuccess.Output 'Bogus server was correctly rejected by read-only validation' 'The drill did not prove its negative case.'
         Assert-Contains $baselineSuccess.Output '[drill-mcp-invalid-credentials] PASS' 'The valid drill path omitted its terminal PASS marker.'
@@ -567,7 +571,7 @@ try {
     }
 }
 finally {
-    foreach ($name in @('TASKDECK_FAKE_DOCKER_SCENARIO', 'TASKDECK_FAKE_DOCKER_STATE', 'TASKDECK_FAKE_DOCKER_LOG')) {
+    foreach ($name in @('TASKDECK_FAKE_DOCKER_SCENARIO', 'TASKDECK_FAKE_DOCKER_MISSING_SERVER', 'TASKDECK_FAKE_DOCKER_STATE', 'TASKDECK_FAKE_DOCKER_LOG')) {
         Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
     }
 

@@ -353,9 +353,6 @@ async function copyTechnicalDetails() {
           data-testid="review-diff-stored"
         >{{ displayedSelectedDiff }}</pre>
         <template v-else-if="storedOperationsFallback">
-          <span class="td-review-card__diff-note" data-testid="review-diff-stored-ops-note">
-            No stored preview was captured — showing the proposal's recorded operations.
-          </span>
           <pre
             class="td-review-card__diff"
             role="region"
