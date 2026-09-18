@@ -71,90 +71,81 @@ jobs:
           path = Path('backend/src/Taskdeck.Infrastructure/Repositories/UnitOfWork.cs')
           source = path.read_text(encoding='utf-8').replace('\r\n', '\n')
 
-          old_usings = '''using Microsoft.EntityFrameworkCore.Storage;
-          using Taskdeck.Application.Interfaces;
-          '''
-          old_usings = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_usings.splitlines()) + '\n'
-          new_usings = '''using Microsoft.EntityFrameworkCore.Storage;
-          using Microsoft.Extensions.Logging;
-          using Microsoft.Extensions.Logging.Abstractions;
-          using Taskdeck.Application.Interfaces;
-          '''
-          new_usings = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_usings.splitlines()) + '\n'
-          if source.count(old_usings) != 1:
-              raise SystemExit(f'expected one UnitOfWork using boundary, found {source.count(old_usings)}')
-          source = source.replace(old_usings, new_usings, 1)
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one {label}, found {count}')
+              source = source.replace(old, new, 1)
 
-          old_fields = '''    private readonly TaskdeckDbContext _context;
-            private IDbContextTransaction? _transaction;
-          '''
-          old_fields = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_fields.splitlines()) + '\n'
-          new_fields = '''    private readonly TaskdeckDbContext _context;
-            private readonly ILogger<UnitOfWork> _logger;
-            private IDbContextTransaction? _transaction;
-          '''
-          new_fields = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_fields.splitlines()) + '\n'
-          if source.count(old_fields) != 1:
-              raise SystemExit(f'expected one UnitOfWork field boundary, found {source.count(old_fields)}')
-          source = source.replace(old_fields, new_fields, 1)
+          replace_once(
+              'using Microsoft.EntityFrameworkCore.Storage;\n'
+              'using Taskdeck.Application.Interfaces;\n',
+              'using Microsoft.EntityFrameworkCore.Storage;\n'
+              'using Microsoft.Extensions.Logging;\n'
+              'using Microsoft.Extensions.Logging.Abstractions;\n'
+              'using Taskdeck.Application.Interfaces;\n',
+              'UnitOfWork using boundary',
+          )
 
-          old_tail = '''        ITomorrowNoteRepository tomorrowNotes,
-              IMcpToolHashRepository mcpToolHashes)
-            {
-                _context = context;
-          '''
-          old_tail = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_tail.splitlines()) + '\n'
-          new_tail = '''        ITomorrowNoteRepository tomorrowNotes,
-              IMcpToolHashRepository mcpToolHashes,
-              ILogger<UnitOfWork>? logger = null)
-            {
-                _context = context;
-                _logger = logger ?? NullLogger<UnitOfWork>.Instance;
-          '''
-          new_tail = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_tail.splitlines()) + '\n'
-          if source.count(old_tail) != 1:
-              raise SystemExit(f'expected one UnitOfWork constructor tail, found {source.count(old_tail)}')
-          source = source.replace(old_tail, new_tail, 1)
+          replace_once(
+              '    private readonly TaskdeckDbContext _context;\n'
+              '    private IDbContextTransaction? _transaction;\n',
+              '    private readonly TaskdeckDbContext _context;\n'
+              '    private readonly ILogger<UnitOfWork> _logger;\n'
+              '    private IDbContextTransaction? _transaction;\n',
+              'UnitOfWork field boundary',
+          )
 
-          old_commit = '''    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
-            {
-                if (_transaction != null)
-                {
-                    await _transaction.CommitAsync(cancellationToken);
-                    await _transaction.DisposeAsync();
-                    _transaction = null;
-                }
-            }
-          '''
-          old_commit = '\n'.join(line[10:] if line.startswith('          ') else line for line in old_commit.splitlines()) + '\n'
-          new_commit = '''    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
-            {
-                var transaction = _transaction;
-                if (transaction == null)
-                    return;
+          replace_once(
+              '        ITomorrowNoteRepository tomorrowNotes,\n'
+              '        IMcpToolHashRepository mcpToolHashes)\n'
+              '    {\n'
+              '        _context = context;\n',
+              '        ITomorrowNoteRepository tomorrowNotes,\n'
+              '        IMcpToolHashRepository mcpToolHashes,\n'
+              '        ILogger<UnitOfWork>? logger = null)\n'
+              '    {\n'
+              '        _context = context;\n'
+              '        _logger = logger ?? NullLogger<UnitOfWork>.Instance;\n',
+              'UnitOfWork constructor tail',
+          )
 
-                await transaction.CommitAsync(cancellationToken);
-
-                // CommitAsync is the durable boundary. Clear the rollback handle before cleanup so
-                // a provider-specific disposal failure cannot make callers treat committed state as
-                // uncommitted or attempt to roll it back.
-                _transaction = null;
-                try
-                {
-                    await transaction.DisposeAsync();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Database transaction committed successfully, but transaction cleanup failed.");
-                }
-            }
-          '''
-          new_commit = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_commit.splitlines()) + '\n'
-          if source.count(old_commit) != 1:
-              raise SystemExit(f'expected one UnitOfWork commit method, found {source.count(old_commit)}')
-          source = source.replace(old_commit, new_commit, 1)
+          replace_once(
+              '    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)\n'
+              '    {\n'
+              '        if (_transaction != null)\n'
+              '        {\n'
+              '            await _transaction.CommitAsync(cancellationToken);\n'
+              '            await _transaction.DisposeAsync();\n'
+              '            _transaction = null;\n'
+              '        }\n'
+              '    }\n',
+              '    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)\n'
+              '    {\n'
+              '        var transaction = _transaction;\n'
+              '        if (transaction == null)\n'
+              '            return;\n'
+              '\n'
+              '        await transaction.CommitAsync(cancellationToken);\n'
+              '\n'
+              '        // CommitAsync is the durable boundary. Clear the rollback handle before cleanup so\n'
+              '        // a provider-specific disposal failure cannot make callers treat committed state as\n'
+              '        // uncommitted or attempt to roll it back.\n'
+              '        _transaction = null;\n'
+              '        try\n'
+              '        {\n'
+              '            await transaction.DisposeAsync();\n'
+              '        }\n'
+              '        catch (Exception ex)\n'
+              '        {\n'
+              '            _logger.LogWarning(\n'
+              '                ex,\n'
+              '                "Database transaction committed successfully, but transaction cleanup failed.");\n'
+              '        }\n'
+              '    }\n',
+              'UnitOfWork commit method',
+          )
 
           path.write_text(source, encoding='utf-8', newline='\n')
           PY
