@@ -51,6 +51,8 @@ public interface IUnitOfWork
     /// <summary>
     /// Begins a repeatable read snapshot without reserving SQLite's WAL writer slot.
     /// Use this for multi-query read models that must describe one database instant.
+    /// The caller must finish the non-nestable transaction through
+    /// <see cref="CommitTransactionAsync"/> or <see cref="RollbackTransactionAsync"/>.
     /// </summary>
     Task BeginReadTransactionAsync(CancellationToken cancellationToken = default);
 
