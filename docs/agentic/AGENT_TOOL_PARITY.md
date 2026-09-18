@@ -1,6 +1,6 @@
 # Agent Tool Parity
 
-Purpose: keep Claude and Codex equally capable in Taskdeck while letting each runtime use its strongest native tools.
+Purpose: keep Claude, Codex, and Grok equally capable in Taskdeck while letting each runtime use its strongest native tools.
 
 Equality here means comparable outcomes and safety, not identical mechanics.
 
@@ -10,10 +10,10 @@ Both agents must use the same project truth:
 
 1. `autodoc/AGENT_INDEX.md` (the seam map — orient here first)
 2. the relevant section of `docs/STATUS.md` (never end to end)
-3. `AGENTS.md` (Codex) / root `CLAUDE.md` plus path rules (Claude, auto-loaded)
+3. `AGENTS.md` (Codex and Grok) / root `CLAUDE.md` plus path rules (Claude auto-loaded; Grok loads both)
 4. `docs/MCP_TOOLING_GUIDE.md`
 5. `docs/agentic/SKILL_REGISTRY.md`
-6. the matching Taskdeck skill: `.claude/skills/` is canonical, `.codex/skills/` is the Codex adapter
+6. the matching Taskdeck skill: `.claude/skills/` is canonical (Claude and Grok), `.codex/skills/` is the Codex adapter. There is no `.grok/skills/`.
 
 Both agents must preserve:
 
@@ -56,10 +56,19 @@ Both agents must preserve:
 - Use Claude skills and slash-command workflows for review, pre-merge gates, issue-to-PR execution, and docs sweeps.
 - On native Windows, project `.mcp.json` wraps `npx` MCP servers with `cmd /c` so Claude can launch them reliably.
 
+## Grok Strengths To Use
+
+- Load project instructions from `AGENTS.md` and `CLAUDE.md`; routing from `.grok/README.md`.
+- Use `.claude/skills/` via Claude compatibility. Do not create `.grok/skills/` or `.grok/hooks/`.
+- Keep MCP at user scope (`~/.grok/config.toml`). Project `.grok/config.toml` is permissions only.
+- Branch as `grok/<topic>`. Delegate with native `spawn_subagent`; never shell out to `grok -p`.
+- Use native `rg` and `gh`. Chrome DevTools, Context7, GitHub, and OpenAI docs come from user-scope Grok MCP.
+
 ## Configuration Parity
 
 Codex MCP configuration lives in `.codex/config.toml`.
 Claude project MCP configuration lives in `.mcp.json`.
+Grok MCP configuration lives in `~/.grok/config.toml` (user scope). `.grok/config.toml` is permissions only.
 
 Shared project baseline servers:
 
@@ -70,8 +79,8 @@ Codex-only enabled project servers: `github` (authenticated), `context7`. Claude
 Context7 from the claude.ai connector and uses `gh` for GitHub.
 
 The Docker MCP gateway is not a project server: it is declared once at user scope (`MCP_DOCKER` in
-`~/.claude.json` and `~/.codex/config.toml`) serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`.
-Re-declaring it in `.mcp.json` or `.codex/config.toml` starts a second gateway per session (agent-harness#87).
+`~/.claude.json`, `~/.codex/config.toml`, and `~/.grok/config.toml`) serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`.
+Re-declaring it in `.mcp.json`, `.codex/config.toml`, or `.grok/config.toml` starts a second gateway per session (agent-harness#87).
 
 Known intentional difference:
 

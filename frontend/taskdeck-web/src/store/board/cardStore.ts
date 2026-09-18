@@ -14,10 +14,14 @@ export function createCardActions(
   refreshBoard: (boardId: string, options?: BoardFetchOptions) => Promise<boolean>,
 ) {
   async function refreshDetachedChildren(boardId: string) {
-    // The mutation already committed. The shared detail reader owns cancellation,
-    // session/navigation generations and any current-context refresh warning.
+    // The mutation already committed. It only changes hierarchy ownership, not
+    // surviving comment threads, so keep the open editor's same-board cache
+    // reachable while the shared reader installs the authoritative child list.
+    // The detail reader still owns cancellation, session/navigation generations,
+    // cross-board cache clearing and any current-context refresh warning.
     await refreshBoard(boardId, {
       intent: 'background',
+      preserveCardComments: true,
       backgroundFailureMessage: 'Card change saved, but child links could not be refreshed. Refresh the board before editing.',
     })
   }
