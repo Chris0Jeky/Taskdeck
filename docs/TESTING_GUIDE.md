@@ -1384,7 +1384,7 @@ Playwright config expanded with 5 projects: `chromium` (all tests), `firefox`/`w
 Run commands:
 ```bash
 cd frontend/taskdeck-web
-npx playwright test --project=chromium               # PR gate (default)
+npx playwright test --config=playwright.required.config.ts --reporter=line  # Required PR gate
 npx playwright test --project=firefox                 # Firefox cross-browser
 npx playwright test --grep @mobile                    # All mobile tests
 npx playwright test                                   # Full matrix (nightly)
@@ -1392,7 +1392,7 @@ npx playwright test                                   # Full matrix (nightly)
 
 Tagging convention: `@smoke` (quick CI), `@cross-browser` (multi-browser), `@mobile` (viewport), `@quarantine` (flaky, excluded). See `docs/testing/FLAKY_TEST_POLICY.md`.
 
-CI: `reusable-e2e-cross-browser.yml` in nightly + extended (testing label/manual). PR gate stays Chromium-only.
+CI: `reusable-e2e-smoke.yml` runs the full desktop Chromium project plus one bounded Pixel 7 contracted-VisualViewport journey in required PR checks. `reusable-e2e-cross-browser.yml` retains the complete mobile Chrome/Safari matrix for nightly and extended runs (testing label/manual).
 
 ### Visual Regression Testing (TST-03, `#88`/`#797`)
 
@@ -2075,7 +2075,7 @@ npx playwright test --grep="@mobile" --reporter=line
 
 ### CI Configuration
 
-- **PR gate** (`ci-required.yml`): calls `reusable-e2e-smoke.yml` which installs and runs chromium only. This keeps PR feedback fast (~12 min timeout).
+- **PR gate** (`ci-required.yml`): calls `reusable-e2e-smoke.yml`, which runs full desktop Chromium plus one bounded Pixel 7 contracted-VisualViewport journey from `playwright.required.config.ts`. This keeps the mobile exception inside the existing ~12 minute smoke budget.
 - **Nightly** (`ci-nightly.yml`): calls `reusable-e2e-cross-browser.yml` which runs all 5 projects in a matrix with `fail-fast: false`.
 - **Extended/manual** (`ci-extended.yml`): calls `reusable-e2e-cross-browser.yml` on `testing` label or manual dispatch.
 
@@ -2083,7 +2083,7 @@ npx playwright test --grep="@mobile" --reporter=line
 
 1. **Default tests** (no tag): run on chromium in PR gate. Use for most new tests.
 2. **Critical journeys** that must work cross-browser: add `@cross-browser` tag. These will also run on chromium in PR gate.
-3. **Mobile-specific behavior** (viewport responsiveness, touch targets, overflow): add `@mobile` tag. These only run on mobile projects.
+3. **Mobile-specific behavior** (viewport responsiveness, touch targets, overflow): add `@mobile`. The full mobile Chrome/Safari matrix remains nightly/manual; only the explicitly contracted Pixel 7 VisualViewport journey is additionally selected by the required PR gate.
 4. **Flaky or unstable tests**: add `@quarantine` tag and file an issue. See `docs/testing/FLAKY_TEST_POLICY.md`.
 
 ### Flaky Test Policy
