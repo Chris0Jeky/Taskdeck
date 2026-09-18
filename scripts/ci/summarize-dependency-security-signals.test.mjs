@@ -371,7 +371,7 @@ test('malformed npm severity counts fail closed instead of becoming NaN', async 
   assert.equal(summary.totals.hasEnforcementFailures, true)
 })
 
-test('malformed nested npm advisory severity cannot be hidden by another allowlisted advisory', async () => {
+test('malformed nested npm advisory severity fails closed', async () => {
   const frontendReport = {
     vulnerabilities: {
       'mixed-advisory-package': {
@@ -424,13 +424,49 @@ test('malformed nested npm advisory severity cannot be hidden by another allowli
     allowlist,
   })
 
-  assert.equal(summary.frontend.highOrCriticalCount, 1)
-  assert.equal(summary.frontend.acceptedHighOrCriticalCount, 0)
-  assert.equal(summary.frontend.unresolvedHighOrCriticalCount, 1)
-  assert.deepEqual(summary.frontend.packages[0].advisoryIds, [
-    'GHSA-AAAA-BBBB-CCCC',
-    'GHSA-DDDD-EEEE-FFFF',
-  ])
+  assert.equal(summary.frontend.parseFailed, true)
+  assert.equal(summary.frontend.scanFailed, true)
+  assert.equal(summary.totals.scanFailures, 1)
+  assert.equal(summary.totals.hasEnforcementFailures, true)
+})
+
+test('missing nested npm advisory severity does not fall back to the package severity', async () => {
+  const frontendReport = {
+    vulnerabilities: {
+      'missing-advisory-severity-package': {
+        name: 'missing-advisory-severity-package',
+        severity: 'moderate',
+        isDirect: true,
+        fixAvailable: false,
+        via: [
+          {
+            source: 1003,
+            name: 'missing-advisory-severity-package',
+            url: 'https://github.com/advisories/GHSA-1111-2222-3333',
+          },
+        ],
+      },
+    },
+    metadata: {
+      vulnerabilities: {
+        info: 0,
+        low: 0,
+        moderate: 1,
+        high: 0,
+        critical: 0,
+        total: 1,
+      },
+    },
+  }
+
+  const { summary } = await buildFixture({
+    frontendReport,
+    frontendExitCode: 1,
+  })
+
+  assert.equal(summary.frontend.parseFailed, true)
+  assert.equal(summary.frontend.scanFailed, true)
+  assert.equal(summary.totals.scanFailures, 1)
   assert.equal(summary.totals.hasEnforcementFailures, true)
 })
 

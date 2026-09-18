@@ -408,7 +408,6 @@ const SEVERITY_RANK = {
   moderate: 2,
   high: 3,
   critical: 4,
-  invalid: 5,
 }
 
 function mergeAdvisory(advisories, advisoryId, severity) {
@@ -416,10 +415,7 @@ function mergeAdvisory(advisories, advisoryId, severity) {
     return
   }
 
-  // An invalid nested severity must remain an enforcement finding. Treating it as
-  // `unknown` would let a package with one allowlisted advisory hide a second,
-  // malformed advisory from the unresolved set.
-  const normalizedSeverity = isKnownSeverity(severity) ? normalizeSeverity(severity) : 'invalid'
+  const normalizedSeverity = normalizeSeverity(severity)
   const existing = advisories.get(advisoryId)
   if (!existing || SEVERITY_RANK[normalizedSeverity] > SEVERITY_RANK[existing]) {
     advisories.set(advisoryId, normalizedSeverity)
@@ -452,8 +448,13 @@ function collectFrontendAdvisories(packageName, vulnerabilities, cache, visiting
       continue
     }
 
+    const advisorySeverity = via?.severity
+    if (!isKnownSeverity(advisorySeverity)) {
+      throw new Error('frontend audit report has an invalid nested advisory severity')
+    }
+
     const advisoryId = advisoryIdFromNpmVia(via)
-    mergeAdvisory(advisories, advisoryId, via?.severity ?? entry.severity)
+    mergeAdvisory(advisories, advisoryId, advisorySeverity)
   }
 
   cache.set(packageName, new Map(advisories))
@@ -496,14 +497,12 @@ function summarizeFrontendReport(report, exitCode, activeAllowlist, matchedAdvis
       const advisories = collectFrontendAdvisories(entry.name, vulnerabilities, advisoryCache)
       const advisoryIds = [...advisories.keys()].sort()
       const enforcedAdvisoryIds = [...advisories.entries()]
-        .filter(([, advisorySeverity]) => isHighOrCritical(advisorySeverity) || advisorySeverity === 'invalid')
+        .filter(([, advisorySeverity]) => isHighOrCritical(advisorySeverity))
         .map(([advisoryId]) => advisoryId)
         .sort()
-      const hasMalformedAdvisory = [...advisories.values()].some((advisorySeverity) => advisorySeverity === 'invalid')
       const isEnforcedFinding = isHighOrCritical(severity)
       const accepted =
         isEnforcedFinding &&
-        !hasMalformedAdvisory &&
         enforcedAdvisoryIds.length > 0 &&
         enforcedAdvisoryIds.every((advisoryId) => activeAllowlist.has(advisoryId))
 
