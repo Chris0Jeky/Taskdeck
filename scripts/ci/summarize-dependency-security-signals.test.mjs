@@ -371,6 +371,69 @@ test('malformed npm severity counts fail closed instead of becoming NaN', async 
   assert.equal(summary.totals.hasEnforcementFailures, true)
 })
 
+test('malformed nested npm advisory severity cannot be hidden by another allowlisted advisory', async () => {
+  const frontendReport = {
+    vulnerabilities: {
+      'mixed-advisory-package': {
+        name: 'mixed-advisory-package',
+        severity: 'high',
+        isDirect: true,
+        fixAvailable: false,
+        via: [
+          {
+            source: 1001,
+            name: 'mixed-advisory-package',
+            severity: 'high',
+            url: 'https://github.com/advisories/GHSA-aaaa-bbbb-cccc',
+          },
+          {
+            source: 1002,
+            name: 'mixed-advisory-package',
+            severity: 123,
+            url: 'https://github.com/advisories/GHSA-dddd-eeee-ffff',
+          },
+        ],
+      },
+    },
+    metadata: {
+      vulnerabilities: {
+        info: 0,
+        low: 0,
+        moderate: 0,
+        high: 1,
+        critical: 0,
+        total: 1,
+      },
+    },
+  }
+  const allowlist = {
+    schemaVersion: 1,
+    entries: [
+      {
+        advisoryId: 'GHSA-aaaa-bbbb-cccc',
+        reason: 'Only the well-formed advisory is covered.',
+        owner: '@Chris0Jeky',
+        expiresOn: '2026-09-30',
+      },
+    ],
+  }
+
+  const { summary } = await buildFixture({
+    frontendReport,
+    frontendExitCode: 1,
+    allowlist,
+  })
+
+  assert.equal(summary.frontend.highOrCriticalCount, 1)
+  assert.equal(summary.frontend.acceptedHighOrCriticalCount, 0)
+  assert.equal(summary.frontend.unresolvedHighOrCriticalCount, 1)
+  assert.deepEqual(summary.frontend.packages[0].advisoryIds, [
+    'GHSA-AAAA-BBBB-CCCC',
+    'GHSA-DDDD-EEEE-FFFF',
+  ])
+  assert.equal(summary.totals.hasEnforcementFailures, true)
+})
+
 test('frontend package indirection resolves to the underlying advisory identity', async () => {
   const frontendReport = {
     vulnerabilities: {

@@ -80,6 +80,15 @@ function normalizeSeverity(value) {
   return 'unknown'
 }
 
+function isKnownSeverity(value) {
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'critical' || normalized === 'high' || normalized === 'moderate' || normalized === 'low'
+}
+
 function isHighOrCritical(severity) {
   return severity === 'high' || severity === 'critical'
 }
@@ -399,6 +408,7 @@ const SEVERITY_RANK = {
   moderate: 2,
   high: 3,
   critical: 4,
+  invalid: 5,
 }
 
 function mergeAdvisory(advisories, advisoryId, severity) {
@@ -406,7 +416,10 @@ function mergeAdvisory(advisories, advisoryId, severity) {
     return
   }
 
-  const normalizedSeverity = normalizeSeverity(severity)
+  // An invalid nested severity must remain an enforcement finding. Treating it as
+  // `unknown` would let a package with one allowlisted advisory hide a second,
+  // malformed advisory from the unresolved set.
+  const normalizedSeverity = isKnownSeverity(severity) ? normalizeSeverity(severity) : 'invalid'
   const existing = advisories.get(advisoryId)
   if (!existing || SEVERITY_RANK[normalizedSeverity] > SEVERITY_RANK[existing]) {
     advisories.set(advisoryId, normalizedSeverity)
@@ -483,12 +496,14 @@ function summarizeFrontendReport(report, exitCode, activeAllowlist, matchedAdvis
       const advisories = collectFrontendAdvisories(entry.name, vulnerabilities, advisoryCache)
       const advisoryIds = [...advisories.keys()].sort()
       const enforcedAdvisoryIds = [...advisories.entries()]
-        .filter(([, advisorySeverity]) => isHighOrCritical(advisorySeverity))
+        .filter(([, advisorySeverity]) => isHighOrCritical(advisorySeverity) || advisorySeverity === 'invalid')
         .map(([advisoryId]) => advisoryId)
         .sort()
+      const hasMalformedAdvisory = [...advisories.values()].some((advisorySeverity) => advisorySeverity === 'invalid')
       const isEnforcedFinding = isHighOrCritical(severity)
       const accepted =
         isEnforcedFinding &&
+        !hasMalformedAdvisory &&
         enforcedAdvisoryIds.length > 0 &&
         enforcedAdvisoryIds.every((advisoryId) => activeAllowlist.has(advisoryId))
 
