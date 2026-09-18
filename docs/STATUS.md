@@ -2,7 +2,7 @@
 
 Last Updated: 2026-09-18
 
-## Source-launcher literal-import readiness (#1900 candidate)
+## Source-launcher literal-import readiness (#1900)
 
 The source Vite launcher now has a real-provider regression for router-style literal lazy imports.
 A missing dependency behind `import('./lazy-route')` must fail startup before
@@ -11,7 +11,7 @@ pinned Vite 8.3 contract, `ModuleNode.staticImportedUrls` contains resolved stat
 and literal dynamic imports while excluding plugin watch files, so the existing traversal already
 covers those lazy routes. Computed runtime imports are not enumerable and remain outside the marker;
 production build, typecheck and route tests are separate evidence. Marker schema version 1 and both
-launcher consumers are unchanged. Exact-head hosted qualification remains required before delivery.
+launcher consumers are unchanged.
 
 Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
 Starting a relation proposal still prevents departure while the request is unsettled, but the
