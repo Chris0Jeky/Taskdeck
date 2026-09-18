@@ -41,7 +41,7 @@ jobs:
         run: |
           git diff --check
           git rm .github/workflows/apply-2075-archived-detail-refresh.yml
-          test "$(git diff --name-only | sort | tr '\n' ' ')" = ".github/workflows/apply-2075-archived-detail-refresh.yml frontend/taskdeck-web/src/views/paper/PaperInboxView.vue "
+          test "$(git diff HEAD --name-only | sort | tr '\n' ' ')" = ".github/workflows/apply-2075-archived-detail-refresh.yml frontend/taskdeck-web/src/views/paper/PaperInboxView.vue "
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add frontend/taskdeck-web/src/views/paper/PaperInboxView.vue
