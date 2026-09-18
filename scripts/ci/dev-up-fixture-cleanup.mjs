@@ -161,3 +161,27 @@ export async function removeFixtureDirectory(fixture, options = {}) {
     }
   }
 }
+
+export async function removeFixture(fixture, options = {}) {
+  if (!fixture?.envelopeRoot) {
+    throw new TypeError('fixture.envelopeRoot is required')
+  }
+
+  // Do not attempt a second recursive traversal when workspace cleanup has already exhausted the
+  // per-test budget. Let that named failure escape immediately so the reserved diagnostic margin
+  // remains available to node:test and the evidence envelope stays intact for inspection.
+  await removeFixtureDirectory(fixture, options)
+
+  const removeEnvelope =
+    options.removeEnvelope ?? ((path) => rm(path, { recursive: true, force: true }))
+  try {
+    await removeEnvelope(fixture.envelopeRoot)
+  } catch (error) {
+    const liveProcesses = await describeLiveFixtureProcesses(fixture, options)
+    throw new Error(
+      `DEV_UP_FIXTURE_TEARDOWN_FAILED: fixture evidence envelope ${fixture.envelopeRoot} ` +
+        `could not be removed. Fixture processes still alive: ${liveProcesses}.`,
+      { cause: error },
+    )
+  }
+}
