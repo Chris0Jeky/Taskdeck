@@ -36,6 +36,18 @@ jobs:
           PY
 
           python3 /tmp/apply-3145.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1')
+          text = path.read_text(encoding='utf-8')
+          needle = '              Add-Type -TypeDefinition @"'
+          replacement = '              $null = Add-Type -TypeDefinition @"'
+          if text.count(needle) != 1:
+              raise SystemExit('native environment type initializer boundary is not unique')
+          path.write_text(text.replace(needle, replacement), encoding='utf-8', newline='\n')
+          PY
+
           git diff --check
           pwsh -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
 
