@@ -60,7 +60,7 @@ jobs:
         run: |
           git diff --check
           git rm .github/workflows/apply-1991-scope-copy.yml
-          test "$(git diff --name-only | sort | tr '\n' ' ')" = ".github/workflows/apply-1991-scope-copy.yml frontend/taskdeck-web/src/locales/en/inbox.ts frontend/taskdeck-web/src/locales/es/inbox.ts frontend/taskdeck-web/src/locales/it/inbox.ts frontend/taskdeck-web/src/views/paper/PaperInboxView.vue "
+          test "$(git diff HEAD --name-only | sort | tr '\n' ' ')" = ".github/workflows/apply-1991-scope-copy.yml frontend/taskdeck-web/src/locales/en/inbox.ts frontend/taskdeck-web/src/locales/es/inbox.ts frontend/taskdeck-web/src/locales/it/inbox.ts frontend/taskdeck-web/src/views/paper/PaperInboxView.vue "
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add frontend/taskdeck-web/src/views/paper/PaperInboxView.vue \
