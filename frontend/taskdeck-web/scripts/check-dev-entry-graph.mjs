@@ -2,10 +2,11 @@ const defaultEntryUrl = '/src/main.ts'
 const defaultMaxModules = 2_048
 
 /**
- * Ask Vite to resolve and transform every literal static and literal dynamic
- * import reachable from the Taskdeck entry module. Vite 8.3 exposes both kinds
- * through ModuleNode.staticImportedUrls. Computed runtime imports cannot be
- * enumerated by this readiness check.
+ * Ask Vite to resolve and transform every static import and every dynamic
+ * import with a statically analyzable specifier reachable from the Taskdeck
+ * entry module. Vite 8.3 exposes both kinds through
+ * ModuleNode.staticImportedUrls. Computed runtime imports cannot be enumerated
+ * by this readiness check.
  *
  * This exercises the development resolver/plugin graph without a browser and
  * without writing a production bundle.
@@ -51,10 +52,10 @@ export async function transformDevEntryGraph(
         throw new Error('Vite did not register the transformed module in its graph.')
       }
 
-      // Vite 8.3 puts resolved literal static and literal dynamic imports in
-      // staticImportedUrls. Plugin-added watch files remain outside that set;
-      // traversing importedModules would incorrectly execute Tailwind content
-      // dependencies (including Markdown and test fixtures) as modules.
+      // Vite 8.3 puts resolved static imports and statically analyzable dynamic
+      // imports in staticImportedUrls. Plugin-added watch files remain outside
+      // that set; traversing importedModules would incorrectly execute Tailwind
+      // content dependencies (including Markdown and test fixtures) as modules.
       // Computed runtime imports have no enumerable URL and stay outside this marker.
       const importedUrls = moduleNode.staticImportedUrls
       if (importedUrls === undefined) {
