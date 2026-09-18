@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick, reactive } from 'vue'
 import CardModal from '../../components/board/CardModal.vue'
+import CardModalForm from '../../components/board/card-modal/CardModalForm.vue'
 import { boardsApi } from '../../api/boardsApi'
 import { useBoardStore } from '../../store/boardStore'
 import { useSessionStore } from '../../store/sessionStore'
@@ -142,6 +143,61 @@ describe('CardModal permission retry focus ownership', () => {
     await nextTick()
     expect(document.activeElement).toBe(close.element)
 
+    wrapper.unmount()
+  })
+
+  it('prefers the focused replacement retry over stale ownership from the previous card', async () => {
+    const replacement: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Second card',
+      updatedAt: '2026-09-02T00:00:00Z',
+    }
+    const wrapper = mount(CardModalForm, {
+      attachTo: document.body,
+      props: {
+        card,
+        canEditType: false,
+        typePermissionChecking: false,
+        typePermissionUnknown: true,
+        formattedDueDate: '',
+        isOverdue: false,
+        workItemType: 'Task',
+        title: card.title,
+        description: '',
+        dueDate: '',
+        estimateHours: '',
+        estimateMinutes: '',
+        isBlocked: false,
+        blockReason: '',
+      },
+    })
+
+    const firstRetry = wrapper.get<HTMLButtonElement>(
+      '[data-testid="card-type-permission-refresh"]',
+    )
+    firstRetry.element.focus()
+    expect(document.activeElement).toBe(firstRetry.element)
+
+    // Card A owns this in-flight retry. Switching to B while `checking` remains
+    // true must not let that stale ownership outrank B's later focused retry.
+    await wrapper.setProps({ typePermissionChecking: true })
+    await wrapper.setProps({ card: replacement })
+    await wrapper.setProps({ typePermissionChecking: false, typePermissionUnknown: true })
+
+    const replacementRetry = wrapper.get<HTMLButtonElement>(
+      '[data-testid="card-type-permission-refresh"]',
+    )
+    replacementRetry.element.focus()
+    expect(document.activeElement).toBe(replacementRetry.element)
+
+    await wrapper.setProps({ typePermissionUnknown: false, canEditType: true })
+    await nextTick()
+    await flushPromises()
+
+    expect(document.activeElement).toBe(
+      wrapper.get<HTMLSelectElement>('#card-work-item-type').element,
+    )
     wrapper.unmount()
   })
 })
