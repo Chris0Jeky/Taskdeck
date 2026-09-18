@@ -346,7 +346,7 @@ public class LlmCaptureTriageExtractorTests
             "Prepare the agenda",
             "Send the summary");
         result.EvidenceSpans.Should().HaveCount(2)
-            .And.OnlyContain(span => span.HasValue && span.Value == (0, transcript.Length));
+            .And.OnlyContain(span => span.HasValue && span.Value.Start == 0 && span.Value.End == transcript.Length);
     }
 
     [Fact]
@@ -365,7 +365,7 @@ public class LlmCaptureTriageExtractorTests
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
         result.Output!.Tasks.Should().HaveCount(2);
-        result.EvidenceSpans.Should().HaveCount(2).And.OnlyContain(span => span is null);
+        result.EvidenceSpans.Should().HaveCount(2).And.OnlyContain(span => !span.HasValue);
     }
 
     [Fact]
