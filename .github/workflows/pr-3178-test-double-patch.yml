@@ -1,0 +1,88 @@
+name: Apply PR 3178 test-double patch
+
+on:
+  push:
+    branches:
+      - fix/3058-rollup-read-snapshot
+    paths:
+      - .github/workflows/pr-3178-test-double-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/3058-rollup-read-snapshot
+          fetch-depth: 0
+
+      - name: Add the read-snapshot member to API test doubles
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          targets = [
+              'backend/tests/Taskdeck.Api.Tests/ActiveUserValidationMiddlewareTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/OutboundWebhookDeliveryWorkerReliabilityTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/OutboundWebhookDeliveryWorkerTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/ProposalHousekeepingWorkerTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/ProposalHousekeepingWorkerEdgeCaseTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/OutboundWebhookHmacDeliveryTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/TranscriptTriageWorkerTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/LlmQueueToProposalWorkerTests.cs',
+              'backend/tests/Taskdeck.Api.Tests/WorkerResilienceTests.cs',
+          ]
+
+          pattern = re.compile(
+              r'^(?P<indent>[ \t]*)public Task BeginTransactionAsync\(CancellationToken cancellationToken = default\)',
+              re.MULTILINE,
+          )
+          total = 0
+
+          for target in targets:
+              path = Path(target)
+              source = path.read_text(encoding='utf-8')
+              if 'BeginReadTransactionAsync' in source:
+                  raise SystemExit(f'{target} already contains BeginReadTransactionAsync; refusing a duplicate patch')
+
+              def insert(match):
+                  indent = match.group('indent')
+                  return (
+                      f'{indent}public Task BeginReadTransactionAsync(CancellationToken cancellationToken = default) '
+                      '=> Task.CompletedTask;\n\n'
+                      f'{match.group(0)}'
+                  )
+
+              updated, count = pattern.subn(insert, source)
+              if count == 0:
+                  raise SystemExit(f'No BeginTransactionAsync test double found in {target}')
+              total += count
+              path.write_text(updated, encoding='utf-8', newline='\n')
+
+          if total != 10:
+              raise SystemExit(f'Expected exactly 10 test-double insertions, found {total}')
+
+          Path('.github/workflows/pr-3178-test-double-patch.yml').unlink()
+          PY
+
+      - name: Verify API test project compiles
+        shell: bash
+        run: |
+          dotnet restore backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj
+          dotnet build backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --no-restore
+
+      - name: Commit bounded compatibility repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/tests/Taskdeck.Api.Tests .github/workflows/pr-3178-test-double-patch.yml
+          git diff --cached --check
+          git commit -m "test(backend): implement read snapshots in unit-of-work doubles"
+          git push origin HEAD:fix/3058-rollup-read-snapshot
