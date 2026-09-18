@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { seedDemo } from '../scripts/demo-seed.mjs'
 
 describe('ordinary demo seed collaborator preflight', () => {
-  it('authenticates the collaborator before board preparation can change product state', async () => {
+  it('authenticates the collaborator after the pure plan and before product writes', async () => {
     const boards = [
       {
         id: 'existing-board',
@@ -13,6 +13,7 @@ describe('ordinary demo seed collaborator preflight', () => {
       },
     ]
     const originalBoards = structuredClone(boards)
+    const events: string[] = []
     const authAttempts: string[] = []
     const productWrites: string[] = []
     let preparationAttempts = 0
@@ -22,6 +23,7 @@ describe('ordinary demo seed collaborator preflight', () => {
         { reset: false },
         {
           ensureUser: async (account) => {
+            events.push(`auth:${account.username}`)
             authAttempts.push(account.username)
             if (account.username === 'collab') {
               throw new Error('Existing collaborator rejected the configured password.')
@@ -35,8 +37,12 @@ describe('ordinary demo seed collaborator preflight', () => {
               },
             }
           },
-          listBoards: async () => structuredClone(boards),
+          listBoards: async () => {
+            events.push('list boards')
+            return structuredClone(boards)
+          },
           prepareBoardsForSeed: async () => {
+            events.push('prepare boards')
             preparationAttempts += 1
             productWrites.push('prepare canonical boards')
             boards.push({
@@ -58,6 +64,7 @@ describe('ordinary demo seed collaborator preflight', () => {
       ),
     ).rejects.toThrow(/collaborator rejected/i)
 
+    expect(events).toEqual(['auth:demo', 'list boards', 'auth:collab'])
     expect(authAttempts).toEqual(['demo', 'collab'])
     expect(preparationAttempts).toBe(0)
     expect(productWrites).toEqual([])
