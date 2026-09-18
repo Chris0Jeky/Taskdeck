@@ -136,7 +136,7 @@ jobs:
           git add scripts/check-docs-governance.mjs scripts/check-docs-governance.review-residuals.test.mjs
           git diff --cached --check
 
-          expected_names=$'.github/workflows/apply-3169-comment-tab.yml\nscripts/check-docs-governance.mjs\nscripts/check-docs-governance.review-residuals.test.mjs'
+          expected_names=$'.github/workflows/apply-3169-comment-tab.yml\nscripts/check-docs-governance.mjs'
           actual_names="$(git diff --cached --name-only | sort)"
           test "$actual_names" = "$expected_names"
 
