@@ -48,110 +48,7 @@ jobs:
           grep -q "OperationHandlerCreateNotificationTests" "$RUNNER_TEMP/pr-3189-red.log"
 
       - name: Apply bounded notification-sink repair
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          service_path = Path('backend/src/Taskdeck.Application/Services/CardService.cs')
-          service = service_path.read_text(encoding='utf-8-sig')
-
-          old = """    public async Task<Result<CardDto>> CreateCardAsync(
-        CreateCardDto dto,
-        Guid? cardId,
-        CancellationToken cancellationToken = default)
-    {
-        return await CreateCardAsync(dto, cardId, actorUserId: null, cancellationToken);
-    }
-
-    public async Task<Result<CardDto>> CreateCardAsync(
-        CreateCardDto dto,
-        Guid? cardId,
-        Guid? actorUserId,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-"""
-          new = """    public async Task<Result<CardDto>> CreateCardAsync(
-        CreateCardDto dto,
-        Guid? cardId,
-        CancellationToken cancellationToken = default,
-        IBoardRealtimeNotifier? notificationSink = null)
-    {
-        return await CreateCardAsync(dto, cardId, actorUserId: null, cancellationToken, notificationSink);
-    }
-
-    public async Task<Result<CardDto>> CreateCardAsync(
-        CreateCardDto dto,
-        Guid? cardId,
-        Guid? actorUserId,
-        CancellationToken cancellationToken = default,
-        IBoardRealtimeNotifier? notificationSink = null)
-    {
-        var notifier = notificationSink ?? _realtimeNotifier;
-        try
-        {
-"""
-          if service.count(old) != 1:
-              raise SystemExit('Could not locate the card-create overload seam exactly once.')
-          service = service.replace(old, new, 1)
-
-          old = """            await _realtimeNotifier.NotifyBoardMutationAsync(
-                new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
-                cancellationToken);
-"""
-          new = """            await notifier.NotifyBoardMutationAsync(
-                new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
-                cancellationToken);
-"""
-          if service.count(old) != 1:
-              raise SystemExit('Could not locate the card-created notifier seam exactly once.')
-          service_path.write_text(service.replace(old, new, 1), encoding='utf-8-sig', newline='\n')
-
-          registry_path = Path('backend/src/Taskdeck.Application/Services/Pipeline/OperationHandlerRegistry.cs')
-          registry = registry_path.read_text(encoding='utf-8')
-
-          old = """            case "create":
-                return await CreateCardAsync(parameters, operation.TargetId, cancellationToken);
-"""
-          new = """            case "create":
-                return await CreateCardAsync(parameters, operation.TargetId, cancellationToken,
-                    deferredNotifications);
-"""
-          if registry.count(old) != 1:
-              raise SystemExit('Could not locate the create dispatch seam exactly once.')
-          registry = registry.replace(old, new, 1)
-
-          old = """    private async Task<Result> CreateCardAsync(
-        JsonElement parameters,
-        string? targetId,
-        CancellationToken cancellationToken)
-"""
-          new = """    private async Task<Result> CreateCardAsync(
-        JsonElement parameters,
-        string? targetId,
-        CancellationToken cancellationToken,
-        DeferredBoardRealtimeNotifier? deferredNotifications)
-"""
-          if registry.count(old) != 1:
-              raise SystemExit('Could not locate the private create handler seam exactly once.')
-          registry = registry.replace(old, new, 1)
-
-          old = """        var result = await _cardService.CreateCardAsync(dto, cardId, cancellationToken);
-"""
-          new = """        var result = await _cardService.CreateCardAsync(
-            dto,
-            cardId,
-            cancellationToken,
-            notificationSink: deferredNotifications);
-"""
-          if registry.count(old) != 1:
-              raise SystemExit('Could not locate the card service create call exactly once.')
-          registry_path.write_text(registry.replace(old, new, 1), encoding='utf-8', newline='\n')
-
-          Path('.github/workflows/pr-3189-branch-patch.yml').unlink()
-          PY
+        run: python scripts/ci/pr3189_patch.py
 
       - name: Verify focused proposal execution behavior
         run: >-
@@ -166,7 +63,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend/src/Taskdeck.Application/Services/CardService.cs \
             backend/src/Taskdeck.Application/Services/Pipeline/OperationHandlerRegistry.cs \
-            .github/workflows/pr-3189-branch-patch.yml
+            .github/workflows/pr-3189-branch-patch.yml \
+            scripts/ci/pr3189_patch.py
           git diff --cached --check
           git commit -m "fix(backend): defer proposal card-created events"
           git push origin HEAD:fix/3073-defer-proposal-create-events
