@@ -167,8 +167,9 @@ The earlier pair named here is closed: **`#2425`** (Windows worktree helper scen
 **Row states re-checked against `OUTSTANDING_TASKS.md` §J on 2026-09-10.** Six of the eleven SC rows
 read as open here while their §J row was already `[x]`: SC-1, SC-3, SC-5, SC-9, SC-10 and SC-11. All six
 are corrected below, and a D-9 row is added for `#1940`. The still-open gates are **SC-4** (register the stable gate), **SC-6** (visibility) and
-**SC-7** (register the runners), and their order is SC-6 before SC-4 before SC-7. §J is the authority for
-these states; this table is a view of it.
+**SC-7** (register the runners), and their order is SC-6 before SC-4 before the CI-17 private-mode,
+Linux-only rehearsal with runners still unassociated, then SC-7. §J is the authority for these
+states; this table is a view of it.
 
 Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and map to issues:
 
@@ -191,7 +192,7 @@ Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and m
 public release and source mirror**. Development, CI, issues and the control plane go private for
 v0.3.0; Releases, checksums and provenance, and the GPL-3.0-only source stay public through a mirror,
 with GitHub Pages still publishing from the private repository. CI-16 `#2439` implements it and
-serves checklist section A, which puts it inside the SC-6 A-to-I prerequisite set. The launch kit and
+serves checklist section J, which puts it inside the SC-6 A-to-J prerequisite set. The launch kit and
 any `awesome-selfhosted` wording point at the mirror, not the private repository.
 
 `#1772` (private shared instance) carries human decision CL-1 and is the one non-CI human-gated issue
