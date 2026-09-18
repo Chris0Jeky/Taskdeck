@@ -57,14 +57,16 @@ describe('Review unavailable-return landmark locale (GH-2599)', () => {
     const wrapper = await mountView()
     try {
       const landmark = wrapper.get('[data-testid="review-landmark"]')
-      const english = i18n.global.t('review.empty.unavailable.return')
+      const english = i18n.global.t('review.surfaceLabel')
+      expect(english).not.toBe(i18n.global.t('review.empty.unavailable.return'))
       expect(landmark.attributes('aria-label')).toBe(english)
 
       i18n.global.locale.value = locale
       await nextTick()
 
-      const localized = i18n.global.t('review.empty.unavailable.return')
+      const localized = i18n.global.t('review.surfaceLabel')
       expect(localized).not.toBe(english)
+      expect(localized).not.toBe(i18n.global.t('review.empty.unavailable.return'))
       expect(landmark.attributes('aria-label')).toBe(localized)
       expect(landmark.attributes('role')).toBe('region')
       expect(landmark.attributes('tabindex')).toBe('-1')

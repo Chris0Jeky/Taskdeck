@@ -21,9 +21,8 @@ const reviewSurfaceRef = ref<ComponentPublicInstance | null>(null)
  * Keep this route wrapper as the last resort rather than teaching either skin
  * about the other's layout. The two ticks let their own queue/empty handoff win;
  * only a focus loss all the way to the document receives the stable, named
- * Review landmark. `tabindex="-1"` keeps it out of the ordinary Tab order. The
- * landmark reuses the localized return-to-Review label because this fallback is
- * reached only through that action, and the name must follow live locale changes.
+ * Review landmark. `tabindex="-1"` keeps it out of the ordinary Tab order. The landmark uses a dedicated localized surface name rather than the
+ * return action's label, and that name follows live locale changes.
  */
 watch(
   () => route.hash,
@@ -49,14 +48,14 @@ watch(
     v-if="paperTheme.isOn"
     ref="reviewSurfaceRef"
     role="region"
-    :aria-label="t('review.empty.unavailable.return')"
+    :aria-label="t('review.surfaceLabel')"
     tabindex="-1"
   />
   <LegacyReviewView
     v-else
     ref="reviewSurfaceRef"
     role="region"
-    :aria-label="t('review.empty.unavailable.return')"
+    :aria-label="t('review.surfaceLabel')"
     tabindex="-1"
   />
 </template>
