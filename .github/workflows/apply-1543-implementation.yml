@@ -29,10 +29,12 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
 
           skill_path = Path('.claude/skills/pre-merge-gate/SKILL.md')
           skill = skill_path.read_text(encoding='utf-8')
-          old_step = '''## Step 5: CI status
+          old_step = dedent('''\
+          ## Step 5: CI status
 
           ```bash
           gh pr checks $ARGUMENTS
@@ -40,8 +42,9 @@ jobs:
 
           Report the exact-head state of every check. A red required check makes the local packet incomplete;
           route diagnosis and recovery through `taskdeck-ci-conflict-recovery`.
-          '''.replace('          ', '')
-          new_step = '''## Step 5: CI status and exact-head secrets evidence
+          ''')
+          new_step = dedent('''\
+          ## Step 5: CI status and exact-head secrets evidence
 
           Derive the secrets verdict from the named hosted check on the exact `pr_head_oid`; never infer it
           from the aggregate PR colour or from a check attached to another commit.
@@ -103,7 +106,7 @@ jobs:
           `completed/success`. Missing, duplicate, pending, cancelled, skipped, failed, or stale-head evidence
           remains `NOT VERIFIED`. Report the exact-head state of every check. A red required check makes the
           local packet incomplete; route diagnosis and recovery through `taskdeck-ci-conflict-recovery`.
-          '''.replace('          ', '')
+          ''')
           if skill.count(old_step) != 1:
               raise SystemExit(f'Expected one Step 5 block, found {skill.count(old_step)}')
           skill = skill.replace(old_step, new_step)
@@ -125,7 +128,8 @@ jobs:
           function_anchor = 'async function validateControlPathMirror() {'
           if checker.count(function_anchor) != 1:
               raise SystemExit('Could not locate control-path validator anchor.')
-          secrets_validator = r'''export function collectPreMergeSecretsEvidenceErrors(
+          secrets_validator = dedent(r'''\
+          export function collectPreMergeSecretsEvidenceErrors(
             skillText,
             skillPath = PRE_MERGE_GATE_PATH,
           ) {
@@ -165,7 +169,7 @@ jobs:
             errors.push(...collectPreMergeSecretsEvidenceErrors(skillText))
           }
 
-          '''
+          ''')
           checker = checker.replace(function_anchor, secrets_validator + function_anchor)
           main_anchor = '  await validateControlPathMirror()'
           if checker.count(main_anchor) != 1:
@@ -181,7 +185,8 @@ jobs:
           if not old_test.exists():
               raise SystemExit('The red contract test was not published.')
           old_test.unlink()
-          new_test.write_text(r'''import assert from 'node:assert/strict'
+          new_test.write_text(dedent(r'''\
+          import assert from 'node:assert/strict'
           import { readFileSync } from 'node:fs'
           import test from 'node:test'
           import {
@@ -228,7 +233,7 @@ jobs:
                 error.includes('require a successful check conclusion')),
             )
           })
-          '''.replace(/^          /gm, ''), encoding='utf-8')
+          '''), encoding='utf-8')
           PY
 
       - name: Verify targeted and production governance contracts
