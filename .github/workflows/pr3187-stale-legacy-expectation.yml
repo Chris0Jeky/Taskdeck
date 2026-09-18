@@ -2,11 +2,14 @@ name: PR 3187 align Legacy fallback regression
 
 # One-shot branch repair. The final step deletes this workflow after the focused contract passes.
 on:
-  push:
+  pull_request:
     branches:
-      - codex/1434-legacy-fallback-copy
+      - main
+    types:
+      - synchronize
     paths:
       - .github/workflows/pr3187-stale-legacy-expectation.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
