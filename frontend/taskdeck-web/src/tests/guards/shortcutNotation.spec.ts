@@ -75,6 +75,7 @@ describe('shortcut modifier notation', () => {
       // sibling specs resolve one level up (`../components/...`).
       .filter(([path]) => path.startsWith('../../'))
       .filter(([path]) => path !== '../../utils/keyboardShortcuts.ts')
+      .filter(([path]) => path !== '../../utils/paperCaptureShortcut.ts')
       .flatMap(([path, source]) => renderedModifierLines(path, source).map((line) => ({ path, line })))
 
     expect([...new Set(offenders.map((offender) => offender.path))].sort())

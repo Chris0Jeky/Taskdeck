@@ -1,6 +1,6 @@
 # MCP Operations Runbook
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-18
 Scope: Local operator setup, credential wiring, verification, and routine usage for Taskdeck MCP integrations.
 
 ## Purpose
@@ -11,11 +11,12 @@ This runbook is the operational companion to `docs/MCP_TOOLING_GUIDE.md`.
 
 ## Baseline Topology
 
-The Docker MCP gateway is declared **once, at user scope** — never in `.codex/config.toml` or `.mcp.json`,
-where a second declaration starts a second gateway process per session (agent-harness#87). Setup path:
+The Docker MCP gateway is declared **once, at user scope** — never in `.codex/config.toml`, `.mcp.json`,
+or `.grok/config.toml`, where a second declaration starts a second gateway process per session (agent-harness#87). Setup path:
 - Claude: `mcpServers.MCP_DOCKER` in `~/.claude.json`
 - Codex: `[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml`
-- Both run `docker mcp gateway run --watch=false --servers docker,docker-docs,time,jetbrains,filesystem,SQLite --transport stdio`
+- Grok: `[mcp_servers.MCP_DOCKER]` in `~/.grok/config.toml` (pinned disabled until Docker Desktop handshakes)
+- Each runtime runs `docker mcp gateway run --watch=false --servers docker,docker-docs,time,jetbrains,filesystem,SQLite --transport stdio`
 
 Optional enabled Docker Marketplace servers (credential/config gated):
 - `postman`
