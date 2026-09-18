@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 const workflowPath = fileURLToPath(new URL('../../.github/workflows/reusable-e2e-smoke.yml', import.meta.url))
 const workflowLintPath = fileURLToPath(new URL('../../.github/workflows/ci-extended.yml', import.meta.url))
 const requiredConfigPath = fileURLToPath(new URL('../../frontend/taskdeck-web/playwright.required.config.ts', import.meta.url))
+const mobileResponsiveSpecPath = fileURLToPath(new URL('../../frontend/taskdeck-web/tests/e2e/mobile-responsive.spec.ts', import.meta.url))
 
 async function loadWorkflow() {
   return readFile(workflowPath, 'utf8')
@@ -34,7 +35,11 @@ test('bounds the required E2E Smoke job and preserves the smoke-test ceiling', a
 })
 
 test('keeps the required config bounded to desktop Chromium and one mobile geometry journey', async () => {
-  const config = await readFile(requiredConfigPath, 'utf8')
+  const [config, mobileResponsiveSpec] = await Promise.all([
+    readFile(requiredConfigPath, 'utf8'),
+    readFile(mobileResponsiveSpecPath, 'utf8'),
+  ])
+  const journeyTitle = '@mobile card editing modal follows a contracted visual viewport'
 
   assert.match(
     config,
@@ -44,6 +49,11 @@ test('keeps the required config bounded to desktop Chromium and one mobile geome
   assert.match(config, /devices\['Pixel 7'\]/)
   assert.match(config, /grep: \/@mobile card editing modal follows a contracted visual viewport\//)
   assert.match(config, /projects: \[desktopChromium, requiredMobileGeometry\]/)
+  assert.equal(
+    mobileResponsiveSpec.split(journeyTitle).length,
+    2,
+    'the required mobile selector must continue to identify exactly one browser journey',
+  )
 })
 
 test('keeps Playwright-managed Chromium bootstrap explicit and separately bounded', async () => {
