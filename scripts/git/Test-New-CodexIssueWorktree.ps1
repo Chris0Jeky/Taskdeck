@@ -935,14 +935,14 @@ $childStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $childStartInfo.FileName = $self.Path
 $childStartInfo.UseShellExecute = $false
 $childStartInfo.CreateNoWindow = $true
-$childArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30")
+$childArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 120")
 if ($null -ne $childStartInfo.PSObject.Properties['ArgumentList']) {
     foreach ($argument in $childArguments) {
         $childStartInfo.ArgumentList.Add($argument)
     }
 }
 else {
-    $childStartInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 30"'
+    $childStartInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 120"'
 }
 $child = [System.Diagnostics.Process]::new()
 try {
@@ -994,7 +994,12 @@ finally {
 
             Assert-True ($timeoutResult.ExitCode -ne 0) "A non-responsive remote helper must fail closed."
             Assert-NormalizedContains $timeoutResult.Output "Git command timed out after 5 seconds; its helper-owned process tree was terminated and reaped." "Timeout diagnostic did not confirm bounded tree cleanup."
-            Assert-True ($timeoutStopwatch.Elapsed.TotalSeconds -lt 20) "Timed-out Git command returned too slowly: $($timeoutStopwatch.Elapsed.TotalSeconds) seconds."
+            # The fixture tree sleeps 120 seconds, so anything under 60 proves the 5-second
+            # timeout fired and the tree was reaped rather than waited on. The previous
+            # 30-second sleep with a 20-second bound left only ~15 seconds for PowerShell
+            # and Git process startup, which a loaded hosted runner exceeded (#3250 run
+            # 35459434941: 28.2 seconds with the timeout diagnostic present).
+            Assert-True ($timeoutStopwatch.Elapsed.TotalSeconds -lt 60) "Timed-out Git command returned too slowly: $($timeoutStopwatch.Elapsed.TotalSeconds) seconds."
             Assert-True (Test-Path -LiteralPath $timeoutRootPidPath -PathType Leaf) "Timeout fixture did not record its root process."
             Assert-True (Test-Path -LiteralPath $timeoutChildPidPath -PathType Leaf) "Timeout fixture did not record its child process."
             $timeoutRootPid = [int](Get-Content -Raw -LiteralPath $timeoutRootPidPath)
