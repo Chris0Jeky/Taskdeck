@@ -56,9 +56,10 @@ jobs:
 
       - name: Run API integration tests
         id: api_integration_tests
+        timeout-minutes: 45
         env:
           TASKDECK_API_TEST_ASSEMBLY_DIAGNOSTICS_PATH: ${{ github.workspace }}/backend/TestResults/api-integration/${{ matrix.os }}/api-test-assembly-diagnostics.json
-        run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"
+        run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}" --diag "backend/TestResults/api-integration/${{ matrix.os }}/vstest-diagnostics.log" --blame-hang --blame-hang-timeout 20m --blame-hang-dump-type mini
 
       - name: Upload API integration test assembly diagnostics
         if: always()
@@ -87,10 +88,12 @@ jobs:
 
       - name: Summarize API integration timing
         if: always()
+        continue-on-error: ${{ steps.api_integration_tests.outcome == 'failure' }}
         run: python scripts/ci/summarize_trx_timing.py --trx "backend/TestResults/api-integration/${{ matrix.os }}/api-integration.trx" --output "backend/TestResults/api-integration/${{ matrix.os }}/api-integration-timing.json"
 
       - name: Upload API integration timing summary
         if: always()
+        continue-on-error: ${{ steps.api_integration_tests.outcome == 'failure' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: api-integration-timing-${{ matrix.os }}
@@ -98,11 +101,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload API integration test results
-        if: ${{ always() && steps.api_integration_tests.outcome == 'failure' }}
+      - name: Upload API integration failure evidence
+        if: ${{ always() && steps.api_integration_tests.outcome != 'success' }}
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: api-integration-trx-${{ matrix.os }}
-          path: backend/TestResults/api-integration/${{ matrix.os }}/*.trx
-          if-no-files-found: ignore
+          name: api-integration-failure-evidence-${{ matrix.os }}
+          path: backend/TestResults/api-integration/${{ matrix.os }}/
+          if-no-files-found: warn
           retention-days: 14
