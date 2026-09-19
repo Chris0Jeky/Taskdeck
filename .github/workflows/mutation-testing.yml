@@ -90,6 +90,14 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
+      # Cheap static contract on checked-in configuration, mirroring the backend lane's
+      # "Validate Stryker.NET configuration" step: it fails only when the sandbox-exclusion
+      # registry and stryker.config.mjs disagree, in which case both the smoke and the full
+      # advisory run would be measuring an unknown sandbox (#3009).
+      - name: Validate mutation source-text guard isolation
+        working-directory: frontend/taskdeck-web
+        run: node --test scripts/stryker-source-text-guards.contract.mjs
+
       - name: Run mutation activation smoke test
         id: activation_smoke
         continue-on-error: true
