@@ -10,6 +10,7 @@ import { useBoardDragDrop } from '../composables/useBoardDragDrop'
 import { useBoardKeyboardNav } from '../composables/useBoardKeyboardNav'
 import { useShellKeyboardHelp } from '../composables/useShellKeyboardHelp'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
+import { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspaceNavigation'
 import BoardToolbar from '../components/board/BoardToolbar.vue'
 import BoardCardArchive from '../components/board/BoardCardArchive.vue'
 import BoardEstimateRollups from '../components/board/BoardEstimateRollups.vue'
@@ -22,6 +23,7 @@ import FilterPanel from '../components/board/FilterPanel.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import PaperBoardView from './paper/PaperBoardView.vue'
 import { TdSkeleton } from '../components/ui'
+import TdDialog from '../components/ui/TdDialog.vue'
 import type { Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
@@ -45,6 +47,38 @@ const showLabelManager = ref(false)
 const showStarterPackCatalog = ref(false)
 const showFilterPanel = ref(false)
 const showBoardCaptureModal = ref(false)
+
+// Legacy owns its card modal inside ColumnLane rather than PaperBoardView. Carry
+// the already-submitted assignment-save state up to the route boundary so shell
+// navigation cannot unmount the only surface that can report its settlement.
+const legacyCardEditorSaving = ref(false)
+const legacySavePendingNotice = ref(false)
+const {
+  leaveRequested: legacyLeaveRequested,
+  decide: decideLegacyLeave,
+} = useUnsavedWorkspaceNavigation(() => !paperOn.value && legacyCardEditorSaving.value)
+
+watch(legacyLeaveRequested, (requested) => {
+  if (!requested) return
+  legacySavePendingNotice.value = true
+  // useUnsavedWorkspaceNavigation publishes leaveRequested immediately before
+  // constructing the Promise that stores its resolver. Defer refusal one
+  // microtask so decide(false) always settles the registered guard.
+  queueMicrotask(() => decideLegacyLeave(false))
+}, { flush: 'sync' })
+
+watch(paperOn, (isPaper) => {
+  if (!isPaper) return
+  legacyCardEditorSaving.value = false
+  legacySavePendingNotice.value = false
+  decideLegacyLeave(false)
+})
+
+function handleLegacyCardEditorSavingChange(saving: boolean) {
+  legacyCardEditorSaving.value = saving
+  if (!saving) legacySavePendingNotice.value = false
+}
+
 const presenceMembers = ref<BoardPresenceMember[]>([])
 
 const boardLoadPerf = usePerformanceMark('board-load')
@@ -722,7 +756,28 @@ useKeyboardShortcuts([
       @column-drop="handleColumnDrop"
       @card-drag-start="handleCardDragStart"
       @card-drag-end="handleCardDragEnd"
+      @card-editor-saving-change="handleLegacyCardEditorSavingChange"
     />
+
+    <TdDialog
+      v-if="legacySavePendingNotice"
+      :open="true"
+      title="Saving assignments…"
+      description="This assignment change was already sent to the server, so it cannot be discarded or cancelled. Wait for the save to finish, then try again."
+      :close-on-backdrop="true"
+      @close="legacySavePendingNotice = false"
+    >
+      <template #footer>
+        <button
+          type="button"
+          class="td-btn td-btn--primary"
+          data-testid="legacy-card-save-pending-dismiss"
+          @click="legacySavePendingNotice = false"
+        >
+          Keep editing
+        </button>
+      </template>
+    </TdDialog>
 
     <!-- Dialog Host -->
     <BoardDialogHost
