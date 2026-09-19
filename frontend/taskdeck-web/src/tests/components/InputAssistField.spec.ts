@@ -113,4 +113,26 @@ describe('InputAssistField', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
     expect(wrapper.emitted('select')?.at(-1)?.[0]).toMatchObject({ value: 'health.check', label: 'Health Check' })
   })
+
+  it('selects an exact value when matching options arrive after input', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options: [],
+      },
+    })
+
+    const input = wrapper.get('input')
+    await input.trigger('focus')
+    await input.setValue('health.check')
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(0)
+
+    await wrapper.setProps({ options })
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
+    expect(wrapper.emitted('select')?.at(-1)?.[0]).toMatchObject({ value: 'health.check', label: 'Health Check' })
+  })
 })

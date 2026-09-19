@@ -37,7 +37,7 @@ const activeDescendant = computed(() => {
   return `${componentId}-option-${activeIndex.value}`
 })
 
-watch(filteredOptions, (options) => {
+watch(filteredOptions, (options, previousOptions) => {
   if (options.length === 0) {
     activeIndex.value = 0
     return
@@ -45,6 +45,16 @@ watch(filteredOptions, (options) => {
 
   if (activeIndex.value >= options.length) {
     activeIndex.value = 0
+  }
+
+  if (!panelOpen.value) {
+    return
+  }
+
+  const exactMatch = findExactMatch(props.modelValue)
+  const previousExactMatch = findExactMatch(props.modelValue, previousOptions)
+  if (exactMatch && !previousExactMatch) {
+    selectOption(exactMatch)
   }
 })
 
@@ -65,18 +75,18 @@ function setModelValue(value: string) {
   emit('update:modelValue', value)
 }
 
-function findExactMatch(value: string): InputAssistOption | null {
+function findExactMatch(value: string, options: InputAssistOption[] = props.options): InputAssistOption | null {
   const normalizedInput = value.trim().toLowerCase()
   if (!normalizedInput) {
     return null
   }
 
-  const byValue = props.options.find((option) => option.value.trim().toLowerCase() === normalizedInput)
+  const byValue = options.find((option) => option.value.trim().toLowerCase() === normalizedInput)
   if (byValue) {
     return byValue
   }
 
-  return props.options.find((option) => {
+  return options.find((option) => {
     return option.label.trim().toLowerCase() === normalizedInput
   })
   ?? null
