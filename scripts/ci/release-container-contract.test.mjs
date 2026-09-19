@@ -20,6 +20,7 @@ const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-cont
 const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
 const bashBin = process.platform === 'win32' ? (process.env.BASH_BIN || 'bash') : 'bash'
 const healthVersionParser = String.raw`sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'`
+  .replaceAll('\"', '"')
 
 function resolveContainerVersion(ref) {
   return spawnSync(bashBin, ['scripts/ci/resolve-container-version.sh', ref], {
