@@ -42,6 +42,8 @@ function makeProposal(id = 'p-1'): ApiProposal {
     appliedAt: null,
     failureReason: null,
     correlationId: `correlation-${id}`,
+    approvedRevisionId: null,
+    latestRevisionId: null,
     operations: [],
   } as ApiProposal
 }
