@@ -21,6 +21,7 @@ import {
   CardModalMetadata,
   CardModalActions,
 } from './card-modal'
+import { shouldConstrainCardModalToVisualViewport } from './card-modal/cardModalViewportPolicy'
 import type { Card, Label } from '../../types/board'
 
 const props = withDefaults(defineProps<{
@@ -107,6 +108,7 @@ function acceptInactiveArchiveCommit(committed: Card) {
 
   committedArchiveCard.value = committed
   archiveStateAfterChange.value = committed.isArchived === true
+  acceptCommittedWriteVersion(committed.updatedAt)
   if (hasUnsavedChanges.value) archiveCompletedWithDraft.value = true
 }
 
@@ -260,7 +262,28 @@ const isInspector = computed(() => props.presentation === 'inspector')
 
 // `'layout'` fallback: `.card-modal-viewport` has no other height declaration,
 // so without a VisualViewport API it must still receive the layout viewport.
-const { style: visualViewportStyle } = useVisualViewport({ prefix: '--card-modal' })
+const {
+  supported: visualViewportSupported,
+  height: visualViewportHeight,
+  offsetTop: visualViewportOffsetTop,
+  style: visualViewportStyle,
+} = useVisualViewport({ prefix: '--card-modal' })
+const touchCapableRuntime =
+  typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
+  || typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches
+const constrainToVisualViewport = computed(() =>
+  !isInspector.value
+  && typeof window !== 'undefined'
+  && shouldConstrainCardModalToVisualViewport({
+    supported: visualViewportSupported.value,
+    touchCapable: touchCapableRuntime,
+    layoutHeight: window.innerHeight,
+    visualHeight: visualViewportHeight.value,
+    visualOffsetTop: visualViewportOffsetTop.value,
+  }),
+)
 
 const focusableSelector =
   'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -429,6 +452,7 @@ const {
   selectedLabelIds,
   isFormValid,
   hasUnsavedChanges: hasCardUnsavedChanges,
+  acceptCommittedWriteVersion,
   acceptAssignmentVersion,
   isSaving,
   saveError,
@@ -569,6 +593,7 @@ useEscapeToClose(
     :class="[
       'card-modal-viewport flex overflow-hidden',
       isInspector ? 'card-modal-viewport--inspector' : 'card-modal-viewport--modal fixed inset-x-0 z-50',
+      constrainToVisualViewport && 'card-modal-viewport--visual-constrained',
     ]"
     :style="isInspector ? undefined : visualViewportStyle"
     role="dialog"
@@ -596,7 +621,7 @@ useEscapeToClose(
           <button ref="permissionRecoveryRefresh" type="button" data-testid="card-permission-refresh" :disabled="typePermissionChecking" @click="refreshTypePermission">Refresh board permission</button>
         </div>
         <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :reads-blocked="readsBlocked" :disabled="isSaving || cardIsArchived" />
-        <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
+        <CardAssignmentField v-if="isOpen" :card="card" :committed-card="committedArchiveCard" :disabled="isSaving"
           :read-only="!boardCanWrite || cardIsArchived"
           :reads-blocked="readsBlocked"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
@@ -840,12 +865,24 @@ useEscapeToClose(
 }
 
 @media (min-width: 768px) {
-  .card-modal-viewport {
+  .card-modal-viewport:not(.card-modal-viewport--visual-constrained) {
     inset: 0;
     height: auto;
     align-items: center;
     justify-content: center;
     padding: 1rem;
+  }
+
+  .card-modal-viewport--visual-constrained {
+    justify-content: center;
+  }
+
+  .card-modal-viewport--visual-constrained .card-modal-scroll-region {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 100%;
   }
 }
 </style>

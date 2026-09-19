@@ -17,6 +17,7 @@
  *     stays in whatever language the server produced.
  */
 export default {
+  surfaceLabel: 'Revisión de propuestas',
   queueRail: {
     eyebrow: 'Cola · {awaiting} en espera · {stale} estancadas',
     eyebrowScoped: 'Cola · {awaiting} en espera en este tablero · {stale} estancadas',

@@ -46,13 +46,18 @@ function parseArgs(argv) {
       case '--base-sha': args.overrides.baseSha = next(); break;
       case '--head-sha': args.overrides.headSha = next(); break;
       case '--repository': args.overrides.repository = next(); break;
-      case '--pr': args.overrides.pullRequestNumber = Number(next()); break;
+      case '--pr': {
+        const pullRequestNumber = Number(next());
+        if (!Number.isInteger(pullRequestNumber) || pullRequestNumber <= 0) throw new Error('--pr must be a positive integer');
+        args.overrides.pullRequestNumber = pullRequestNumber;
+        break;
+      }
       case '--actor': args.overrides.actorLogin = next(); break;
       case '--association': args.overrides.authorAssociation = next(); break;
       case '--fork': args.overrides.isFork = true; break;
       case '--labels': args.overrides.labels = next().split(',').map((label) => label.trim()).filter(Boolean); break;
       case '--help':
-        console.log('usage: plan.mjs --policy <file> (--event <github event json> | --base-sha S --head-sha S [--actor L] [--association A] [--fork] [--labels a,b] [--pr N]) --changed-files <list> [--event-name N] [--execution-mode M] [--merge-ref-qualification qualified|stale-base-unqualified] [--merge-sha S --merge-tree-sha S --merge-base-sha S --merge-base-tip-sha S|null] --out <file> [--summary <file>]');
+        console.log('usage: plan.mjs --policy <file> (--event <github event json> | --base-sha S --head-sha S [--actor L] [--association A] [--fork] [--labels a,b] [--pr N (local annotation)]) --changed-files <list> [--event-name N] [--execution-mode M] [--merge-ref-qualification qualified|stale-base-unqualified] [--merge-sha S --merge-tree-sha S --merge-base-sha S --merge-base-tip-sha S|null] --out <file> [--summary <file>]');
         process.exit(0);
         break;
       default: throw new Error(`Unknown argument: ${arg}`);
@@ -191,6 +196,9 @@ function main() {
     digest = policyDigest(policyText);
     policy = JSON.parse(policyText);
     const event = args.event ? JSON.parse(readFileSync(args.event, 'utf8')) : null;
+    if (event && Number.isInteger(args.overrides.pullRequestNumber)) {
+      throw new Error('--pr is only available for no-event local what-if planning');
+    }
     let changedFiles = [];
     let changedFileRows = null;
     let changedFilesAvailable = false;
@@ -207,7 +215,15 @@ function main() {
       input.actorType = 'User';
       input.authorAssociation = 'OWNER';
     }
-    for (const [key, value] of Object.entries(args.overrides)) input[key] = value;
+    const overrides = { ...args.overrides };
+    if (!event && Number.isInteger(overrides.pullRequestNumber)) {
+      input.notes = [
+        ...(input.notes ?? []),
+        `local what-if for PR #${overrides.pullRequestNumber}; no production merge binding claimed`,
+      ];
+      delete overrides.pullRequestNumber;
+    }
+    for (const [key, value] of Object.entries(overrides)) input[key] = value;
     requirePullRequestMergeBinding(event, input);
     plan = buildPlan(input, policy, digest);
   } catch (error) {

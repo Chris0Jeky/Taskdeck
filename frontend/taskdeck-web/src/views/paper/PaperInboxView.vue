@@ -352,7 +352,11 @@ async function onTriageOpen(itemId: string) {
   historyDetailError.value = null
   historyDetailLoading.value = true
   try {
-    const detail = await captureStore.peekDetail(itemId, { recordError: false, showToast: false })
+    const detail = await captureStore.peekDetail(itemId, {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
     // The user may have collapsed this row, reopened it, or opened another while
     // the request was in flight; a superseded payload must not reopen, mislabel,
     // or overwrite the panel that replaced it.
@@ -544,8 +548,12 @@ defineExpose({ variant, toggleVariant, setVariant })
               : isScopeReplacement
                 ? $t('inbox.eyebrowUncounted')
                 : $t(
-                    'inbox.eyebrow',
-                    { pending: pendingTriageCount, total: capturedCount },
+                    activeBoardId ? 'inbox.eyebrowScoped' : 'inbox.eyebrow',
+                    {
+                      board: activeBoardName,
+                      pending: pendingTriageCount,
+                      total: capturedCount,
+                    },
                     capturedCount,
                   )
           }}

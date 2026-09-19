@@ -1,29 +1,8 @@
+import { NodeTypes, parse as parseTemplate } from '@vue/compiler-dom'
+import { parse as parseSfc } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
 
 import { PAPER_VIEW_ROOTS } from './paperRootInventory'
-
-import activitySource from '../../views/ActivityView.vue?raw'
-import agentRunDetailSource from '../../views/AgentRunDetailView.vue?raw'
-import agentRunsSource from '../../views/AgentRunsView.vue?raw'
-import agentsSource from '../../views/AgentsView.vue?raw'
-import apiKeysSource from '../../views/ApiKeySettingsView.vue?raw'
-import appearanceSource from '../../views/AppearanceSettingsView.vue?raw'
-import archiveSource from '../../views/ArchiveView.vue?raw'
-import automationChatSource from '../../views/AutomationChatView.vue?raw'
-import automationQueueSource from '../../views/AutomationQueueView.vue?raw'
-import boardAccessSource from '../../views/BoardAccessView.vue?raw'
-import boardsSource from '../../views/BoardsListView.vue?raw'
-import calendarSource from '../../views/CalendarView.vue?raw'
-import devToolsSource from '../../views/DevToolsView.vue?raw'
-import exportImportSource from '../../views/ExportImportView.vue?raw'
-import integrationsSource from '../../views/IntegrationsView.vue?raw'
-import metricsSource from '../../views/MetricsView.vue?raw'
-import notFoundSource from '../../views/NotFoundView.vue?raw'
-import notificationInboxSource from '../../views/NotificationInboxView.vue?raw'
-import notificationPrefsSource from '../../views/NotificationPreferencesView.vue?raw'
-import opsConsoleSource from '../../views/OpsConsoleView.vue?raw'
-import profileSource from '../../views/ProfileSettingsView.vue?raw'
-import savedViewsSource from '../../views/SavedViewsView.vue?raw'
 
 /**
  * Legacy ("off") mode substrate guard for the #1769 Paper view restyle wave.
@@ -49,40 +28,31 @@ import savedViewsSource from '../../views/SavedViewsView.vue?raw'
  *
  * Sources are pulled in with Vite's `?raw` rather than `node:fs`: this spec is
  * type-checked by `tsconfig.vitest.json`, whose `types` deliberately omits
- * "node", and its quarantine list may only shrink.
+ * "node", and its quarantine list may only shrink. The glob is deliberately
+ * non-recursive: core-loop views under `src/views/paper/` have their own theme
+ * boundary and are outside the #1769 restyle wave guarded here.
  */
 
-type PaperViewName = (typeof PAPER_VIEW_ROOTS)[number]['view']
+const TOP_LEVEL_VIEW_SOURCES = import.meta.glob('../../views/*.vue', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
 
-const VIEW_SOURCES: Readonly<Record<PaperViewName, string>> = {
-  'ActivityView.vue': activitySource,
-  'AgentRunDetailView.vue': agentRunDetailSource,
-  'AgentRunsView.vue': agentRunsSource,
-  'AgentsView.vue': agentsSource,
-  'ApiKeySettingsView.vue': apiKeysSource,
-  'AppearanceSettingsView.vue': appearanceSource,
-  'ArchiveView.vue': archiveSource,
-  'AutomationChatView.vue': automationChatSource,
-  'AutomationQueueView.vue': automationQueueSource,
-  'BoardAccessView.vue': boardAccessSource,
-  'BoardsListView.vue': boardsSource,
-  'CalendarView.vue': calendarSource,
-  'DevToolsView.vue': devToolsSource,
-  'ExportImportView.vue': exportImportSource,
-  'IntegrationsView.vue': integrationsSource,
-  'MetricsView.vue': metricsSource,
-  'NotFoundView.vue': notFoundSource,
-  'NotificationInboxView.vue': notificationInboxSource,
-  'NotificationPreferencesView.vue': notificationPrefsSource,
-  'OpsConsoleView.vue': opsConsoleSource,
-  'ProfileSettingsView.vue': profileSource,
-  'SavedViewsView.vue': savedViewsSource,
+type PaperViewName = (typeof PAPER_VIEW_ROOTS)[number]['view']
+type DiscoveredRoot = { view: string; selector: string }
+
+function sourceForView(view: PaperViewName): string {
+  const path = `../../views/${view}`
+  const source = TOP_LEVEL_VIEW_SOURCES[path]
+  if (source === undefined) throw new Error(`Could not load ${path}`)
+  return source
 }
 
 const VIEW_ROOTS = PAPER_VIEW_ROOTS.map(({ view, selector }) => ({
   view,
   selector,
-  source: VIEW_SOURCES[view],
+  source: sourceForView(view),
 }))
 
 /**
@@ -95,13 +65,98 @@ const VIEW_ROOTS = PAPER_VIEW_ROOTS.map(({ view, selector }) => ({
  * the legibility guarantee. What is still forbidden is painting nothing.
  */
 const SUBSTRATE = /background(?:-color)?:\s*var\(--paper(?:-card|-2)?,\s*(#[0-9a-fA-F]{3,8})\s*\)/
+const PAPER_INK = /color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/
 
-/** Read the first top-level rule body for `selector` (these blocks contain no nested braces). */
-function readRootRule(source: string, selector: string): string {
-  const pattern = new RegExp(`^\\${selector}\\s*\\{([\\s\\S]*?)\\}`, 'm')
-  const match = source.match(pattern)
-  if (!match) throw new Error(`Could not locate the ${selector} rule`)
-  return match[1]
+/** Read a top-level rule body for `selector`, including selectors grouped by commas. */
+function readRootRule(source: string, selector: string, filename = '<inline SFC>'): string {
+  const parsed = parseSfc(source, { filename })
+  if (parsed.errors.length > 0) {
+    throw new Error(`Could not parse ${filename}: ${parserErrorMessage(parsed.errors[0])}`)
+  }
+
+  const rulePattern = /(?:^|})\s*([^{}]+)\{([^{}]*)\}/gm
+  for (const style of parsed.descriptor.styles) {
+    for (const match of style.content.matchAll(rulePattern)) {
+      const selectors = match[1]
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split(',')
+        .map((candidate) => candidate.trim())
+      if (selectors.includes(selector)) return match[2]
+    }
+  }
+
+  throw new Error(`Could not locate the ${selector} rule in ${filename}`)
+}
+
+function parserErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String(error.message)
+  }
+  return String(error)
+}
+
+function readTemplate(source: string, filename = '<inline SFC>'): string {
+  const parsed = parseSfc(source, { filename })
+  if (parsed.errors.length > 0) {
+    throw new Error(`Could not parse ${filename}: ${parserErrorMessage(parsed.errors[0])}`)
+  }
+  if (parsed.descriptor.template === null) {
+    throw new Error(`Could not locate the component template in ${filename}`)
+  }
+  return parsed.descriptor.template.content
+}
+
+/** Static `paper-*` classes on top-level template elements only. */
+function rootPaperSelectors(source: string, filename = '<inline SFC>'): string[] {
+  const selectors = new Set<string>()
+  const template = parseTemplate(readTemplate(source, filename), {
+    onError: (error) => {
+      throw new Error(`Could not parse ${filename}: ${parserErrorMessage(error)}`)
+    },
+  })
+
+  for (const child of template.children) {
+    if (child.type !== NodeTypes.ELEMENT) continue
+    for (const property of child.props) {
+      if (property.type !== NodeTypes.ATTRIBUTE || property.name !== 'class' || property.value === undefined) {
+        continue
+      }
+      for (const className of property.value.content.split(/\s+/)) {
+        if (/^paper-[a-z0-9-]+$/.test(className)) selectors.add(`.${className}`)
+      }
+    }
+  }
+
+  return [...selectors]
+}
+
+function viewName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+function compareRoots(left: DiscoveredRoot, right: DiscoveredRoot): number {
+  if (left.view !== right.view) return left.view < right.view ? -1 : 1
+  if (left.selector === right.selector) return 0
+  return left.selector < right.selector ? -1 : 1
+}
+
+/**
+ * Discover the scope independently from the hand-maintained inventory. A
+ * `paper-*` name alone is not enough: newer dark-shell views also use that
+ * namespace. This guard owns top-level roots whose own rule opts into Paper's
+ * `--ink` token, which is precisely the substrate invariant under test.
+ */
+function discoverPaperInkRoots(sources: Record<string, string> = TOP_LEVEL_VIEW_SOURCES): DiscoveredRoot[] {
+  return Object.entries(sources)
+    .flatMap(([path, source]) =>
+      rootPaperSelectors(source, path).flatMap((selector) => {
+        return PAPER_INK.test(readRootRule(source, selector, path))
+          ? [{ view: viewName(path), selector }]
+          : []
+      }),
+    )
+    .sort(compareRoots)
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -125,13 +180,58 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+describe('Paper view root inventory', () => {
+  it('tracks every top-level view root that opts into Paper ink', () => {
+    const declared = PAPER_VIEW_ROOTS
+      .map(({ view, selector }) => ({ view, selector }))
+      .sort(compareRoots)
+
+    expect(discoverPaperInkRoots()).toEqual(declared)
+  })
+
+  it('parses native void elements in a discovered SFC template', () => {
+    expect(rootPaperSelectors(sourceForView('ApiKeySettingsView.vue'))).toContain('.paper-api-keys')
+  })
+
+  it('discovers a Paper root from a grouped CSS selector', () => {
+    const source = `<template><div class="paper-grouped" /></template>
+      <style>
+        .paper-grouped,
+        .paper-alias {
+          color: var(--ink, #1a1814);
+          background: var(--paper, #f7f1e5);
+        }
+      </style>`
+
+    expect(discoverPaperInkRoots({ '../../views/GroupedView.vue': source })).toEqual([
+      { view: 'GroupedView.vue', selector: '.paper-grouped' },
+    ])
+  })
+
+  it('fails closed when a discovered root has a malformed CSS rule', () => {
+    const source = `<template><div class="paper-malformed" /></template>
+      <style>
+        .paper-malformed {
+          color: var(--ink, #1a1814);
+      </style>`
+
+    expect(() => discoverPaperInkRoots({ '../../views/MalformedView.vue': source })).toThrow(
+      'Could not locate the .paper-malformed rule',
+    )
+  })
+
+  it('fails closed with a source name when template parsing fails', () => {
+    expect(() => rootPaperSelectors('<template><section></template>')).toThrow('<inline SFC>')
+  })
+})
+
 describe('Paper view roots stay legible in Legacy mode', () => {
   it.each(VIEW_ROOTS)('$view $selector paints --paper wherever it sets --ink', ({ selector, source }) => {
     const rule = readRootRule(source, selector)
 
     // Guard the guard: if the ink declaration is ever dropped or renamed, the
     // substrate assertion below would otherwise pass vacuously.
-    expect(rule).toMatch(/color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(rule).toMatch(PAPER_INK)
     expect(rule).toMatch(SUBSTRATE)
   })
 
