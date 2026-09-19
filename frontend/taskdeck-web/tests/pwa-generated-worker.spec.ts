@@ -11,15 +11,29 @@ function deserializeRuntimeMatcher(source: string): RuntimeMatcher {
   return new RegExp(source.slice(1, closingDelimiter), source.slice(closingDelimiter + 1))
 }
 
-function loadGeneratedWorker(): string {
+/**
+ * This suite builds the app itself, so it MUST NOT emit into `dist`. That
+ * directory holds the production `vite build` artifact the Frontend Unit job
+ * measures with `scripts/ci/check-bundle-size.mjs`, and this build is neither
+ * production (vitest presets `NODE_ENV=test`, so Vite keeps development-only
+ * code) nor production-configured (`VITE_API_BASE_URL` is overridden below).
+ * Emitting here used to overwrite `dist` and hand the bundle gate a build
+ * roughly 20% larger than the one that ships.
+ */
+const PWA_CONTRACT_OUT_DIR = 'dist-pwa-contract'
+
+function contractArtifact(name: string): string {
   const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
-  return readFileSync(resolve(projectRoot, 'dist', 'sw.js'), 'utf8')
+  return readFileSync(resolve(projectRoot, PWA_CONTRACT_OUT_DIR, name), 'utf8')
+}
+
+function loadGeneratedWorker(): string {
+  return contractArtifact('sw.js')
 }
 
 /** The emitted copy of `public/api-cache-cleanup.js` that the worker importScripts. */
 function loadGeneratedCleanupScript(): string {
-  const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
-  return readFileSync(resolve(projectRoot, 'dist', 'api-cache-cleanup.js'), 'utf8')
+  return contractArtifact('api-cache-cleanup.js')
 }
 
 /** Runtime cache names as the *generated* worker spells them, not as the source hopes. */
@@ -117,7 +131,7 @@ async function evaluateCleanupWithoutActivate(
 function buildWithNestedApiBase(): void {
   const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
   const viteBin = resolve(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
-  execFileSync(process.execPath, [viteBin, 'build'], {
+  execFileSync(process.execPath, [viteBin, 'build', '--outDir', PWA_CONTRACT_OUT_DIR, '--emptyOutDir'], {
     cwd: projectRoot,
     env: { ...process.env, VITE_API_BASE_URL: '/assets/api' },
     stdio: 'pipe',
