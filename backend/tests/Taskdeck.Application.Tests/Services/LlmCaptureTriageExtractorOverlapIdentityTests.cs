@@ -64,8 +64,11 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
         extraction.MatchingChunkCalls.Should().Be(2);
         extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
         extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
-            "Prepare the launch packet",
-            "Archive the launch packet",
+            new[]
+            {
+                "Prepare the launch packet",
+                "Archive the launch packet"
+            },
             "one evidence sentence can contain two commitments even when their trailing noun phrase matches");
         AssertSharedEvidenceSpans(extraction, expectedCount: 2);
     }
@@ -80,8 +83,11 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
         extraction.MatchingChunkCalls.Should().Be(2);
         extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
         extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
-            "We will prepare the launch packet",
-            "We will archive the launch packet",
+            new[]
+            {
+                "We will prepare the launch packet",
+                "We will archive the launch packet"
+            },
             "a shared subject or modal phrase must not hide incompatible commitment verbs");
         AssertSharedEvidenceSpans(extraction, expectedCount: 2);
     }
@@ -96,7 +102,7 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
         extraction.MatchingChunkCalls.Should().Be(2);
         extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
         extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
-            "Prepare the launch packet",
+            new[] { "Prepare the launch packet" },
             "the reducer keeps the first stable task when adjacent chunks rephrase one preparation commitment");
         AssertSharedEvidenceSpans(extraction, expectedCount: 1);
     }
