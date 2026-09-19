@@ -440,7 +440,7 @@ describe('PaperTriageTable', () => {
       const pick = wrapper.get('[data-testid="capture-board-pick"]')
       expect(pick.get('.tk-eyebrow').text()).toBe('Bacheca')
       expect(pick.get('select').attributes('aria-label')).toBe(
-        'Bacheca: scegli dove va questa cattura',
+        'Bacheca: scegli la bacheca a cui è destinata la proposta di triage',
       )
     } finally {
       i18n.global.locale.value = previousLocale
@@ -468,7 +468,7 @@ describe('PaperTriageTable', () => {
       const pick = wrapper.get('[data-testid="capture-board-pick"]')
       expect(pick.get('.tk-eyebrow').text()).toBe('Bacheca')
       expect(pick.get('select').attributes('aria-label')).toBe(
-        'Bacheca: scegli dove va questa cattura',
+        'Bacheca: scegli la bacheca a cui è destinata la proposta di triage',
       )
     } finally {
       i18n.global.locale.value = previousLocale
@@ -483,7 +483,7 @@ describe('PaperTriageTable', () => {
 
     expect(pick.get('.tk-eyebrow').text()).toBe('Board')
     expect(pick.get('select').attributes('aria-label')).toBe(
-      'Board: choose where this capture goes',
+      'Board: choose which board the triage proposal targets',
     )
   })
 
