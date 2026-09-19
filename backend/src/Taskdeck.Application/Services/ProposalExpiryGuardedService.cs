@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
-using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -159,7 +159,7 @@ public sealed class ProposalExpiryGuardedService(
     }
 
     private async Task<Result> PublishProposalOutcomeNotificationAsync(
-        Taskdeck.Domain.Entities.AutomationProposal proposal,
+        AutomationProposal proposal,
         CancellationToken cancellationToken)
     {
         var publishResult = await _notificationService.PublishAsync(
