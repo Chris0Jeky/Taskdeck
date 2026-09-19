@@ -37,7 +37,7 @@ const activeDescendant = computed(() => {
   return `${componentId}-option-${activeIndex.value}`
 })
 
-watch(filteredOptions, (options, previousOptions) => {
+watch(filteredOptions, (options) => {
   if (options.length === 0) {
     activeIndex.value = 0
     return
@@ -46,17 +46,22 @@ watch(filteredOptions, (options, previousOptions) => {
   if (activeIndex.value >= options.length) {
     activeIndex.value = 0
   }
-
-  if (!panelOpen.value) {
-    return
-  }
-
-  const exactMatch = findExactMatch(props.modelValue)
-  const previousExactMatch = findExactMatch(props.modelValue, previousOptions)
-  if (exactMatch && !previousExactMatch) {
-    selectOption(exactMatch)
-  }
 })
+
+watch(
+  () => props.options,
+  (options, previousOptions) => {
+    if (!panelOpen.value) {
+      return
+    }
+
+    const exactMatch = findExactMatch(props.modelValue, options)
+    const previousExactMatch = findExactMatch(props.modelValue, previousOptions)
+    if (exactMatch && !previousExactMatch) {
+      selectOption(exactMatch)
+    }
+  },
+)
 
 function openPanel() {
   if (props.disabled) {
