@@ -24,6 +24,9 @@ jobs:
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1
 
+      - name: Validate equivalent tracked-file index refresh
+        run: node --test scripts/git/refresh-equivalent-tracked-file.test.mjs
+
       - name: Validate read-only inventory command contract
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest

@@ -43,6 +43,34 @@ function parseArgs(argv) {
   return args;
 }
 
+function normaliseMergeBaseBinding(plan) {
+  const empty = { mergeBaseSha: null, mergeBaseTipSha: null };
+  const validSha = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value);
+  if (!plan
+    || !Number.isInteger(plan.event && plan.event.pullRequest)
+    || plan.plannerError
+    || plan.mergeRefQualification !== 'qualified'
+    || !Object.hasOwn(plan, 'mergeBaseSha')
+    || !Object.hasOwn(plan, 'mergeBaseTipSha')
+    || !validSha(plan.baseSha)
+    || !validSha(plan.mergeBaseSha)
+    || !(plan.mergeBaseTipSha === null || validSha(plan.mergeBaseTipSha))) {
+    return empty;
+  }
+
+  if (plan.mergeBaseTipSha === null) {
+    if (plan.mergeBaseSha !== plan.baseSha) return empty;
+  } else if (plan.mergeBaseSha !== plan.mergeBaseTipSha
+    || plan.mergeBaseTipSha === plan.baseSha) {
+    return empty;
+  }
+
+  return {
+    mergeBaseSha: plan.mergeBaseSha.toLowerCase(),
+    mergeBaseTipSha: plan.mergeBaseTipSha === null ? null : plan.mergeBaseTipSha.toLowerCase(),
+  };
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   let plan = null;
@@ -88,6 +116,7 @@ function main() {
   process.stdout.write(summary);
   if (args.receipt) {
     mkdirSync(dirname(args.receipt), { recursive: true });
+    const mergeBaseBinding = normaliseMergeBaseBinding(plan);
     const receipt = {
       schemaVersion: 1,
       kind: 'smart-ci-gate-receipt',
@@ -103,8 +132,8 @@ function main() {
       headSha: plan ? plan.headSha : null,
       mergeSha: plan ? plan.mergeSha : null,
       mergeTreeSha: plan ? plan.mergeTreeSha : null,
-      mergeBaseSha: plan ? plan.mergeBaseSha ?? null : null,
-      mergeBaseTipSha: plan ? plan.mergeBaseTipSha ?? null : null,
+      mergeBaseSha: mergeBaseBinding.mergeBaseSha,
+      mergeBaseTipSha: mergeBaseBinding.mergeBaseTipSha,
       risk: plan ? plan.risk : null,
       trust: plan ? plan.trust : null,
       escalated: plan ? plan.escalated : null,

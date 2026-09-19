@@ -67,6 +67,8 @@ const props = withDefaults(
     history: HistoryRow[]
     /** Required evidence could not be refreshed for the active saved revision. */
     evidenceUnavailable?: boolean
+    /** Persistent explanation that belongs only to the enabled Apply recovery action. */
+    applyDescriptionIds?: string
     /** When true the active proposal is settled; the rail offers "File away" only. */
     dismissable?: boolean
     /**
@@ -347,6 +349,7 @@ watch(
       :apply-phase="applyPhase"
       :edit-lock="editLock"
       :apply-only="decisionReceipt === 'approved'"
+      :apply-description-ids="applyDescriptionIds"
       :decision-description-ids="busy ? decisionDescriptionIds() : undefined"
       data-testid="paper-review-decision-rail"
       @apply="emit('apply')"
