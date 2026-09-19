@@ -11,7 +11,7 @@ namespace Taskdeck.Api.Routing;
 /// would read as that prefix is a variant, and a variant is not a machine path, not an SPA path, and
 /// not normalized into the canonical one: it is 404, at every layer.
 ///
-/// The two variant classes exist because the three layers disagree about the request path:
+/// The variant classes exist because the layers disagree about the request path:
 ///
 /// <list type="bullet">
 /// <item><description><b>Case.</b> ASP.NET Core route matching is case-insensitive, so
@@ -33,7 +33,8 @@ namespace Taskdeck.Api.Routing;
 /// <item><description><b>Percent-encoded prefix letters.</b> <c>/%61pi/boards</c> decodes to the
 /// canonical path in <em>both</em> nginx and Kestrel, so by the time any middleware runs the
 /// encoding is gone and the request is at the real controller. Only the raw request target still
-/// carries it. See <see cref="IsRejectedSpelling"/>.</description></item>
+/// carries it. This also applies to HTTP/1.1 absolute-form targets such as
+/// <c>http://host/%61pi/boards</c>; see <see cref="IsRejectedSpelling"/>.</description></item>
 /// </list>
 ///
 /// Normalizing (lowercase-folding or decoding into the canonical path) was considered and rejected
@@ -63,9 +64,11 @@ internal static class MachinePathCanonicalForm
     /// machine-facing, is a non-canonical spelling of the prefix. Scoping it to machine-facing
     /// decoded paths is what keeps an ordinary SPA route such as <c>/caf%C3%A9</c> working.
     ///
-    /// <paramref name="rawTarget"/> is best-effort: a host that does not supply one (or supplies an
-    /// absolute-form target) is checked by <see cref="IsRejectedVariant"/> alone. On Kestrel it is
-    /// always present in origin form.
+    /// <paramref name="rawTarget"/> is best-effort evidence. Origin-form targets are inspected
+    /// directly. Kestrel also accepts HTTP/1.1 absolute-form targets, so HTTP and HTTPS absolute
+    /// forms are reduced to their still-escaped path-and-query component before the same check.
+    /// Unsupported or malformed forms retain the parsed-path rules from
+    /// <see cref="IsRejectedVariant"/> but provide no additional raw evidence.
     /// </remarks>
     internal static bool IsRejectedSpelling(
         PathString path,
@@ -79,7 +82,8 @@ internal static class MachinePathCanonicalForm
         string? rawTarget,
         IReadOnlyList<string> canonicalPrefixes)
     {
-        if (string.IsNullOrEmpty(rawTarget) || rawTarget[0] != '/')
+        var rawPathAndQuery = GetRawPathAndQuery(rawTarget);
+        if (rawPathAndQuery is null)
         {
             return false;
         }
@@ -87,9 +91,9 @@ internal static class MachinePathCanonicalForm
         // First raw path segment: everything between the leading '/' and the next '/', stopping at
         // the query. A '%' anywhere in it means the segment was not written literally.
         var encoded = false;
-        for (var i = 1; i < rawTarget.Length; i++)
+        for (var i = 1; i < rawPathAndQuery.Length; i++)
         {
-            var c = rawTarget[i];
+            var c = rawPathAndQuery[i];
             if (c == '/' || c == '?' || c == '#')
             {
                 break;
@@ -116,6 +120,75 @@ internal static class MachinePathCanonicalForm
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns the still-escaped path-and-query evidence from origin-form or supported absolute-form
+    /// request targets. It intentionally does not URI-decode, normalize separators, or return the
+    /// authority: this guard needs the client's path spelling, not another interpretation of it.
+    /// </summary>
+    private static string? GetRawPathAndQuery(string? rawTarget)
+    {
+        if (string.IsNullOrEmpty(rawTarget))
+        {
+            return null;
+        }
+
+        if (rawTarget[0] == '/')
+        {
+            return rawTarget;
+        }
+
+        var schemeSeparator = rawTarget.IndexOf("://", StringComparison.Ordinal);
+        if (schemeSeparator <= 0)
+        {
+            return null;
+        }
+
+        var scheme = rawTarget.AsSpan(0, schemeSeparator);
+        if (!scheme.Equals("http", StringComparison.OrdinalIgnoreCase) &&
+            !scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var authorityStart = schemeSeparator + 3;
+        if (authorityStart >= rawTarget.Length)
+        {
+            return null;
+        }
+
+        // Fragments are not valid in an HTTP request target. Treat a target carrying one as
+        // unsupported raw evidence rather than trying to invent browser-style fragment semantics.
+        if (rawTarget.IndexOf('#', authorityStart) >= 0)
+        {
+            return null;
+        }
+
+        var pathStart = rawTarget.IndexOf('/', authorityStart);
+        var queryStart = rawTarget.IndexOf('?', authorityStart);
+        var targetStart = pathStart switch
+        {
+            >= 0 when queryStart >= 0 => Math.Min(pathStart, queryStart),
+            >= 0 => pathStart,
+            _ => queryStart
+        };
+
+        // No authority, for example http:///api, is malformed. The request host/parser may reject
+        // it independently; this helper must not reinterpret it as a supported absolute form.
+        if (targetStart == authorityStart)
+        {
+            return null;
+        }
+
+        if (targetStart < 0)
+        {
+            return "/";
+        }
+
+        return rawTarget[targetStart] == '?'
+            ? "/" + rawTarget[targetStart..]
+            : rawTarget[targetStart..];
     }
 
     /// <summary>

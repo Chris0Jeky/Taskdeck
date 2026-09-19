@@ -1514,15 +1514,14 @@ export async function seedDemo(
 
   console.log(`Demo user:   ${demoUser.username} (${demoUser.email})`)
 
-  // 2) Complete the pure reset inventory plan before collaborator provisioning or product writes.
+  // 2) Complete the pure board inventory/reset plan before collaborator provisioning or product writes.
   const boards = await listSeedBoards(demoToken)
   const boardPlan = planDemoBoardsForSeed(boards, { reset })
 
-  let collabLogin = null
-  if (reset) {
-    collabLogin = await ensureSeedUser(COLLAB)
-    console.log(`Collab user: ${collabLogin.user.username} (${collabLogin.user.email})`)
-  }
+  // A valid plan is still read-only. Authenticate or provision the collaborator now so
+  // stale credentials cannot leave either ordinary or reset seeding partially written.
+  const collabLogin = await ensureSeedUser(COLLAB)
+  console.log(`Collab user: ${collabLogin.user.username} (${collabLogin.user.email})`)
 
   // 3) Reuse canonical boards normally; protected reset retires them only after both accounts authenticate.
   const preparedBoards = await prepareSeedBoards(boards, demoToken, {
@@ -1546,11 +1545,8 @@ export async function seedDemo(
     )
   }
 
-  // Ordinary seeds preserve their existing board-before-collaborator ordering.
-  collabLogin ||= await ensureSeedUser(COLLAB)
   const collabToken = collabLogin.token
   const collabUser = collabLogin.user
-  if (!reset) console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
   const canonicalBoardIds = new Set([captureBoard.id, contentBoard.id, blankBoard.id, archivedBoard.id])
   const extraActiveDemoBoards = demoBoards.filter((b) => !b.isArchived && !canonicalBoardIds.has(b.id))

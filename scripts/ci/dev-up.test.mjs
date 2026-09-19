@@ -24,6 +24,9 @@ const frontendPackage = join(repoRoot, 'frontend', 'taskdeck-web', 'package.json
 const trackedNodeVersion = join(repoRoot, '.nvmrc')
 const DIAGNOSTIC_OUTPUT_LIMIT = 8 * 1024
 const RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000
+// #2588: repeated hosted failures reached the former 5s ceiling before the fake frontend bound.
+// Stay bounded below the 30s hosted per-test ceiling while retaining time for TERM and cleanup.
+const FRONTEND_HELPER_READINESS_TIMEOUT_MS = 15_000
 
 // #2378: this suite is serial and launches real PowerShell/Bash launchers, which in turn start
 // real API/Vite child processes. `--test-timeout` bounds each individual case, but it cannot bound
@@ -256,7 +259,12 @@ if (kind === 'linger') {
     server.once('listening', onListening)
     server.listen(port, frontendHost)
   }
-  listen()
+  const bindDelayMs = Number(process.env.FAKE_FRONTEND_BIND_DELAY_MS ?? 0)
+  if (Number.isFinite(bindDelayMs) && bindDelayMs > 0) {
+    setTimeout(listen, bindDelayMs)
+  } else {
+    listen()
+  }
 } else if (kind === 'dotnet') {
   appendEvent({})
   const mode = process.env.FAKE_API_MODE ?? 'ready'
@@ -1002,7 +1010,7 @@ function readinessFailure(reason, child, expectedPort, expectedHost, readStdout,
   return error
 }
 
-function waitForFrontendReadiness(child, { expectedHost = 'localhost', expectedPort, readStdout, readStderr, timeout = 5000 }) {
+function waitForFrontendReadiness(child, { expectedHost = 'localhost', expectedPort, readStdout, readStderr, timeout = FRONTEND_HELPER_READINESS_TIMEOUT_MS }) {
   return new Promise((resolve, reject) => {
     let settled = false
     const markerPrefix = 'TASKDECK_DEV_FRONTEND_READY '
@@ -1224,7 +1232,7 @@ test(
   'Node helper: TERM closes an active frontend connection',
   {
     concurrency: false,
-    timeout: 10_000,
+    timeout: 25_000,
     skip: process.platform === 'win32' ? 'requires POSIX signal handling; hosted Linux proof is required' : false,
   },
   async () => {
@@ -1237,6 +1245,8 @@ test(
       env: fixtureEnvironment(platform, fixture, {
         FAKE_FRONTEND_HOST: '127.0.0.1',
         FAKE_FRONTEND_PORT: String(frontendPort),
+        // #2588: exceed the historical five-second ceiling deterministically.
+        FAKE_FRONTEND_BIND_DELAY_MS: '5250',
       }),
     })
     const readStdout = captureBoundedOutput(child.stdout)

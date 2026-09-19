@@ -239,6 +239,7 @@ describe('PaperInboxView', () => {
     // Inspection reads and nothing else: the non-caching peek, never the
     // summary-syncing fetch, and no triage/ignore call.
     expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('history-capture', {
+      forceRefresh: true,
       recordError: false,
       showToast: false,
     })

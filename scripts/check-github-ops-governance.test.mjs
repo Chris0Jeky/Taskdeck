@@ -8,6 +8,7 @@ import {
   validateParkedStagingGateWorkflow,
 } from './check-github-ops-governance.mjs'
 import './ci/prepare-staging-compose-inputs.test.mjs'
+import './ci/api-integration-workflow-contract.test.mjs'
 
 const canonicalWorkflow = readFileSync(
   new URL('../.github/workflows/cd-staging-gate.yml', import.meta.url),
