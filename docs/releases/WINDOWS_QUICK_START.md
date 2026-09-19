@@ -106,6 +106,13 @@ The console prints the effective data directory on every packaged start. An expl
 `ConnectionStrings__DefaultConnection` override can move the database; if you use one, back up that
 exact path instead.
 
+`TASKDECK_HEADLESS` is an advanced server/automation switch, not an alternate desktop data-root
+selector. It leaves local configuration executable-local and disables automatic per-user database
+relocation. A packaged headless run that must keep all writable state outside the extracted release
+folder must provide stable `Jwt__SecretKey` and `Connectors__EncryptionKey` values on every start and
+an absolute `ConnectionStrings__DefaultConnection` path. See the
+[generated local-configuration contract](https://github.com/Chris0Jeky/Taskdeck/blob/main/docs/platform/CONFIGURATION_REFERENCE.md#generated-local-configuration-file).
+
 Before an upgrade:
 
 1. Stop Taskdeck with Ctrl+C and stop any Taskdeck CLI or MCP process using the same database.
@@ -185,6 +192,14 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
   supply-your-own-key contract) and no `Connectors__EncryptionKey` was configured. Set a stable
   base64-encoded 256-bit key, or reuse the key already stored for this data folder, and start again. The
   message prints no settings. Earlier builds report this case as the generic `code=startup_failed`.
+- **Unreleased (`main` after this repair)** `TASKDECK_DESKTOP_FATAL
+  code=connector_encryption_key_unrecoverable`: Taskdeck found an existing database but could not
+  recover the connector key that protects stored credentials. Restore the original key or set that
+  exact value through `Connectors__EncryptionKey`; do not generate a replacement for the existing data.
+- **Unreleased (`main` after this repair)** `TASKDECK_DESKTOP_FATAL
+  code=connector_encryption_key_persistence_failed`: normal desktop startup could not securely persist
+  its generated connector key. Use a writable local-config directory on NTFS or another filesystem
+  supporting owner-only permissions, or supply a stable `Connectors__EncryptionKey` and restart.
 - `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the
   retired Gemini provider and refused to switch providers silently. **In v0.2.0 and earlier this
   fires for retired Gemini settings from any source, including leftover `Llm__Gemini__*` variables

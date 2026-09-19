@@ -189,18 +189,7 @@ public class AutomationExecutorService : IAutomationExecutorService
         // Idempotent behavior across requests/processes: already-applied proposals are treated as success.
         if (proposal.Status == ProposalStatus.Applied)
         {
-            var syncResult = await SyncLinkedCaptureConversionAsync(proposal, cancellationToken);
-            if (!syncResult.IsSuccess)
-            {
-                var errorMessage = SanitizeUnexpectedErrorMessage(
-                    syncResult.ErrorCode,
-                    syncResult.ErrorMessage);
-                _logger?.LogWarning(
-                    "Already-applied proposal {ProposalId} could not sync linked capture conversion: {ErrorCode} {ErrorMessage}",
-                    proposalId,
-                    syncResult.ErrorCode,
-                    errorMessage);
-            }
+            await SyncLinkedCaptureConversionBestEffortAsync(proposal);
 
             _logger?.LogInformation(
                 "Automation proposal execution skipped for already-applied proposal {ProposalId} after {DurationMs}ms",
@@ -282,6 +271,8 @@ public class AutomationExecutorService : IAutomationExecutorService
         var deferredNotifications = _realtimeNotifier is null
             ? null
             : new DeferredBoardRealtimeNotifier(_realtimeNotifier);
+        var orderedOperations = effectiveProposal.Operations.OrderBy(o => o.Sequence).ToList();
+        var transactionCommitted = false;
 
         try
         {
@@ -336,8 +327,6 @@ public class AutomationExecutorService : IAutomationExecutorService
                 }
             }
 
-            // Execute operations in sequence order
-            var orderedOperations = effectiveProposal.Operations.OrderBy(o => o.Sequence).ToList();
             var failedOperation = -1;
             var failedResult = Result.Success();
             var failureReason = "";
@@ -421,40 +410,7 @@ public class AutomationExecutorService : IAutomationExecutorService
             }
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
-            // Only now is the lifecycle change real for subscribers — and this is the first
-            // statement after the commit on purpose: anything that throws later in this tail
-            // would otherwise reach the finally below and discard events for a change that is
-            // already durable. Every path that did not reach this line drops them, correctly.
-            await FlushDeferredNotificationsAsync(deferredNotifications, proposalId);
-            await _handlerRegistry.NotifyAssignmentsCommittedAsync(orderedOperations, cancellationToken);
-
-            var captureSyncResult = await SyncLinkedCaptureConversionAsync(
-                effectiveProposal with
-                {
-                    Status = ProposalStatus.Applied,
-                    AppliedAt = DateTime.UtcNow
-                },
-                cancellationToken);
-            if (!captureSyncResult.IsSuccess)
-            {
-                var errorMessage = SanitizeUnexpectedErrorMessage(
-                    captureSyncResult.ErrorCode,
-                    captureSyncResult.ErrorMessage);
-                _logger?.LogWarning(
-                    "Applied proposal {ProposalId} could not sync linked capture conversion: {ErrorCode} {ErrorMessage}",
-                    proposalId,
-                    captureSyncResult.ErrorCode,
-                    errorMessage);
-            }
-
-            _logger?.LogInformation(
-                "Automation proposal execution completed for proposal {ProposalId} in {DurationMs}ms with {OperationCount} operation(s)",
-                proposalId,
-                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
-                orderedOperations.Count);
-            return Result.Success(new ProposalExecutionReceipt(
-                AlreadyApplied: false,
-                AppliedOperationCount: orderedOperations.Count));
+            transactionCommitted = true;
         }
         catch (Exception)
         {
@@ -495,11 +451,32 @@ public class AutomationExecutorService : IAutomationExecutorService
         }
         finally
         {
-            // Single drain point for every non-commit exit: the rollback returns, the guard
-            // refusals, the unexpected-error catch, and cancellation. A successful flush already
-            // emptied the buffer, so this is a no-op there.
-            deferredNotifications?.Discard();
+            // A transaction that did not reach durable commit must not leak staged events. Once
+            // committed, ownership passes to the best-effort post-commit flush below.
+            if (!transactionCommitted)
+                deferredNotifications?.Discard();
         }
+
+        // Nothing below this point may reinterpret the durable proposal result. The caller may
+        // have disconnected as commit completed, and adapters may be unavailable; both tails are
+        // therefore independent, best-effort work with their own exception boundaries.
+        await FlushDeferredNotificationsAsync(deferredNotifications, proposalId);
+        await NotifyAssignmentsCommittedBestEffortAsync(orderedOperations, proposalId);
+        await SyncLinkedCaptureConversionBestEffortAsync(
+            effectiveProposal with
+            {
+                Status = ProposalStatus.Applied,
+                AppliedAt = DateTime.UtcNow
+            });
+
+        _logger?.LogInformation(
+            "Automation proposal execution completed for proposal {ProposalId} in {DurationMs}ms with {OperationCount} operation(s)",
+            proposalId,
+            (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+            orderedOperations.Count);
+        return Result.Success(new ProposalExecutionReceipt(
+            AlreadyApplied: false,
+            AppliedOperationCount: orderedOperations.Count));
     }
 
     /// <summary>
@@ -533,6 +510,51 @@ public class AutomationExecutorService : IAutomationExecutorService
                 ex,
                 "Automation proposal {ProposalId} committed but could not publish its deferred board notifications",
                 proposalId);
+        }
+    }
+
+    private async Task NotifyAssignmentsCommittedBestEffortAsync(
+        IEnumerable<ProposalOperationDto> operations,
+        Guid proposalId)
+    {
+        try
+        {
+            await _handlerRegistry.NotifyAssignmentsCommittedAsync(operations, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(
+                ex,
+                "Automation proposal {ProposalId} committed but could not publish assignment notifications",
+                proposalId);
+        }
+    }
+
+    private async Task SyncLinkedCaptureConversionBestEffortAsync(ProposalDto proposal)
+    {
+        try
+        {
+            var captureSyncResult = await SyncLinkedCaptureConversionAsync(
+                proposal,
+                CancellationToken.None);
+            if (captureSyncResult.IsSuccess)
+                return;
+
+            var errorMessage = SanitizeUnexpectedErrorMessage(
+                captureSyncResult.ErrorCode,
+                captureSyncResult.ErrorMessage);
+            _logger?.LogWarning(
+                "Applied proposal {ProposalId} could not sync linked capture conversion: {ErrorCode} {ErrorMessage}",
+                proposal.Id,
+                captureSyncResult.ErrorCode,
+                errorMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(
+                ex,
+                "Applied proposal {ProposalId} could not run linked capture conversion reconciliation",
+                proposal.Id);
         }
     }
 

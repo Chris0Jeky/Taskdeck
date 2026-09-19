@@ -52,11 +52,22 @@ actions are `add-relation` and `remove-relation`; their parameters are `boardId`
 silently replace that version with a newer read. The existing direct dependency editor keeps its
 compatibility route.
 
-The same canonicalization and graph rules govern preview and Apply. A proposal can contain one
-explicit relation operation, including references to cards created earlier in that proposal.
+Typed relation admission is authoritative at the shared proposal-service boundary, not in any one
+transport. Before a proposal row is stored, the authenticated requester must clear the board write
+bar and the complete ordered operation plan must clear the same endpoint, graph revision, duplicate,
+cycle, removal and maximum-edge rules used by Preview and Apply. This includes card endpoints created
+by earlier operations in the same proposal. A stale graph returns `409`; invalid graph material
+returns `400`; missing authority or a cross-board endpoint returns the established `403` contract.
+The failed request creates no proposal, card, relation, notification or audit row. MCP and chat may
+retain their earlier preflight for a more immediate explanation, but it is not an alternative policy
+boundary and cannot widen what the shared service accepts.
+
+The same canonicalization and graph rules govern admission, preview and Apply. A proposal can contain
+one explicit relation operation, including references to cards created earlier in that proposal.
 Mixing that operation with lifecycle archive/restore or card deletion is refused in this first
-slice. Unrelated edits retain their existing contracts. A stale graph or competing endpoint change
-fails the whole transaction; audit and realtime publication follow successful commit.
+slice. Unrelated edits retain their existing contracts. A graph or endpoint that changes after a
+valid proposal was admitted is revalidated at Preview, approval and Apply; a stale graph or competing
+endpoint change fails the whole transaction, and audit/realtime publication follow successful commit.
 
 MCP exposes `get_board_card_relations` with Read scope and `add_card_relation` /
 `remove_card_relation` with Propose scope. Chat uses `propose_add_card_relation` and

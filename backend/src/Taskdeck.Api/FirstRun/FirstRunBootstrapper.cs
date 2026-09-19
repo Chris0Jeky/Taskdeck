@@ -34,6 +34,12 @@ public static class FirstRunBootstrapper
     internal const string MissingConnectorEncryptionKeyMessagePrefix =
         "SECURITY: The Connectors:EncryptionKey is not configured.";
 
+    internal const string ExistingDatabaseMissingConnectorEncryptionKeyMessagePrefix =
+        "First-run: An existing database was found";
+
+    internal const string ConnectorEncryptionKeyPersistenceFailureMessagePrefix =
+        "First-run: Could not persist the connector encryption key";
+
     private const string LocalConfigFileName = "appsettings.local.json";
 
     // Placeholder values that indicate "not configured".
@@ -807,7 +813,8 @@ public static class FirstRunBootstrapper
             && string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
         {
             throw new InvalidOperationException(
-                $"First-run: An existing database was found at {databasePath}, but no supplied or " +
+                ExistingDatabaseMissingConnectorEncryptionKeyMessagePrefix +
+                $" at {databasePath}, but no supplied or " +
                 $"persisted connector encryption key is recoverable from {localConfigPath}. Refusing to " +
                 "generate replacement connector or JWT secrets because stored connector credentials may " +
                 "depend on the missing key. Restore the original key or explicitly supply " +
@@ -1034,7 +1041,8 @@ public static class FirstRunBootstrapper
                 // be lost on the next launch, which would then generate a different one and silently lose
                 // the ability to decrypt previously-stored connector credentials. Fail loudly instead.
                 throw new InvalidOperationException(
-                    $"First-run: Could not persist the connector encryption key to {localConfigPath} " +
+                    ConnectorEncryptionKeyPersistenceFailureMessagePrefix +
+                    $" to {localConfigPath} " +
                     $"({ex.Message}). A run-once in-memory key would be lost on restart and make stored " +
                     "connector credentials unrecoverable. Ensure the local-config directory is writable AND on " +
                     "a filesystem that supports owner-only file permissions (NTFS / a POSIX filesystem; " +

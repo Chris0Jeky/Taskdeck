@@ -608,11 +608,11 @@ public class CaptureTriageService : ICaptureTriageService
     };
 
     /// <summary>
-    /// Repairs the narrow proposal-persisted / capture-provenance-not-stamped crash window. A
-    /// metadata edit is represented by a non-null Labels collection: UpdateSuggestion normalizes
-    /// an explicit replacement to an array (including an empty one), while an untouched payload
-    /// keeps Labels null. That distinction prevents a retry from erasing extractor metadata merely
-    /// because the capture was never edited.
+    /// Repairs the narrow proposal-persisted / capture-provenance-not-stamped crash window without
+    /// treating the capture as the owner of metadata a reviewer changed later. Ownership is derived
+    /// against the proposal's original operations: repeating the original capture values is a replay,
+    /// while a value that differs from the original is a capture-side correction. Only those corrected
+    /// fields may be projected onto the latest pending revision.
     /// </summary>
     private async Task<Result<int>> ReconcileExistingCaptureProposalAsync(
         AutomationProposal proposal,
@@ -620,42 +620,42 @@ public class CaptureTriageService : ICaptureTriageService
         CapturePayloadV1 payload,
         CancellationToken cancellationToken)
     {
+        // UpdateSuggestion normalizes an explicit metadata replacement to a non-null labels array
+        // (including an empty one). Null therefore remains the compatibility marker for a capture
+        // whose metadata was never edited after proposal creation.
         if (payload.Labels is null)
         {
             return Result.Success(proposal.Operations.Count);
         }
 
-        ProposalRevision? latestRevision = null;
-        IReadOnlyList<ProposalOperationDto> effectiveOperations;
-        if (proposal.Status == ProposalStatus.PendingReview)
+        var originalOperations = proposal.Operations
+            .OrderBy(operation => operation.Sequence)
+            .Select(MapOperation)
+            .ToList();
+        var ownership = ResolveCaptureMetadataOwnership(originalOperations, payload);
+        if (!ownership.HasAny)
         {
-            latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(
-                proposal.Id,
-                cancellationToken);
-            if (latestRevision is null)
-            {
-                effectiveOperations = proposal.Operations.OrderBy(operation => operation.Sequence).Select(MapOperation).ToList();
-            }
-            else
-            {
-                var parsedRevision = ParseRevisionOperations(proposal.Id, latestRevision.RevisedPayload);
-                if (!parsedRevision.IsSuccess)
-                {
-                    return Result.Failure<int>(parsedRevision.ErrorCode, parsedRevision.ErrorMessage);
-                }
-
-                effectiveOperations = parsedRevision.Value;
-            }
-        }
-        else
-        {
-            // A decided proposal is frozen at its original operations (the same shape Apply is
-            // entitled to execute). Never use a later revision to rewrite a decision.
-            effectiveOperations = proposal.Operations.OrderBy(operation => operation.Sequence).Select(MapOperation).ToList();
+            return Result.Success(originalOperations.Count);
         }
 
+        var effectiveOperationsResult = await ResolveReplayBaselineAsync(
+            proposal,
+            originalOperations,
+            cancellationToken);
+        if (!effectiveOperationsResult.IsSuccess)
+        {
+            return Result.Failure<int>(
+                effectiveOperationsResult.ErrorCode,
+                effectiveOperationsResult.ErrorMessage);
+        }
+
+        var effectiveOperations = effectiveOperationsResult.Value;
         var patchedOperations = effectiveOperations
-            .Select(operation => PatchCaptureCardMetadata(operation, payload.DueDate, payload.Labels!))
+            .Select(operation => PatchCaptureCardMetadata(
+                operation,
+                payload.DueDate,
+                payload.Labels,
+                ownership))
             .ToList();
 
         var changed = effectiveOperations.Zip(patchedOperations, (before, after) => before.Parameters != after.Parameters)
@@ -665,6 +665,9 @@ public class CaptureTriageService : ICaptureTriageService
             return Result.Success(effectiveOperations.Count);
         }
 
+        // Once a proposal is decided, its approved revision (or originals when approved without a
+        // revision) is immutable. Replay may compare against that exact Apply baseline, but may not
+        // create a new post-decision revision.
         if (proposal.Status != ProposalStatus.PendingReview)
         {
             return Result.Failure<int>(
@@ -707,6 +710,82 @@ public class CaptureTriageService : ICaptureTriageService
         return Result.Success(patchedOperations.Count);
     }
 
+    private async Task<Result<IReadOnlyList<ProposalOperationDto>>> ResolveReplayBaselineAsync(
+        AutomationProposal proposal,
+        IReadOnlyList<ProposalOperationDto> originalOperations,
+        CancellationToken cancellationToken)
+    {
+        if (proposal.Status == ProposalStatus.PendingReview)
+        {
+            var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(
+                proposal.Id,
+                cancellationToken);
+            return latestRevision is null
+                ? Result.Success<IReadOnlyList<ProposalOperationDto>>(originalOperations)
+                : ParseRevisionOperations(proposal.Id, latestRevision.RevisedPayload);
+        }
+
+        if (proposal.ApprovedRevisionId is not Guid approvedRevisionId)
+        {
+            return Result.Success<IReadOnlyList<ProposalOperationDto>>(originalOperations);
+        }
+
+        var pinnedRevision = await _unitOfWork.ProposalRevisions.GetByIdAsync(
+            approvedRevisionId,
+            cancellationToken);
+        if (pinnedRevision is null)
+        {
+            return Result.Failure<IReadOnlyList<ProposalOperationDto>>(
+                ErrorCodes.NotFound,
+                "The approved proposal revision could not be found.");
+        }
+        if (pinnedRevision.ProposalId != proposal.Id)
+        {
+            return Result.Failure<IReadOnlyList<ProposalOperationDto>>(
+                ErrorCodes.InvalidOperation,
+                "The approved proposal revision does not belong to this proposal.");
+        }
+
+        return ParseRevisionOperations(proposal.Id, pinnedRevision.RevisedPayload);
+    }
+
+    private static CaptureMetadataOwnership ResolveCaptureMetadataOwnership(
+        IReadOnlyList<ProposalOperationDto> originalOperations,
+        CapturePayloadV1 payload)
+    {
+        var ownsDueDate = false;
+        var ownsLabels = false;
+
+        foreach (var operation in originalOperations.Where(IsCreateCardOperation))
+        {
+            using var document = JsonDocument.Parse(operation.Parameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new DomainException(
+                    ErrorCodes.InvalidOperation,
+                    "Cannot reconcile capture metadata for an operation with non-object parameters");
+            }
+
+            ownsLabels |= !CaptureLabelsMatch(document.RootElement, payload.Labels!);
+
+            if (!CaptureDueDateMatches(document.RootElement, payload.DueDate))
+            {
+                // A transcript proposal may contain an extractor-inferred due date even when the
+                // capture payload has no explicit date. Null alone therefore cannot prove the user
+                // cleared that date. Other capture sources have no inference leg, so a missing date
+                // that differs from originals is an explicit clear made after proposal creation.
+                ownsDueDate |= payload.DueDate.HasValue
+                    || !CaptureRequestContract.IsTranscriptSource(payload.Source);
+            }
+        }
+
+        return new CaptureMetadataOwnership(ownsDueDate, ownsLabels);
+    }
+
+    private static bool IsCreateCardOperation(ProposalOperationDto operation) =>
+        string.Equals(operation.ActionType, "create", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase);
+
     private static ProposalOperationDto MapOperation(AutomationProposalOperation operation) => new(
         operation.Id,
         operation.ProposalId,
@@ -734,10 +813,10 @@ public class CaptureTriageService : ICaptureTriageService
     private static ProposalOperationDto PatchCaptureCardMetadata(
         ProposalOperationDto operation,
         DateOnly? dueDate,
-        IReadOnlyList<string> labels)
+        IReadOnlyList<string> labels,
+        CaptureMetadataOwnership ownership)
     {
-        if (!string.Equals(operation.ActionType, "create", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase))
+        if (!IsCreateCardOperation(operation))
         {
             return operation;
         }
@@ -745,10 +824,14 @@ public class CaptureTriageService : ICaptureTriageService
         using var document = JsonDocument.Parse(operation.Parameters);
         if (document.RootElement.ValueKind != JsonValueKind.Object)
         {
-            throw new DomainException(ErrorCodes.InvalidOperation, "Cannot reconcile capture metadata for an operation with non-object parameters");
+            throw new DomainException(
+                ErrorCodes.InvalidOperation,
+                "Cannot reconcile capture metadata for an operation with non-object parameters");
         }
 
-        if (CaptureMetadataMatches(document.RootElement, dueDate, labels))
+        var dueDateMatches = !ownership.DueDate || CaptureDueDateMatches(document.RootElement, dueDate);
+        var labelsMatch = !ownership.Labels || CaptureLabelsMatch(document.RootElement, labels);
+        if (dueDateMatches && labelsMatch)
         {
             return operation;
         }
@@ -756,47 +839,48 @@ public class CaptureTriageService : ICaptureTriageService
         var parameters = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var property in document.RootElement.EnumerateObject())
         {
-            if (!string.Equals(property.Name, "dueDate", StringComparison.Ordinal) &&
-                !string.Equals(property.Name, "labels", StringComparison.Ordinal))
+            var replaceDueDate = ownership.DueDate
+                && string.Equals(property.Name, "dueDate", StringComparison.Ordinal);
+            var replaceLabels = ownership.Labels
+                && string.Equals(property.Name, "labels", StringComparison.Ordinal);
+            if (!replaceDueDate && !replaceLabels)
             {
                 parameters[property.Name] = property.Value.Clone();
             }
         }
 
-        if (dueDate.HasValue)
+        if (ownership.DueDate && dueDate.HasValue)
         {
             parameters["dueDate"] = JsonSerializer.SerializeToElement(new DateTimeOffset(
                 dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
         }
-
-        // Labels is deliberately written even when empty. It is the explicit replacement marker
-        // that makes a user clear reviewable instead of silently retaining old labels.
-        parameters["labels"] = JsonSerializer.SerializeToElement(labels);
+        if (ownership.Labels)
+        {
+            // Empty is the explicit replacement marker for clearing labels.
+            parameters["labels"] = JsonSerializer.SerializeToElement(labels);
+        }
 
         return operation with { Parameters = JsonSerializer.Serialize(parameters) };
     }
 
-    private static bool CaptureMetadataMatches(
-        JsonElement parameters,
-        DateOnly? dueDate,
-        IReadOnlyList<string> labels)
+    private static bool CaptureDueDateMatches(JsonElement parameters, DateOnly? dueDate)
     {
-        var dueDateMatches = !parameters.TryGetProperty("dueDate", out var existingDueDate)
+        return !parameters.TryGetProperty("dueDate", out var existingDueDate)
             ? !dueDate.HasValue
-            : dueDate.HasValue &&
-              existingDueDate.ValueKind == JsonValueKind.String &&
-              existingDueDate.TryGetDateTimeOffset(out var parsedDueDate) &&
-              parsedDueDate == new DateTimeOffset(dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-        if (!dueDateMatches)
-        {
-            return false;
-        }
+            : dueDate.HasValue
+              && existingDueDate.ValueKind == JsonValueKind.String
+              && existingDueDate.TryGetDateTimeOffset(out var parsedDueDate)
+              && parsedDueDate == new DateTimeOffset(
+                  dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+    }
 
+    private static bool CaptureLabelsMatch(JsonElement parameters, IReadOnlyList<string> labels)
+    {
         if (!parameters.TryGetProperty("labels", out var existingLabels))
             return labels.Count == 0;
 
-        if (existingLabels.ValueKind != JsonValueKind.Array ||
-            existingLabels.GetArrayLength() != labels.Count)
+        if (existingLabels.ValueKind != JsonValueKind.Array
+            || existingLabels.GetArrayLength() != labels.Count)
         {
             return false;
         }
@@ -804,6 +888,11 @@ public class CaptureTriageService : ICaptureTriageService
         return existingLabels.EnumerateArray()
             .Select(label => label.ValueKind == JsonValueKind.String ? label.GetString() : null)
             .SequenceEqual(labels);
+    }
+
+    private readonly record struct CaptureMetadataOwnership(bool DueDate, bool Labels)
+    {
+        public bool HasAny => DueDate || Labels;
     }
 
     private static string SerializeRevisionPayload(IReadOnlyList<ProposalOperationDto> operations) =>

@@ -77,85 +77,45 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
             .Equal(CardRelationRules.Normalize(new CardRelationEdge(sourceId, targetId, "relates-to")));
     }
 
-    [Theory]
-    [InlineData("stale")]
-    [InlineData("duplicate")]
-    [InlineData("cycle")]
-    [InlineData("missing-remove")]
-    public async Task RelationProposal_RejectsCurrentGraphFailureBeforePreviewOrDecision(string failure)
+    [Fact]
+    public async Task RelationProposal_RejectsGraphThatChangesAfterAdmissionBeforePreviewOrDecision()
     {
         using var client = factory.CreateClient();
-        var (user, boardId, columnId) = await SetupAsync(client, $"relation-{failure}");
+        var (user, boardId, columnId) = await SetupAsync(client, "relation-stale");
         var source = await CreateCardAsync(client, boardId, columnId, "Source");
         var target = await CreateCardAsync(client, boardId, columnId, "Target");
         var third = await CreateCardAsync(client, boardId, columnId, "Third");
+        var requested = new CardRelationEdge(source.Id, target.Id, "blocks");
+        var stored = new CardRelationEdge(source.Id, third.Id, "duplicates");
 
-        CardRelationEdge requested;
-        string action;
-        long expectedRevision;
-        IReadOnlyList<CardRelationEdge> stored;
-        switch (failure)
-        {
-            case "stale":
-                requested = new CardRelationEdge(source.Id, target.Id, "blocks");
-                action = "add-relation";
-                expectedRevision = 0;
-                stored = [new CardRelationEdge(source.Id, third.Id, "duplicates")];
-                break;
-            case "duplicate":
-                requested = new CardRelationEdge(source.Id, target.Id, "blocks");
-                action = "add-relation";
-                expectedRevision = 1;
-                stored = [requested];
-                break;
-            case "cycle":
-                requested = new CardRelationEdge(target.Id, source.Id, "blocks");
-                action = "add-relation";
-                expectedRevision = 1;
-                stored = [new CardRelationEdge(source.Id, target.Id, "blocks")];
-                break;
-            default:
-                requested = new CardRelationEdge(source.Id, target.Id, "blocks");
-                action = "remove-relation";
-                expectedRevision = 0;
-                stored = [];
-                break;
-        }
-
-        async Task SeedStoredGraphAsync()
-        {
-            using var seed = factory.Services.CreateScope();
-            var graph = new BoardDependencies(boardId);
-            graph.ReplaceRelations(stored);
-            seed.ServiceProvider.GetRequiredService<TaskdeckDbContext>().Add(graph);
-            await seed.ServiceProvider.GetRequiredService<TaskdeckDbContext>().SaveChangesAsync();
-        }
-
-        if (stored.Count > 0 && failure != "stale")
-            await SeedStoredGraphAsync();
-
+        // The draft is valid against revision zero and therefore admitted. A later graph write must
+        // still be caught by the existing Preview/Approve revalidation rather than by admission.
         var proposal = await CreateProposalAsync(client, user.UserId, boardId,
-            [RelationOp(0, action, boardId, requested.SourceCardId, requested.TargetCardId,
-                requested.RelationType, expectedRevision)]);
+            [RelationOp(0, "add-relation", boardId, requested.SourceCardId, requested.TargetCardId,
+                requested.RelationType, expectedRevision: 0)]);
+        using (var seed = factory.Services.CreateScope())
+        {
+            var graph = new BoardDependencies(boardId);
+            graph.ReplaceRelations([stored]);
+            var seedDb = seed.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            seedDb.Add(graph);
+            await seedDb.SaveChangesAsync();
+        }
 
-        if (failure == "stale")
-            await SeedStoredGraphAsync();
-
-        var expectedStatus = failure == "stale" ? HttpStatusCode.Conflict : HttpStatusCode.BadRequest;
         var preview = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
-        preview.StatusCode.Should().Be(expectedStatus, await preview.Content.ReadAsStringAsync());
+        preview.StatusCode.Should().Be(HttpStatusCode.Conflict, await preview.Content.ReadAsStringAsync());
         var approval = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
-        approval.StatusCode.Should().Be(expectedStatus, await approval.Content.ReadAsStringAsync());
+        approval.StatusCode.Should().Be(HttpStatusCode.Conflict, await approval.Content.ReadAsStringAsync());
 
         using var verify = factory.Services.CreateScope();
         var db = verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         (await db.AutomationProposals.SingleAsync(item => item.Id == proposal.Id)).Status.Should().Be(ProposalStatus.PendingReview);
-        ((await db.Set<BoardDependencies>().SingleOrDefaultAsync(graph => graph.BoardId == boardId))?.ReadRelations() ?? [])
-            .Should().BeEquivalentTo(stored.Select(CardRelationRules.Normalize));
+        (await db.Set<BoardDependencies>().SingleAsync(graph => graph.BoardId == boardId)).ReadRelations()
+            .Should().Equal(CardRelationRules.Normalize(stored));
     }
 
     [Fact]
-    public async Task RelationProposal_RejectsThe501stCurrentGraphEdgeBeforePreviewOrDecision()
+    public async Task RelationProposal_RejectsThe501stCurrentGraphEdgeAtAdmission()
     {
         using var client = factory.CreateClient();
         var (user, boardId, columnId) = await SetupAsync(client, "relation-cap");
@@ -176,15 +136,16 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
             await seedDb.SaveChangesAsync();
         }
 
-        var proposal = await CreateProposalAsync(client, user.UserId, boardId,
-            [RelationOp(0, "add-relation", boardId, root.Id, targets[^1].Id, "relates-to", expectedRevision: 1)]);
+        var before = await CountProposalsAsync(factory);
+        var response = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
+            ProposalSourceType.Manual, user.UserId, "Over-cap relation", RiskLevel.Medium,
+            Guid.NewGuid().ToString(), boardId, Operations:
+            [RelationOp(0, "add-relation", boardId, root.Id, targets[^1].Id, "relates-to", expectedRevision: 1)]));
 
-        (await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        (await CountProposalsAsync(factory)).Should().Be(before);
         using var verify = factory.Services.CreateScope();
         var db = verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-        (await db.AutomationProposals.SingleAsync(item => item.Id == proposal.Id)).Status.Should().Be(ProposalStatus.PendingReview);
         (await db.Set<BoardDependencies>().SingleAsync(graph => graph.BoardId == boardId)).ReadRelations().Should().HaveCount(500);
     }
 
@@ -311,7 +272,7 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
     [Theory]
     [InlineData("archive-lifecycle")]
     [InlineData("delete")]
-    public async Task RelationProposal_RefusesMixedLifecycleOrDeleteOperations(string conflictingAction)
+    public async Task RelationProposal_RefusesMixedLifecycleOrDeleteOperationsAtAdmission(string conflictingAction)
     {
         using var client = factory.CreateClient();
         var (user, boardId, columnId) = await SetupAsync(client, $"relation-mixed-{conflictingAction}");
@@ -322,15 +283,13 @@ public sealed class TypedRelationProposalsApiTests(HostedWorkerDisabledTestWebAp
             ? new { cardId = source.Id, expectedUpdatedAt = source.UpdatedAt }
             : new { cardId = source.Id };
         var conflict = CardOp(1, conflictingAction, source.Id, conflictParameters);
+        var before = await CountProposalsAsync(factory);
         var response = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
             ProposalSourceType.Manual, user.UserId, "Invalid mixed relation", RiskLevel.Medium,
             Guid.NewGuid().ToString(), boardId, Operations: [relation, conflict]));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
-        var proposal = await response.Content.ReadFromJsonAsync<ProposalDto>();
-        proposal.Should().NotBeNull();
-        var rejected = await client.PostAsync($"/api/automation/proposals/{proposal!.Id}/approve", null);
-        rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest, await rejected.Content.ReadAsStringAsync());
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        (await CountProposalsAsync(factory)).Should().Be(before);
         (await GetRelationsAsync(client, boardId)).Relations.Should().BeEmpty();
         (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{source.Id}"))!.IsArchived.Should().BeFalse();
     }

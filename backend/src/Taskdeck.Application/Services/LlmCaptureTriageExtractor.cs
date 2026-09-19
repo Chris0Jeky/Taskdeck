@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -476,7 +477,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 "LLM transcript triage output failed contract validation for user {UserId}: {Error}",
                 userId,
                 validation.ErrorMessage);
-            return new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.InvalidOutput);
+            return new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.InvalidOutput,
+                Detail: validation.ErrorMessage);
         }
 
         return new LlmCaptureTriageExtraction(
@@ -535,6 +538,8 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
     private sealed record MappedChunkTasks(IReadOnlyList<MappedTask> Tasks);
 
+    private sealed record AcceptedEvidenceTask(int ChunkIndex, CaptureTriageTaskV2 Task);
+
     private sealed record ReducedTasks(
         IReadOnlyList<CaptureTriageTaskV2> Tasks,
         IReadOnlyList<(int Start, int End)?> Spans);
@@ -552,17 +557,49 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         var reduced = new List<CaptureTriageTaskV2>();
         var reducedSpans = new List<(int Start, int End)?>();
         var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var acceptedEvidenceTasks = new Dictionary<(int Start, int End), List<AcceptedEvidenceTask>>();
 
-        void AddIfUnique(CaptureTriageTaskV2 task)
+        void AddIfUnique(MappedTask candidate, int chunkIndex)
         {
-            if (reduced.Count < CaptureTriageOutputContract.MaxTasks && seenTitles.Add(task.Title))
+            if (reduced.Count >= CaptureTriageOutputContract.MaxTasks ||
+                seenTitles.Contains(candidate.Task.Title))
             {
-                reduced.Add(task);
-                reducedSpans.Add(ResolveConsensusSpan(
-                    sanitizedByChunk
-                        .SelectMany(tasks => tasks)
-                        .Where(candidate => string.Equals(candidate.Task.Title, task.Title, StringComparison.OrdinalIgnoreCase))
-                        .Select(candidate => candidate.Span)));
+                return;
+            }
+
+            // Absolute evidence proves that two map outputs came from the same overlap, but not
+            // that a compound sentence contains only one commitment. Collapse cross-chunk rows
+            // only when the structured metadata matches and the titles share a substantial,
+            // contiguous lexical identity. Same-chunk rows and ambiguous/null spans stay distinct.
+            if (candidate.Span is { } span &&
+                acceptedEvidenceTasks.TryGetValue(span, out var priorAcceptedForSpan) &&
+                priorAcceptedForSpan.Any(accepted =>
+                    accepted.ChunkIndex != chunkIndex &&
+                    HasStableTaskIdentity(accepted.Task, candidate.Task)))
+            {
+                return;
+            }
+
+            seenTitles.Add(candidate.Task.Title);
+            reduced.Add(candidate.Task);
+            reducedSpans.Add(ResolveConsensusSpan(
+                sanitizedByChunk
+                    .SelectMany(tasks => tasks)
+                    .Where(existing => string.Equals(
+                        existing.Task.Title,
+                        candidate.Task.Title,
+                        StringComparison.OrdinalIgnoreCase))
+                    .Select(existing => existing.Span)));
+
+            if (candidate.Span is { } acceptedSpan)
+            {
+                if (!acceptedEvidenceTasks.TryGetValue(acceptedSpan, out var acceptedForSpan))
+                {
+                    acceptedForSpan = [];
+                    acceptedEvidenceTasks[acceptedSpan] = acceptedForSpan;
+                }
+
+                acceptedForSpan.Add(new AcceptedEvidenceTask(chunkIndex, candidate.Task));
             }
         }
 
@@ -576,7 +613,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                     : (int)((long)slot * (sanitizedByChunk.Count - 1) / (coverageCount - 1));
                 if (sanitizedByChunk[chunkIndex].Count > 0)
                 {
-                    AddIfUnique(sanitizedByChunk[chunkIndex][0].Task);
+                    AddIfUnique(sanitizedByChunk[chunkIndex][0], chunkIndex);
                 }
             }
         }
@@ -586,11 +623,12 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
              sanitizedByChunk.Any(tasks => taskIndex < tasks.Count);
              taskIndex++)
         {
-            foreach (var tasks in sanitizedByChunk)
+            for (var chunkIndex = 0; chunkIndex < sanitizedByChunk.Count; chunkIndex++)
             {
+                var tasks = sanitizedByChunk[chunkIndex];
                 if (taskIndex < tasks.Count)
                 {
-                    AddIfUnique(tasks[taskIndex].Task);
+                    AddIfUnique(tasks[taskIndex], chunkIndex);
                 }
 
                 if (reduced.Count >= CaptureTriageOutputContract.MaxTasks)
@@ -601,6 +639,99 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         }
 
         return new ReducedTasks(reduced, reducedSpans);
+    }
+
+    private static bool HasStableTaskIdentity(
+        CaptureTriageTaskV2 left,
+        CaptureTriageTaskV2 right)
+    {
+        return string.Equals(left.Type, right.Type, StringComparison.OrdinalIgnoreCase) &&
+               TokenizeIdentity(left.AssigneeHint).SequenceEqual(TokenizeIdentity(right.AssigneeHint)) &&
+               TokenizeIdentity(left.DueDateHint).SequenceEqual(TokenizeIdentity(right.DueDateHint)) &&
+               TitlesShareStableIdentity(left.Title, right.Title);
+    }
+
+    private static bool TitlesShareStableIdentity(string left, string right)
+    {
+        var leftTokens = TokenizeIdentity(left);
+        var rightTokens = TokenizeIdentity(right);
+        if (leftTokens.Count == 0 || rightTokens.Count == 0)
+        {
+            return false;
+        }
+
+        if (leftTokens.SequenceEqual(rightTokens))
+        {
+            return true;
+        }
+
+        var longestSharedRun = LongestCommonContiguousTokenRun(leftTokens, rightTokens);
+        return longestSharedRun > 0 &&
+               longestSharedRun * 2 >= Math.Min(leftTokens.Count, rightTokens.Count);
+    }
+
+    private static IReadOnlyList<string> TokenizeIdentity(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        var tokens = new List<string>();
+        var token = new StringBuilder();
+
+        void FlushToken()
+        {
+            if (token.Length == 0)
+            {
+                return;
+            }
+
+            tokens.Add(token.ToString());
+            token.Clear();
+        }
+
+        foreach (var character in value)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                token.Append(char.ToLowerInvariant(character));
+            }
+            else
+            {
+                FlushToken();
+            }
+        }
+
+        FlushToken();
+        return tokens;
+    }
+
+    private static int LongestCommonContiguousTokenRun(
+        IReadOnlyList<string> left,
+        IReadOnlyList<string> right)
+    {
+        var previous = new int[right.Count + 1];
+        var longest = 0;
+
+        for (var leftIndex = 0; leftIndex < left.Count; leftIndex++)
+        {
+            var current = new int[right.Count + 1];
+            for (var rightIndex = 0; rightIndex < right.Count; rightIndex++)
+            {
+                if (!string.Equals(left[leftIndex], right[rightIndex], StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                current[rightIndex + 1] = previous[rightIndex] + 1;
+                longest = Math.Max(longest, current[rightIndex + 1]);
+            }
+
+            previous = current;
+        }
+
+        return longest;
     }
 
     private static (int Start, int End)? ResolveConsensusSpan(
