@@ -4,11 +4,20 @@ import { test } from 'node:test'
 
 const frontendUnitWorkflowUrl = new URL('../../../.github/workflows/reusable-frontend-unit.yml', import.meta.url)
 const policyUrl = new URL('../../../ci/policy.v1.json', import.meta.url)
+const lanesDocUrl = new URL('../../../docs/ci/continuation/LANES.md', import.meta.url)
+const testingGuideUrl = new URL('../../../docs/TESTING_GUIDE.md', import.meta.url)
 const ciScriptsDirUrl = new URL('../', import.meta.url)
 const LAUNCHER_STEP_NAME = 'Run source launcher regression suite'
-// #3165: the step runs the whole `dev-up*.test.mjs` family, not just the launcher entry point, so
-// the fixture-teardown regressions are required-CI coverage rather than an opt-in local run.
-const LAUNCHER_SUITE_GLOB = 'scripts/ci/dev-up*.test.mjs'
+// This literal is the hosted and canonical local reproduction contract; both docs must carry it exactly (#2136).
+// #3165: it names the whole `dev-up*.test.mjs` family, not just the launcher entry point, so the
+// fixture-teardown regressions are required-CI coverage rather than an opt-in local run.
+const LAUNCHER_SUITES = [
+  'scripts/ci/dev-up-identity-seam.test.mjs',
+  'scripts/ci/dev-up.test.mjs',
+  'scripts/ci/dev-up-fixture-cleanup.test.mjs',
+  'scripts/ci/dev-up-fixture-diagnostics.test.mjs',
+]
+const LAUNCHER_COMMAND = `node --test --test-concurrency=1 --test-timeout=30000 ${LAUNCHER_SUITES.join(' ')}`
 const LAUNCHER_SUITE_FILE_PATTERN = /^dev-up.*\.test\.mjs$/
 const UNCONDITIONAL_STEP_NAMES = [
   'Run frontend lint', 'Run frontend typecheck', 'Run frontend build', 'Run frontend tests with coverage thresholds',
@@ -40,23 +49,33 @@ test('source launcher remains Linux-only with the exact command and step budget 
   assert.ok(lines.includes('    runs-on: ubuntu-latest'))
   assert.ok(!lines.some(line => /^ {4}if:/.test(line)))
   const launcher = step(extractSteps(lines), LAUNCHER_STEP_NAME)
-  assert.match(launcher.body, /^ {8}run: node --test --test-concurrency=1 --test-timeout=30000 scripts\/ci\/dev-up\*\.test\.mjs$/m)
+  assert.match(launcher.body, new RegExp(`^ {8}run: ${LAUNCHER_COMMAND.replaceAll('.', '\\.')}$`, 'm'))
   assert.match(launcher.body, /^ {8}timeout-minutes: 10$/m)
   assert.equal(condition(launcher), "runner.os == 'Linux'")
-  assert.equal(text.split(LAUNCHER_SUITE_GLOB).length - 1, 1)
+  for (const suite of LAUNCHER_SUITES) assert.equal(text.split(suite).length - 1, 1, `${suite} must appear exactly once`)
 })
-test('the launcher glob is not vacuous and covers the whole dev-up suite family (#3165)', async () => {
+test('every scripts/ci/dev-up suite is named by the required launcher step (#3165)', async () => {
   const suiteFiles = (await readdir(ciScriptsDirUrl)).filter(name => LAUNCHER_SUITE_FILE_PATTERN.test(name)).sort()
-  assert.ok(suiteFiles.includes('dev-up.test.mjs'), 'the launcher entry point must stay in the glob')
+  assert.ok(suiteFiles.includes('dev-up.test.mjs'), 'the launcher entry point must stay in the suite list')
   assert.deepEqual(
-    suiteFiles,
-    ['dev-up-fixture-cleanup.test.mjs', 'dev-up-fixture-diagnostics.test.mjs', 'dev-up.test.mjs'],
-    'a new scripts/ci/dev-up*.test.mjs file joins the required Linux step: confirm it is bounded before widening this list',
+    suiteFiles.map(name => `scripts/ci/${name}`),
+    [...LAUNCHER_SUITES].sort(),
+    'a new scripts/ci/dev-up*.test.mjs file must join the required Linux step: confirm it is bounded, then add it to LAUNCHER_SUITES and to both canonical docs',
   )
+})
+test('canonical docs reproduce the complete launcher command (#2136)', async () => {
+  const documents = [
+    ['docs/ci/continuation/LANES.md', await readFile(lanesDocUrl, 'utf8')],
+    ['docs/TESTING_GUIDE.md', await readFile(testingGuideUrl, 'utf8')],
+  ]
+  for (const [name, text] of documents) {
+    assert.ok(text.includes('`' + LAUNCHER_COMMAND + '`'), `${name} must include the exact hosted launcher command`)
+    for (const suite of LAUNCHER_SUITES) assert.ok(text.includes(suite), `${name} must name ${suite}`)
+  }
 })
 test('frontend semantics no longer execute launcher tests or wait for launcher results', async () => {
   const lines = extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit')
-  assert.ok(!lines.some(line => /dev-up\.test|^ {4}needs:/.test(line)))
+  assert.ok(!lines.some(line => /dev-up(?:-identity-seam)?\.test|^ {4}needs:/.test(line)))
 })
 test('frontend-unit retains both hosted operating systems', async () => {
   const lines = extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit')

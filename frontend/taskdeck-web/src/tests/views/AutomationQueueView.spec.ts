@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../../api/http'
 import AutomationQueueView from '../../views/AutomationQueueView.vue'
 
 const routerMocks = vi.hoisted(() => ({
@@ -114,6 +115,51 @@ describe('AutomationQueueView', () => {
     expect(wrapper.text()).toContain('Board-scoped instructions')
     expect(wrapper.text()).toContain('Inbox -> Start Triage')
     expect(wrapper.find('input[aria-label="Board for queue request"]').exists()).toBe(true)
+  })
+
+  it('bounds board discovery and recovers without blocking manual board IDs', async () => {
+    let resolveRetry: (boards: Array<{ id: string; name: string }>) => void = () => {}
+    const retryRequest = new Promise<Array<{ id: string; name: string }>>((resolve) => {
+      resolveRetry = resolve
+    })
+
+    boardsMocks.getBoards
+      .mockRejectedValueOnce(new Error('board discovery failed'))
+      .mockReturnValueOnce(retryRequest)
+
+    const wrapper = mount(AutomationQueueView)
+    await flushPromises()
+    await openComposer(wrapper)
+
+    const boundedRead = {
+      timeout: BOARD_REQUEST_TIMEOUT_MS,
+      skipRetry: true,
+    }
+
+    expect(boardsMocks.getBoards).toHaveBeenNthCalledWith(1, undefined, true, boundedRead)
+    expect(wrapper.get('[data-testid="queue-boards-error-message"]').attributes('role')).toBe('alert')
+    expect(wrapper.get('[data-testid="queue-boards-error-message"]').text()).toContain(
+      'Board suggestions could not be loaded.',
+    )
+    expect(
+      wrapper.get('input[aria-label="Board for queue request"]').attributes('disabled'),
+    ).toBeUndefined()
+
+    const retryButton = wrapper.get('[data-testid="queue-boards-retry"]')
+    await retryButton.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(boardsMocks.getBoards).toHaveBeenNthCalledWith(2, undefined, true, boundedRead)
+    expect(wrapper.get('[data-testid="queue-boards-retry"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="queue-boards-retry"]').text()).toContain('Retrying boards...')
+
+    resolveRetry([
+      { id: '123e4567-e89b-12d3-a456-426614174000', name: 'Engineering Sprint' },
+    ])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="queue-boards-error-message"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="queue-boards-retry"]').exists()).toBe(false)
   })
 
   it('submits board id selected via board picker with queue request', async () => {

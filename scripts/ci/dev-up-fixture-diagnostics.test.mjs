@@ -67,9 +67,12 @@ test('required source-launcher lane discovers the cleanup regression family', as
     new URL('../../.github/workflows/reusable-frontend-unit.yml', import.meta.url),
     'utf8',
   )
-  assert.match(
-    workflow,
-    /^\s*run: node --test\b[^\r\n]* scripts\/ci\/dev-up\*\.test\.mjs\s*$/m,
-    'required CI must execute the fixture cleanup regressions, not just dev-up.test.mjs',
-  )
+  const step = workflow.match(/^\s*run: node --test\b[^\r\n]*$/m)?.[0]
+  assert.ok(step, 'the required lane must keep a node --test launcher step')
+  for (const suite of ['scripts/ci/dev-up-fixture-cleanup.test.mjs', 'scripts/ci/dev-up-fixture-diagnostics.test.mjs']) {
+    assert.ok(
+      step.includes(suite),
+      `required CI must execute ${suite}, not just dev-up.test.mjs`,
+    )
+  }
 })
