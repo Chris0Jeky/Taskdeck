@@ -73,7 +73,7 @@ async function flushMicrotasks() {
 
 describe('useProposalRevisions residual hardening', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('keeps metadata unknown when a self-complete stale prefix omits the disputed number', async () => {
@@ -133,6 +133,74 @@ describe('useProposalRevisions residual hardening', () => {
     expect(revisions.revisionCount.value).toBe(1)
     expect(revisions.revisionsLoaded.value).toBe(true)
     expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('never evicts the active proposal even when it is the least-recently-used history', async () => {
+    // p-0 must become the OLDEST entry while it is on screen: its history is
+    // created by a save (the pending GET never answers), 63 other proposals are
+    // walked after it, and a stale save continuation for a 65th proposal then
+    // lands while p-0 is active again. The eviction candidate is p-0, and the
+    // guard must skip it so its save-proven revision survives.
+    const pendingGets = new Map<string, Array<(revisions: ProposalRevision[]) => void>>()
+    vi.mocked(proposalRevisionsApi.getRevisions).mockImplementation((proposalId) => {
+      if (proposalId === 'p-0' || proposalId === 'p-64') {
+        return new Promise<ProposalRevision[]>((resolve) => {
+          const resolvers = pendingGets.get(proposalId) ?? []
+          resolvers.push(resolve)
+          pendingGets.set(proposalId, resolvers)
+        })
+      }
+      return Promise.resolve([makeRevision(proposalId, 1)])
+    })
+    let resolveStaleSave!: (revision: ProposalRevision) => void
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementation((proposalId) => {
+      if (proposalId === 'p-64') {
+        return new Promise<ProposalRevision>((resolve) => { resolveStaleSave = resolve })
+      }
+      return Promise.resolve(makeRevision(proposalId, 1))
+    })
+
+    const activeProposal = ref<ApiProposal | null>(makeProposal('p-0'))
+    const revisions = useProposalRevisions(activeProposal)
+    await flushMicrotasks()
+    await revisions.saveRevision({ revisedPayload: '{}', reason: 'Proven by save' })
+    expect(revisions.revisionCount.value).toBe(1)
+    expect(revisions.revisionsLoaded.value).toBe(true)
+
+    for (let index = 1; index <= 63; index += 1) {
+      activeProposal.value = makeProposal(`p-${index}`)
+      await flushMicrotasks()
+      expect(revisions.latestRevision.value?.proposalId).toBe(`p-${index}`)
+    }
+
+    // p-64 has no history yet (its GET never answers); its save is still in
+    // flight when the reviewer returns to p-0.
+    activeProposal.value = makeProposal('p-64')
+    await flushMicrotasks()
+    const staleSave = revisions.saveRevision({ revisedPayload: '{}', reason: 'Stale' })
+    await vi.waitFor(() => expect(resolveStaleSave).toBeTypeOf('function'))
+
+    activeProposal.value = makeProposal('p-0')
+    await flushMicrotasks()
+    expect(revisions.revisionsLoaded.value).toBe(false)
+
+    // The 65th history arrives from the stale continuation: eviction pressure
+    // with p-0 both active and least recently used.
+    resolveStaleSave(makeRevision('p-64', 1))
+    await staleSave
+    await flushMicrotasks()
+
+    // A pre-save read for p-0 answers empty. With p-0's history retained, the
+    // save-proven revision wins; had p-0 been evicted, the empty answer would
+    // publish an authoritative zero over a persisted revision.
+    const p0Gets = pendingGets.get('p-0') ?? []
+    expect(p0Gets).toHaveLength(2)
+    p0Gets[1]([])
+    await flushMicrotasks()
+
+    expect(revisions.revisionsLoaded.value).toBe(true)
+    expect(revisions.revisionCount.value).toBe(1)
+    expect(revisions.latestRevision.value?.id).toBe('revision-p-0-1')
   })
 
   it('evicts the least-recently-used proposal history after a bounded queue walk', async () => {
