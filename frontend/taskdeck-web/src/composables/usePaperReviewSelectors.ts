@@ -218,7 +218,7 @@ export interface PaperReviewSelectors {
 }
 
 const EMPTY_PROVENANCE: ProvenanceRow[] = Object.freeze([] as ProvenanceRow[]) as ProvenanceRow[]
-const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]
+export const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]
 const EMPTY_CONFLICTS: ConflictRow[] = Object.freeze([] as ConflictRow[]) as ConflictRow[]
 const EMPTY_HISTORY: HistoryRow[] = Object.freeze([] as HistoryRow[]) as HistoryRow[]
 const EMPTY_SIMILAR: SimilarPastRow[] = Object.freeze([] as SimilarPastRow[]) as SimilarPastRow[]

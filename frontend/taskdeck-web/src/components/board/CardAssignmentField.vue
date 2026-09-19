@@ -5,7 +5,13 @@ import { useSessionStore } from '../../store/sessionStore'
 import type { BoardParticipant, Card, CardAssignment } from '../../types/board'
 import CardAssignees from './CardAssignees.vue'
 
-const props = defineProps<{ card: Card; readOnly: boolean; readsBlocked?: boolean; disabled?: boolean }>()
+const props = defineProps<{
+  card: Card
+  committedCard?: Card | null
+  readOnly: boolean
+  readsBlocked?: boolean
+  disabled?: boolean
+}>()
 const emit = defineEmits<{
   saved: [card: Card, previousVersion?: string]
   'dirty-change': [dirty: boolean]
@@ -107,6 +113,17 @@ function reset(card: Card) {
   selected.value = [...baseline.value]
   version.value = card.updatedAt
 }
+// A late archive/restore receipt owns lifecycle and the next CAS token only.
+// Preserve the assignment baseline and local selection so a newer draft is not overwritten.
+watch(
+  () => props.committedCard,
+  committed => {
+    if (!committed || committed.boardId !== props.card.boardId || committed.id !== props.card.id) return
+    version.value = committed.updatedAt
+    archived.value = !!committed.isArchived
+  },
+  { flush: 'sync' },
+)
 async function load(refresh = false) {
   if (props.readsBlocked) return
   const request = ++loadGeneration

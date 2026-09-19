@@ -11,7 +11,8 @@ export const PRE_MERGE_GATE_SKILL_PATH = '.claude/skills/pre-merge-gate/SKILL.md
 export const PRE_MERGE_SECRETS_HELPER_PATH =
   'scripts/github/check-pre-merge-secrets-evidence.mjs'
 export const PRE_MERGE_SECRET_CHECK_NAME = 'Secret Scan / Gitleaks Scan'
-const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F]/u
+const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F\uFFFE\uFFFF]/u
+const FORBIDDEN_COMMENT_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\uFFFE\uFFFF]/u
 
 function hasUnpairedUtf16Surrogate(value) {
   for (let index = 0; index < value.length; index += 1) {
@@ -273,7 +274,23 @@ function validateFrontMatterStructure(lines, rulePath) {
       structureErrors.push(`${rulePath} front matter has tab indentation, which this check cannot parse: ${line.trim()}`)
       continue
     }
-    if (/^ *#/.test(line)) {
+    const commentOnly = /^ *#/.test(line)
+    const forbiddenCharacter = commentOnly
+      ? FORBIDDEN_COMMENT_CONTROL
+      : FORBIDDEN_SCALAR_CONTROL
+    if (forbiddenCharacter.test(line)) {
+      structureErrors.push(
+        `${rulePath} front matter has a forbidden control or non-printable character, which this check cannot parse`,
+      )
+      continue
+    }
+    if (hasUnpairedUtf16Surrogate(line)) {
+      structureErrors.push(
+        `${rulePath} front matter has invalid Unicode, which this check cannot parse`,
+      )
+      continue
+    }
+    if (commentOnly) {
       continue
     }
 

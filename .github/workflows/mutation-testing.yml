@@ -90,7 +90,15 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
-      - name: Run Stryker
+      - name: Run mutation activation smoke test
+        id: activation_smoke
+        continue-on-error: true
+        working-directory: frontend/taskdeck-web
+        run: npm run mutation:smoke
+
+      - name: Run Stryker advisory report
+        if: ${{ !cancelled() && (steps.activation_smoke.outcome == 'success' || steps.activation_smoke.outcome == 'failure') }}
+        continue-on-error: true
         working-directory: frontend/taskdeck-web
         run: npx stryker run
 
@@ -101,6 +109,16 @@ jobs:
           name: stryker-js-report
           path: frontend/taskdeck-web/reports/
           retention-days: 30
+
+      - name: Enforce mutation activation smoke verdict
+        if: ${{ !cancelled() && (steps.activation_smoke.outcome == 'success' || steps.activation_smoke.outcome == 'failure') }}
+        env:
+          ACTIVATION_SMOKE_OUTCOME: ${{ steps.activation_smoke.outcome }}
+        run: |
+          if [ "$ACTIVATION_SMOKE_OUTCOME" != "success" ]; then
+            echo "::error::Mutation activation smoke failed. The full advisory report was still attempted and its artifact upload step ran for diagnosis."
+            exit 1
+          fi
 
   summary:
     name: Mutation Testing Summary
