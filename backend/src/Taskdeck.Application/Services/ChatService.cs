@@ -313,18 +313,9 @@ public class ChatService : IChatService
             string? degradedReason = null;
             string? toolCallMetadataJson = null;
 
-            // Quota and kill switch gate — block before any LLM call
+            // Preserve the kill-switch boundary even for deterministic local chat actions.
             if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
                 return Result.Failure<ChatMessageDto>(ErrorCodes.LlmKillSwitchActive, "LLM access is currently disabled");
-
-            if (_quotaService != null)
-            {
-                var reservation = await _quotaService.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
-                if (!reservation.Allowed)
-                    return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
-                quotaReservationId = reservation.ReservationId;
-                quotaEstimatedTokens = reservation.EstimatedTokens;
-            }
 
             if (ChatPromptPolicy.LooksLikeChecklistBootstrapRequest(actionAttemptContent)
                 && (turnRequestsAction || !ChatPromptPolicy.StartsWithQuestion(actionAttemptContent)))
@@ -357,6 +348,16 @@ public class ChatService : IChatService
             }
             else
             {
+                // Only requests that can reach a provider consume an LLM quota slot.
+                if (_quotaService != null)
+                {
+                    var reservation = await _quotaService.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
+                    if (!reservation.Allowed)
+                        return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
+                    quotaReservationId = reservation.ReservationId;
+                    quotaEstimatedTokens = reservation.EstimatedTokens;
+                }
+
                 var usedToolCalling = false;
                 var failedProposalToolAttempt = false;
                 LlmCompletionResult? reusableNoToolResponse = null;

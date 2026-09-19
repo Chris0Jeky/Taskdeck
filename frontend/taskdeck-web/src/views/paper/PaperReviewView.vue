@@ -1413,7 +1413,13 @@ let activeRevisionReviewAttempt: RevisionReviewAttempt | null = null
  */
 let revisionReviewAttemptGeneration = 0
 
-const revisionReviewUnavailableKeys = ref<Map<string, RevisionReviewUnavailableReason>>(
+interface RevisionReviewUnavailableState {
+  /** The exact still-armed barrier generation this guidance belongs to. */
+  epoch: number
+  reason: RevisionReviewUnavailableReason
+}
+
+const revisionReviewUnavailableStates = ref<Map<string, RevisionReviewUnavailableState>>(
   new Map(),
 )
 
@@ -1421,30 +1427,38 @@ function revisionReviewKey(proposalId: string): string {
   return proposalId.toLowerCase()
 }
 
-function revisionReviewUnavailableKey(
+function clearRevisionReviewUnavailable(
   proposalId: string,
-  revisionIdentity: string | null,
-): string {
-  return `${revisionReviewKey(proposalId)}:${revisionIdentity?.toLowerCase() ?? ''}`
+  expectedEpoch?: number,
+) {
+  const key = revisionReviewKey(proposalId)
+  const current = revisionReviewUnavailableStates.value.get(key)
+  if (!current || (expectedEpoch !== undefined && current.epoch !== expectedEpoch)) return
+  const next = new Map(revisionReviewUnavailableStates.value)
+  next.delete(key)
+  revisionReviewUnavailableStates.value = next
 }
 
 function requireRevisionReviewRefresh(proposalId: string) {
-  revisionReviewRefreshEpochs.set(
-    revisionReviewKey(proposalId),
-    ++revisionReviewEpoch,
-  )
+  const key = revisionReviewKey(proposalId)
+  revisionReviewRefreshEpochs.set(key, ++revisionReviewEpoch)
+  // A later save creates a new authority epoch. Guidance from the superseded
+  // barrier must not certify or suppress evidence for that newer save.
+  clearRevisionReviewUnavailable(proposalId)
 }
 
 function setRevisionReviewUnavailable(
   proposalId: string,
-  revisionIdentity: string | null,
-  reason: RevisionReviewUnavailableReason | null,
+  requiredEpoch: number,
+  reason: RevisionReviewUnavailableReason,
 ) {
-  const key = revisionReviewUnavailableKey(proposalId, revisionIdentity)
-  const next = new Map(revisionReviewUnavailableKeys.value)
-  if (reason) next.set(key, reason)
-  else next.delete(key)
-  revisionReviewUnavailableKeys.value = next
+  const key = revisionReviewKey(proposalId)
+  // A stale attempt may settle after another save armed a newer barrier. Bind
+  // guidance only to the epoch that still owns the decision preflight.
+  if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return
+  const next = new Map(revisionReviewUnavailableStates.value)
+  next.set(key, { epoch: requiredEpoch, reason })
+  revisionReviewUnavailableStates.value = next
 }
 
 function isRevisionReviewUnavailableVisible(proposal: ApiProposal): boolean {
@@ -1462,11 +1476,18 @@ const activeRevisionReviewUnavailableReason = computed<RevisionReviewUnavailable
   () => {
     const proposal = activeProposal.value
     if (!proposal || !isRevisionReviewUnavailableVisible(proposal)) return null
-    return (
-      revisionReviewUnavailableKeys.value.get(
-        revisionReviewUnavailableKey(proposal.id, proposalRevisionIdentity(proposal)),
-      ) ?? null
-    )
+    const key = revisionReviewKey(proposal.id)
+    // Read the REACTIVE state first, unconditionally. `revisionReviewRefreshEpochs`
+    // is a plain Map, so returning early on it would leave this computed with no
+    // dependency on the guidance map at all: Vue would cache `null` from the
+    // first evaluation (taken before any barrier was armed) and never re-run
+    // when `setRevisionReviewUnavailable` later publishes a failed/timed-out
+    // receipt. The reviewer would then get no "no decision was made" note for
+    // exactly the barrier failures this guidance exists to report.
+    const unavailable = revisionReviewUnavailableStates.value.get(key)
+    const requiredEpoch = revisionReviewRefreshEpochs.get(key)
+    if (requiredEpoch === undefined) return null
+    return unavailable?.epoch === requiredEpoch ? unavailable.reason : null
   },
 )
 
@@ -1493,18 +1514,17 @@ watch(
     if (!proposal) return null
     return {
       proposalId: proposal.id,
-      revisionIdentity: proposalRevisionIdentity(proposal),
       eligible: isRevisionReviewUnavailableVisible(proposal),
     }
   },
   (current, previous) => {
     if (!previous?.eligible) return
     const sameProposal = !!current && proposalIdsEqual(current.proposalId, previous.proposalId)
-    // Keep a failure for its exact revision so a move to a clean revision does
-    // not inherit it. Clear it when that proposal leaves the actionable review
-    // state, or when the active proposal itself is replaced.
+    // A revision identity poll for the same proposal must not discard guidance
+    // while its barrier epoch is still armed. Clear only when the proposal is
+    // replaced or leaves the actionable review state.
     if (!sameProposal || !current?.eligible) {
-      setRevisionReviewUnavailable(previous.proposalId, previous.revisionIdentity, null)
+      clearRevisionReviewUnavailable(previous.proposalId)
     }
   },
 )
@@ -1797,6 +1817,7 @@ function clearRevisionReviewBarrier(
   const key = revisionReviewKey(proposal.id)
   if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return 'superseded'
   revisionReviewRefreshEpochs.delete(key)
+  clearRevisionReviewUnavailable(proposal.id, requiredEpoch)
   return 'refreshed'
 }
 
@@ -1816,6 +1837,7 @@ function clearRevisionReviewBarrier(
  */
 function applyRevisionReviewOutcome(
   proposal: ApiProposal,
+  requiredEpoch: number,
   outcome: RevisionReviewRefreshOutcome,
 ) {
   // Nothing to tell the reviewer: the screen they were deciding on is gone or
@@ -1824,19 +1846,18 @@ function applyRevisionReviewOutcome(
 
   const current = activeProposal.value
   if (!current || !proposalIdsEqual(current.id, proposal.id)) return
-  const revisionIdentity = proposalRevisionIdentity(current)
 
   switch (outcome) {
     case 'refreshed':
-      setRevisionReviewUnavailable(current.id, revisionIdentity, null)
+      clearRevisionReviewUnavailable(current.id, requiredEpoch)
       toast.info(t('review.toast.revisionReviewRefreshed'))
       return
     case 'failed':
-      setRevisionReviewUnavailable(current.id, revisionIdentity, 'failed')
+      setRevisionReviewUnavailable(current.id, requiredEpoch, 'failed')
       toast.error(t('review.toast.revisionReviewUnavailable'))
       return
     case 'timed-out':
-      setRevisionReviewUnavailable(current.id, revisionIdentity, 'timed-out')
+      setRevisionReviewUnavailable(current.id, requiredEpoch, 'timed-out')
       toast.error(t('review.toast.revisionReviewTimedOut'))
       return
   }
@@ -1860,6 +1881,7 @@ async function refreshRevisionReviewBeforeApply(
     if (generation !== revisionReviewAttemptGeneration) return
     applyRevisionReviewOutcome(
       proposal,
+      requiredEpoch,
       outcome === 'refreshed'
         ? clearRevisionReviewBarrier(proposal, requiredEpoch)
         : outcome,

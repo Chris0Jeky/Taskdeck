@@ -2862,10 +2862,10 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_ShouldReleaseReservation_WhenChecklistBootstrapMakesNoLlmCall()
+    public async Task SendMessageAsync_ShouldNotReserve_WhenChecklistBootstrapMakesNoLlmCall()
     {
-        // #1427 re-review: the checklist-bootstrap branch bypasses the LLM entirely, so the reserved
-        // slot was never billed — the finally must RELEASE it (no quota consumed by a no-LLM request).
+        // #1431 L3: the checklist-bootstrap branch is fully local. It must not transiently
+        // occupy an LLM quota slot before returning its deterministic result.
         var userId = Guid.NewGuid();
         var session = new ChatSession(userId, "Bootstrap no-board quota test"); // no BoardId
 
@@ -2873,10 +2873,7 @@ public class ChatServiceTests
             .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
             .ReturnsAsync(session);
 
-        var reservationId = Guid.NewGuid();
-        var quotaMock = new Mock<ILlmQuotaService>();
-        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
-            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));
+        var quotaMock = new Mock<ILlmQuotaService>(MockBehavior.Strict);
 
         var serviceWithQuota = new ChatService(
             _unitOfWorkMock.Object,
@@ -2896,11 +2893,7 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         _llmProviderMock.Verify(
             p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-        quotaMock.Verify(
-            q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
-        quotaMock.Verify(
-            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        quotaMock.VerifyNoOtherCalls();
     }
 
     [Fact]

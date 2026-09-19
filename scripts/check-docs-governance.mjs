@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url'
 
 export const CI_POLICY_PATH = 'ci/policy.v1.json'
 export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
+export const PRE_MERGE_GATE_SKILL_PATH = '.claude/skills/pre-merge-gate/SKILL.md'
+export const PRE_MERGE_SECRETS_HELPER_PATH =
+  'scripts/github/check-pre-merge-secrets-evidence.mjs'
+export const PRE_MERGE_SECRET_CHECK_NAME = 'Secret Scan / Gitleaks Scan'
 const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F\uFFFE\uFFFF]/u
 const FORBIDDEN_COMMENT_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\uFFFE\uFFFF]/u
 
@@ -70,6 +74,44 @@ function expectContains(source, token, label) {
   if (!source.includes(token)) {
     errors.push(`${label} is missing required token: ${token}`)
   }
+}
+
+
+/**
+ * Validate that the pre-merge gate derives its secrets verdict from one canonical, exact-head
+ * GitHub check-run receipt. A prose-only or unconditional CLEAN template would let missing,
+ * pending, stale, failed, or ambiguous evidence appear verified.
+ */
+export function collectPreMergeSecretsSkillErrors(
+  skillText,
+  skillPath = PRE_MERGE_GATE_SKILL_PATH,
+) {
+  const skillErrors = []
+  const requiredTokens = [
+    PRE_MERGE_SECRET_CHECK_NAME,
+    PRE_MERGE_SECRETS_HELPER_PATH.split('/').at(-1),
+    'NOT VERIFIED',
+    'exact PR head',
+    'expected_head=',
+    'observed_head=',
+    'status=',
+    'conclusion=',
+    'url=',
+  ]
+
+  if (/^\s*-\s*\[[ xX]\]\s*Secrets scan(?:\s*\([^\n]*\))?:\s*CLEAN\s*$/mu.test(skillText)) {
+    skillErrors.push(
+      `${skillPath} must not declare an unconditional CLEAN secrets verdict; derive it from exact-head check-run evidence`,
+    )
+  }
+
+  for (const token of requiredTokens) {
+    if (!skillText.includes(token)) {
+      skillErrors.push(`${skillPath} is missing required secrets-evidence token: ${token}`)
+    }
+  }
+
+  return skillErrors
 }
 
 /**
@@ -448,6 +490,18 @@ async function validateControlPathMirror() {
   errors.push(...collectControlPathMirrorErrors(policyText, ruleText))
 }
 
+async function validatePreMergeSecretsSkill() {
+  for (const path of [PRE_MERGE_GATE_SKILL_PATH, PRE_MERGE_SECRETS_HELPER_PATH]) {
+    if (!(await fileExists(path))) {
+      errors.push(`Missing required pre-merge secrets-evidence input: ${path}`)
+      return
+    }
+  }
+
+  const skillText = await readFile(resolve(PRE_MERGE_GATE_SKILL_PATH), 'utf8')
+  errors.push(...collectPreMergeSecretsSkillErrors(skillText))
+}
+
 async function main() {
   for (const path of requiredDocs) {
     if (!(await fileExists(path))) {
@@ -487,6 +541,7 @@ async function main() {
   }
 
   await validateControlPathMirror()
+  await validatePreMergeSecretsSkill()
 
   if (errors.length > 0) {
     console.error('Docs governance check failed:')

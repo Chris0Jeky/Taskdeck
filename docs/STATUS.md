@@ -4,6 +4,18 @@ Last Updated: 2026-09-19
 
 GitHub Pages (`https://chris0jeky.github.io/Taskdeck/`) now runs as a static demo: empty `VITE_API_BASE_URL` plus `VITE_DEMO_MODE=true`, runtime Pages+loopback detection, and an axios demo adapter so review, chat, and card parent/assignee reads never call `localhost:5000`. Home and Review share the same one pending demo proposal. Local Vite with `.env` still uses the real local API. This is not a hosted backend; that remains later work. Detection: `frontend/taskdeck-web/src/utils/apiBaseUrl.ts`. Operator notes: `docs/product/DEMO_PLAYBOOK.md`.
 
+## Local checklist bootstrap no longer holds an LLM quota slot (#1431 L3)
+
+A deterministic checklist-bootstrap chat turn never reaches a provider, but `ChatService` used to
+reserve an LLM quota slot before selecting that branch and release it in the `finally`. Under a small
+`RequestsPerHour` limit, a burst of purely local requests could therefore transiently deny concurrent
+genuine LLM work. The reservation now happens inside the branch that can reach a provider, so a local
+bootstrap turn makes no quota-service call at all. This supersedes the `#1427` M2 invariant that the
+no-LLM bootstrap path *releases* its reservation: there is no longer a reservation to release. The
+kill-switch check still runs before branch selection, so a disabled Chat surface continues to block
+local bootstrap turns as well. Every provider-reachable path — tool-calling, reusable no-tool, single
+turn and streaming — reserves and settles exactly as before.
+
 ## Source-launcher literal-import readiness (#1900)
 
 The source Vite launcher now has a real-provider regression for router-style literal lazy imports.
