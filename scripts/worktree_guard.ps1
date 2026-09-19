@@ -13,7 +13,7 @@
 # Exit codes (unchanged contract):
 #   0 - inside a valid linked worktree
 #   1 - FATAL: main checkout / not a linked worktree / HEAD expectation unmet
-#   2 - ERROR: setup failure, not inside a git repository, layout unreadable
+#   2 - ERROR: setup/configuration failure, repository/layout unreadable
 #
 # -AllowedMarkers is retained for invocation compatibility and is ADVISORY
 # only: a root outside those markers is reported but not rejected.
@@ -85,6 +85,17 @@ finally {
 if (-not $layoutInvocationSucceeded -or $layoutExitCode -ne 0 -or $layoutOutput.Count -ne 2) {
     Write-Error "ERROR [worktree_guard]: repository layout could not be verified." -ErrorAction Continue
     exit 2
+}
+
+function Test-GuardAsciiWhitespaceOnly {
+    param([AllowEmptyString()][string]$Value)
+
+    # Git branch names are byte-preserving Unicode strings, and the shell guard
+    # rejects only ASCII horizontal/vertical whitespace ([[:space:]] in the C
+    # locale). .NET's IsNullOrWhiteSpace also classifies valid branch characters
+    # such as U+00A0 NBSP, which made the two guards disagree on the same name.
+    return (-not [string]::IsNullOrEmpty($Value)) -and
+        [System.Text.RegularExpressions.Regex]::IsMatch($Value, "^[\x09-\x0D\x20]+$")
 }
 
 $invocationDirectory = (Get-Location).Path
@@ -239,7 +250,16 @@ if ($symbolicHead.Succeeded -and $symbolicHead.ExitCode -eq 0 -and $symbolicHead
 $headState = if ([string]::IsNullOrEmpty($headBranch)) { "detached" } else { "branch" }
 
 $effectiveExpectHead = $ExpectHead
-if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $effectiveExpectHead -eq "Any") {
+$hasExpectedBranch = -not [string]::IsNullOrEmpty($ExpectedBranch)
+if ($hasExpectedBranch -and (Test-GuardAsciiWhitespaceOnly $ExpectedBranch)) {
+    Write-Error "ERROR [worktree_guard]: -ExpectedBranch cannot be whitespace-only." -ErrorAction Continue
+    exit 2
+}
+if ($hasExpectedBranch -and $effectiveExpectHead -eq "Detached") {
+    Write-Error "ERROR [worktree_guard]: -ExpectHead Detached cannot be combined with -ExpectedBranch." -ErrorAction Continue
+    exit 2
+}
+if ($hasExpectedBranch -and $effectiveExpectHead -eq "Any") {
     $effectiveExpectHead = "Branch"
 }
 
@@ -256,11 +276,11 @@ if ($effectiveExpectHead -eq "Branch") {
         Write-Error -ErrorAction Continue @"
 FATAL [worktree_guard]: Worktree HEAD is detached but a branch was required.
   toplevel: $topLevel
-  expected: $(if ([string]::IsNullOrWhiteSpace($ExpectedBranch)) { "<any branch>" } else { $ExpectedBranch })
+  expected: $(if (-not $hasExpectedBranch) { "<any branch>" } else { $ExpectedBranch })
 "@
         exit 1
     }
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $headBranch -ne $ExpectedBranch) {
+    if ($hasExpectedBranch -and $headBranch -ne $ExpectedBranch) {
         Write-Error -ErrorAction Continue @"
 FATAL [worktree_guard]: Worktree HEAD is on the wrong branch.
   toplevel: $topLevel
