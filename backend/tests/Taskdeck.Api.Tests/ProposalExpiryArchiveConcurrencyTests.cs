@@ -85,8 +85,8 @@ public sealed class ProposalExpiryArchiveConcurrencyTests
             result.ErrorCode.Should().Be(ErrorCodes.Conflict);
             proposals.Verify(
                 repository => repository.GetExpiredAsync(It.IsAny<CancellationToken>()),
-                Times.Exactly(2),
-                "the decorator guards one snapshot and the inner lifecycle service owns the authoritative sweep");
+                Times.Once,
+                "the guard and lifecycle mutation must consume the same authoritative sweep");
             await using var verifyDb = new TaskdeckDbContext(options);
             (await verifyDb.Boards.SingleAsync(board => board.Id == seeded.BoardId))
                 .IsArchived.Should().BeTrue();
