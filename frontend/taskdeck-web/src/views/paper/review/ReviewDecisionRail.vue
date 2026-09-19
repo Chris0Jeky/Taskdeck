@@ -70,11 +70,14 @@ const props = withDefaults(
      * applied to each rendered decision control (Reject, Request edit, Defer and
      * Apply); `applyOnly` can hide the first three, while `dismissable` renders only
      * File away without this decision description. The rail may append its own
-     * edit-lock note when that lock is active. The caller owns ensuring each supplied
-     * id resolves to a rendered explanation for the controls' CURRENT state; a
+     * edit-lock note when that lock is active. `applyDescriptionIds` adds optional
+     * explanation ids to Apply only. The caller owns ensuring each supplied id
+     * resolves to a rendered explanation for the controls' CURRENT state; a
      * dangling reference reports nothing while the markup claims otherwise.
      */
     decisionDescriptionIds?: string
+    /** Space-separated DOM ids of explanations that apply only to Apply. */
+    applyDescriptionIds?: string
   }>(),
   { applyPhase: 'approve', editLock: 'off', applyOnly: false },
 )
@@ -114,6 +117,15 @@ const decisionDescribedBy = computed(() => {
   const ids = (props.decisionDescriptionIds ?? '').split(/\s+/).filter(Boolean)
   if (showEditLock.value) ids.push(lockNoteId)
   return ids.length > 0 ? ids.join(' ') : undefined
+})
+
+const applyDecisionDescribedBy = computed(() => {
+  const ids = [
+    ...((decisionDescribedBy.value ?? '').split(/\s+/).filter(Boolean)),
+    ...((props.applyDescriptionIds ?? '').split(/\s+/).filter(Boolean)),
+  ]
+  const uniqueIds = [...new Set(ids)]
+  return uniqueIds.length > 0 ? uniqueIds.join(' ') : undefined
 })
 
 /**
@@ -248,7 +260,7 @@ const emit = defineEmits<{
           kbd="⏎"
           variant="ember"
           :disabled="busy"
-          :aria-describedby="decisionDescribedBy"
+          :aria-describedby="applyDecisionDescribedBy"
           data-testid="decision-apply"
           :data-apply-phase="applyPhase"
           :aria-label="applyAriaLabel"
