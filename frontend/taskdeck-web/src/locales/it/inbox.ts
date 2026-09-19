@@ -23,6 +23,12 @@ export default {
   },
   eyebrow:
     'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
+  // Variante di `eyebrow` con ambito bacheca. Entrambi i conteggi derivano
+  // dalle righe caricate da questo client e `currentListQuery()` limita quella
+  // pagina a 200: nessuno dei due è un totale autoritativo della bacheca.
+  // «Visualizzati» è tutta l'onestà di questa stringa (GH-1991 M4).
+  eyebrowScoped:
+    'Inbox · {board} · Visualizzati {pending} da smistare · {total} catturato | Inbox · {board} · Visualizzati {pending} da smistare · {total} catturati',
   // Mostrato AL POSTO di `eyebrow` durante la sostituzione dell'ambito (#2501):
   // i conteggi apparterrebbero all'ambito appena lasciato. Nessun plurale: non
   // c'è alcun numero con cui concordare. E nessuna parola sul caricamento: la
@@ -167,16 +173,14 @@ export default {
     // accessibili portano l'etichetta visibile per prima (WCAG 2.5.3) e si
     // distinguono solo per quello che dicono dopo.
     //
-    // `composerAria` non può dire che la cattura ARRIVI sulla bacheca scelta:
-    // ogni cattura arriva nell'Inbox, e la bacheca la COLLEGA soltanto perché il
-    // triage possa proporre su di essa; niente arriva alla bacheca senza
-    // approvare ed eseguire (ADR-0003). È quello che dicono il piè di pagina del
-    // Composer e `nib.destination*`, quindi questo nome dice "collegare ... per
-    // il triage" e quello della riga conserva "dove va questa cattura", che è il
-    // compito di quel selettore.
+    // Il selettore del Composer COLLEGA una nuova cattura a una bacheca per il
+    // triage. Quello della riga sceglie la bacheca a cui è destinata la proposta
+    // risultante; non sposta la cattura fuori dall'Inbox. Nessuno dei due può
+    // dire che la cattura ARRIVI alla bacheca: nulla vi arriva senza revisione,
+    // approvazione ed esecuzione della proposta (ADR-0003).
     label: 'Bacheca',
     composerAria: 'Bacheca: scegli a quale bacheca collegare questa cattura per il triage',
-    triageAria: 'Bacheca: scegli dove va questa cattura',
+    triageAria: 'Bacheca: scegli la bacheca a cui è destinata la proposta di triage',
     noBoardOption: 'Nessuna bacheca · arriva nell’Inbox',
     selectPlaceholder: 'Seleziona una bacheca…',
     viewOnlyOption: '{name} · sola lettura',

@@ -7,7 +7,10 @@ import {
   classifyProvenanceActor,
   formatProvenanceActorLabel,
 } from '../../../../views/paper/review/provenanceActor'
-import type { ProvenanceRow } from '../../../../composables/usePaperReviewSelectors'
+import {
+  EMPTY_EVIDENCE_LINKS,
+  type ProvenanceRow,
+} from '../../../../composables/usePaperReviewSelectors'
 import type { ProvenanceMetadata } from '../../../../components/review/ProvenanceDrawer.vue'
 import { i18n, SUPPORTED_LOCALES } from '../../../../i18n'
 
@@ -134,6 +137,17 @@ describe('ReviewProvenance footnote', () => {
 
     await wrapper.setProps({ detailsExpanded: true })
     expect(drawer()).toBe(providedReference)
+
+    await wrapper.setProps({ evidenceLinks: undefined })
+    const absentReference = drawer()
+    expect(toRaw(absentReference)).toBe(EMPTY_EVIDENCE_LINKS)
+    expect(
+      Object.isFrozen(toRaw(absentReference)),
+      'the absent reference must be the frozen canonical sentinel',
+    ).toBe(true)
+
+    await wrapper.setProps({ metadata: DETERMINISTIC })
+    expect(drawer()).toBe(absentReference)
     wrapper.unmount()
   })
 
