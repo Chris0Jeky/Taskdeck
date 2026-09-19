@@ -157,7 +157,8 @@ public class OperationHandlerRegistry
         switch (actionType)
         {
             case "create":
-                return await CreateCardAsync(parameters, operation.TargetId, cancellationToken);
+                return await CreateCardAsync(parameters, operation.TargetId, cancellationToken,
+                    deferredNotifications);
 
             case "update":
                 return await UpdateCardAsync(parameters, cancellationToken, deferredNotifications);
@@ -216,7 +217,8 @@ public class OperationHandlerRegistry
     private async Task<Result> CreateCardAsync(
         JsonElement parameters,
         string? targetId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DeferredBoardRealtimeNotifier? deferredNotifications)
     {
         if (!OperationParameterParser.TryGetRequiredString(parameters, "title", out var title, out var titleError))
             return Result.Failure(ErrorCodes.ValidationError, titleError);
@@ -270,7 +272,11 @@ public class OperationHandlerRegistry
 
         var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value, workItemType, parentId,
             EstimatedEffortMinutes: estimatedEffortMinutes);
-        var result = await _cardService.CreateCardAsync(dto, cardId, cancellationToken);
+        var result = await _cardService.CreateCardAsync(
+            dto,
+            cardId,
+            cancellationToken,
+            notificationSink: deferredNotifications);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }

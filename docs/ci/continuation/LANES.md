@@ -4,7 +4,7 @@ Date: 2026-09-10. Owners: #2331, #2332 and #2329. Parent: [engineering contract]
 
 `reusable-frontend-unit.yml` defines two independent job families. `source-launcher` runs the existing regression once on hosted Linux; `frontend-unit` retains the complete Linux/Windows matrix and every previous frontend semantic check. No launcher source or test implementation is changed.
 
-The exact launcher command remains `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`. Its Linux guard and ten-minute step timeout are unchanged. The separate job has a fifteen-minute ceiling for checkout/Node setup around the suite's own watchdog. Node uses the caller's version input. The new checkout disables credential persistence; preserve concurrent checkout hardening during integration. PowerShell cases remain governed by SC-3; this slice does not change #2858's cleanup implementation.
+The exact hosted launcher command is `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs`. It runs the focused Bash identity seam before the broader cross-launcher suite, so local reproduction cannot omit the TERM/KILL grace-window, exact-PID, and descendant-traversal contract. Its Linux guard and ten-minute step timeout are unchanged. The separate job has a fifteen-minute ceiling for checkout/Node setup around the suites' own watchdogs. Node uses the caller's version input. The new checkout disables credential persistence; preserve concurrent checkout hardening during integration. PowerShell cases remain governed by SC-3; this slice does not change #2858's cleanup implementation.
 
 ## Independent results without lost qualification
 

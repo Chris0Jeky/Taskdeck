@@ -148,6 +148,7 @@ drill-artifacts/
 # Stryker mutation testing output
 StrykerOutput/
 stryker-tmp/
+stryker-smoke-tmp/
 frontend/*/reports/mutation/
 /.worktrees
 /extensions/vscode-taskdeck/node_modules

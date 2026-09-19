@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ArchiveView from '../../views/ArchiveView.vue'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../../api/http'
 import { HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY } from '../../utils/storageKeys'
 
 const mocks = vi.hoisted(() => ({
@@ -106,7 +107,10 @@ describe('ArchiveView', () => {
 
     expect(wrapper.text()).toContain('Board To Restore')
     expect(wrapper.text()).toContain('Archived Card')
-    expect(mocks.getBoards).toHaveBeenCalledWith(undefined, true)
+    expect(mocks.getBoards).toHaveBeenCalledWith(undefined, true, {
+      timeout: BOARD_REQUEST_TIMEOUT_MS,
+      skipRetry: true,
+    })
   })
 
   it('opens archived captures and decisions through board-scoped routes', async () => {
