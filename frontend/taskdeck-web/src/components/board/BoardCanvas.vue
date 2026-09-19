@@ -22,6 +22,7 @@ defineEmits<{
   columnDrop: [column: Column, event: DragEvent]
   cardDragStart: [card: Card]
   cardDragEnd: []
+  cardEditorSavingChange: [saving: boolean]
 }>()
 </script>
 
@@ -57,6 +58,7 @@ defineEmits<{
           :selected-card-id="selectedCardId"
           @card-drag-start="$emit('cardDragStart', $event)"
           @card-drag-end="$emit('cardDragEnd')"
+          @card-editor-saving-change="$emit('cardEditorSavingChange', $event)"
         />
       </div>
 

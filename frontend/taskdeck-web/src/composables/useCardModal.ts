@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, computed, watch } from 'vue'
+import { onBeforeUnmount, provide, ref, computed, watch } from 'vue'
 import { cardsApi } from '../api/cardsApi'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
@@ -6,6 +6,7 @@ import type { CardDetachPreview, CardWorkItemType, Card, CardCaptureProvenance, 
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
+import { cardCommentLoadContextKey } from './cardCommentLoadContext'
 import { getValidationReason, isValidationError } from './useErrorMapper'
 import { estimatedEffortInputs, parseEstimatedEffort } from '../utils/estimatedEffort'
 import {
@@ -81,6 +82,9 @@ export function useCardModal(options: UseCardModalOptions) {
   const commentPendingDeletion = ref<CardComment | null>(null)
   const showCommentDeleteConfirm = ref(false)
   const isDeletingComment = ref(false)
+  const commentsLoading = ref(false)
+  const commentsLoadError = ref<string | null>(null)
+  let commentLoadGeneration = 0
 
   // Provenance state
   const captureProvenance = ref<CardCaptureProvenance | null>(null)
@@ -102,6 +106,12 @@ export function useCardModal(options: UseCardModalOptions) {
 
   // Computed
   const card = computed(() => options.getCard())
+
+  provide(cardCommentLoadContextKey, {
+    loading: commentsLoading,
+    error: commentsLoadError,
+    retry: retryCardComments,
+  })
 
   const deleteConfirmDescription = computed(
     () => `Are you sure you want to delete "${card.value.title}"? This action cannot be undone.`
@@ -227,6 +237,9 @@ export function useCardModal(options: UseCardModalOptions) {
         return
       }
 
+      commentLoadGeneration += 1
+      commentsLoading.value = false
+      commentsLoadError.value = null
       newCommentContent.value = ''
       replyDraftByParent.value = {}
       editingCommentId.value = null
@@ -250,13 +263,40 @@ export function useCardModal(options: UseCardModalOptions) {
     { immediate: true }
   )
 
-  function loadCardComments(targetCard: Card) {
-    return boardStore.fetchCardComments(targetCard.boardId, targetCard.id).catch((error: unknown) => {
-      // The store owns the user-facing error state and toast. Keep cached comments intact
-      // and let the rest of the card editor continue loading, but never swallow the failure
-      // silently: this is the only reporting sink once the rejection is caught here.
+  function ownsCardCommentLoad(generation: number, targetCard: Card): boolean {
+    return (
+      generation === commentLoadGeneration &&
+      options.getIsOpen() &&
+      card.value.boardId === targetCard.boardId &&
+      card.value.id === targetCard.id
+    )
+  }
+
+  async function loadCardComments(targetCard: Card) {
+    const generation = ++commentLoadGeneration
+    commentsLoading.value = true
+    commentsLoadError.value = null
+
+    try {
+      await boardStore.fetchCardComments(targetCard.boardId, targetCard.id)
+    } catch (error) {
+      // The store still owns the global toast and error reporting. This local
+      // receipt exists only to keep an unconfirmed read from masquerading as an
+      // empty comment history in the active editor.
       logError('Failed to load card comments:', error)
-    })
+      if (ownsCardCommentLoad(generation, targetCard)) {
+        commentsLoadError.value = 'Comments could not be loaded. Existing comments may be out of date.'
+      }
+    } finally {
+      if (ownsCardCommentLoad(generation, targetCard)) {
+        commentsLoading.value = false
+      }
+    }
+  }
+
+  function retryCardComments() {
+    if (!options.getIsOpen() || commentsLoading.value) return
+    void loadCardComments(card.value)
   }
 
   // Provenance
@@ -570,6 +610,9 @@ export function useCardModal(options: UseCardModalOptions) {
       boardStore.setEditingCard(null)
     }
 
+    commentLoadGeneration += 1
+    commentsLoading.value = false
+    commentsLoadError.value = null
     expectedUpdatedAt.value = null
     newCommentContent.value = ''
     replyDraftByParent.value = {}
