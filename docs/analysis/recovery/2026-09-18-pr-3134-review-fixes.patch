@@ -1,0 +1,178 @@
+--- a/scripts/check-docs-governance.mjs
++++ b/scripts/check-docs-governance.mjs
+@@ -9,13 +9,13 @@
+ export const CI_CONTROL_RULE_PATH = '.claude/rules/ci-control.md'
+ const FORBIDDEN_SCALAR_CONTROL = /[\u0000-\u001F\u007F-\u009F]/u
+ 
+-const YAML_NULL_SCALAR = /^(?:~|null)$/i
+-const YAML_BOOLEAN_SCALAR = /^(?:true|false)$/i
+-const YAML_INTEGER_SCALAR = /^[+-]?(?:0b[01](?:_?[01])*|0o[0-7](?:_?[0-7])*|0x[0-9a-f](?:_?[0-9a-f])*|[0-9](?:_?[0-9])*)$/i
+-const YAML_FLOAT_SCALAR = /^[+-]?(?:(?:[0-9](?:_?[0-9])*)?\.[0-9](?:_?[0-9])*(?:e[+-]?[0-9](?:_?[0-9])*)?|[0-9](?:_?[0-9])*\.(?:[0-9](?:_?[0-9])*)?(?:e[+-]?[0-9](?:_?[0-9])*)?|[0-9](?:_?[0-9])*e[+-]?[0-9](?:_?[0-9])*)$/i
+-const YAML_NON_FINITE_FLOAT_SCALAR = /^[+-]?\.(?:inf|nan)$/i
+-const YAML_DATE_SCALAR = /^\d{4}-\d{2}-\d{2}$/
+-const YAML_TIMESTAMP_SCALAR = /^\d{4}-\d{2}-\d{2}(?:[Tt]|[ \t]+)\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:[ \t]*(?:[Zz]|[+-]\d{1,2}(?::?\d{2})?))?$/
++// Match the default YAML schema's exact implicit scalar spellings. Deliberately avoid broad
++// case-insensitive patterns: mixed-case booleans/nulls and uppercase numeric prefixes are strings.
++const YAML_NULL_SCALAR = /^(?:~|null|Null|NULL)$/
++const YAML_BOOLEAN_SCALAR = /^(?:true|True|TRUE|false|False|FALSE)$/
++const YAML_FLOAT_SCALAR = /^(?:[-+]?(?:[0-9][0-9_]*)(?:\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?|\.[0-9_]+(?:[eE][-+]?[0-9]+)?|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/
++const YAML_DATE_SCALAR = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
++const YAML_TIMESTAMP_SCALAR = /^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?$/
+ 
+ const requiredDocs = [
+   'docs/STATUS.md',
+@@ -102,13 +102,79 @@
+     : { value, error: null, quoted }
+ }
+ 
++function isAsciiDecimalDigit(char) {
++  return char >= '0' && char <= '9'
++}
++
++function isAsciiOctalDigit(char) {
++  return char >= '0' && char <= '7'
++}
++
++function isAsciiHexDigit(char) {
++  return (
++    isAsciiDecimalDigit(char) ||
++    (char >= 'A' && char <= 'F') ||
++    (char >= 'a' && char <= 'f')
++  )
++}
++
++function isYamlImplicitIntegerScalar(value) {
++  const max = value.length
++  let index = 0
++  let hasDigits = false
++  let char = value[index]
++
++  if (max === 0) return false
++
++  if (char === '-' || char === '+') {
++    index += 1
++    char = value[index]
++  }
++
++  if (char === '0') {
++    if (index + 1 === max) return true
++    index += 1
++    char = value[index]
++
++    let isValidDigit = null
++    if (char === 'b') isValidDigit = (candidate) => candidate === '0' || candidate === '1'
++    else if (char === 'o') isValidDigit = isAsciiOctalDigit
++    else if (char === 'x') isValidDigit = isAsciiHexDigit
++
++    if (isValidDigit !== null) {
++      index += 1
++      for (; index < max; index += 1) {
++        char = value[index]
++        if (char === '_') continue
++        if (!isValidDigit(char)) return false
++        hasDigits = true
++      }
++      return hasDigits && char !== '_'
++    }
++  }
++
++  if (char === '_') return false
++
++  for (; index < max; index += 1) {
++    char = value[index]
++    if (char === '_') continue
++    if (!isAsciiDecimalDigit(char)) return false
++    hasDigits = true
++  }
++
++  return hasDigits && char !== '_'
++}
++
++function isYamlImplicitFloatScalar(value) {
++  return YAML_FLOAT_SCALAR.test(value) && !value.endsWith('_')
++}
++
+ function isYamlImplicitNonStringScalar(value) {
+   return (
+     YAML_NULL_SCALAR.test(value) ||
+     YAML_BOOLEAN_SCALAR.test(value) ||
+-    YAML_INTEGER_SCALAR.test(value) ||
+-    YAML_FLOAT_SCALAR.test(value) ||
+-    YAML_NON_FINITE_FLOAT_SCALAR.test(value) ||
++    isYamlImplicitIntegerScalar(value) ||
++    isYamlImplicitFloatScalar(value) ||
+     YAML_DATE_SCALAR.test(value) ||
+     YAML_TIMESTAMP_SCALAR.test(value)
+   )
+--- a/scripts/check-docs-governance.hardening.test.mjs
++++ b/scripts/check-docs-governance.hardening.test.mjs
+@@ -59,7 +59,10 @@
+   '0b1010',
+   '0o17',
+   '0xFF',
++  '0xF__F',
++  '1__0',
+   '1.5',
++  '1.5__0',
+   '.5',
+   '5.',
+   '1e3',
+@@ -71,6 +74,8 @@
+   '.NaN',
+   '2026-09-17',
+   '2026-09-17T12:34:56Z',
++  '2026-09-17T12:34:56.',
++  '2026-9-7T1:02:03.',
+   '2026-09-17 12:34:56 +01:00',
+ ]
+ 
+@@ -91,7 +96,7 @@
+   }
+ })
+ 
+-test('does not overmatch ordinary path-like strings', () => {
++test('does not overmatch loader-resolved strings or ordinary path-like strings', () => {
+   for (const path of [
+     '2026-09-17-notes.md',
+     '123/notes.md',
+@@ -100,6 +105,16 @@
+     '1e3/results.md',
+     '.nan.md',
+     'nullish',
++    '0XFF',
++    '0B10',
++    '0O7',
++    '+.nAn',
++    '.nAn',
++    '1e1_0',
++    'nUlL',
++    'tRuE',
++    '2026-09-17T12:34:56z',
++    '2026-09-17T12:34:56+0130',
+   ]) {
+     const errors = collectControlPathMirrorErrors(
+       JSON.stringify({ controlPaths: [path] }),
+--- a/scripts/check-docs-governance.test.mjs
++++ b/scripts/check-docs-governance.test.mjs
+@@ -301,7 +301,7 @@
+   assert.deepEqual(collectControlPathMirrorErrors(policy, ruleFixture(['**/.npmrc'])), [])
+ })
+ 
+-for (const path of [' ci/**', 'ci/** ', '\tci/**', 'ci/**\n']) {
++for (const path of [' ci/**', 'ci/** ']) {
+   test(`rejects policy whitespace rather than normalizing away the mismatch: ${JSON.stringify(path)}`, () => {
+     const result = parsePolicyControlPaths(JSON.stringify({ controlPaths: [path] }))
+     assert.equal(result.controlPaths.length, 0)
+@@ -309,4 +309,12 @@
+   })
+ }
+ 
++for (const path of ['\tci/**', 'ci/**\n']) {
++  test(`rejects policy control characters before whitespace validation: ${JSON.stringify(path)}`, () => {
++    const result = parsePolicyControlPaths(JSON.stringify({ controlPaths: [path] }))
++    assert.equal(result.controlPaths.length, 0)
++    assert.ok(result.errors.some((error) => /control/.test(error)), result.errors.join(' | '))
++  })
++}
++
+ test('decodes supported quoting in path values instead of comparing escape source text', () => {

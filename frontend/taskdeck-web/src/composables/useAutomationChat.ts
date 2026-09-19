@@ -2,6 +2,7 @@ import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import { useToastStore } from '../store/toastStore'
 import type { ChatContextSelection, ChatMessage, ChatProviderHealth, ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
@@ -486,7 +487,10 @@ export function useAutomationChat(options: { boardId?: () => string | undefined;
       try {
         loadingBoards.value = true
         boardOptionsLoadError.value = null
-        const result = await boardsApi.getBoards()
+        const result = await boardsApi.getBoards(undefined, false, {
+          timeout: BOARD_REQUEST_TIMEOUT_MS,
+          skipRetry: true,
+        })
         if (isDisposed) return false
         availableBoards.value = result
         return true

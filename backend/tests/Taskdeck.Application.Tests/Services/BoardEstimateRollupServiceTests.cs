@@ -25,6 +25,12 @@ public sealed class BoardEstimateRollupServiceTests
     {
         _unit.SetupGet(unit => unit.Cards).Returns(_cards.Object);
         _unit.SetupGet(unit => unit.Columns).Returns(_columns.Object);
+        _unit.Setup(unit => unit.BeginReadTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _unit.Setup(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _unit.Setup(unit => unit.RollbackTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         _cards.Setup(repo => repo.GetForEstimateRollupsAsync(_boardId, It.IsAny<CancellationToken>())).ReturnsAsync(cards);
         _columns.Setup(repo => repo.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>())).ReturnsAsync(columns);
         _assignments.Setup(store => store.ReadParticipantsAsync(_boardId, It.IsAny<CancellationToken>())).ReturnsAsync([_owner, _member]);
@@ -68,6 +74,8 @@ public sealed class BoardEstimateRollupServiceTests
         parent.EstimatedEffortMinutes.Should().Be(90);
         _cards.Verify(repo => repo.GetForEstimateRollupsAsync(_boardId, It.IsAny<CancellationToken>()), Times.Once);
         _assignments.Verify(store => store.ReadParticipantsAsync(_boardId, It.IsAny<CancellationToken>()), Times.Once);
+        _unit.Verify(unit => unit.BeginReadTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unit.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _unit.Verify(unit => unit.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -105,6 +113,65 @@ public sealed class BoardEstimateRollupServiceTests
         result.Value.Unassigned.KnownEstimateMinutes.Should().Be(2_200_000_000L);
     }
 
+    [Fact]
+    public async Task SuccessfulReadCommitsOnlyAfterEveryRollupInputWasRead()
+    {
+        var events = new List<string>();
+        var service = CreateService([]);
+        _unit.Setup(unit => unit.BeginReadTransactionAsync(It.IsAny<CancellationToken>()))
+            .Callback<CancellationToken>(_ => events.Add("begin"))
+            .Returns(Task.CompletedTask);
+        _cards.Setup(repo => repo.GetForEstimateRollupsAsync(_boardId, It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>((_, _) => events.Add("cards"))
+            .ReturnsAsync([]);
+        _columns.Setup(repo => repo.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>((_, _) => events.Add("columns"))
+            .ReturnsAsync([]);
+        _assignments.Setup(store => store.ReadParticipantsAsync(_boardId, It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>((_, _) => events.Add("participants"))
+            .ReturnsAsync([]);
+        _unit.Setup(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()))
+            .Callback<CancellationToken>(_ => events.Add("commit"))
+            .Returns(Task.CompletedTask);
+
+        var result = await service.GetAsync(_boardId, _owner.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        events.Should().Equal("begin", "cards", "columns", "participants", "commit");
+        _unit.Verify(unit => unit.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task FailedSnapshotReadRollsBackWithoutCommitting()
+    {
+        var service = CreateService([]);
+        _columns.Setup(repo => repo.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("column read failed"));
+
+        Func<Task> act = () => service.GetAsync(_boardId, _owner.Id);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("column read failed");
+        _unit.Verify(unit => unit.BeginReadTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unit.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unit.Verify(unit => unit.RollbackTransactionAsync(CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelledSnapshotReadRollsBackWithAnUncancelledCleanupToken()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var service = CreateService([]);
+        _cards.Setup(repo => repo.GetForEstimateRollupsAsync(_boardId, cancellation.Token))
+            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+        Func<Task> act = () => service.GetAsync(_boardId, _owner.Id, cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _unit.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unit.Verify(unit => unit.RollbackTransactionAsync(CancellationToken.None), Times.Once);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -117,5 +184,6 @@ public sealed class BoardEstimateRollupServiceTests
         result.ErrorCode.Should().Be(failure ? ErrorCodes.NotFound : ErrorCodes.Forbidden);
         _cards.Verify(repo => repo.GetForEstimateRollupsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _assignments.Verify(store => store.ReadParticipantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unit.Verify(unit => unit.BeginReadTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 }
