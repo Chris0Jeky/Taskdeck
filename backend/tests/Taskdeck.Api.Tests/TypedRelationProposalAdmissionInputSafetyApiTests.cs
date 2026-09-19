@@ -23,9 +23,9 @@ public sealed class TypedRelationProposalAdmissionInputSafetyApiTests(
     public async Task NullOperationBeforeTypedRelation_Returns400WithoutPersistence()
     {
         using var client = factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(
-            client,
-            $"relation-input-safety-{Guid.NewGuid():N}");
+        // AuthenticateAsync appends its own unique suffix; a second full GUID here exceeded the
+        // 50-character username bound and turned registration into a 400.
+        var user = await ApiTestHarness.AuthenticateAsync(client, "relation-input-safety");
         var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "Relation input safety");
         var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
         var columnId = board.Columns.Single().Id;

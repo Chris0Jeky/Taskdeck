@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
@@ -99,9 +99,7 @@ public sealed class TypedRelationProposalAdmissionApiTests(
         var target = await CreateCardAsync(ownerClient, boardId, columnId, "Target");
 
         using var viewerClient = factory.CreateClient();
-        var viewer = await ApiTestHarness.AuthenticateAsync(
-            viewerClient,
-            $"relation-admission-viewer-{Guid.NewGuid():N}");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "relation-admission-viewer");
         var grant = await ownerClient.PostAsJsonAsync(
             $"/api/boards/{boardId}/access",
             new GrantAccessDto(boardId, viewer.UserId, UserRole.Viewer));
@@ -124,9 +122,7 @@ public sealed class TypedRelationProposalAdmissionApiTests(
     public async Task WebAdmission_RejectsCrossBoardEndpointBeforePersistence()
     {
         using var client = factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(
-            client,
-            $"relation-admission-cross-board-{Guid.NewGuid():N}");
+        var user = await ApiTestHarness.AuthenticateAsync(client, "relation-admission-cross-board");
         var firstBoard = await ApiTestHarness.CreateBoardWithColumnAsync(client, "First relation board");
         var firstDetail = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{firstBoard}"))!;
         var secondBoard = await ApiTestHarness.CreateBoardWithColumnAsync(client, "Second relation board");
@@ -191,9 +187,12 @@ public sealed class TypedRelationProposalAdmissionApiTests(
         HttpClient client,
         string stem)
     {
-        var suffix = Guid.NewGuid().ToString("N");
-        var user = await ApiTestHarness.AuthenticateAsync(client, $"{stem}-{suffix}");
-        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, $"{stem} board {suffix}");
+        // Both helpers append their own GUID suffix, so the stem must stay short: a username may
+        // not exceed 50 characters and a board name 100. Adding a second full GUID here pushed
+        // every stem past those bounds, so registration and board import answered 400 and each
+        // test failed in setup rather than on its own contract.
+        var user = await ApiTestHarness.AuthenticateAsync(client, stem);
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, $"{stem} board");
         var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
         return (user, boardId, board.Columns.Single().Id);
     }
