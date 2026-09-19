@@ -1,34 +1,35 @@
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
-using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// Production-facing proposal service decorator that closes the automatic-expiry archive race.
+/// Production-facing proposal service that composes the host's two late safety boundaries.
 ///
-/// The inner service owns proposal lifecycle behaviour, notifications and operator reporting. This
-/// decorator owns only the missing second-stage board guard: it snapshots the current expiry
-/// candidates, rejects a board that became archived after repository selection, and marks every
-/// still-active board so an archive that commits later collides with the inner service's atomic save.
+/// Proposal creation flows through <see cref="RelationProposalAdmissionService"/> so every producer
+/// validates typed relations before persistence. Automatic expiry retains its own second-stage board
+/// guard so an archive race cannot mutate read-only decision history. All other lifecycle behaviour,
+/// notifications and operator reporting remain owned by the concrete service.
 /// </summary>
 public sealed class ProposalExpiryGuardedService(
     AutomationProposalService inner,
     IUnitOfWork unitOfWork,
     IAutomationPolicyEngine policyEngine) : IAutomationProposalService
 {
+    private readonly RelationProposalAdmissionService _admission = new(inner, policyEngine);
+
     public Task<Result<ProposalDto>> CreateProposalAsync(
         CreateProposalDto dto,
         CancellationToken cancellationToken = default) =>
-        inner.CreateProposalAsync(dto, cancellationToken);
+        _admission.CreateProposalAsync(dto, cancellationToken);
 
     public Task<Result<ProposalDto>> CreateTranscriptProposalAsync(
         CreateProposalDto dto,
         IReadOnlyList<TranscriptEvidenceLinkInput> evidence,
         CancellationToken cancellationToken = default) =>
-        inner.CreateTranscriptProposalAsync(dto, evidence, cancellationToken);
+        _admission.CreateTranscriptProposalAsync(dto, evidence, cancellationToken);
 
     public Task<Result<ProposalDto>> GetProposalByIdAsync(
         Guid id,
