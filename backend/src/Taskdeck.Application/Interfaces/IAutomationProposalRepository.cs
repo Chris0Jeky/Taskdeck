@@ -32,7 +32,23 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
         string actionType,
         ProposalSourceType sourceType,
         CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Legacy creation-time operation lookup retained for repository compatibility only.
+    /// </summary>
+    /// <remarks>
+    /// Never use this method for conflict, history, similar-past, or other review evidence.
+    /// A proposal revision can replace the target represented by the immutable operation row, so
+    /// raw-operation filtering can produce both false positives and false negatives. Evidence paths
+    /// must read status/scope candidates through <see cref="IProposalEvidenceCandidateStore"/> and
+    /// resolve each candidate's effective revision in Application (#2452, #3249).
+    /// Deferred pending proposals remain candidates in that revision-aware path.
+    /// </remarks>
+    Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(
+        string targetType,
+        string targetId,
+        CancellationToken cancellationToken = default);
+
     // Automatic-expiry candidate read. Expired PendingReview rows whose board is archived are
     // withheld from Expirable and counted instead: expiry is a decision write, and ADR-0063 / #2168
     // make archived decision history read-only (#2197). Board-less and dangling-board rows stay
@@ -42,10 +58,14 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
     Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets proposals that have at least one operation matching the given action type
-    /// and are in a terminal state (Applied or Rejected), ordered by most recent first.
-    /// Optionally scoped to a specific board. Limited to a lookback window for performance.
+    /// Legacy creation-time action lookup retained for repository compatibility only.
     /// </summary>
+    /// <remarks>
+    /// Never use this method for review evidence. The approved revision pin or decision-time
+    /// revision, not the immutable creation-time action row, defines terminal evidence. Use
+    /// <see cref="IProposalEvidenceCandidateStore.ReadTerminalPageAsync"/> followed by effective
+    /// revision resolution in Application (#2452, #3249).
+    /// </remarks>
     Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(
         string actionType,
         Guid? boardId,
