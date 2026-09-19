@@ -27,6 +27,22 @@ covers those lazy routes. Computed runtime imports are not enumerable and remain
 production build, typecheck and route tests are separate evidence. Marker schema version 1 and both
 launcher consumers are unchanged.
 
+Related-proposal review evidence (#2452) now resolves each candidate to its effective operation set
+before filtering, so the conflicts, history and similar-past endpoints agree with the operations
+approval and Apply actually use. Duplicate-pending detection, related card history and the
+similar-past cohort read authorization-scoped candidate pages without operation predicates, batch
+the revision resolution per page through the resolver `AutomationProposalService` also uses, and
+apply the target/action test afterwards. A latest pending revision that moves onto or away from a
+card is followed in both directions; an Applied proposal keeps its approved pin despite a later
+unpinned revision; a Rejected proposal stays frozen on its decision-time revision; a candidate with
+no revision keeps its original operations. Two shipped behaviors narrow with this change: duplicate
+detection is now scoped to the reviewed proposal's board (or, for a board-less proposal, its owner)
+rather than searching every board, and the similar-past lookback of 200 now bounds terminal
+decisions INSPECTED rather than decisions already matched by SQL. Apply rate remains the shipped
+0..1 ratio. Evidence: the full backend solution passes (10,149 tests, 0 failures, 34 pre-existing
+skips), including the three real-SQLite HTTP regressions for this issue, which run and pass rather
+than skip.
+
 Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
 Starting a relation proposal still prevents departure while the request is unsettled, but the
 message describes that proposal rather than asking the user to finish an answer or stop recording.

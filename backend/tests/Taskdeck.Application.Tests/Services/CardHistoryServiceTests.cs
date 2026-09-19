@@ -15,6 +15,7 @@ public class CardHistoryServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly Mock<IAutomationProposalRepository> _proposalRepoMock;
+    private readonly Mock<IRelatedProposalEvidenceService> _relatedEvidenceMock;
     private readonly CardHistoryService _service;
 
     public CardHistoryServiceTests()
@@ -22,11 +23,12 @@ public class CardHistoryServiceTests
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _auditLogRepoMock = new Mock<IAuditLogRepository>();
         _proposalRepoMock = new Mock<IAutomationProposalRepository>();
+        _relatedEvidenceMock = new Mock<IRelatedProposalEvidenceService>();
 
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
 
-        _service = new CardHistoryService(_unitOfWorkMock.Object);
+        _service = new CardHistoryService(_unitOfWorkMock.Object, _relatedEvidenceMock.Object);
     }
 
     #region Validation Tests
@@ -92,7 +94,7 @@ public class CardHistoryServiceTests
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId, 200, default))
             .ReturnsAsync(auditLogs);
 
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutomationProposal?)null);
 
         var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
@@ -123,7 +125,7 @@ public class CardHistoryServiceTests
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId, 200, default))
             .ReturnsAsync(Array.Empty<AuditLog>());
 
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(appliedProposal);
 
         var result = await _service.GetCardHistoryForProposalAsync(currentProposal.Id);
@@ -162,9 +164,9 @@ public class CardHistoryServiceTests
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId2, 200, default))
             .ReturnsAsync(logs2);
 
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId1.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId1, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutomationProposal?)null);
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId2.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId2, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutomationProposal?)null);
 
         var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
@@ -196,9 +198,9 @@ public class CardHistoryServiceTests
             .ReturnsAsync(Array.Empty<AuditLog>());
 
         // Both cards return the same related proposal
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId1.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(sharedRelatedProposal);
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId2.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(sharedRelatedProposal);
 
         var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
@@ -230,7 +232,7 @@ public class CardHistoryServiceTests
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId, 200, default))
             .ReturnsAsync(logs);
 
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutomationProposal?)null);
 
         var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
@@ -393,7 +395,7 @@ public class CardHistoryServiceTests
             .ReturnsAsync(proposal);
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId, 200, default))
             .ReturnsAsync(Array.Empty<AuditLog>());
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutomationProposal?)null);
 
         var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
@@ -417,7 +419,7 @@ public class CardHistoryServiceTests
         };
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId, 200, default))
             .ReturnsAsync(logs);
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutomationProposal?)null);
 
         var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
@@ -439,7 +441,7 @@ public class CardHistoryServiceTests
             .ReturnsAsync(currentProposal);
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId, 200, default))
             .ReturnsAsync(Array.Empty<AuditLog>());
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(rejectedProposal);
 
         var result = await _service.GetCardHistoryForProposalAsync(currentProposal.Id);
@@ -486,7 +488,7 @@ public class CardHistoryServiceTests
         _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId, 200, default))
             .ReturnsAsync(Array.Empty<AuditLog>());
         // Related proposal query returns the same proposal
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", cardId.ToString(), default))
+        _relatedEvidenceMock.Setup(r => r.GetLatestOtherProposalTargetingCardAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
         var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);

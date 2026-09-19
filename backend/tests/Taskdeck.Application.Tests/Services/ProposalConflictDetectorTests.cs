@@ -19,6 +19,7 @@ public class ProposalConflictDetectorTests
     private readonly Mock<ICardCommentRepository> _commentRepoMock;
     private readonly Mock<IOutboundWebhookSubscriptionRepository> _webhookRepoMock;
     private readonly Mock<IAuthorizationService> _authServiceMock;
+    private readonly Mock<IRelatedProposalEvidenceService> _relatedEvidenceMock;
     private readonly ProposalConflictDetector _detector;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -33,6 +34,7 @@ public class ProposalConflictDetectorTests
         _commentRepoMock = new Mock<ICardCommentRepository>();
         _webhookRepoMock = new Mock<IOutboundWebhookSubscriptionRepository>();
         _authServiceMock = new Mock<IAuthorizationService>();
+        _relatedEvidenceMock = new Mock<IRelatedProposalEvidenceService>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
@@ -44,7 +46,8 @@ public class ProposalConflictDetectorTests
 
         _detector = new ProposalConflictDetector(
             _unitOfWorkMock.Object,
-            _authServiceMock.Object);
+            _authServiceMock.Object,
+            _relatedEvidenceMock.Object);
     }
 
     #region Authorization and Not Found
@@ -450,9 +453,9 @@ public class ProposalConflictDetectorTests
         // Another pending proposal for the same card -- must be set up AFTER other mocks
         // because SetupEmptySecondaryChecks would override with It.IsAny<string>()
         var otherProposal = CreateProposal(_userId, _boardId);
-        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
-                "card", cardId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AutomationProposal> { otherProposal });
+        _relatedEvidenceMock.Setup(r => r.HasOtherPendingProposalTargetingCardAsync(
+                It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
 
@@ -461,7 +464,7 @@ public class ProposalConflictDetectorTests
     }
 
     [Fact]
-    public async Task DetectConflictsAsync_SameProposalFoundByTarget_NoDuplicateWarning()
+    public async Task DetectConflictsAsync_EvidenceServiceFindsNoOtherPendingProposal_NoDuplicateWarning()
     {
         var cardId = Guid.NewGuid();
         // Create card BEFORE proposal so card.UpdatedAt <= proposal.CreatedAt
@@ -470,10 +473,11 @@ public class ProposalConflictDetectorTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        // Same proposal returned by target query (not a duplicate)
-        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
-                "card", cardId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AutomationProposal> { proposal });
+        // The proposal under review is the only pending proposal on the card. Self-exclusion
+        // itself is owned by IRelatedProposalEvidenceService and pinned in its own tests.
+        _relatedEvidenceMock.Setup(r => r.HasOtherPendingProposalTargetingCardAsync(
+                It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
@@ -499,9 +503,9 @@ public class ProposalConflictDetectorTests
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
 
         var otherProposal = CreateProposal(_userId, _boardId);
-        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
-                "card", cardId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AutomationProposal> { otherProposal });
+        _relatedEvidenceMock.Setup(r => r.HasOtherPendingProposalTargetingCardAsync(
+                It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
 
@@ -1290,17 +1294,17 @@ public class ProposalConflictDetectorTests
         else
         {
             // Setup for any card ID
-            _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
-                    "card", It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<AutomationProposal>());
+            _relatedEvidenceMock.Setup(r => r.HasOtherPendingProposalTargetingCardAsync(
+                It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
         }
     }
 
     private void SetupNoDuplicateProposal(Guid cardId)
     {
-        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
-                "card", cardId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AutomationProposal>());
+        _relatedEvidenceMock.Setup(r => r.HasOtherPendingProposalTargetingCardAsync(
+                It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
     }
 
     private void SetupCardForMove(AutomationProposal proposal, Guid? specificCardId = null)

@@ -16,15 +16,19 @@ public class ProposalConflictDetector : IProposalConflictDetector
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
+    private readonly IRelatedProposalEvidenceService _relatedEvidence;
     private readonly ILogger<ProposalConflictDetector>? _logger;
 
     public ProposalConflictDetector(
         IUnitOfWork unitOfWork,
         IAuthorizationService authorizationService,
+        IRelatedProposalEvidenceService relatedEvidence,
         ILogger<ProposalConflictDetector>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
+        _relatedEvidence = relatedEvidence
+            ?? throw new ArgumentNullException(nameof(relatedEvidence));
         _logger = logger;
     }
 
@@ -222,7 +226,10 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
     /// <summary>
     /// Warn: another pending proposal targets the same card.
-    /// Queries for ANY pending proposals on the target card, not just the latest.
+    /// Considers ANY pending proposal on the target card, not just the latest, and
+    /// matches on each candidate's EFFECTIVE operation set (latest pending revision
+    /// or approved pin) rather than its immutable creation-time rows, so the warning
+    /// agrees with what approval and Apply would actually mutate (#2452).
     /// </summary>
     private async Task CheckDuplicatePendingProposalsAsync(
         ProposalConflictContext proposal,
@@ -232,12 +239,12 @@ public class ProposalConflictDetector : IProposalConflictDetector
         var cardTargetIds = GetDistinctCardTargetIds(proposal, includeCreate: true);
         if (cardTargetIds.Count == 0) return;
 
+        var scope = new ProposalEvidenceScope(proposal.BoardId, proposal.RequestedByUserId);
         foreach (var cardId in cardTargetIds)
         {
-            var pendingProposals = await _unitOfWork.AutomationProposals
-                .GetPendingByOperationTargetAsync("card", cardId.ToString("D"), cancellationToken);
+            var hasDuplicate = await _relatedEvidence.HasOtherPendingProposalTargetingCardAsync(
+                scope, proposal.Id, cardId, cancellationToken);
 
-            var hasDuplicate = pendingProposals.Any(p => p.Id != proposal.Id);
             if (hasDuplicate)
             {
                 rows.Add(new ConflictRow(

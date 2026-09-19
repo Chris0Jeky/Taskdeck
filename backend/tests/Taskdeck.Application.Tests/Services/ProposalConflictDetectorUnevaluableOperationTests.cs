@@ -26,6 +26,7 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
     private readonly Mock<ICardCommentRepository> _comments = new();
     private readonly Mock<IOutboundWebhookSubscriptionRepository> _webhooks = new();
     private readonly Mock<IAuthorizationService> _authorization = new();
+    private readonly Mock<IRelatedProposalEvidenceService> _relatedEvidence = new();
     private readonly RecordingLogger<ProposalConflictDetector> _logger = new();
     private readonly ProposalConflictDetector _detector;
 
@@ -42,9 +43,9 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
             .ReturnsAsync(card);
         _columns.Setup(repository => repository.GetByIdWithCardsAsync(_targetColumnId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Column(_boardId, "Target", 1, wipLimit: 5));
-        _proposals.Setup(repository => repository.GetPendingByOperationTargetAsync(
-                "card", _cardId.ToString("D"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AutomationProposal>());
+        _relatedEvidence.Setup(service => service.HasOtherPendingProposalTargetingCardAsync(
+                It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), _cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         _comments.Setup(repository => repository.CountByCardIdAsync(_cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
         _webhooks.Setup(repository => repository.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
@@ -55,6 +56,7 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
         _detector = new ProposalConflictDetector(
             _unitOfWork.Object,
             _authorization.Object,
+            _relatedEvidence.Object,
             _logger);
     }
 
