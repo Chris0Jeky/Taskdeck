@@ -20,16 +20,20 @@ public class SimilarDecisionService : ISimilarDecisionService
     internal const int MaxDecisions = 3;
 
     /// <summary>
-    /// Maximum number of past proposals to query for rate calculation.
+    /// Maximum number of past terminal decisions inspected for rate calculation.
     /// Limits the lookback window to avoid unbounded queries.
     /// </summary>
     internal const int LookbackLimit = 200;
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IRelatedProposalEvidenceService _relatedEvidence;
 
-    public SimilarDecisionService(IUnitOfWork unitOfWork)
+    public SimilarDecisionService(
+        IUnitOfWork unitOfWork,
+        IRelatedProposalEvidenceService relatedEvidence)
     {
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _relatedEvidence = relatedEvidence ?? throw new ArgumentNullException(nameof(relatedEvidence));
     }
 
     public async Task<Result<SimilarPastResultDto>> GetSimilarPastAsync(
@@ -53,12 +57,19 @@ public class SimilarDecisionService : ISimilarDecisionService
         // Query past proposals with the same action class in terminal states,
         // always scoped to the proposal's board to prevent cross-board title leakage.
         // No cross-board fallback: if the board has no history, return empty rather
-        // than surfacing proposal titles from other boards.
-        var pastProposals = (await _unitOfWork.AutomationProposals
-            .GetTerminalByActionTypeAsync(actionType, proposal.BoardId, userId, LookbackLimit, cancellationToken))
+        // than surfacing proposal titles from other boards. The action class of each
+        // candidate comes from its EFFECTIVE operations (approved pin, or the
+        // decision-time revision for a rejected one), not its creation-time rows (#2452).
+        var pastProposals = (await _relatedEvidence.GetTerminalProposalsByEffectiveActionAsync(
+            new ProposalEvidenceScope(proposal.BoardId, userId),
+            proposalId,
+            actionType,
+            LookbackLimit,
+            cancellationToken))
             ?? Array.Empty<AutomationProposal>();
 
-        // Exclude the current proposal itself from the results
+        // The evidence service already excludes the current proposal; keep the filter
+        // as a local invariant rather than trusting the collaborator for correctness.
         var filtered = pastProposals
             .Where(p => p.Id != proposalId)
             .ToList();
@@ -96,8 +107,12 @@ public class SimilarDecisionService : ISimilarDecisionService
         if (string.IsNullOrWhiteSpace(actionType))
             return Result.Success(ToDto(SimilarPastResult.Empty));
 
-        var pastProposals = (await _unitOfWork.AutomationProposals
-            .GetTerminalByActionTypeAsync(actionType, effectiveProposal.BoardId, userId, LookbackLimit, cancellationToken))
+        var pastProposals = (await _relatedEvidence.GetTerminalProposalsByEffectiveActionAsync(
+            new ProposalEvidenceScope(effectiveProposal.BoardId, userId),
+            effectiveProposal.Id,
+            actionType,
+            LookbackLimit,
+            cancellationToken))
             ?? Array.Empty<AutomationProposal>();
 
         var filtered = pastProposals

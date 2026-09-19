@@ -20,10 +20,15 @@ public class CardHistoryService : ICardHistoryService
     private const int MaxTotalHistoryRows = 500;
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IRelatedProposalEvidenceService _relatedEvidence;
 
-    public CardHistoryService(IUnitOfWork unitOfWork)
+    public CardHistoryService(
+        IUnitOfWork unitOfWork,
+        IRelatedProposalEvidenceService relatedEvidence)
     {
         _unitOfWork = unitOfWork;
+        _relatedEvidence = relatedEvidence
+            ?? throw new ArgumentNullException(nameof(relatedEvidence));
     }
 
     public async Task<Result<IReadOnlyList<CardHistoryRowDto>>> GetCardHistoryForProposalAsync(
@@ -42,6 +47,8 @@ public class CardHistoryService : ICardHistoryService
         return await GetCardHistoryForProposalAsync(
             new ProposalCardHistoryContext(
                 proposal.Id,
+                proposal.BoardId,
+                proposal.RequestedByUserId,
                 proposal.Summary,
                 proposal.CreatedAt,
                 proposal.Operations.Select(ToDto).ToList()),
@@ -56,6 +63,8 @@ public class CardHistoryService : ICardHistoryService
         return GetCardHistoryForProposalAsync(
             new ProposalCardHistoryContext(
                 effectiveProposal.Id,
+                effectiveProposal.BoardId,
+                effectiveProposal.RequestedByUserId,
                 effectiveProposal.Summary,
                 effectiveProposal.CreatedAt,
                 effectiveProposal.Operations),
@@ -113,12 +122,16 @@ public class CardHistoryService : ICardHistoryService
         }
 
         // Find proposals that targeted the same cards (applied proposals get 'applied' status).
+        // Matching runs against each candidate's EFFECTIVE operation set -- latest pending
+        // revision, approved pin, or decision-time revision -- rather than its creation-time
+        // rows, so the ledger agrees with what approval and Apply use (#2452).
         // Track seen proposal IDs to avoid duplicates when multiple cards share the same related proposal.
+        var evidenceScope = new ProposalEvidenceScope(proposal.BoardId, proposal.RequestedByUserId);
         var seenProposalIds = new HashSet<Guid> { proposal.Id };
         foreach (var cardId in affectedCardIds)
         {
-            var relatedProposal = await _unitOfWork.AutomationProposals
-                .GetLatestByOperationTargetAsync("card", cardId.ToString(), cancellationToken);
+            var relatedProposal = await _relatedEvidence.GetLatestOtherProposalTargetingCardAsync(
+                evidenceScope, proposal.Id, cardId, cancellationToken);
 
             if (relatedProposal != null && seenProposalIds.Add(relatedProposal.Id))
             {
@@ -314,6 +327,8 @@ public class CardHistoryService : ICardHistoryService
 
     private sealed record ProposalCardHistoryContext(
         Guid Id,
+        Guid? BoardId,
+        Guid RequestedByUserId,
         string Summary,
         DateTimeOffset CreatedAt,
         IReadOnlyList<ProposalOperationDto> Operations);

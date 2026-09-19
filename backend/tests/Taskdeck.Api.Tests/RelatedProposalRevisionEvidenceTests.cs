@@ -169,7 +169,8 @@ public sealed class RelatedProposalRevisionEvidenceTests : IClassFixture<TestWeb
         similar.Should().NotBeNull();
         similar!.Decisions.Should().ContainSingle()
             .Which.Title.Should().Be(pinnedSummary);
-        similar.ApplyRate.Should().Be(100,
+        // ApplyRate is the shipped 0..1 ratio (SimilarPastResult.ComputeApplyRate), not a percentage.
+        similar.ApplyRate.Should().Be(1.0,
             "only the effectively matching Applied decision belongs in the update-action cohort");
     }
 
