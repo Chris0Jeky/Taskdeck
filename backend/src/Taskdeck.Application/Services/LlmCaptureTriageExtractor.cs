@@ -641,6 +641,15 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         return new ReducedTasks(reduced, reducedSpans);
     }
 
+    /// <summary>
+    /// Determines whether two map rows describe one stable commitment. Matching type, assignee and
+    /// due-date metadata are necessary but not sufficient: one evidence sentence can contain both
+    /// "Prepare the launch packet" and "Archive the launch packet". Title identity therefore also
+    /// requires compatible action heads before lexical overlap can collapse a row. Exact action
+    /// heads are compatible; the only cross-head family admitted is the bounded preparation
+    /// progression (for example Prepare/Draft/Finalize/Complete). If a head cannot be identified,
+    /// retain both tasks so Review can merge a duplicate rather than losing a commitment.
+    /// </summary>
     private static bool HasStableTaskIdentity(
         CaptureTriageTaskV2 left,
         CaptureTriageTaskV2 right)
@@ -665,10 +674,65 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return true;
         }
 
+        if (!ActionHeadsAreCompatible(leftTokens, rightTokens))
+        {
+            return false;
+        }
+
         var longestSharedRun = LongestCommonContiguousTokenRun(leftTokens, rightTokens);
         return longestSharedRun > 0 &&
                longestSharedRun * 2 >= Math.Min(leftTokens.Count, rightTokens.Count);
     }
+
+    private static bool ActionHeadsAreCompatible(
+        IReadOnlyList<string> leftTokens,
+        IReadOnlyList<string> rightTokens)
+    {
+        var leftHead = GetActionHead(leftTokens);
+        var rightHead = GetActionHead(rightTokens);
+        if (leftHead is null || rightHead is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(leftHead, rightHead, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return IsPreparationProgressionHead(leftHead) &&
+               IsPreparationProgressionHead(rightHead);
+    }
+
+    private static string? GetActionHead(IReadOnlyList<string> tokens)
+    {
+        foreach (var token in tokens)
+        {
+            if (token is "please" or "kindly" or "to" or "can" or "could" or "would" or
+                "should" or "must" or "we" or "you" or "let" or "lets" or "s" or
+                "need" or "needs")
+            {
+                continue;
+            }
+
+            return NormalizeActionHead(token);
+        }
+
+        return null;
+    }
+
+    private static string NormalizeActionHead(string token) => token switch
+    {
+        "preparing" or "prepared" => "prepare",
+        "drafting" or "drafted" => "draft",
+        "finalise" or "finalising" or "finalised" or "finalizing" or "finalized" => "finalize",
+        "completing" or "completed" => "complete",
+        "finishing" or "finished" => "finish",
+        _ => token
+    };
+
+    private static bool IsPreparationProgressionHead(string head) =>
+        head is "prepare" or "draft" or "finalize" or "complete" or "finish";
 
     private static IReadOnlyList<string> TokenizeIdentity(string? value)
     {
