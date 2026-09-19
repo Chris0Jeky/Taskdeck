@@ -1,6 +1,7 @@
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Workers;
 
@@ -118,6 +119,40 @@ public class ProposalHousekeepingWorker : BackgroundService
         }
 
         _lastSkippedArchivedBoardCount = sweep.SkippedArchivedBoardCount;
+
+        if (expiredProposals.Count > 0)
+        {
+            // Query filtering handles boards that were already archived. Re-run the shared decision
+            // guard immediately before mutation to close the remaining TOCTOU window (#2170):
+            // an archive observed now defers this sweep without touching proposals; an archive that
+            // commits later conflicts with the active board marker in the same SaveChanges call.
+            var policyEngine = scope.ServiceProvider.GetService<IAutomationPolicyEngine>()
+                ?? new AutomationPolicyEngine(unitOfWork);
+            var decisionGuard = await policyEngine.GuardProposalDecisionWritesAsync(
+                expiredProposals.Select(proposal => proposal.BoardId),
+                ct);
+            if (!decisionGuard.IsSuccess)
+            {
+                if (decisionGuard.ErrorCode == ErrorCodes.InvalidOperation)
+                {
+                    // Count only, never proposal or board identity. A later sweep re-reads the
+                    // partition, so an ordinary restore makes the proposals eligible again.
+                    _logger.LogInformation(
+                        "Deferred expiring {CandidateCount} stale proposals because board state changed "
+                            + "during the sweep; they will be retried.",
+                        expiredProposals.Count);
+                    activity?.SetTag("taskdeck.proposals.expired_count", 0);
+                    TaskdeckTelemetry.HousekeepingExpiredProposals.Add(
+                        0,
+                        new KeyValuePair<string, object?>(
+                            TaskdeckTelemetryTags.WorkerName,
+                            nameof(ProposalHousekeepingWorker)));
+                    return;
+                }
+
+                throw new DomainException(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+            }
+        }
 
         foreach (var proposal in expiredProposals)
         {

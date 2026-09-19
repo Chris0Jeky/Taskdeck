@@ -1,6 +1,18 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-18
+Last Updated: 2026-09-19
+
+## Local checklist bootstrap no longer holds an LLM quota slot (#1431 L3)
+
+A deterministic checklist-bootstrap chat turn never reaches a provider, but `ChatService` used to
+reserve an LLM quota slot before selecting that branch and release it in the `finally`. Under a small
+`RequestsPerHour` limit, a burst of purely local requests could therefore transiently deny concurrent
+genuine LLM work. The reservation now happens inside the branch that can reach a provider, so a local
+bootstrap turn makes no quota-service call at all. This supersedes the `#1427` M2 invariant that the
+no-LLM bootstrap path *releases* its reservation: there is no longer a reservation to release. The
+kill-switch check still runs before branch selection, so a disabled Chat surface continues to block
+local bootstrap turns as well. Every provider-reachable path — tool-calling, reusable no-tool, single
+turn and streaming — reserves and settles exactly as before.
 
 ## Source-launcher literal-import readiness (#1900)
 

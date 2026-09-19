@@ -18,7 +18,7 @@ process.env.TASKDECK_E2E_API_BASE_URL = apiBaseUrl
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: 'packaged-desktop.spec.ts',
+  testMatch: ['packaged-desktop.spec.ts', 'packaged-manifest.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,

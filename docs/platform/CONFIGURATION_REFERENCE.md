@@ -189,6 +189,18 @@ host and uses that exact path for loading and first-run writes:
 - Development, Test/Staging, and headless Production: the historical
   executable-local path, preserving development and container compatibility.
 
+| Environment variable | Interpretation | Storage effect | Required? |
+| --- | --- | --- | --- |
+| `TASKDECK_HEADLESS` | Presence-based (`1`, `true`, or any other nonblank value all enable it) | Disables desktop-style connector-key generation and automatic per-user database relocation. It does **not** choose a data directory. | Set explicitly for server/container or packaged automation runs; leave unset for normal desktop use. |
+
+`TASKDECK_HEADLESS` changes bootstrap identity policy, not the storage root. There is no separate
+headless app-data-root override. To keep a packaged automation run from writing state beside the
+executable, supply stable `Jwt__SecretKey` and `Connectors__EncryptionKey` values on every start and
+set `ConnectionStrings__DefaultConnection` to an absolute SQLite path. With both identities supplied,
+the bootstrapper has no generated secret to persist. `FirstRun__ResolveAppDataDbPath` does not relocate
+a headless database; container and automation operators must make the database path explicit. Reuse the
+same connector key after restart because replacing it makes stored connector credentials unreadable.
+
 For MCP stdio, `DOTNET_ENVIRONMENT` is authoritative when it is nonblank;
 `ASPNETCORE_ENVIRONMENT` is a backward-compatible fallback. When neither is
 set, Generic Host command-line/default selection remains authoritative. The
