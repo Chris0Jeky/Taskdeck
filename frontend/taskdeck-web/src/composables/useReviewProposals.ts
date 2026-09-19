@@ -381,16 +381,31 @@ export function useReviewProposals() {
   // explicit success no longer bounds it either.
   let backgroundQueueReadCount = 0
   let queueRecoveryRaisedAtBackgroundRead: number | null = null
+  /**
+   * Identity of the recovery sentence currently standing. A boolean "this read
+   * already raised one" cannot tell a sentence that is still up from one the
+   * retained-health watcher retired in between, which is the GH-2930 defect.
+   */
+  type QueueRecoveryReceipt = Readonly<{ id: number }>
+  let nextQueueRecoveryReceiptId = 0
+  let activeQueueRecoveryReceipt: QueueRecoveryReceipt | null = null
 
-  function raiseQueueRecovery(kind: QueueRecoveryKind, source: 'poll' | 'explicit') {
+  function raiseQueueRecovery(
+    kind: QueueRecoveryKind,
+    source: 'poll' | 'explicit',
+  ): QueueRecoveryReceipt {
+    const receipt = { id: ++nextQueueRecoveryReceiptId }
+    activeQueueRecoveryReceipt = receipt
     queueRefreshRecoveredKind.value = kind
     queueRecoveryRaisedAtBackgroundRead =
       source === 'poll' ? backgroundQueueReadCount : backgroundQueueReadCount + 1
+    return receipt
   }
 
   function retireQueueRecovery() {
     queueRefreshRecoveredKind.value = null
     queueRecoveryRaisedAtBackgroundRead = null
+    activeQueueRecoveryReceipt = null
   }
   let latestProposalLoadRequestId = 0
   const availableBoards = ref<Board[]>([])
@@ -1211,9 +1226,11 @@ export function useReviewProposals() {
    * the sentence raised here lives (the retirement rule at
    * `backgroundQueueReadCount`); the retraction itself is the same either way.
    */
-  function recordQueueListReadSucceeded(source: 'poll' | 'explicit'): boolean {
+  function recordQueueListReadSucceeded(
+    source: 'poll' | 'explicit',
+  ): QueueRecoveryReceipt | null {
     consecutiveQueueRefreshRefusals = 0
-    if (!currentQueueRefreshRefused.value) return false
+    if (!currentQueueRefreshRefused.value) return null
     currentQueueRefreshRefused.value = false
     // Retracting a disclosure silently is exactly the #2630 defect: the warning
     // is simply gone on the next render and a reviewer who was not watching
@@ -1224,8 +1241,7 @@ export function useReviewProposals() {
     // can still fail below and return before `proposals.value = next`, so
     // "showing current proposals" would be false for up to two more poll
     // intervals (#2214).
-    raiseQueueRecovery('refused', source)
-    return true
+    return raiseQueueRecovery('refused', source)
   }
 
   /**
@@ -1237,24 +1253,29 @@ export function useReviewProposals() {
    * at `backgroundQueueReadCount`). It defaults to 'explicit' so every caller
    * that is not the poll is safe by construction.
    *
-   * `recoveryAlreadyRaised` is passed by the poll when
+   * `recoveryReceipt` is passed by the poll when
    * `recordQueueListReadSucceeded` already announced a recovery earlier in this
-   * same read, so the retirement branch below cannot retire the sentence its
-   * own read just raised (#2694). The read counter states the same fact for
-   * every kind of read; both are kept because they answer different questions —
-   * "did THIS read raise it" and "was it raised by an EARLIER read".
+   * same read (#2694). It counts as delivered only while that exact receipt is
+   * still active: retained-health reactivity may retire the preliminary
+   * sentence during a delayed pin, in which case the final landing must
+   * announce the now-truthful recovery again (#2930). The read counter still
+   * answers the separate question of whether a standing sentence belongs to an
+   * EARLIER background read and is therefore old enough to retire.
    */
   function recordQueueRefreshSuccess(options?: {
     source?: 'poll' | 'explicit'
-    recoveryAlreadyRaised?: boolean
+    recoveryReceipt?: QueueRecoveryReceipt | null
   }) {
     const source = options?.source ?? 'explicit'
     const wasRefused = queueRefreshRefused.value
     consecutiveQueueRefreshFailures = 0
     // Idempotent: a no-op when the poll already ran it at the list-success
     // point, and the whole clear when an explicit load lands.
+    const listRecoveryReceipt = recordQueueListReadSucceeded(source)
     const recoveryRaisedThisRead =
-      recordQueueListReadSucceeded(source) || options?.recoveryAlreadyRaised === true
+      listRecoveryReceipt !== null
+      || (options?.recoveryReceipt != null
+        && activeQueueRecoveryReceipt === options.recoveryReceipt)
     if (wasRefused && !recoveryRaisedThisRead) raiseQueueRecovery('refused', source)
     // The QUEUE sentence is spoken only when a read that COMPLETED ended a
     // visible degraded state: the caller has accepted the answer and replaces
@@ -1454,7 +1475,7 @@ export function useReviewProposals() {
       // the refusal claim is falsified NOW -- before the pin leg gets a chance
       // to return early and strand it (round-2 review finding). The transient
       // accounting deliberately stays below, on the composite outcome.
-      const listRecoveryRaised = recordQueueListReadSucceeded('poll')
+      const listRecoveryReceipt = recordQueueListReadSucceeded('poll')
       const next = [...loadedProposals]
       let pinUnavailable = false
       let pinMalformed = false
@@ -1543,7 +1564,7 @@ export function useReviewProposals() {
           clearProposalUnavailable()
         }
       }
-      recordQueueRefreshSuccess({ source: 'poll', recoveryAlreadyRaised: listRecoveryRaised })
+      recordQueueRefreshSuccess({ source: 'poll', recoveryReceipt: listRecoveryReceipt })
       proposals.value = next
       landedQueueProposalIds.value = new Set(loadedProposals.map(proposal => proposal.id.toLowerCase()))
       // `isCurrentRead` has already refused any answer whose scope moved, so

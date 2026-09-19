@@ -1,0 +1,197 @@
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { validatePlan } from './lib/plan.mjs';
+
+const repository = 'Chris0Jeky/Taskdeck';
+const policyPath = fileURLToPath(new URL('../../../ci/policy.v1.json', import.meta.url));
+const plannerPath = fileURLToPath(new URL('./plan.mjs', import.meta.url));
+const gatePath = fileURLToPath(new URL('./evaluate-gate.mjs', import.meta.url));
+const policy = JSON.parse(readFileSync(policyPath, 'utf8'));
+
+function sha(character) {
+  return character.repeat(40);
+}
+
+function writeChangedFiles(root) {
+  const path = join(root, 'changed-files.tsv');
+  writeFileSync(path, 'modified\tdocs/example.md\t\n');
+  return path;
+}
+
+test('diagnostic gate receipts clear malformed and semantically invalid merge-base bindings', () => {
+  const root = mkdtempSync(join(tmpdir(), 'taskdeck-merge-base-diagnostic-'));
+  try {
+    const baseSha = sha('1');
+    const headSha = sha('2');
+    const mergeSha = sha('3');
+    const mergeTreeSha = sha('4');
+    const eventPath = join(root, 'event.json');
+    const validPlanPath = join(root, 'valid-ci-plan.json');
+    const changedFilesPath = writeChangedFiles(root);
+    const event = {
+      action: 'synchronize',
+      repository: { full_name: repository, owner: { login: 'Chris0Jeky' } },
+      sender: { login: 'Chris0Jeky', type: 'User' },
+      pull_request: {
+        number: 2508,
+        draft: false,
+        changed_files: 1,
+        base: { sha: baseSha, ref: 'main', repo: { full_name: repository } },
+        head: { sha: headSha, ref: 'feature', repo: { full_name: repository } },
+        user: { login: 'Chris0Jeky', type: 'User' },
+        author_association: 'OWNER',
+        labels: [],
+      },
+    };
+    writeFileSync(eventPath, `${JSON.stringify(event)}\n`);
+
+    execFileSync(process.execPath, [
+      plannerPath,
+      '--policy', policyPath,
+      '--event', eventPath,
+      '--event-name', 'pull_request_target',
+      '--head-actors', 'Chris0Jeky',
+      '--changed-files', changedFilesPath,
+      '--changed-files-expected', '1',
+      '--merge-ref-qualification', 'qualified',
+      '--merge-sha', mergeSha,
+      '--merge-tree-sha', mergeTreeSha,
+      '--merge-base-sha', baseSha,
+      '--merge-base-tip-sha', 'null',
+      '--out', validPlanPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const validPlan = JSON.parse(readFileSync(validPlanPath, 'utf8'));
+    const cases = [
+      {
+        name: 'malformed-base',
+        mutate(plan) { plan.mergeBaseSha = 'not-a-git-sha'; },
+      },
+      {
+        name: 'malformed-tip',
+        mutate(plan) { plan.mergeBaseTipSha = 'not-a-git-sha'; },
+      },
+      {
+        name: 'null-tip-base-mismatch',
+        mutate(plan) { plan.mergeBaseSha = sha('5'); },
+      },
+      {
+        name: 'moved-base-pair-mismatch',
+        mutate(plan) {
+          plan.mergeBaseSha = sha('5');
+          plan.mergeBaseTipSha = sha('6');
+        },
+      },
+      {
+        name: 'redundant-live-tip',
+        mutate(plan) {
+          plan.mergeBaseSha = baseSha;
+          plan.mergeBaseTipSha = baseSha;
+        },
+      },
+      {
+        name: 'unqualified-plan-carries-identities',
+        mutate(plan) {
+          plan.mergeRefQualification = 'stale-base-unqualified';
+          plan.escalated = true;
+          plan.escalationReasons = [...new Set([...(plan.escalationReasons ?? []), 'merge-ref-unqualified'])];
+        },
+      },
+      {
+        name: 'non-pr-plan-carries-identities',
+        mutate(plan) { plan.event.pullRequest = null; },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const planPath = join(root, `${testCase.name}-ci-plan.json`);
+      const receiptPath = join(root, `${testCase.name}-ci-run.json`);
+      const invalidPlan = JSON.parse(JSON.stringify(validPlan));
+      testCase.mutate(invalidPlan);
+      writeFileSync(planPath, `${JSON.stringify(invalidPlan, null, 2)}\n`);
+
+      const gate = spawnSync(process.execPath, [
+        gatePath,
+        '--plan', planPath,
+        '--policy', policyPath,
+        '--mode', 'shadow',
+        '--event', eventPath,
+        '--event-name', 'pull_request_target',
+        '--head-actors', 'Chris0Jeky',
+        '--expected-head', headSha,
+        '--expected-base', baseSha,
+        '--plan-job-result', 'success',
+        '--receipt', receiptPath,
+      ], { encoding: 'utf8' });
+
+      assert.equal(gate.status, 1, `${testCase.name}: ${gate.stdout}\n${gate.stderr}`);
+      const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+      assert.equal(receipt.ok, false, testCase.name);
+      assert.equal(receipt.wouldFail, true, testCase.name);
+      assert.ok(
+        receipt.failures.some((failure) => ['plan-invalid', 'merge-base-binding-mismatch'].includes(failure.code)),
+        testCase.name,
+      );
+      assert.equal(receipt.mergeBaseSha, null, testCase.name);
+      assert.equal(receipt.mergeBaseTipSha, null, testCase.name);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('local --pr what-if planning is annotated without claiming a production PR receipt', () => {
+  const root = mkdtempSync(join(tmpdir(), 'taskdeck-local-pr-what-if-'));
+  try {
+    const baseSha = sha('a');
+    const headSha = sha('b');
+    const planPath = join(root, 'ci-plan.json');
+    const receiptPath = join(root, 'ci-run.json');
+    const changedFilesPath = writeChangedFiles(root);
+    execFileSync(process.execPath, [
+      plannerPath,
+      '--policy', policyPath,
+      '--event-name', 'local',
+      '--base-sha', baseSha,
+      '--head-sha', headSha,
+      '--repository', repository,
+      '--pr', '2508',
+      '--changed-files', changedFilesPath,
+      '--out', planPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+    assert.equal(plan.plannerError, null);
+    assert.equal(plan.event.name, 'local');
+    assert.equal(plan.event.pullRequest, null);
+    assert.ok(plan.notes.includes('local what-if for PR #2508; no production merge binding claimed'));
+    assert.equal(plan.mergeRefQualification, null);
+    assert.equal(plan.mergeBaseSha, null);
+    assert.equal(plan.mergeBaseTipSha, null);
+    assert.deepEqual(validatePlan(plan, policy), []);
+
+    const gate = spawnSync(process.execPath, [
+      gatePath,
+      '--plan', planPath,
+      '--policy', policyPath,
+      '--mode', 'shadow',
+      '--expected-head', headSha,
+      '--expected-base', baseSha,
+      '--plan-job-result', 'success',
+      '--receipt', receiptPath,
+    ], { encoding: 'utf8' });
+    assert.equal(gate.status, 0, `${gate.stdout}\n${gate.stderr}`);
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    assert.equal(receipt.ok, true);
+    assert.equal(receipt.wouldFail, false);
+    assert.equal(receipt.mergeBaseSha, null);
+    assert.equal(receipt.mergeBaseTipSha, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

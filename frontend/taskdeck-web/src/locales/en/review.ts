@@ -47,6 +47,7 @@
  *    never through a pattern in this file.
  */
 export default {
+  surfaceLabel: 'Proposal review',
   // ── Left column: queue rail ───────────────────────────────────────────────
   queueRail: {
     eyebrow: 'Queue · {awaiting} awaiting · {stale} stale',
