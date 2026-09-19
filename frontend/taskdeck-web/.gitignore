@@ -10,6 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# Build emitted by tests/pwa-generated-worker.spec.ts; kept out of dist so the
+# bundle-size gate keeps measuring the production build.
+dist-pwa-contract
 storybook-static
 *.local
 

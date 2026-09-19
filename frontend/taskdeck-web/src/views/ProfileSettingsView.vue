@@ -11,6 +11,7 @@ import type { LinkedAccount } from '../types/auth'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import { normalizeBoardRole } from '../utils/roles'
 import { isDemoMode } from '../utils/demoMode'
+import { resolveApiBaseUrl } from '../utils/apiBaseUrl'
 
 const router = useRouter()
 const route = useRoute()
@@ -91,7 +92,7 @@ async function handleChangePassword() {
 }
 
 function startGitHubLink() {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+  const apiBase = resolveApiBaseUrl()
   // Return to the profile settings page after OAuth completes.
   // Note: mode=link is NOT passed — the backend derives link/login mode from
   // server-side auth state (JWT presence) to prevent user-controlled bypass.

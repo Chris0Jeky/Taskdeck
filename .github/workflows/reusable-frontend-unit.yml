@@ -35,7 +35,7 @@ jobs:
       - name: Run source launcher regression suite
         if: runner.os == 'Linux'
         timeout-minutes: 10
-        run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
+        run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs scripts/ci/dev-up-fixture-cleanup.test.mjs scripts/ci/dev-up-fixture-diagnostics.test.mjs
 
   frontend-unit:
     name: Frontend Unit (${{ matrix.os }})
@@ -50,6 +50,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -81,6 +83,13 @@ jobs:
       - name: Run frontend tests with coverage thresholds
         working-directory: frontend/taskdeck-web
         run: npm run test:coverage
+
+      - name: Reconcile equivalent Windows snapshot index metadata
+        if: runner.os == 'Windows'
+        run: >-
+          node scripts/git/refresh-equivalent-tracked-file.mjs
+          --repo .
+          --path frontend/taskdeck-web/src/tests/components/paper/__snapshots__/PaperConfidenceDial.spec.ts.snap
 
       # Bundle-size budget promoted into the required lane (#1132). Reuses the build above
       # (no extra install/build), so it is the "cheap" check the issue asks for. Runs AFTER the

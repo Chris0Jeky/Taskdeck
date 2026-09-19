@@ -6,6 +6,7 @@ import { useSessionStore } from '../store/sessionStore'
 import { authApi } from '../api/authApi'
 import { sanitizeInternalRedirect } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
+import { resolveApiBaseUrl } from '../utils/apiBaseUrl'
 import { normalizeRegistrationAvailability } from '../utils/registrationAvailability'
 
 const router = useRouter()
@@ -56,7 +57,7 @@ async function handleSubmit() {
 }
 
 function startGitHubLogin() {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+  const apiBase = resolveApiBaseUrl()
   const redirect = [route.query.redirect].flat()[0]
   const returnUrl = redirect
     ? `/login?redirect=${encodeURIComponent(redirect)}`
@@ -65,7 +66,7 @@ function startGitHubLogin() {
 }
 
 function startOidcLogin(providerName: string) {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+  const apiBase = resolveApiBaseUrl()
   const redirect = [route.query.redirect].flat()[0]
   const returnUrl = redirect
     ? `/login?redirect=${encodeURIComponent(redirect)}`

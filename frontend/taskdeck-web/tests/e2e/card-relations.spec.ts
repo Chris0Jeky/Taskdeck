@@ -164,20 +164,13 @@ test('paper: depends-on is inverted, review-gated, removable, and rejects a stal
     response.url().endsWith('/api/automation/proposals') && response.request().method() === 'POST',
   )
   await staleRelations.getByRole('button', { name: 'Propose relation', exact: true }).click()
-  const staleProposal = await responseJson<Proposal>(await staleDraftResponse, 'Create stale relation draft')
-  // Generic proposal creation stores a reviewable draft; the current graph is
-  // intentionally revalidated at Review so a stale draft never reaches Apply.
-  expect((await getRelations(request, owner, boardId)).relations).toEqual([
-    { sourceCardId: validation.id, targetCardId: delivery.id, relationType: 'blocks' },
-  ])
-  await page.goto(`/workspace/review#proposal-${staleProposal.id}`)
-  const rejectedApproval = page.waitForResponse(response =>
-    response.url().endsWith(`/api/automation/proposals/${staleProposal.id}/approve`) && response.request().method() === 'POST',
-  )
-  const paperDecision = page.getByTestId('decision-apply')
-  await expect(paperDecision).toBeVisible()
-  await paperDecision.click()
-  expect((await rejectedApproval).status()).toBe(409)
+  // Producer-neutral admission (GH-3061): the observed graph revision is now validated at
+  // creation, exactly like the MCP and chat producers, so a stale relation is refused before a
+  // reviewable draft exists and the component's creation-time 409 recovery is the visible
+  // outcome. Nothing reaches Review, and no relation is written.
+  expect((await staleDraftResponse).status()).toBe(409)
+  await expect(staleRelations.getByText('Refresh relations to use the current version', { exact: false }))
+    .toBeVisible()
   expect((await getRelations(request, owner, boardId)).relations).toEqual([
     { sourceCardId: validation.id, targetCardId: delivery.id, relationType: 'blocks' },
   ])

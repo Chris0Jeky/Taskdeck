@@ -56,6 +56,23 @@ public class McpApplicationServiceRegistrationTests
     }
 
     [Fact]
+    public void AddMcpApplicationServices_UsesTheExpiryGuardedProposalService()
+    {
+        // #2170: the minimal MCP host must not bypass the automatic-expiry archive guard by
+        // resolving the inner lifecycle service directly. Resolution itself is the contract here;
+        // no proposal mutation is needed to prove the host-facing interface points at the decorator.
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new Mock<IUnitOfWork>().Object);
+        services.AddMcpApplicationServices();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<IAutomationProposalService>()
+            .Should().BeOfType<ProposalExpiryGuardedService>();
+    }
+
+    [Fact]
     public void AddMcpApplicationServices_BindsContextFabricSettingsFromConfiguration()
     {
         // ADR-0065 scaffold review: the standalone MCP hosts never call AddTaskdeckSettings, so without

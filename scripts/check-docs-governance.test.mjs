@@ -5,7 +5,11 @@ import { readFileSync } from 'node:fs'
 import {
   CI_CONTROL_RULE_PATH,
   CI_POLICY_PATH,
+  PRE_MERGE_GATE_SKILL_PATH,
+  PRE_MERGE_SECRET_CHECK_NAME,
+  PRE_MERGE_SECRETS_HELPER_PATH,
   collectControlPathMirrorErrors,
+  collectPreMergeSecretsSkillErrors,
   parsePolicyControlPaths,
   parseRuleFrontMatterPaths,
 } from './check-docs-governance.mjs'
@@ -379,3 +383,55 @@ for (const entry of ['  -', '  - # missing scalar']) {
     assert.ok(collectControlPathMirrorErrors(policyFixture, withExtraFrontMatter('extra:', entry)).length > 0)
   })
 }
+
+test('rejects an unconditional pre-merge secrets CLEAN template', () => {
+  const unsafe = '- [ ] Secrets scan: CLEAN\n'
+  const skillErrors = collectPreMergeSecretsSkillErrors(unsafe)
+
+  assert.ok(
+    skillErrors.some((error) => /unconditional CLEAN secrets verdict/u.test(error)),
+    skillErrors.join(' | '),
+  )
+})
+
+test('requires the exact check authority, exact-head wording, fail-closed verdict, and receipt fields', () => {
+  const incomplete = 'Secrets scan: NOT VERIFIED\n'
+  const skillErrors = collectPreMergeSecretsSkillErrors(incomplete)
+
+  for (const token of [
+    PRE_MERGE_SECRET_CHECK_NAME,
+    PRE_MERGE_SECRETS_HELPER_PATH.split('/').at(-1),
+    'exact PR head',
+    'expected_head=',
+    'observed_head=',
+    'status=',
+    'conclusion=',
+    'url=',
+  ]) {
+    assert.ok(
+      skillErrors.some((error) => error.includes(token)),
+      `expected a missing-token error for ${token}: ${skillErrors.join(' | ')}`,
+    )
+  }
+})
+
+test('accepts a bounded exact-head pre-merge secrets evidence contract', () => {
+  const safe = [
+    `Run ${PRE_MERGE_SECRETS_HELPER_PATH}.`,
+    `Require ${PRE_MERGE_SECRET_CHECK_NAME} on the exact PR head.`,
+    'Missing or pending evidence is NOT VERIFIED.',
+    'expected_head=<sha>',
+    'observed_head=<sha>',
+    'status=completed',
+    'conclusion=success',
+    'url=<check-run-url>',
+  ].join('\n')
+
+  assert.deepEqual(collectPreMergeSecretsSkillErrors(safe), [])
+})
+
+test('the repository pre-merge skill satisfies the secrets evidence contract', () => {
+  const skillText = readFileSync(new URL(`../${PRE_MERGE_GATE_SKILL_PATH}`, import.meta.url), 'utf8')
+
+  assert.deepEqual(collectPreMergeSecretsSkillErrors(skillText), [])
+})

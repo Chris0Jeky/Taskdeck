@@ -32,6 +32,13 @@ export default {
   },
   eyebrow:
     'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
+  // Board-scoped variant of `eyebrow`. Both counts are derived from the rows
+  // this client actually loaded, and `currentListQuery()` caps that page at
+  // 200, so neither number is an authoritative board total. "Showing" is the
+  // whole honesty of this string: it must not claim the counts describe every
+  // capture on the board (GH-1991 M4, Codex P2 on GH-3175).
+  eyebrowScoped:
+    'Inbox · {board} · Showing {pending} awaiting triage · {total} captured | Inbox · {board} · Showing {pending} awaiting triage · {total} captured',
   // Shown INSTEAD of `eyebrow` during a scope replacement (#2501). The rows
   // those counts would be computed from belong to the scope the user just left,
   // so the eyebrow carries no count at all rather than a count about somewhere

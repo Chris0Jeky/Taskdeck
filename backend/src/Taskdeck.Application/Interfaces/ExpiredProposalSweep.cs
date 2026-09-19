@@ -3,25 +3,32 @@ using Taskdeck.Domain.Entities;
 namespace Taskdeck.Application.Interfaces;
 
 /// <summary>
-/// One expired-proposal sweep, already partitioned by ADR-0063's archived-board rule.
+/// One expired-proposal sweep, partitioned by ADR-0063's archived-board rule.
 ///
 /// <para>
 /// Expiry is a decision write: it moves a proposal out of <c>PendingReview</c> into the terminal
-/// <c>Expired</c> status. ADR-0063 / #2168 make archived-board decision history read-only, and
-/// <c>IAutomationPolicyEngine.GuardProposalDecisionWritesAsync</c> enforces that on the interactive
-/// lanes. The automatic lanes cannot reuse that guard as-is — it *fails* the whole call, which is
-/// wrong for a sweep that must keep expiring everything else — so the equivalent rule is applied
-/// where the rows are selected instead. Returning the partition rather than a bare list is
-/// deliberate: it is a compile-time break for any future caller, so a third expiry path cannot
-/// silently reintroduce #2197 by ignoring the rule the way the worker and
-/// <c>AutomationProposalService.ExpireProposalsAsync</c> both did.
+/// <c>Expired</c> status. ADR-0063 / #2168 make archived-board decision history read-only. The
+/// repository partition is the first guard: it withholds boards already known to be archived while
+/// allowing unrelated active-board, boardless and dangling-board history to continue. It is not an
+/// atomic authorization snapshot. Every automatic caller must pass <see cref="Expirable"/> board
+/// references through <c>IAutomationPolicyEngine.GuardProposalDecisionWritesAsync</c> immediately
+/// before mutation. That second guard rejects a board archived after selection and arms active board
+/// concurrency markers so an archive committed later conflicts with the same expiry save (#2170).
+/// </para>
+///
+/// <para>
+/// Returning the partition rather than a bare list remains deliberate: it is a compile-time break
+/// for any future caller, so a third expiry path cannot silently ignore the already-archived-board
+/// rule. The second-stage guard is executable at the service/worker boundary because it must share
+/// the exact scoped unit of work that persists the proposal transition.
 /// </para>
 /// </summary>
 /// <param name="Expirable">
-/// Expired <c>PendingReview</c> proposals that may be expired: board-less proposals, proposals whose
-/// board row no longer exists, and proposals on an extant, non-archived board. This mirrors
-/// <c>GetActiveByUserIdAsync</c>'s predicate exactly — only a positively identified extant archived
-/// board is withheld, so dangling history is never silently dropped.
+/// Expired <c>PendingReview</c> candidates whose board was not archived when the repository query
+/// ran: board-less proposals, proposals whose board row no longer exists, and proposals on an
+/// extant, non-archived board. This mirrors <c>GetActiveByUserIdAsync</c>'s predicate exactly — only
+/// a positively identified extant archived board is withheld, so dangling history is never silently
+/// dropped. Callers must still run the second-stage decision-write guard before mutation.
 /// </param>
 /// <param name="SkippedArchivedBoardCount">
 /// How many otherwise-expirable proposals were withheld because their board is archived. Reported

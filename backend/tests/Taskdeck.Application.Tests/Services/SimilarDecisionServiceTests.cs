@@ -11,6 +11,7 @@ public class SimilarDecisionServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAutomationProposalRepository> _proposalRepo = new();
+    private readonly Mock<IRelatedProposalEvidenceService> _relatedEvidence = new();
     private readonly SimilarDecisionService _service;
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _boardId = Guid.NewGuid();
@@ -18,7 +19,7 @@ public class SimilarDecisionServiceTests
     public SimilarDecisionServiceTests()
     {
         _unitOfWork.Setup(u => u.AutomationProposals).Returns(_proposalRepo.Object);
-        _service = new SimilarDecisionService(_unitOfWork.Object);
+        _service = new SimilarDecisionService(_unitOfWork.Object, _relatedEvidence.Object);
     }
 
     [Fact]
@@ -54,7 +55,7 @@ public class SimilarDecisionServiceTests
         var proposal = CreateProposalWithOperation("move", "card");
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("move", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "move", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AutomationProposal>());
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
@@ -73,7 +74,7 @@ public class SimilarDecisionServiceTests
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("create", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "create", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { past1, past2 });
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
@@ -94,7 +95,7 @@ public class SimilarDecisionServiceTests
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("archive", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "archive", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { past1, past2, past3 });
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
@@ -115,7 +116,7 @@ public class SimilarDecisionServiceTests
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("move", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "move", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { past1, past2, past3, past4 });
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
@@ -135,7 +136,7 @@ public class SimilarDecisionServiceTests
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("update", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "update", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pastProposals);
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
@@ -153,13 +154,13 @@ public class SimilarDecisionServiceTests
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
         // Should query with "create" (first operation by sequence), not "move" (second operation)
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("create", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "create", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AutomationProposal>());
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
 
         result.IsSuccess.Should().BeTrue();
-        _proposalRepo.Verify(r => r.GetTerminalByActionTypeAsync("create", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        _relatedEvidence.Verify(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "create", It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -171,7 +172,7 @@ public class SimilarDecisionServiceTests
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("move", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "move", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { proposal });
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
@@ -189,7 +190,7 @@ public class SimilarDecisionServiceTests
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
         // Board-scoped query returns empty
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("move", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "move", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AutomationProposal>());
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
@@ -198,7 +199,7 @@ public class SimilarDecisionServiceTests
         result.Value.Decisions.Should().BeEmpty();
         result.Value.ApplyRate.Should().Be(0.0);
         // Should never fall back to cross-board user-scoped query
-        _proposalRepo.Verify(r => r.GetTerminalByActionTypeAsync("move", null, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _relatedEvidence.Verify(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(null, _userId), It.IsAny<Guid>(), "move", It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -208,14 +209,14 @@ public class SimilarDecisionServiceTests
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("move", null, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(null, _userId), It.IsAny<Guid>(), "move", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AutomationProposal>());
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
 
         result.IsSuccess.Should().BeTrue();
         // Should only query once (user-scoped), not twice
-        _proposalRepo.Verify(r => r.GetTerminalByActionTypeAsync(It.IsAny<string>(), It.IsAny<Guid?>(), _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        _relatedEvidence.Verify(r => r.GetTerminalProposalsByEffectiveActionAsync(It.IsAny<ProposalEvidenceScope>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -227,7 +228,7 @@ public class SimilarDecisionServiceTests
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("create", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _relatedEvidence.Setup(r => r.GetTerminalProposalsByEffectiveActionAsync(new ProposalEvidenceScope(_boardId, _userId), It.IsAny<Guid>(), "create", It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { past1, past2 });
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);

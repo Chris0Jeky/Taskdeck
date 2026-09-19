@@ -6526,6 +6526,16 @@ describe('PaperReviewView', () => {
       expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
         'Review evidence could not be refreshed',
       )
+      const recoveryApply = wrapper.get('[data-testid="decision-apply"]')
+      expect(recoveryApply.attributes('disabled')).toBeUndefined()
+      expect(recoveryApply.attributes('aria-describedby')).toBe(
+        'paper-review-evidence-unavailable-note',
+      )
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer']) {
+        const control = wrapper.get(`[data-testid="${testid}"]`)
+        expect(control.attributes('disabled')).toBeUndefined()
+        expect(control.attributes('aria-describedby')).toBeUndefined()
+      }
       expect(wrapper.text()).not.toContain('Nothing flagged.')
       expect(wrapper.text()).not.toContain('No history recorded.')
       expect(wrapper.text()).not.toContain('No comparable past decisions.')
@@ -6549,66 +6559,87 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
-    it('scopes unavailable review evidence to the active revision', async () => {
-      const now = new Date().toISOString()
-      const original = makeProposal({ id: 'revision-scoped' })
-      const refreshed = makeProposal({
-        id: 'revision-scoped',
-        latestRevisionId: 'rev-scoped-1',
-      })
-      const moved = makeProposal({
-        id: 'revision-scoped',
-        latestRevisionId: 'rev-scoped-2',
-      })
-      mocks.createRevision.mockResolvedValueOnce({
-        id: 'rev-scoped-1',
-        proposalId: 'revision-scoped',
-        revisionNumber: 1,
-        editorUserId: 'u-1',
-        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
-        revisedAt: now,
-        reason: 'Scope the evidence state',
-        createdAt: now,
-      })
-      const wrapper = await mountView(
-        [original],
-        '/workspace/review#proposal-revision-scoped',
-      )
+    it('keeps unavailable review guidance with its barrier across revision identity polls', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        const now = new Date().toISOString()
+        const original = makeProposal({ id: 'revision-scoped' })
+        const revisionOne = makeProposal({
+          id: 'revision-scoped',
+          latestRevisionId: 'rev-scoped-1',
+        })
+        const revisionTwo = makeProposal({
+          id: 'revision-scoped',
+          latestRevisionId: 'rev-scoped-2',
+        })
+        mocks.createRevision.mockResolvedValueOnce({
+          id: 'rev-scoped-1',
+          proposalId: 'revision-scoped',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+          revisedAt: now,
+          reason: 'Scope the evidence state',
+          createdAt: now,
+        })
+        const wrapper = await mountView(
+          [original],
+          '/workspace/review#proposal-revision-scoped',
+        )
 
-      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
-      await flushPromises()
-      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
-        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
-        reason: 'Scope the evidence state',
-      })
-      await flushPromises()
+        await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+        await flushPromises()
+        wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+          revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+          reason: 'Scope the evidence state',
+        })
+        await flushPromises()
 
-      mocks.getProposals.mockResolvedValue([refreshed])
-      mocks.getHistory
-        .mockRejectedValueOnce(new Error('history unavailable'))
-        .mockRejectedValueOnce(new Error('history still unavailable'))
-      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
-      await flushPromises()
-      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(true)
+        mocks.getProposals.mockResolvedValue([revisionOne])
+        mocks.getHistory
+          .mockRejectedValueOnce(new Error('history unavailable'))
+          .mockRejectedValueOnce(new Error('history still unavailable'))
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(true)
 
-      let resolveMovedHistory!: (rows: unknown[]) => void
-      mocks.getProposals.mockResolvedValueOnce([moved])
-      mocks.getHistory.mockImplementationOnce(
-        () => new Promise((resolve) => { resolveMovedHistory = resolve }),
-      )
-      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
-      await vi.waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(4))
-      await nextTick()
+        // The normal queue poll can learn the post-save revision identity before
+        // the reviewer retries. The unavailable guidance belongs to the still-armed
+        // barrier, not to the DTO identity that happened to be current when it failed.
+        mocks.getProposals.mockResolvedValueOnce([revisionTwo])
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+        await nextTick()
 
-      // The old revision's failure remains scoped to rev-scoped-1; a clean
-      // rev-scoped-2 load must not inherit the unavailable note or hidden panels.
-      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="apply-risk-posture"]').exists()).toBe(true)
+        expect(
+          wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists(),
+          'the unavailable note must survive same-proposal revision identity polling',
+        ).toBe(true)
+        expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
+          'Review evidence could not be refreshed',
+        )
+        expect(wrapper.find('[data-testid="apply-risk-posture"]').exists()).toBe(false)
 
-      resolveMovedHistory([])
-      await flushPromises()
-      expect(mocks.approveProposal).not.toHaveBeenCalled()
-      wrapper.unmount()
+        // A successful explicit retry consumes the same barrier and clears its note.
+        mocks.getProposals.mockResolvedValue([revisionTwo])
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+        expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="apply-risk-posture"]').exists()).toBe(true)
+
+        // Returning to the former identity after the barrier is gone must not revive
+        // a stale map entry from revision one.
+        mocks.getProposals.mockResolvedValueOnce([revisionOne])
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+        await nextTick()
+        expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="apply-risk-posture"]').exists()).toBe(true)
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('clears unavailable review evidence when the proposal is deferred', async () => {

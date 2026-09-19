@@ -26,7 +26,8 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
     {
         if (_context.Database.IsSqlite())
         {
-            return await GetRequestCountSqliteAsync(userId, surface, from, to, cancellationToken);
+            return await GetRequestCountSqliteAsync(
+                userId, surface, from.ToUniversalTime(), to.ToUniversalTime(), cancellationToken);
         }
 
         var query = BuildFilteredQuery(userId, surface, from, to);
@@ -42,7 +43,8 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
     {
         if (_context.Database.IsSqlite())
         {
-            return await GetTotalTokensSqliteAsync(userId, surface, from, to, cancellationToken);
+            return await GetTotalTokensSqliteAsync(
+                userId, surface, from.ToUniversalTime(), to.ToUniversalTime(), cancellationToken);
         }
 
         var query = BuildFilteredQuery(userId, surface, from, to);
@@ -62,7 +64,8 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
     {
         if (_context.Database.IsSqlite())
         {
-            return await GetUsageSummarySqliteAsync(userId, surface, from, to, cancellationToken);
+            return await GetUsageSummarySqliteAsync(
+                userId, surface, from.ToUniversalTime(), to.ToUniversalTime(), cancellationToken);
         }
 
         var query = BuildFilteredQuery(userId, surface, from, to);
@@ -110,6 +113,14 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
                 requestsPerHour, tokensPerDay, globalBudgetCeilingTokens,
                 estimatedTokens, expiresAt, cancellationToken);
         }
+
+        // SQLite persists DateTimeOffset values as TEXT, so equivalent instants with
+        // different offsets must be normalized before lexical comparisons and writes.
+        hourStart = hourStart.ToUniversalTime();
+        now = now.ToUniversalTime();
+        dayStart = dayStart.ToUniversalTime();
+        dayEnd = dayEnd.ToUniversalTime();
+        expiresAt = expiresAt.ToUniversalTime();
 
         var surfaceValue = (int)surface;
         var provider = LlmUsageRecord.ReservationProvider;

@@ -23,6 +23,12 @@ export default {
   },
   eyebrow:
     'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
+  // Variante di `eyebrow` con ambito bacheca. Entrambi i conteggi derivano
+  // dalle righe caricate da questo client e `currentListQuery()` limita quella
+  // pagina a 200: nessuno dei due è un totale autoritativo della bacheca.
+  // «Visualizzati» è tutta l'onestà di questa stringa (GH-1991 M4).
+  eyebrowScoped:
+    'Inbox · {board} · Visualizzati {pending} da smistare · {total} catturato | Inbox · {board} · Visualizzati {pending} da smistare · {total} catturati',
   // Mostrato AL POSTO di `eyebrow` durante la sostituzione dell'ambito (#2501):
   // i conteggi apparterrebbero all'ambito appena lasciato. Nessun plurale: non
   // c'è alcun numero con cui concordare. E nessuna parola sul caricamento: la

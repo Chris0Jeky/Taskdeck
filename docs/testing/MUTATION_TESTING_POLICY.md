@@ -1,6 +1,6 @@
 # Mutation Testing Policy
 
-Last Updated: 2026-09-11
+Last Updated: 2026-09-18
 
 ## Purpose
 
@@ -26,6 +26,42 @@ This is a **quality signal**, not a gatekeeping mechanism. Mutation testing comp
 - **Test runner**: Vitest
 - **Rationale**: These two Pinia stores are the core data flow layer for the capture-to-board pipeline. Mutations here have direct product impact on the golden path.
 - **Config**: `frontend/taskdeck-web/stryker.config.mjs`
+- **Activation smoke test**: `npm run mutation:smoke` instruments the exact board-list deletion expression, runs the focused CRUD suite with a 100% break threshold, and validates the JSON receipt with `scripts/check-mutation-smoke.mjs`.
+  - **Config**: `frontend/taskdeck-web/stryker.smoke.config.mjs`
+  - **Shared seam contract**: `frontend/taskdeck-web/stryker.smoke.contract.mjs` owns the source file, line/column range, expected source text, and accepted report schema. Move the range and source text together when the expression moves. Its columns are 1-based; `mutationSmokeRange` subtracts 1 because Stryker's `mutate` range is 1-based in the line and 0-based in the column. Passing the 1-based column verbatim starts the range one character inside the expression and silently drops the mutant for its own outermost node (measured: 4 mutants instead of 5).
+  - **Why the command runner**: the smoke does not use `@stryker-mutator/vitest-runner`. Measured 2026-09-12 on Stryker 10.0.0 with the repository's Vitest 5.0.0 line, that runner reports `Ran 0.00 tests per mutant` and every measured mutant survives; the same probe driven through Stryker's `command` runner (`npx vitest --run …`) killed 5/5 in ~22 s (re-measured 2026-09-18 after the range fix below). Note that the command runner equates any non-zero exit with a kill, so a systematically broken command would read as all-killed; Stryker's dry run is what rules that out, and it is why the probe's claim is activation, not score. Shelling out to the ordinary Vitest CLI keeps the probe working across Vitest majors instead of pinning the repository's Vitest line to the runner's tested pairing.
+  - **Why the extra assertion**: `thresholds.break` cannot catch an empty probe. When the mutated line/column range no longer holds an expression, Stryker can instrument zero mutants, report a score of `NaN`, and exit 0. The receipt guard requires schema `1.0`, the exact contracted source seam, at least one mutant, and every reported mutant to be `Killed`. It deliberately accepts any non-zero mutant count because the count belongs to Stryker's installed mutator set, not to Taskdeck's source contract.
+
+#### Source-text guards and the mutation sandbox (#3009)
+
+`boardMutationCapabilityParity.spec.ts` intentionally reads the raw board-store facade and parses
+its structure. Stryker instruments that facade before the initial test run, so the static guard
+would otherwise inspect transformed source and fail before any mutant executes.
+
+Register these exceptional specs in `sourceTextGuardTests`, beside the mutation targets. The
+configuration derives literal, root-anchored `ignorePatterns` from that registry, omitting only
+those spec files from Stryker's sandbox. The original files and ordinary `vitest.config.ts` remain
+unchanged: the guards still execute in ordinary Vitest and required CI. Do not broaden these
+patterns to production files, whole directories, or unrelated behavioral tests.
+
+Negative `testFiles` entries did not exclude the guard in the measured failing dry run
+[35299300550](https://github.com/Chris0Jeky/Taskdeck/actions/runs/35299300550). The registry contract
+therefore checks the actual sandbox-exclusion configuration, not the presence of an ineffective
+negative test pattern. The mutation workflow runs that inexpensive contract before the long run.
+
+Qualify changes to this boundary with all three commands, from `frontend/taskdeck-web`:
+
+```bash
+node --test scripts/stryker-source-text-guards.contract.mjs
+npx vitest --run src/tests/views/paper/boardMutationCapabilityParity.spec.ts --maxWorkers=1 --maxConcurrency=1
+npx stryker run --dryRunOnly
+```
+
+The first checks the explicit exclusion registry, the second proves the ordinary source guard
+still runs, and the third exercises Stryker's real instrumented sandbox. Passing the registry
+contract alone is not dry-run qualification. A successful dry run does not prove mutant activation
+or mutation score correctness; the Vitest-runner activation investigation (#3038) and bounded
+activation-smoke work (#3039, PR #2931) remain separate.
 
 ## Threshold Strategy
 
@@ -74,6 +110,7 @@ Report: `backend/StrykerOutput/<timestamp>/reports/mutation-report.html`
 
 ```bash
 cd frontend/taskdeck-web
+npm run mutation:smoke
 npm run mutation:test
 ```
 
@@ -81,24 +118,31 @@ Report: `frontend/taskdeck-web/reports/mutation/mutation.html`
 
 #### Reproducing the Vitest dry run without a full mutation run
 
-Stryker runs the whole Vitest suite once as a **dry run** before it executes any mutant. If that dry
-run fails, the lane produces no report at all, whatever the mutation score would have been. The dry
-run does not use the repository's default Vitest pool: `@stryker-mutator/vitest-runner` (v10,
-`#getVitestPoolConfig`) forces `pool: 'threads', maxWorkers: 1`, overriding the `forks` pool the
-ordinary unit jobs use.
+Stryker runs its selected Vitest suite once as a **dry run** before it executes any mutant. If that
+dry run fails, the lane produces no report at all, whatever the mutation score would have been.
+The dry run does not use the repository's default Vitest pool:
+`@stryker-mutator/vitest-runner` (v10, `#getVitestPoolConfig`) forces `pool: 'threads', maxWorkers: 1`,
+overriding the `forks` pool the ordinary unit jobs use.
 
-Reproduce that exact shape in seconds, without waiting for a mutation run:
+Reproduce that pool shape without a full mutation run:
 
 ```bash
 cd frontend/taskdeck-web
-# Whole suite in Stryker's pool shape (~7 min on a dev box):
+# Whole ordinary suite in Stryker's pool shape (~7 min on a dev box):
 npx vitest --run --pool=threads --maxWorkers=1 --maxConcurrency=1
 # One spec, seconds:
 npx vitest --run --pool=threads --maxWorkers=1 src/tests/utils/timeZone.spec.ts
+# Actual instrumented sandbox and initial test run, without executing mutants:
+npx stryker run --dryRunOnly
 ```
+
+The direct Vitest commands reproduce the pool, not Stryker's instrumentation or sandbox exclusions.
+Use the actual Stryker command to qualify source-text guard isolation.
 
 Deliberately not an npm script: `frontend/taskdeck-web/package.json` is a declared control path
 (`ci/policy.v1.json`), so adding one would make an otherwise ordinary test change an R4 PR.
+(`mutation:smoke` below is the deliberate exception: it is invoked by the workflow itself, so it
+has to be a script, and its PR is accepted as R4 for that reason.)
 
 **Known pool-dependent trap — timezone stubs (#2943).** `vi.stubEnv('TZ', zone)` changes the runtime
 zone only as a side effect of Node's real environment store notifying V8. That notification does not
@@ -116,11 +160,23 @@ host in any zone.
 
 ### CI
 
-The mutation testing workflow runs:
-- **Weekly**: Sunday 04:00 UTC (automatic)
-- **On demand**: via `workflow_dispatch` from the Actions tab
+The mutation testing workflow runs **on demand**, via `workflow_dispatch` from the Actions tab.
+The weekly schedule was removed under ADR-0052; the checked-in workflow is the trigger authority.
+The frontend job first validates the source-text guard isolation contract (#3009) -- a static check
+on checked-in configuration that fails closed, because a sandbox whose exclusions do not match the
+registry measures nothing knowable. It then records the activation smoke outcome, always attempts
+the full advisory mutation run, always executes the report upload step, and only then enforces the
+smoke verdict. A smoke failure therefore remains visible and job-failing without suppressing the
+diagnostic full-run attempt. The full mutation runner and mutation score remain advisory and
+non-blocking.
 
-Reports are uploaded as GitHub Actions artifacts with 30-day retention.
+**What the smoke does and does not prove.** It proves Stryker can instrument the exact contracted seam and that the Vitest CLI kills every mutant emitted for that seam. It does **not** exercise `@stryker-mutator/vitest-runner`, which is the runner the *full* advisory report still uses, so a green smoke step is not evidence that the full step executed any test. Read the two steps separately, and judge the full lane by its mutation score and its per-mutant test counts, never by the job's green tick: `stryker.config.mjs` sets `break: 0`, so a run in which every mutant survives would score `0.00` and remain advisory.
+
+**The full frontend lane previously produced no report at all (#3040).** Measured on hosted Linux before the guard isolation above, [run 34659915617](https://github.com/Chris0Jeky/Taskdeck/actions/runs/34659915617): the smoke step passed 4/4 in 11 s, and the full `npx stryker run` step then failed in its initial dry run, before any mutant executed, with
+`board-mutation capability parity reads the facade return block, so a restructure cannot mute the guard -- expected 0 to be greater than 15`.
+The cause is structural rather than environmental. `src/tests/views/paper/boardMutationCapabilityParity.spec.ts` parses the **raw source text** of `src/store/boardStore.ts` for its `return {` facade block, and `stryker.config.mjs` mutates that same file, so the dry run read Stryker's instrumented copy, the regex matched nothing, and the assertion failed. Any mutation run whose `mutate` list includes a file that some spec parses as text fails this way. `stryker.config.mjs` now excludes exactly those registered specs from the sandbox (#3009, the section above), which removes that cause. #3040 is closed on the pre-fix record above; that no hosted dispatch has re-measured the lane since means a report artifact from the full frontend job is still unobserved, not that it is known to fail. The `@stryker-mutator/vitest-runner` zero-execution problem in #3038 is a separate defect that this failure masked.
+
+Reports produced by either lane are uploaded as GitHub Actions artifacts with 30-day retention.
 The backend job has a finite 180-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.
 
 The first repaired backend-only baseline, [run 30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d`, completed in 192 seconds. It created 3,682 mutants: 2,351 killed, 576 survived, 2 timed out, and 753 skipped, for a 70.75% score. The non-empty two-file report artifact is 874,386 bytes (SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`). Keep the 0% break threshold until the policy's 3-4-run calibration window exists.

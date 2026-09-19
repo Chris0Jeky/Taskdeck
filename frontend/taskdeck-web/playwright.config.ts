@@ -94,7 +94,10 @@ const e2eWorkers = resolveWorkers(process.env.TASKDECK_E2E_WORKERS, effectiveDef
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testIgnore: /packaged-desktop\.spec\.ts/,
+  // Packaged-desktop specs read their loopback origin from the release harness env at
+  // module load, so collecting them in the ordinary lanes throws before any test runs.
+  // They are executed only by playwright.packaged-desktop.config.ts.
+  testIgnore: /packaged-(desktop|manifest)\.spec\.ts/,
   forbidOnly: !!process.env.CI,
   /*
    * Parallel execution is safe because tests provision unique users, boards,
