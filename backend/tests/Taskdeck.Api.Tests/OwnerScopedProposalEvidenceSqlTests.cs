@@ -33,7 +33,7 @@ public sealed class OwnerScopedProposalEvidenceSqlTests : IClassFixture<TestWebA
     {
         using var ownerClient = _factory.CreateClient();
         using var strangerClient = _factory.CreateClient();
-        var suffix = Guid.NewGuid().ToString("N");
+        var suffix = Guid.NewGuid().ToString("N")[..8];
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, $"owner-pending-{suffix}");
         var stranger = await ApiTestHarness.AuthenticateAsync(strangerClient, $"stranger-pending-{suffix}");
         var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, $"owner-pending-{suffix}");
@@ -88,7 +88,7 @@ public sealed class OwnerScopedProposalEvidenceSqlTests : IClassFixture<TestWebA
     {
         using var ownerClient = _factory.CreateClient();
         using var strangerClient = _factory.CreateClient();
-        var suffix = Guid.NewGuid().ToString("N");
+        var suffix = Guid.NewGuid().ToString("N")[..8];
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, $"owner-history-{suffix}");
         var stranger = await ApiTestHarness.AuthenticateAsync(strangerClient, $"stranger-history-{suffix}");
         var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, $"owner-history-{suffix}");
@@ -129,7 +129,7 @@ public sealed class OwnerScopedProposalEvidenceSqlTests : IClassFixture<TestWebA
     {
         using var ownerClient = _factory.CreateClient();
         using var strangerClient = _factory.CreateClient();
-        var suffix = Guid.NewGuid().ToString("N");
+        var suffix = Guid.NewGuid().ToString("N")[..8];
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, $"owner-terminal-{suffix}");
         var stranger = await ApiTestHarness.AuthenticateAsync(strangerClient, $"stranger-terminal-{suffix}");
         var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, $"owner-terminal-{suffix}");
