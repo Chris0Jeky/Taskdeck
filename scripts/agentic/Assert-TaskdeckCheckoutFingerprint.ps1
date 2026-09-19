@@ -405,6 +405,16 @@ function Get-Inventory {
             if ($null -ne $MissingBaselinePaths -and $MissingBaselinePaths.ContainsKey($relativePath)) {
                 continue
             }
+            if ($null -ne $MissingBaselinePaths -and ([string]$entry.code).Contains('D')) {
+                $records.Add([pscustomobject]@{
+                        path = $relativePath
+                        code = $entry.code
+                        deleted = $true
+                        length = [Int64]0
+                        hash = ''
+                    })
+                continue
+            }
             throw 'status artifact disappeared before it could be fingerprinted'
         }
 
@@ -458,6 +468,15 @@ function Assert-InventoryStability {
 
     foreach ($record in $Records) {
         $fullPath = Get-ArtifactPath -Checkout $Checkout -RelativePath $record.path
+        $deletedProperty = $record.PSObject.Properties['deleted']
+        if ($null -ne $deletedProperty -and [bool]$deletedProperty.Value) {
+            if (Test-Path -LiteralPath $fullPath) {
+                throw ('status inventory changed while it was fingerprinted: ' +
+                    (ConvertTo-DiagnosticText -Value $record.path) + ' reappeared')
+            }
+            continue
+        }
+
         try {
             $item = Get-Item -LiteralPath $fullPath -Force -ErrorAction Stop
         }
@@ -767,15 +786,21 @@ function Invoke-Compare {
     }
     foreach ($path in ($after.Keys | Sort-Object)) {
         if (-not $before.ContainsKey($path)) {
-            # Absent from the baseline is not the same as new on disk: a file
-            # that was clean tracked content at capture time never entered the
-            # baseline, so the lane overwrote it rather than creating it. Only
-            # an untracked (`??`) or newly index-added (`A`) artifact is really
-            # a creation.
-            $code = [string]$after[$path].code
-            $classification = 'overwritten'
-            if ($code -eq '??' -or $code.StartsWith('A', [StringComparison]::Ordinal)) {
-                $classification = 'created'
+            $deletedProperty = $after[$path].PSObject.Properties['deleted']
+            if ($null -ne $deletedProperty -and [bool]$deletedProperty.Value) {
+                $classification = 'deleted'
+            }
+            else {
+                # Absent from the baseline is not the same as new on disk: a file
+                # that was clean tracked content at capture time never entered the
+                # baseline, so the lane overwrote it rather than creating it. Only
+                # an untracked (`??`) or newly index-added (`A`) artifact is really
+                # a creation.
+                $code = [string]$after[$path].code
+                $classification = 'overwritten'
+                if ($code -eq '??' -or $code.StartsWith('A', [StringComparison]::Ordinal)) {
+                    $classification = 'created'
+                }
             }
             $changes.Add([pscustomobject]@{ path = $path; classification = $classification })
         }

@@ -91,6 +91,9 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   /** Invalidates in-flight retry ownership when consent is withdrawn. */
   let consentEpoch = 0
 
+  /** Toast owned by the most recent failed consent persistence attempt. */
+  let consentPersistenceWarningId: string | null = null
+
   // ── Computed ────────────────────────────────────────────────────────
 
   /** Telemetry is active only when BOTH user consents AND server enables it */
@@ -137,6 +140,12 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     }
   }
 
+  function clearConsentPersistenceWarning() {
+    if (consentPersistenceWarningId === null) return
+    toast.remove(consentPersistenceWarningId)
+    consentPersistenceWarningId = null
+  }
+
   /** Set user consent; persistence failure must not prevent revocation. */
   function setConsent(value: boolean) {
     consentGiven.value = value
@@ -151,12 +160,16 @@ export const useTelemetryStore = defineStore('telemetry', () => {
       startFlushTimer()
     }
 
+    // This store owns at most one persistence receipt. A new attempt makes the
+    // previous warning stale whether the new write succeeds or needs a replacement.
+    clearConsentPersistenceWarning()
+
     try {
       localStorage.setItem(CONSENT_KEY, String(value))
     } catch {
       // Keep the privacy-first in-memory choice, but do not let stale browser
       // storage silently reverse it after a reload.
-      toast.warning(
+      consentPersistenceWarningId = toast.warning(
         value
           ? ENABLED_CONSENT_PERSISTENCE_WARNING
           : DISABLED_CONSENT_PERSISTENCE_WARNING,
