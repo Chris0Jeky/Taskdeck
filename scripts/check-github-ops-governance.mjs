@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url'
 
 const errors = []
 
-// Regenerated 2026-09-04 (CI-11 #2335): the only delta from the previously reviewed parked
-// text is that its four external actions are now pinned to full commit SHAs. A parked
-// workflow must be SHA-pinned too, so the pins are kept and the digest is re-frozen over them.
-const expectedParkedStagingGateSha256 = 'fb43cd8e585310ebd47fe954444f2ea7b7edcca16843c3f762c3f5b10c91f44b'
+// Regenerated 2026-09-09 (CI-11 #2335): the only delta from the previously pinned
+// parked workflow disables credential persistence on its two checkout steps.
+// Triggers, permissions, commands, and the non-deploying handoff remain unchanged.
+const expectedParkedStagingGateSha256 = '3040d111ec69ea09e3cac7f2750d9093e992eb149e3332e127285e935281ae2f'
 
 const requiredIssueTemplateFiles = [
   '.github/ISSUE_TEMPLATE/bug_report.md',
