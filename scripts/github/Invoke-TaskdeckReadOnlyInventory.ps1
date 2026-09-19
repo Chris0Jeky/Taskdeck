@@ -790,24 +790,163 @@ function Resolve-InventoryExecutable {
     return $command.Source
 }
 
+function Initialize-InventoryNativeEnvironmentType {
+    if ($null -ne ("TaskdeckInventoryNativeEnvironment" -as [type])) {
+        return
+    }
+
+    Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class TaskdeckInventoryNativeEnvironment
+{
+    private const int ErrorEnvironmentVariableNotFound = 203;
+    private const int WindowsEnvironmentBufferLength = 32768;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SetEnvironmentVariableW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowsNative(string name, string value);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "GetEnvironmentVariableW")]
+    private static extern uint GetWindowsNative(string name, StringBuilder buffer, uint size);
+
+    [DllImport("kernel32.dll", EntryPoint = "SetLastError")]
+    private static extern void ResetWindowsLastError(uint errorCode);
+
+    public static void SetWindows(string name, string value, bool present)
+    {
+        if (!SetWindowsNative(name, present ? value : null))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to update process environment variable '" + name + "'.");
+        }
+    }
+
+    public static void SetUnix(string name, string value, bool present)
+    {
+        Environment.SetEnvironmentVariable(
+            name,
+            present ? value : null,
+            EnvironmentVariableTarget.Process);
+    }
+
+    public static bool TryGetWindows(string name, out string value)
+    {
+        StringBuilder buffer = new StringBuilder(WindowsEnvironmentBufferLength);
+        ResetWindowsLastError(0);
+        uint length = GetWindowsNative(name, buffer, (uint)buffer.Capacity);
+        if (length == 0)
+        {
+            int error = Marshal.GetLastWin32Error();
+            if (error == ErrorEnvironmentVariableNotFound)
+            {
+                value = null;
+                return false;
+            }
+            if (error != 0)
+            {
+                throw new Win32Exception(error, "Failed to read process environment variable '" + name + "'.");
+            }
+            value = string.Empty;
+            return true;
+        }
+        if (length >= buffer.Capacity)
+        {
+            throw new InvalidOperationException("Process environment variable '" + name + "' exceeds the supported Windows size.");
+        }
+        value = buffer.ToString();
+        return true;
+    }
+
+    public static bool TryGetUnix(string name, out string value)
+    {
+        var processEnvironment = Environment.GetEnvironmentVariables(EnvironmentVariableTarget.Process);
+        if (!processEnvironment.Contains(name))
+        {
+            value = null;
+            return false;
+        }
+        value = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.Process);
+        return true;
+    }
+}
+"@
+}
+
+function Get-InventoryProcessEnvironmentVariableState {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    Initialize-InventoryNativeEnvironmentType
+    $value = $null
+    $runningOnWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+    if ($runningOnWindows) {
+        $present = [TaskdeckInventoryNativeEnvironment]::TryGetWindows($Name, [ref]$value)
+    }
+    else {
+        $present = [TaskdeckInventoryNativeEnvironment]::TryGetUnix($Name, [ref]$value)
+    }
+
+    return [pscustomobject]@{
+        Present = [bool]$present
+        Value = $value
+    }
+}
+
+function Set-InventoryProcessEnvironmentVariable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][object]$Value
+    )
+
+    Initialize-InventoryNativeEnvironmentType
+    $present = $null -ne $Value
+    $processValue = $null
+    if ($present) {
+        $processValue = [string]$Value
+    }
+
+    $runningOnWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+    if ($runningOnWindows) {
+        [TaskdeckInventoryNativeEnvironment]::SetWindows($Name, $processValue, $present)
+    }
+    else {
+        [TaskdeckInventoryNativeEnvironment]::SetUnix($Name, $processValue, $present)
+    }
+
+    $actual = Get-InventoryProcessEnvironmentVariableState -Name $Name
+    if (
+        $actual.Present -ne $present -or
+        ($present -and $actual.Value -cne $processValue)
+    ) {
+        throw "Process environment update did not preserve the requested state for '$Name'."
+    }
+}
+
 function Set-InventoryEnvironmentVariable {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Saved,
         [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][string]$Value
+        [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][object]$Value
     )
 
     if (-not $Saved.ContainsKey($Name)) {
-        $Saved[$Name] = [System.Environment]::GetEnvironmentVariable($Name, "Process")
+        $Saved[$Name] = Get-InventoryProcessEnvironmentVariableState -Name $Name
     }
-    [System.Environment]::SetEnvironmentVariable($Name, $Value, "Process")
+    Set-InventoryProcessEnvironmentVariable -Name $Name -Value $Value
 }
 
 function Restore-InventoryEnvironment {
     param([Parameter(Mandatory = $true)][hashtable]$Saved)
 
     foreach ($name in @($Saved.Keys)) {
-        [System.Environment]::SetEnvironmentVariable($name, $Saved[$name], "Process")
+        $savedVariable = $Saved[$name]
+        $restoreValue = $null
+        if ($savedVariable.Present) {
+            $restoreValue = $savedVariable.Value
+        }
+        Set-InventoryProcessEnvironmentVariable -Name $name -Value $restoreValue
     }
 }
 
@@ -1170,19 +1309,139 @@ function Invoke-ReadOnlyInventorySelfTest {
     }
     $state.Checks++
 
-    $environmentProbe = @{}
-    [System.Environment]::SetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", "external-helper", "Process")
-    Set-InventoryEnvironmentVariable -Saved $environmentProbe -Name "TASKDECK_INVENTORY_PROBE" -Value $null
-    if ($null -ne [System.Environment]::GetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", "Process")) {
-        throw "Neutralized environment variables must be cleared before the child process starts."
-    }
-    Restore-InventoryEnvironment -Saved $environmentProbe
-    if ([System.Environment]::GetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", "Process") -cne "external-helper") {
-        throw "Neutralized environment variables must be restored afterwards."
-    }
-    [System.Environment]::SetEnvironmentVariable("TASKDECK_INVENTORY_PROBE", $null, "Process")
-    $state.Checks++
+    $environmentProbeName = "TASKDECK_INVENTORY_PROBE"
+    $missingEnvironmentProbeName = "TASKDECK_INVENTORY_MISSING_PROBE"
+    $emptyEnvironmentProbeName = "TASKDECK_INVENTORY_EMPTY_PROBE"
 
+    function Assert-InventoryEnvironmentState {
+        param(
+            [Parameter(Mandatory = $true)][string]$Name,
+            [Parameter(Mandatory = $true)][bool]$Present,
+            [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][object]$Value,
+            [Parameter(Mandatory = $true)][string]$Message
+        )
+
+        $actual = Get-InventoryProcessEnvironmentVariableState -Name $Name
+        if (
+            $actual.Present -ne $Present -or
+            ($Present -and $actual.Value -cne [string]$Value)
+        ) {
+            throw $Message
+        }
+    }
+
+    $environmentProbeNames = @(
+        $environmentProbeName,
+        $missingEnvironmentProbeName,
+        $emptyEnvironmentProbeName
+    )
+    $originalEnvironmentProbeStates = @{}
+    foreach ($probeName in $environmentProbeNames) {
+        $originalEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+    }
+
+    try {
+        # Exercise the exact caller-state shapes named by the regression while the outer
+        # finally remains responsible for restoring whatever the invoking process supplied.
+        Set-InventoryProcessEnvironmentVariable -Name $environmentProbeName -Value "caller-non-empty"
+        Set-InventoryProcessEnvironmentVariable -Name $missingEnvironmentProbeName -Value $null
+        Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
+
+        $selfTestEnvironmentProbeStates = @{}
+        foreach ($probeName in $environmentProbeNames) {
+            $selfTestEnvironmentProbeStates[$probeName] = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+        }
+
+        try {
+            foreach ($probeName in $environmentProbeNames) {
+                Set-InventoryProcessEnvironmentVariable -Name $probeName -Value $null
+            }
+
+            $environmentProbe = @{}
+            Set-InventoryProcessEnvironmentVariable -Name $environmentProbeName -Value "external-helper"
+            Set-InventoryEnvironmentVariable -Saved $environmentProbe -Name $environmentProbeName -Value $null
+            Assert-InventoryEnvironmentState `
+                -Name $environmentProbeName `
+                -Present $false `
+                -Message "Neutralized environment variables must be absent before the child process starts."
+            Restore-InventoryEnvironment -Saved $environmentProbe
+            Assert-InventoryEnvironmentState `
+                -Name $environmentProbeName `
+                -Present $true `
+                -Value "external-helper" `
+                -Message "Non-empty environment variables must be restored exactly afterwards."
+            $state.Checks++
+
+            $missingEnvironmentProbe = @{}
+            Set-InventoryEnvironmentVariable -Saved $missingEnvironmentProbe -Name $missingEnvironmentProbeName -Value "temporary"
+            Assert-InventoryEnvironmentState `
+                -Name $missingEnvironmentProbeName `
+                -Present $true `
+                -Value "temporary" `
+                -Message "The environment helper must set a value while preserving a missing original."
+            Restore-InventoryEnvironment -Saved $missingEnvironmentProbe
+            Assert-InventoryEnvironmentState `
+                -Name $missingEnvironmentProbeName `
+                -Present $false `
+                -Message "A missing environment variable must remain missing after restore."
+            $state.Checks++
+
+            Set-InventoryProcessEnvironmentVariable -Name $emptyEnvironmentProbeName -Value ""
+            Assert-InventoryEnvironmentState `
+                -Name $emptyEnvironmentProbeName `
+                -Present $true `
+                -Value "" `
+                -Message "The process environment must retain an explicitly empty probe value."
+
+            $emptyEnvironmentProbe = @{}
+            Set-InventoryEnvironmentVariable -Saved $emptyEnvironmentProbe -Name $emptyEnvironmentProbeName -Value $null
+            Assert-InventoryEnvironmentState `
+                -Name $emptyEnvironmentProbeName `
+                -Present $false `
+                -Message "An explicitly empty environment variable must still be removed during neutralization."
+            Restore-InventoryEnvironment -Saved $emptyEnvironmentProbe
+            Assert-InventoryEnvironmentState `
+                -Name $emptyEnvironmentProbeName `
+                -Present $true `
+                -Value "" `
+                -Message "An explicitly empty environment variable must be restored as present and empty."
+            $state.Checks++
+        }
+        finally {
+            Restore-InventoryEnvironment -Saved $selfTestEnvironmentProbeStates
+        }
+
+        Assert-InventoryEnvironmentState `
+            -Name $environmentProbeName `
+            -Present $true `
+            -Value "caller-non-empty" `
+            -Message "The self-test must restore a caller's non-empty probe value."
+        Assert-InventoryEnvironmentState `
+            -Name $missingEnvironmentProbeName `
+            -Present $false `
+            -Message "The self-test must preserve a caller's missing probe state."
+        Assert-InventoryEnvironmentState `
+            -Name $emptyEnvironmentProbeName `
+            -Present $true `
+            -Value "" `
+            -Message "The self-test must restore a caller's present-empty probe value."
+        $state.Checks++
+    }
+    finally {
+        Restore-InventoryEnvironment -Saved $originalEnvironmentProbeStates
+    }
+
+    foreach ($probeName in $environmentProbeNames) {
+        $expected = $originalEnvironmentProbeStates[$probeName]
+        $actual = Get-InventoryProcessEnvironmentVariableState -Name $probeName
+        if (
+            $actual.Present -ne $expected.Present -or
+            ($expected.Present -and $actual.Value -cne $expected.Value)
+        ) {
+            throw "The self-test did not restore the inherited process environment state for '$probeName'."
+        }
+    }
+    $state.Checks++
     $pathspecLaunch = Get-GitLaunchArguments -Arguments @("diff", "--name-only", "HEAD", "--", "scripts")
     if ($pathspecLaunch -cnotcontains "--") {
         throw "Local subcommands must keep their -- pathspec separator."
