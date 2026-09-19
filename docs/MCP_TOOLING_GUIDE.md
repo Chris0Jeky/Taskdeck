@@ -19,11 +19,12 @@ Operational companion:
 - For high-autonomy batches, report actual MCP/GitHub/subagent availability at session start because runtime availability can differ from `.codex/config.toml`.
 - For unresolved MCP/tool failures, classify the result with `docs/agentic/FAILURE_LEDGER.md` instead of silently switching tools.
 
-### 0.1) Codex and Claude configuration parity
+### 0.1) Codex, Claude, and Grok configuration parity
 - Codex project MCP servers live in `.codex/config.toml`.
 - Claude project MCP servers live in `.mcp.json`, with project approval and `/mcp` authentication where required.
-- Shared enabled project baseline: `openaiDeveloperDocs` and `chromeDevTools` (pinned to 1.8.0 in both files). Codex additionally declares `context7` and an authenticated `github` server. Its `ripgrep` and alternative `playwright` servers are disabled by default. Claude's `.mcp.json` omits those alternatives and omits Context7/GitHub on purpose: Context7 arrives through the claude.ai connector and GitHub work uses `gh`. The Docker MCP gateway is user-scope only and belongs in neither project file.
-- Use each runtime's native mechanics: Codex configured agents/worktrees when policy allows; Claude skills/hooks/worktree sessions and MCP auth flow.
+- Grok project config is `.grok/config.toml` (permissions only). MCP stays in `~/.grok/config.toml`; do not redeclare servers in the project file.
+- Shared enabled project baseline: `openaiDeveloperDocs` and `chromeDevTools` (pinned to 1.8.0 in both Claude/Codex files). Codex additionally declares `context7` and an authenticated `github` server. Its `ripgrep` and alternative `playwright` servers are disabled by default. Claude's `.mcp.json` omits those alternatives and omits Context7/GitHub on purpose: Context7 arrives through the claude.ai connector and GitHub work uses `gh`. Grok takes Context7, GitHub, OpenAI docs, and Chrome DevTools from user-scope `~/.grok/config.toml`. The Docker MCP gateway is user-scope only and belongs in none of the project files.
+- Use each runtime's native mechanics: Codex configured agents/worktrees when policy allows; Claude skills/worktree sessions and MCP auth flow; Grok native `spawn_subagent` (isolation `worktree`) and user-scope MCP. Taskdeck installs no project runtime hooks.
 
 ### 1) Prefer the right tool over guessing
 - OpenAI/Codex/OpenAI API questions -> `openaiDeveloperDocs` MCP
@@ -122,7 +123,7 @@ For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the h
 1. Use `docker` MCP for container/image lifecycle inspection.
 2. Use shell `docker compose` commands for canonical repo workflows and script parity.
 3. `docker` MCP in this repo is backed by Docker Desktop's `docker mcp gateway run` path, so Docker Desktop must be running.
-4. The Docker MCP gateway is **not** a project server. It is declared once at user scope — `MCP_DOCKER` in `~/.claude.json` (Claude) and `[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml` (Codex) — serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`. Never re-declare it in `.codex/config.toml` or `.mcp.json`: a second declaration starts a second gateway process per session (agent-harness#87).
+4. The Docker MCP gateway is **not** a project server. It is declared once at user scope — `MCP_DOCKER` in `~/.claude.json` (Claude), `[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml` (Codex), and `[mcp_servers.MCP_DOCKER]` in `~/.grok/config.toml` (Grok, currently disabled until Docker Desktop handshakes) — serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`. Never re-declare it in `.codex/config.toml`, `.mcp.json`, or `.grok/config.toml`: a second declaration starts a second gateway process per session (agent-harness#87).
 5. Validate the configured profile with `scripts/mcp/Test-DockerMcpProfile.ps1`. The validator is intentionally non-starting: it parses the read-only profile inventory and proves the exact `docker-mcp=true` container ID set is unchanged before reporting `PASS`.
 6. Do not use `docker mcp gateway run --dry-run` as a validation probe. That mode starts a gateway without a listener, and the CLI provides no invocation identity that would make set-difference cleanup safe around concurrent sessions.
 

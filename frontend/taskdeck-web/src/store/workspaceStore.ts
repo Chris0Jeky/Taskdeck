@@ -430,13 +430,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   ): boolean {
     if (!optimisticBase) return true
 
-    // Dismissed onboarding is intentionally deferred by the server: it carries
-    // no steps/current step. Replay is therefore not a plain visibility echo;
-    // its response is the first authoritative payload containing the restored
-    // guide and must replace this placeholder.
+    // Deferred onboarding carries no steps/current step. An optimistic replay
+    // changes its visibility to active before the request settles, so retries
+    // and overlapping replay clicks must identify the placeholder by shape,
+    // not by its now-mutable visibility. Populated guides remain confirm-only.
     return (
       action === 'replay' &&
-      optimisticBase.visibility === 'dismissed' &&
       !optimisticBase.isComplete &&
       optimisticBase.currentStepId === null &&
       optimisticBase.steps.length === 0
@@ -488,9 +487,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return nextOnboarding
     } catch (e: unknown) {
       if (onboardingRequestVersion === requestVersion) {
-        if (appliedOptimistic) {
-          // Local intent stays applied; flag it unsaved so reads cannot
-          // silently revert it (mirrors the failed-mode-save semantics).
+        if (adoptAuthoritativePayload && optimisticBase) {
+          // A deferred placeholder has no usable active guide. Restore
+          // the dismissed affordance so Replay remains reachable, and
+          // leave it clean so a later summary can confirm a commit whose
+          // response was lost.
+          onboardingDirty = false
+          syncOnboarding({ ...optimisticBase, visibility: 'dismissed' })
+        } else if (appliedOptimistic) {
+          // Ordinary local intent stays applied; flag it unsaved so reads
+          // cannot silently revert it (mirrors failed mode-save semantics).
           onboardingDirty = true
         }
         preferenceError.value = getErrorMessage(e, "We couldn't update the setup guide")
