@@ -39,9 +39,9 @@ no revision keeps its original operations. Two shipped behaviors narrow with thi
 detection is now scoped to the reviewed proposal's board (or, for a board-less proposal, its owner)
 rather than searching every board, and the similar-past lookback of 200 now bounds terminal
 decisions INSPECTED rather than decisions already matched by SQL. Apply rate remains the shipped
-0..1 ratio. Evidence: `Taskdeck.Application.Tests` 4,842 pass, `Taskdeck.Api.Tests` 3,300 pass with
-four existing skips (including the three real-SQLite HTTP regressions for this issue), and
-`Taskdeck.Architecture.Tests` 28 pass with one existing skip.
+0..1 ratio. Evidence: the full backend solution passes (10,149 tests, 0 failures, 34 pre-existing
+skips), including the three real-SQLite HTTP regressions for this issue, which run and pass rather
+than skip.
 
 Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
 Starting a relation proposal still prevents departure while the request is unsettled, but the

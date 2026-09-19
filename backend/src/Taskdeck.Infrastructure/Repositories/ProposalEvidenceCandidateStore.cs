@@ -52,20 +52,27 @@ public sealed class ProposalEvidenceCandidateStore(TaskdeckDbContext context)
             ? await ReadSqlitePageAsync(set, scope, offset, limit, cancellationToken)
             : await ReadRelationalPageAsync(set, scope, offset, limit, cancellationToken);
 
+        // Include composes over the raw query and does not guarantee the inner order
+        // survives, so re-sort. The Id tiebreak must use the SAME comparison the SQL
+        // pages with -- `ORDER BY ... Id` is a SQLite TEXT comparison of the stored
+        // Guid, not Guid.CompareTo's signed-field order -- otherwise the concatenated
+        // page sequence is not monotone in the database's order and a tie group can
+        // straddle a page boundary out of order. Same convention as
+        // AutomationProposalRepository's bounded raw-SQL reads.
         return set switch
         {
             CandidateSet.Pending => page
                 .OrderByDescending(proposal => proposal.CreatedAt)
-                .ThenBy(proposal => proposal.Id)
+                .ThenBy(proposal => proposal.Id.ToString(), StringComparer.Ordinal)
                 .ToList(),
             CandidateSet.History => page
                 .OrderByDescending(proposal => proposal.UpdatedAt)
-                .ThenBy(proposal => proposal.Id)
+                .ThenBy(proposal => proposal.Id.ToString(), StringComparer.Ordinal)
                 .ToList(),
             CandidateSet.Terminal => page
                 .OrderByDescending(proposal => proposal.DecidedAt)
                 .ThenByDescending(proposal => proposal.UpdatedAt)
-                .ThenBy(proposal => proposal.Id)
+                .ThenBy(proposal => proposal.Id.ToString(), StringComparer.Ordinal)
                 .ToList(),
             _ => throw new ArgumentOutOfRangeException(nameof(set))
         };

@@ -78,8 +78,14 @@ internal static class ProposalEffectiveOperationsResolver
     /// one winner per proposal, then only those winner payloads are loaded. Every
     /// supplied proposal appears in the result. A winner row that vanishes between
     /// the two reads degrades to originals, matching the existing proposal DTO
-    /// read. A present but malformed winner fails closed with the same validation
-    /// error class as current-proposal preview and Apply materialization.
+    /// read. A present but malformed winner fails CLOSED rather than silently
+    /// degrading to originals, so evidence never describes an operation set Apply
+    /// would refuse. Note the escape shape differs from preview/Apply: those return a
+    /// ValidationError Result the controller renders as 400, while this throw reaches
+    /// UnhandledExceptionMiddleware as a 500. Unreachable through the API today --
+    /// ProposalRevisionService validates every revision with this same parser before
+    /// it is stored -- so only an out-of-band write (hand-edited SQLite, a future
+    /// import path) can produce it.
     /// </summary>
     internal static async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProposalOperationDto>>> ResolveAsync(
         IProposalRevisionRepository revisions,
