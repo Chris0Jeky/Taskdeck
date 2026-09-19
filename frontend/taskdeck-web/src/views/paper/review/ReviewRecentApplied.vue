@@ -36,6 +36,7 @@ const emit = defineEmits<{
       :aria-label="$t('review.recent.openLabel', { title: row.title })"
       :aria-pressed="row.id === activeId"
       :data-proposal-id="row.id"
+      :data-review-keymap-allow="row.id === activeId ? 'onReject' : undefined"
       @click="emit('select', row.id)"
     >
       <div class="paper-review-recent__head">

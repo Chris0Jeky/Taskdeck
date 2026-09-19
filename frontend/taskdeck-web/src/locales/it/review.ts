@@ -18,6 +18,7 @@
  *     stays in whatever language the server produced.
  */
 export default {
+  surfaceLabel: 'Revisione delle proposte',
   queueRail: {
     eyebrow: 'Coda · {awaiting} in attesa · {stale} ferme',
     eyebrowScoped: 'Coda · {awaiting} in attesa in questa bacheca · {stale} ferme',
