@@ -6526,6 +6526,16 @@ describe('PaperReviewView', () => {
       expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
         'Review evidence could not be refreshed',
       )
+      const recoveryApply = wrapper.get('[data-testid="decision-apply"]')
+      expect(recoveryApply.attributes('disabled')).toBeUndefined()
+      expect(recoveryApply.attributes('aria-describedby')).toBe(
+        'paper-review-evidence-unavailable-note',
+      )
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer']) {
+        const control = wrapper.get(`[data-testid="${testid}"]`)
+        expect(control.attributes('disabled')).toBeUndefined()
+        expect(control.attributes('aria-describedby')).toBeUndefined()
+      }
       expect(wrapper.text()).not.toContain('Nothing flagged.')
       expect(wrapper.text()).not.toContain('No history recorded.')
       expect(wrapper.text()).not.toContain('No comparable past decisions.')
