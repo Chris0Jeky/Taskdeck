@@ -125,6 +125,7 @@ describe('InputAssistField', () => {
     const input = wrapper.get('input')
     await input.trigger('focus')
     await input.setValue('health.check')
+    await wrapper.setProps({ modelValue: 'health.check' })
 
     expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
     expect(wrapper.findAll('[role="option"]')).toHaveLength(0)
@@ -134,5 +135,20 @@ describe('InputAssistField', () => {
     expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
     expect(wrapper.emitted('select')?.at(-1)?.[0]).toMatchObject({ value: 'health.check', label: 'Health Check' })
+  })
+
+  it('does not synthesize selection when only the controlled value changes', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options,
+      },
+    })
+
+    await wrapper.get('input').trigger('focus')
+    await wrapper.setProps({ modelValue: 'health.check' })
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+    expect(wrapper.emitted('select')).toBeUndefined()
   })
 })
