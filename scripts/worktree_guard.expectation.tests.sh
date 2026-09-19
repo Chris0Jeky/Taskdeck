@@ -23,7 +23,9 @@ fi
 FIXTURE_ROOT="$(mktemp -d)"
 cleanup() {
     if [ -d "$FIXTURE_ROOT/primary" ]; then
-        git -C "$FIXTURE_ROOT/primary" worktree remove "$FIXTURE_ROOT/detached" >/dev/null 2>&1 || true
+        for worktree in detached unicode case; do
+            git -C "$FIXTURE_ROOT/primary" worktree remove "$FIXTURE_ROOT/$worktree" >/dev/null 2>&1 || true
+        done
     fi
     rm -rf -- "$FIXTURE_ROOT" 2>/dev/null || true
 }
@@ -83,6 +85,45 @@ assert_named_branch_mismatch() {
     pass "$name treats the value as a named branch expectation"
 }
 
+assert_branch_success() {
+    local name="$1"
+    local code="$2"
+    local output="$3"
+    local expected_branch="$4"
+    local normalized_output
+
+    if [ "$code" -ne 0 ]; then
+        printf '%s\n' "$output" >&2
+        fail "$name must accept the exact checked-out branch (got $code)"
+    fi
+
+    normalized_output="$(normalize_assertion_output "$output")"
+    if ! printf '%s' "$normalized_output" | grep -qF -- "WT_HEAD_STATE=branch ($expected_branch)"; then
+        printf '%s\n' "$output" >&2
+        fail "$name did not preserve the exact checked-out branch"
+    fi
+    pass "$name accepts and preserves the exact checked-out branch"
+}
+
+assert_wrong_branch() {
+    local name="$1"
+    local code="$2"
+    local output="$3"
+    local normalized_output
+
+    if [ "$code" -ne 1 ]; then
+        printf '%s\n' "$output" >&2
+        fail "$name must reject a non-identical branch expectation (got $code)"
+    fi
+
+    normalized_output="$(normalize_assertion_output "$output")"
+    if ! printf '%s' "$normalized_output" | grep -qF -- "Worktree HEAD is on the wrong branch"; then
+        printf '%s\n' "$output" >&2
+        fail "$name did not report the branch mismatch"
+    fi
+    pass "$name rejects the non-identical branch expectation"
+}
+
 assert_setup_error "formatter-wrapped setup error" \
     2 $'ERROR: cannot be\r\ncombined with -ExpectedBranch' "cannot be combined"
 
@@ -96,6 +137,51 @@ git -C "$FIXTURE_ROOT/primary" \
     -c user.name=t \
     commit -q --allow-empty -m "seed" --no-gpg-sign
 git -C "$FIXTURE_ROOT/primary" worktree add -q --detach "$FIXTURE_ROOT/detached" HEAD
+
+unicode_branch=$'\u00a0'
+unicode_checked_branch="${unicode_branch}fix/3236-unicode"
+case_branch="fix/ABC-3236"
+case_expected_lower="fix/abc-3236"
+git -C "$FIXTURE_ROOT/primary" branch "$unicode_checked_branch"
+git -C "$FIXTURE_ROOT/primary" branch "$case_branch"
+git -C "$FIXTURE_ROOT/primary" worktree add -q "$FIXTURE_ROOT/unicode" "$unicode_checked_branch"
+git -C "$FIXTURE_ROOT/primary" worktree add -q "$FIXTURE_ROOT/case" "$case_branch"
+
+set +e
+sh_case_exact_output="$(
+    cd -- "$FIXTURE_ROOT/case"
+    WT_EXPECT_HEAD=branch \
+    WT_EXPECT_BRANCH="$case_branch" \
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
+sh_case_exact_code=$?
+set -e
+assert_branch_success "shell guard exact checked-out branch" \
+    "$sh_case_exact_code" "$sh_case_exact_output" "$case_branch"
+
+set +e
+sh_case_mismatch_output="$(
+    cd -- "$FIXTURE_ROOT/case"
+    WT_EXPECT_HEAD=branch \
+    WT_EXPECT_BRANCH="$case_expected_lower" \
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
+sh_case_mismatch_code=$?
+set -e
+assert_wrong_branch "shell guard case-only branch mismatch" \
+    "$sh_case_mismatch_code" "$sh_case_mismatch_output"
+
+set +e
+sh_unicode_exact_output="$(
+    cd -- "$FIXTURE_ROOT/unicode"
+    WT_EXPECT_HEAD=branch \
+    WT_EXPECT_BRANCH="$unicode_checked_branch" \
+        bash -c 'source "$1"' bash "$SH_GUARD" 2>&1
+)"
+sh_unicode_exact_code=$?
+set -e
+assert_branch_success "shell guard Unicode checked-out branch" \
+    "$sh_unicode_exact_code" "$sh_unicode_exact_output" "$unicode_checked_branch"
 
 set +e
 sh_output="$(
@@ -120,7 +206,6 @@ set -e
 assert_setup_error "shell guard whitespace-only branch" \
     "$sh_whitespace_code" "$sh_whitespace_output" "cannot be whitespace-only"
 
-unicode_branch=$'\u00a0'
 set +e
 sh_unicode_output="$(
     cd -- "$FIXTURE_ROOT/detached"
@@ -167,6 +252,42 @@ assert_named_branch_mismatch "shell guard escape-letter branch" \
 if [ -z "$PS_EXE" ]; then
     printf '  SKIP: PowerShell guard contract (no powershell/pwsh on PATH)\n'
 else
+    set +e
+    ps_case_exact_output="$(
+        cd -- "$FIXTURE_ROOT/case"
+        "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
+            -ExpectHead Branch \
+            -ExpectedBranch "$case_branch" 2>&1
+    )"
+    ps_case_exact_code=$?
+    set -e
+    assert_branch_success "PowerShell guard exact checked-out branch" \
+        "$ps_case_exact_code" "$ps_case_exact_output" "$case_branch"
+
+    set +e
+    ps_case_mismatch_output="$(
+        cd -- "$FIXTURE_ROOT/case"
+        "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
+            -ExpectHead Branch \
+            -ExpectedBranch "$case_expected_lower" 2>&1
+    )"
+    ps_case_mismatch_code=$?
+    set -e
+    assert_wrong_branch "PowerShell guard case-only branch mismatch" \
+        "$ps_case_mismatch_code" "$ps_case_mismatch_output"
+
+    set +e
+    ps_unicode_exact_output="$(
+        cd -- "$FIXTURE_ROOT/unicode"
+        "$PS_EXE" -NoLogo -NoProfile -NonInteractive -File "$PS_GUARD_NATIVE" \
+            -ExpectHead Branch \
+            -ExpectedBranch "$unicode_checked_branch" 2>&1
+    )"
+    ps_unicode_exact_code=$?
+    set -e
+    assert_branch_success "PowerShell guard Unicode checked-out branch" \
+        "$ps_unicode_exact_code" "$ps_unicode_exact_output" "$unicode_checked_branch"
+
     set +e
     ps_output="$(
         cd -- "$FIXTURE_ROOT/detached"
