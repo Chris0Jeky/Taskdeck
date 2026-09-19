@@ -70,6 +70,12 @@ const mockBoardStore = reactive({
 vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
   useRouter: () => routerMock,
+  // BoardView registers navigation guards through useUnsavedWorkspaceNavigation;
+  // this file mounts BoardView with a hand-built router module, so the guard
+  // registrars must exist here too. Behaviour of the guards themselves is proven
+  // in LegacyAssignmentSaveNavigation.spec.ts against a real router.
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
 }))
 
 vi.mock('../../store/boardStore', () => ({
