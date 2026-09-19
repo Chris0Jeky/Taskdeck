@@ -20,13 +20,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Validate worktree guard expectation contract
+        shell: bash
+        run: bash scripts/worktree_guard.expectation.tests.sh
+
+      - name: Validate shell guard export path contract
+        shell: bash
+        run: bash scripts/worktree_guard.path-flavor.tests.sh
+
       - name: Validate detached-first worktree helper
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1
 
+      - name: Validate equivalent tracked-file index refresh
+        run: node --test scripts/git/refresh-equivalent-tracked-file.test.mjs
+
       - name: Validate read-only inventory command contract
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
+
+      - name: Validate read-only inventory environment contract on PowerShell 7
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
+
+      - name: Validate read-only inventory launch on PowerShell 7
+        shell: pwsh
+        run: |
+          & ./scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @("git", "status", "--short")
 
       - name: Validate checkout fingerprint guard
         shell: powershell
@@ -38,6 +58,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate worktree guard contracts
+        shell: bash
+        run: |
+          bash scripts/worktree_guard.tests.sh
+          bash scripts/worktree_guard.submodule.tests.sh
+          bash scripts/worktree_guard.expectation.tests.sh
+          bash scripts/worktree_guard.path-flavor.tests.sh
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -74,7 +102,10 @@ jobs:
         run: python -m unittest discover -s scripts/analysis -p "test_rank_refactor_candidates.py"
 
       - name: Validate docs governance invariants
-        run: node scripts/check-docs-governance.mjs
+        run: |
+          node --test scripts/check-docs-governance*.test.mjs
+          node --test scripts/check-doc-links*.test.mjs
+          node scripts/check-docs-governance.mjs
 
       - name: Validate golden principles invariants
         run: node scripts/check-golden-principles.mjs

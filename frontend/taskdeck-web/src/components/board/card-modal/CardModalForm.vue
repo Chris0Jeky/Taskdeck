@@ -30,12 +30,33 @@ const blockReason = defineModel<string>('blockReason', { required: true })
 const workItemTypeSelect = ref<HTMLSelectElement | null>(null)
 const typePermissionRefresh = ref<HTMLButtonElement | null>(null)
 const retryOwnedFocus = ref(false)
+type RetryFocusOwner = { boardId: string; cardId: string }
+const retryFocusOwner = ref<RetryFocusOwner | null>(null)
+
+function currentCardIdentity(): RetryFocusOwner {
+  return { boardId: props.card.boardId, cardId: props.card.id }
+}
+
+function isCurrentCard(owner: RetryFocusOwner): boolean {
+  return owner.boardId === props.card.boardId && owner.cardId === props.card.id
+}
+
+function clearRetryFocusOwnership() {
+  retryOwnedFocus.value = false
+  retryFocusOwner.value = null
+}
+
+watch(
+  () => [props.card.boardId, props.card.id] as const,
+  clearRetryFocusOwnership,
+)
 
 watch(
   () => [props.typePermissionChecking, props.typePermissionUnknown, props.canEditType] as const,
   async ([checking, unknown, canEdit], [wasChecking, wasUnknown]) => {
     if (checking && !wasChecking) {
       retryOwnedFocus.value = document.activeElement === typePermissionRefresh.value
+      retryFocusOwner.value = retryOwnedFocus.value ? currentCardIdentity() : null
       return
     }
 
@@ -44,10 +65,18 @@ watch(
     const activeElement = document.activeElement
     const shouldRestoreFocus = activeElement === typePermissionRefresh.value
       || (retryOwnedFocus.value && (activeElement === document.body || activeElement === null))
-    retryOwnedFocus.value = false
-    if (!canEdit || !shouldRestoreFocus) return
+    // A retry that is visibly focused now belongs to the current card and must
+    // outrank any in-flight ownership captured before a same-instance card swap.
+    const focusOwner = activeElement === typePermissionRefresh.value
+      ? currentCardIdentity()
+      : retryOwnedFocus.value
+        ? retryFocusOwner.value
+        : null
+    clearRetryFocusOwnership()
+    if (!canEdit || !shouldRestoreFocus || !focusOwner || !isCurrentCard(focusOwner)) return
 
     await nextTick()
+    if (!isCurrentCard(focusOwner)) return
     workItemTypeSelect.value?.focus()
   },
 )
