@@ -1536,6 +1536,12 @@ const reviewMainDescriptionIds = computed(() => {
   return ids.join(' ') || undefined
 })
 
+const reviewApplyDescriptionIds = computed(() =>
+  activeRevisionReviewUnavailable.value
+    ? 'paper-review-evidence-unavailable-note'
+    : undefined,
+)
+
 function revisionIdentitiesEqual(
   left: string | null,
   right: string | null,
@@ -2917,6 +2923,7 @@ async function onClearBoardScope() {
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"
         :evidence-unavailable="activeRevisionReviewUnavailable"
+        :apply-description-ids="reviewApplyDescriptionIds"
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
         :edit-lock="editLock"

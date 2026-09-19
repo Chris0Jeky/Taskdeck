@@ -56,6 +56,15 @@ test('code spans and fenced blocks are masked, and masking preserves offsets', (
   assert.doesNotMatch(masked, /path\/to\/x\.svg/)
 })
 
+test('a literal backslash before an inline-code closer does not unbalance the span', () => {
+  const markdown = 'See `[hidden](missing.md) C:\\Users\\name\\`.'
+  const result = maskCodeWithDiagnostics(markdown)
+
+  assert.deepEqual(result.diagnostics, [])
+  assert.doesNotMatch(result.masked, /missing\.md/)
+  assert.deepEqual(extractLocalTargets(markdown), [])
+})
+
 test('an unbalanced inline span cannot mask links beyond a blank line', () => {
   const markdown = ['Before `unterminated', '', '[real](target.md)'].join('\n')
   const result = maskCodeWithDiagnostics(markdown)
