@@ -25,6 +25,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'card-drag-start', card: Card): void
   (e: 'card-drag-end'): void
+  (e: 'card-editor-saving-change', saving: boolean): void
 }>()
 
 const boardStore = useBoardStore()
@@ -52,6 +53,10 @@ function handleCardClick(card: Card) {
 }
 
 function handleModalClose() {
+  // CardModal refuses every close while an assignment PUT is in flight. A
+  // close therefore proves the editor has settled and cannot leave the host
+  // latched in its navigation-refusal state.
+  emit('card-editor-saving-change', false)
   showCardModal.value = false
   selectedCard.value = null
 }
@@ -346,6 +351,7 @@ const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
       :labels="labels"
       @close="handleModalClose"
       @updated="handleModalClose"
+      @saving-change="emit('card-editor-saving-change', $event)"
     />
 
     <!-- Column Edit Modal -->

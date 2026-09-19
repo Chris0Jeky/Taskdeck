@@ -15,12 +15,12 @@ addresses, invitations, or a global user directory.
 The shared Paper inspector and Legacy card editor show the current assignees and
 offer a multiple-selection control, Clear, Cancel, and Save assignments. Other card
 drafts survive assignment saves. A submitted set replacement cannot be recalled, so
-while one is in flight the editor never offers a discard: closing, Escape, the
-backdrop, the header close, switching card and leaving the board all answer that the
-change was already sent and must be waited out, and an open discard confirmation is
-withdrawn. Settlement shows either the committed assignees or the failure with the
-kept draft, and restores every control except after a refusal for lost edit
-permission. An uncertain save or version conflict keeps the
+while one is in flight neither skin offers a discard: closing, Escape, backdrop and
+header-close requests stay in the editor; Paper also refuses card switches; and both
+Paper and Legacy refuse route navigation or page unload with truthful saving guidance.
+An open discard confirmation is withdrawn. Settlement shows either the committed
+assignees or the failure with the kept draft, releases navigation, and restores every
+control except after a refusal for lost edit permission. An uncertain save or version conflict keeps the
 selection, requires a current-state refresh, and leaves the retry explicit. A
 save refused because edit permission was revoked is distinguished from an
 uncertain one: it says so and locks the selection control and Save assignments,
@@ -139,5 +139,6 @@ an assignment-aware importer.
 - Frontend `CardAssignmentField.spec.ts`, `useCardModal.spec.ts`,
   `ExportImportView.spec.ts`; real-API Chromium `card-assignments.spec.ts`.
 - In-flight save honesty: `CardModalAssignmentSave.spec.ts` (Paper and Legacy,
-  delayed success and failure, Escape/backdrop/header/confirmation) and the
-  card-switch, route-leave and unload refusals in `PaperBoardView.spec.ts`.
+  delayed success and failure, Escape/backdrop/header/confirmation), the Paper
+  card-switch/route/unload refusals in `PaperBoardView.spec.ts`, and Legacy event
+  propagation plus route/unload refusal in `LegacyAssignmentSaveNavigation.spec.ts`.
