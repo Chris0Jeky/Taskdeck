@@ -91,6 +91,133 @@ function Wait-ForAsyncTask {
     }
 }
 
+function Get-HelperOwnedTreeIdentity {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$RootProcessId
+    )
+
+    # #3203: record the tree as exact PID + start-time identities *before* termination so a later
+    # liveness check cannot be fooled by PID reuse, and so a non-zero taskkill exit can be judged on
+    # evidence instead of on its localized prose. `Enumerated` is false when the descendant table
+    # could not be read at all; callers must then stay fail-closed rather than assume an empty tree.
+    $identities = [System.Collections.Generic.List[pscustomobject]]::new()
+    $childrenByParent = @{}
+    $enumerated = $true
+    $enumerationFailure = $null
+    try {
+        foreach ($entry in (Get-CimInstance -ClassName Win32_Process -Property ProcessId, ParentProcessId -ErrorAction Stop)) {
+            $parentProcessId = [int]$entry.ParentProcessId
+            if (-not $childrenByParent.ContainsKey($parentProcessId)) {
+                $childrenByParent[$parentProcessId] = [System.Collections.Generic.List[int]]::new()
+            }
+            $childrenByParent[$parentProcessId].Add([int]$entry.ProcessId)
+        }
+    }
+    catch {
+        # Keep the cause: without it a broken WMI repository or a policy-blocked Win32_Process
+        # turns every Git timeout into an undiagnosable hard failure.
+        $enumerationFailure = $_.Exception.Message
+        $enumerated = $false
+        $childrenByParent = @{}
+    }
+
+    $seen = [System.Collections.Generic.HashSet[int]]::new()
+    $pending = [System.Collections.Generic.Queue[int]]::new()
+    $pending.Enqueue($RootProcessId)
+    while ($pending.Count -gt 0) {
+        $currentProcessId = $pending.Dequeue()
+        if (-not $seen.Add($currentProcessId)) {
+            continue
+        }
+        $current = Get-Process -Id $currentProcessId -ErrorAction SilentlyContinue
+        if ($null -ne $current) {
+            try {
+                $identities.Add([pscustomobject]@{
+                        ProcessId = $currentProcessId
+                        StartTimeUtcTicks = $current.StartTime.ToUniversalTime().Ticks
+                    })
+            }
+            catch {
+                # A process that exits (or becomes unreadable) between enumeration and inspection
+                # cannot be proven gone later either, so record it with an unknown start time and
+                # let Get-SurvivingHelperOwnedProcess treat it fail-closed.
+                $identities.Add([pscustomobject]@{
+                        ProcessId = $currentProcessId
+                        StartTimeUtcTicks = $null
+                    })
+            }
+            finally {
+                $current.Dispose()
+            }
+        }
+        if ($childrenByParent.ContainsKey($currentProcessId)) {
+            foreach ($childProcessId in $childrenByParent[$currentProcessId]) {
+                $pending.Enqueue($childProcessId)
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        Enumerated = $enumerated
+        EnumerationFailure = $enumerationFailure
+        Identities = $identities.ToArray()
+    }
+}
+
+function Get-SurvivingHelperOwnedProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Identities
+    )
+
+    $survivors = [System.Collections.Generic.List[string]]::new()
+    foreach ($identity in $Identities) {
+        $live = Get-Process -Id $identity.ProcessId -ErrorAction SilentlyContinue
+        if ($null -eq $live) {
+            continue
+        }
+        try {
+            if ($null -eq $identity.StartTimeUtcTicks) {
+                # The identity was never fully captured, so a live PID cannot be attributed to a
+                # different process. Report it rather than claiming the tree is gone.
+                $survivors.Add("PID $($identity.ProcessId) (start time was never captured)")
+            }
+            elseif ($live.StartTime.ToUniversalTime().Ticks -eq $identity.StartTimeUtcTicks) {
+                $survivors.Add("PID $($identity.ProcessId)")
+            }
+        }
+        catch {
+            $survivors.Add("PID $($identity.ProcessId) (start time unreadable: $($_.Exception.Message))")
+        }
+        finally {
+            $live.Dispose()
+        }
+    }
+    return $survivors.ToArray()
+}
+
+function Wait-ForHelperOwnedTreeExit {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Identities,
+
+        [Parameter(Mandatory = $true)]
+        [int]$TimeoutMilliseconds
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+    for (;;) {
+        $survivors = @(Get-SurvivingHelperOwnedProcess -Identities $Identities)
+        if ($survivors.Count -eq 0 -or [DateTimeOffset]::UtcNow -ge $deadline) {
+            return $survivors
+        }
+        Start-Sleep -Milliseconds 50
+    }
+}
+
 function Stop-HelperOwnedProcessTree {
     param(
         [Parameter(Mandatory = $true)]
@@ -117,6 +244,7 @@ function Stop-HelperOwnedProcessTree {
 
     $isWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
     if ($isWindows) {
+        $treeIdentity = Get-HelperOwnedTreeIdentity -RootProcessId $expectedProcessId
         $taskkillPath = Join-Path $env:SystemRoot "System32/taskkill.exe"
         if (-not (Test-Path -LiteralPath $taskkillPath -PathType Leaf)) {
             throw "Cannot terminate the timed-out Git process tree because taskkill.exe was not found."
@@ -170,7 +298,19 @@ function Stop-HelperOwnedProcessTree {
                 $taskkillStderr.GetAwaiter().GetResult().Trim()
             ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
             if ($taskkill.ExitCode -ne 0) {
-                throw "taskkill.exe failed for timed-out Git PID $expectedProcessId (exit $($taskkill.ExitCode)). $taskkillOutput"
+                # #3203: `taskkill /T /F` reports a non-zero exit when the root exits on its own
+                # between the descendant pass and the final root operation, which is
+                # indistinguishable from a real failure by exit code alone. Its output is localized,
+                # so it is never parsed. Accept the non-zero exit only on positive evidence: every
+                # identity captured before termination must be provably gone. Everything else —
+                # including an unreadable descendant table — stays fail-closed.
+                if (-not $treeIdentity.Enumerated) {
+                    throw "taskkill.exe failed for timed-out Git PID $expectedProcessId (exit $($taskkill.ExitCode)) and its helper-owned descendants could not be enumerated, so cleanup cannot be proven ($($treeIdentity.EnumerationFailure)). $taskkillOutput"
+                }
+                $survivors = @(Wait-ForHelperOwnedTreeExit -Identities $treeIdentity.Identities -TimeoutMilliseconds $ReapTimeoutMilliseconds)
+                if ($survivors.Count -gt 0) {
+                    throw "taskkill.exe failed for timed-out Git PID $expectedProcessId (exit $($taskkill.ExitCode)) and these helper-owned processes are still alive: $($survivors -join ', '). $taskkillOutput"
+                }
             }
         }
         finally {

@@ -65,7 +65,10 @@ public static class ApplicationServiceRegistration
         services.AddScoped<HistoryService>();
         services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
         services.AddScoped<IInsightsService, InsightsService>();
-        services.AddScoped<IAutomationProposalService, AutomationProposalService>();
+        services.AddScoped<AutomationProposalService>();
+        services.AddScoped<ProposalExpiryGuardedService>();
+        services.AddScoped<IAutomationProposalService>(
+            sp => sp.GetRequiredService<ProposalExpiryGuardedService>());
         services.AddScoped<IProposalConflictDetector, ProposalConflictDetector>();
         services.AddScoped<IProvenanceQueryService, ProvenanceQueryService>();
         services.AddScoped<ITranscriptQueryService, TranscriptQueryService>();

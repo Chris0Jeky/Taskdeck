@@ -46,6 +46,7 @@ for (const [index, origin] of backendCorsOrigins.entries()) {
  * - testDir points to tests/visual/
  * - Fixed viewport (1280x720) for deterministic screenshots
  * - Animations disabled via reducedMotion to prevent flaky diffs
+ * - Locale and timezone pinned so browser internationalisation cannot drift
  * - Screenshot comparison thresholds tuned for cross-platform tolerance
  * - Snapshot path template deliberately omits {platform}: there is exactly one
  *   canonical baseline per surface and it is captured on the hosted Linux lane,
@@ -84,7 +85,9 @@ export default defineConfig({
     viewport: { width: 1280, height: 720 },
     // Disable CSS animations and transitions
     reducedMotion: 'reduce',
-    // Consistent color scheme
+    // Consistent browser internationalisation and color defaults
+    locale: 'en-US',
+    timezoneId: 'UTC',
     colorScheme: 'light',
     screenshot: 'off',
   },

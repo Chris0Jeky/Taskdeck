@@ -45,10 +45,14 @@ vi.mock('../../../api/labelsApi', () => ({
   labelsApi: mockLabelsApi,
 }))
 
-vi.mock('../../../utils/demoData', () => ({
-  buildDemoBoardList: mockDemoData.buildDemoBoardList,
-  buildDemoBoardDetail: mockDemoData.buildDemoBoardDetail,
-}))
+vi.mock('../../../utils/demoData', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/demoData')>()
+  return {
+    ...actual,
+    buildDemoBoardList: mockDemoData.buildDemoBoardList,
+    buildDemoBoardDetail: mockDemoData.buildDemoBoardDetail,
+  }
+})
 
 import { createBoardCrudActions } from '../../../store/board/boardCrudStore'
 import { initialCardFilters, type CardFilters } from '../../../store/board/boardState'
@@ -644,24 +648,25 @@ describe('boardCrudStore', () => {
       expect(state.cardCommentsByCardId.value).toEqual({})
     })
 
-    it('uses demo data in demo mode', async () => {
+    it('uses the demo APIs in demo mode', async () => {
       helpers = createMockHelpers({ isDemoMode: true })
-      const demoDetail = {
+      const demoBoard = {
         board: { id: 'demo-1', name: 'Demo' },
-        cards: [{ id: 'card-1', title: 'Task' }],
+        cards: [{ id: 'card-1', title: 'Task', columnId: 'column-1' }],
       }
-      mockDemoData.buildDemoBoardDetail.mockReturnValue(demoDetail)
+      const board = { ...demoBoard.board, columns: [{ id: 'column-1', cardCount: 0 }] }
+      mockBoardsApi.getBoard.mockResolvedValueOnce(board)
+      mockCardsApi.getCards.mockResolvedValueOnce(demoBoard.cards)
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
       const committed = await fetchBoard('demo-1')
 
-      expect(mockDemoData.buildDemoBoardDetail).toHaveBeenCalledWith('demo-1')
-      expect(state.currentBoard.value).toEqual(demoDetail.board)
-      expect(state.currentBoardCards.value).toEqual(demoDetail.cards)
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledWith('demo-1')
+      expect(mockCardsApi.getCards).toHaveBeenCalledWith('demo-1')
+      expect(state.currentBoard.value).toEqual(board)
+      expect(state.currentBoardCards.value).toEqual(demoBoard.cards)
       expect(state.currentBoardLabels.value).toEqual([])
       expect(state.cardCommentsByCardId.value).toEqual({})
-      expect(mockBoardsApi.getBoard).not.toHaveBeenCalled()
-      expect(mockCardsApi.getCards).not.toHaveBeenCalled()
       expect(mockLabelsApi.getLabels).not.toHaveBeenCalled()
       expect(committed).toBe(true)
       expect(state.loading.value).toBe(false)

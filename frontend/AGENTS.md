@@ -2,6 +2,7 @@
 
 ## Rules
 - Centralize HTTP in src/api. No endpoint URLs in views/components.
+- GitHub Pages / static demo: empty `VITE_API_BASE_URL` or `VITE_DEMO_MODE=true` selects mock data via `utils/apiBaseUrl.ts` and `api/demoAdapter.ts`. Local Vite with `.env` still talks to `localhost:5000`. See `docs/product/DEMO_PLAYBOOK.md`.
 - Always implement: loading + empty + error + disabled states.
 - Handle auth consistently: 401 => session flow, 403 => permission message.
 - Keep diffs small; avoid refactors unless needed for the change.
