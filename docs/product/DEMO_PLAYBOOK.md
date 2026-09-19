@@ -18,6 +18,20 @@ Capture -> Triage -> Proposal -> Apply -> Board
 Saul-facing recording contract:
 - `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
 
+## GitHub Pages static demo (no local API)
+
+The public site at `https://chris0jeky.github.io/Taskdeck/` is a **backend-less** Vue build. It must not call `http://localhost:5000`. Detection lives in `frontend/taskdeck-web/src/utils/apiBaseUrl.ts` and `demoMode.ts`; mocked HTTP is `api/demoAdapter.ts`.
+
+Demo/static mode is on when any of these is true:
+
+1. **`VITE_DEMO_MODE`** is `1` / `true` / `yes`. The Pages workflow sets this.
+2. **`VITE_API_BASE_URL` is empty.** The Pages workflow already builds with `VITE_API_BASE_URL: ''`.
+3. The page origin is GitHub Pages (`*.github.io`) or `*.pages.dev` **and** the configured API base is still loopback (`localhost` / `127.0.0.1`). That covers a bundle that accidentally inlined the local-dev default.
+
+Local Vite with `frontend/taskdeck-web/.env` (`VITE_API_BASE_URL=http://localhost:5000/api`) stays live and talks to a real local backend. A later hosted API is live as soon as Pages is rebuilt with a non-loopback `VITE_API_BASE_URL` (and without `VITE_DEMO_MODE`).
+
+In demo mode: login is the "Enter Demo" path, review/chat/card metadata read from in-bundle fixtures, and SignalR is not started. Mutations are view-only or in-memory only; they are not a production backend. Adapter responses follow the live contracts: proposal previews come from the matched in-memory proposal, calendar/thinking/today/search payloads keep their arrays, batch approve returns `approvedIds`, and chat POST persists the user turn before the assistant reply. Unmatched GET paths return 404 instead of `{}`.
+
 ## Quick Start (source-only seeded demo)
 
 This playbook is for a source checkout. The packaged Windows release has no seeded credentials and

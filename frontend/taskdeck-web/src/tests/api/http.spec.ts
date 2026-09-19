@@ -37,11 +37,15 @@ function expiredJwt(): string {
 // Use a hoisted getter so per-test overrides work without Object.defineProperty
 // (which triggers ESLint no-import-assign).
 const demoModeFlag = vi.hoisted(() => ({ value: false }))
-vi.mock('../../utils/demoMode', () => ({
-  get isDemoMode() {
-    return demoModeFlag.value
-  },
-}))
+vi.mock('../../utils/demoMode', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/demoMode')>()
+  return {
+    ...actual,
+    get isDemoMode() {
+      return demoModeFlag.value
+    },
+  }
+})
 
 // We'll control this per-test
 const navigationMock = vi.hoisted(() => ({

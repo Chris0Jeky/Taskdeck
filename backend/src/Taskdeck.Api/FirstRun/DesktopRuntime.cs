@@ -273,6 +273,34 @@ internal static class DesktopRuntime
             ];
         }
 
+        if (exception is InvalidOperationException existingDataFailure
+            && existingDataFailure.Message.StartsWith(
+                FirstRunBootstrapper.ExistingDatabaseMissingConnectorEncryptionKeyMessagePrefix,
+                StringComparison.Ordinal))
+        {
+            return
+            [
+                "TASKDECK_DESKTOP_FATAL code=connector_encryption_key_unrecoverable",
+                "Taskdeck found existing data but could not recover its connector encryption key. Restore the original key " +
+                "or set the matching Connectors__EncryptionKey value before restarting. Do not generate a replacement key " +
+                "for this data. No paths or settings were printed."
+            ];
+        }
+
+        if (exception is InvalidOperationException persistenceFailure
+            && persistenceFailure.Message.StartsWith(
+                FirstRunBootstrapper.ConnectorEncryptionKeyPersistenceFailureMessagePrefix,
+                StringComparison.Ordinal))
+        {
+            return
+            [
+                "TASKDECK_DESKTOP_FATAL code=connector_encryption_key_persistence_failed",
+                "Taskdeck could not securely persist its connector encryption key. Make the local-config directory writable " +
+                "on a filesystem that supports owner-only permissions, or set a stable Connectors__EncryptionKey value and " +
+                "restart. No paths or settings were printed."
+            ];
+        }
+
         if (exception is RetiredLlmProviderConfigurationException)
         {
             return

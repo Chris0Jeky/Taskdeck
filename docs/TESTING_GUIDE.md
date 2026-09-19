@@ -2413,12 +2413,14 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 
-  The focused launcher identity seam (`scripts/ci/dev-up-identity-seam.test.mjs`) and the broader
-  cross-launcher regression suite (`scripts/ci/dev-up.test.mjs`) run together in the independent
+  The focused launcher identity seam (`scripts/ci/dev-up-identity-seam.test.mjs`), the broader
+  cross-launcher regression suite (`scripts/ci/dev-up.test.mjs`) and the fixture-teardown suites
+  (`scripts/ci/dev-up-fixture-cleanup.test.mjs`, `scripts/ci/dev-up-fixture-diagnostics.test.mjs`)
+  run together in the independent
   `source-launcher` job of the reusable frontend workflow, reported as
   `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`. The exact hosted
   command, and the canonical Linux local reproduction command, is
-  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs`. The focused Bash seam runs first and pins the full TERM grace window, exact signal/PID
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up-identity-seam.test.mjs scripts/ci/dev-up.test.mjs scripts/ci/dev-up-fixture-cleanup.test.mjs scripts/ci/dev-up-fixture-diagnostics.test.mjs`. The focused Bash seam runs first and pins the full TERM grace window, exact signal/PID
   binding, and descendant-driven KILL escalation before the broader launcher scenarios execute.
   Both suites remain **Linux only** in hosted CI (CI-07 `#2331`, SC-3: hosted minutes are Linux-only).
   On a Windows developer box with Git Bash, the same combined command reproduces the complete lane;

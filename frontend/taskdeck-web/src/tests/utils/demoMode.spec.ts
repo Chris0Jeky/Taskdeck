@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest'
+import { shouldUseDemoMode } from '../../utils/apiBaseUrl'
 import {
   isDemoSessionActive,
   activateDemoSession,
@@ -17,6 +18,16 @@ describe('demoMode', () => {
       expect(DEMO_USER.username).toBe('demo')
       expect(DEMO_USER.email).toBe('demo@taskdeck.local')
       expect(typeof DEMO_USER.defaultRole).toBe('number')
+    })
+  })
+
+  describe('detection', () => {
+    it('stays off in the default unit-test local-dev environment', () => {
+      expect(shouldUseDemoMode({
+        apiBase: 'http://localhost:5000/api',
+        hostname: 'localhost',
+        demoFlag: false,
+      })).toBe(false)
     })
   })
 

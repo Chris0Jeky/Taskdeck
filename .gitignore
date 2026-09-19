@@ -36,6 +36,7 @@ bld/
 frontend/*/node_modules/
 frontend/*/dist/
 frontend/*/dist-ssr/
+frontend/*/dist-pwa-contract/
 frontend/*/.env.local
 frontend/*/.env.*.local
 frontend/*/coverage/

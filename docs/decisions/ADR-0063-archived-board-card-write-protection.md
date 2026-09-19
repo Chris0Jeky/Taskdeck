@@ -3,7 +3,7 @@
 - **Status**: Accepted (maintainer scope ruling on `#2080`, 2026-08-24)
 - **Date**: 2026-08-26
 - **Deciders**: Chris0Jeky (maintainer)
-- **Related**: `#2080`, `#1973`, `#2114`, ADR-0007, ADR-0056
+- **Related**: `#2080`, `#1973`, `#2114`, `#2168`, `#2170`, `#2197`, ADR-0007, ADR-0056
 
 ## Context
 
@@ -17,10 +17,13 @@ This guard applies at the shared service boundary used by HTTP, CLI, and proposa
 
 The bulk writers — external import, starter-pack apply, and archive-item restore (its column half included: `RestoreColumnAsync` writes no cards, but `RestorePlanner`'s archived-target check governs every non-board restore, so guarding only the card half would leave the identical window open on the same predicate) — join the same conditional board update (`#2114`). They already rejected an archived board on read, but that check ran once before a whole batch was planned, so an archive committing in between was accepted silently. They now record the same non-advancing card-mutation marker, so a racing archive turns the batch into `ErrorCodes.Conflict` (`409`) and rolls it back. The token is deliberately still not advanced by any of them, so bulk writers do not invalidate each other or in-flight single-card writes on the same board.
 
+Proposal decision history follows the same restore-before-change rule (`#2168`). Approve, reject, defer, revision, dismiss, execute and automatic expiry are decision writes, so each uses the shared `IAutomationPolicyEngine.GuardProposalDecisionWritesAsync` boundary: a board already archived is refused, while an active board records the same dependent-mutation marker before the proposal transition is saved. Automatic expiry additionally excludes already-archived boards in its repository query so one archived board does not stall unrelated active-board, boardless or dangling-board candidates. The query is only a first-stage partition, not an atomic snapshot; the service and housekeeping worker re-run the shared guard immediately before mutation (`#2170`). An archive between query and guard defers that candidate set untouched, while an archive committed after the guard conflicts with the board marker and rolls the whole expiry save back. Restoring the board makes its pending proposals eligible on a later sweep.
+
 ## Consequences
 
-- Archived boards are a read-only history state for card mutations.
+- Archived boards are a read-only history state for card mutations and proposal decisions.
 - All CardService callers receive the same failure rather than relying on client-side controls.
+- Automatic proposal expiry preserves throughput for unrelated candidates while remaining atomic against a racing archive.
 - Existing archived-board bulk-write precedents and the API's `InvalidOperation` mapping remain consistent.
 
 ## Amendment 2026-08-26 — the board row is marked modified by a guard marker, not by `UpdatedAt` (`#2115`, `#2123`)
@@ -56,6 +59,8 @@ because the cached board list is keyed per user and a board is readable by more 
 **Implicit unarchive on write.** Rejected because it would make a deliberate archive state silently mutable.
 
 **Restore-first user interface.** Deferred. It may improve recovery ergonomics but does not replace the service-level safety boundary.
+
+**Treating the expiry query as a sufficient archive check (`#2170`).** Rejected because the board can be archived after the query has materialized its candidates. Query filtering remains useful for partitioning throughput, but only the second-stage board marker makes the later save atomic with respect to archive.
 
 **Invalidating the board-list cache from CardService instead of adding a marker (`#2115`).** Rejected. The cache is keyed per user and a board is readable by its owner *and* by everyone holding a `BoardAccess` row, so every card write would have to enumerate that membership and evict each entry — a membership query per card write, and a correctness bug the moment a new sharing path forgets to evict. It would also leave `#2123` open, since the board row would still enter the update only when the clock advanced.
 

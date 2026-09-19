@@ -39,7 +39,22 @@ type RevisionHistory = {
   revisions: Map<number, ProposalRevision>
   loaded: boolean
   invalid: boolean
+  /**
+   * Revision numbers a response reported under two different ids. Only a later
+   * response that covers every one of them can settle the contradiction, so a
+   * stale prefix that happens to be self-complete cannot clear `invalid` while
+   * saying nothing about the number that was actually disputed (#2579).
+   */
+  disputed: Set<number>
 }
+
+/**
+ * The retained-history bound. A reviewer walks a queue one proposal at a time
+ * and never returns to most of them, so an unbounded map is a leak for the
+ * lifetime of the view. 64 is well past any realistic A -> B -> A window while
+ * keeping the worst case bounded.
+ */
+const MAX_CACHED_REVISION_HISTORIES = 64
 
 type RevisionMetadata = {
   count: number
@@ -80,21 +95,57 @@ export function useProposalRevisions(
   const revisionsLoaded = ref(false)
   let loadGeneration = 0
   let saveGeneration = 0
+  // Bumped whenever a POST response publishes metadata it proved on its own.
+  // A GET that was already in flight at that moment is answering a question the
+  // save has since answered authoritatively, so its FAILURE is stale news: it
+  // must neither overwrite that metadata nor raise a failure toast over it
+  // (#2579 residual 2). Only that overlap is silenced; a failure with no
+  // intervening save still toasts.
+  let saveProofGeneration = 0
 
   // Successful save responses survive A -> B -> A navigation so a delayed
   // response can be reconciled with the response that became current later.
   // The map is deliberately conservative: a gap in the chain stays unknown.
   const revisionHistoryByProposal = new Map<string, RevisionHistory>()
 
+  /**
+   * Drops the oldest entries until the map is within its bound. The ACTIVE
+   * proposal is never evicted: its history carries what a POST response proved
+   * about the proposal on screen, and re-reading that from the server would
+   * republish a pre-save answer as authoritative.
+   */
+  function evictLeastRecentlyUsedHistories() {
+    while (revisionHistoryByProposal.size > MAX_CACHED_REVISION_HISTORIES) {
+      const activeId = activeProposal.value?.id
+      let evicted = false
+      for (const proposalId of revisionHistoryByProposal.keys()) {
+        if (proposalId === activeId) continue
+        revisionHistoryByProposal.delete(proposalId)
+        evicted = true
+        break
+      }
+      if (!evicted) return
+    }
+  }
+
   function getRevisionHistory(proposalId: string): RevisionHistory {
     const existing = revisionHistoryByProposal.get(proposalId)
-    if (existing) return existing
+    if (existing) {
+      // Map iteration is insertion-ordered, so re-inserting the entry makes it
+      // the most recently used one and leaves the oldest key as the eviction
+      // candidate. No copy is made: the same object is re-keyed.
+      revisionHistoryByProposal.delete(proposalId)
+      revisionHistoryByProposal.set(proposalId, existing)
+      return existing
+    }
     const created: RevisionHistory = {
       revisions: new Map(),
       loaded: false,
       invalid: false,
+      disputed: new Set(),
     }
     revisionHistoryByProposal.set(proposalId, created)
+    evictLeastRecentlyUsedHistories()
     return created
   }
 
@@ -119,6 +170,7 @@ export function useProposalRevisions(
     const existing = history.revisions.get(revision.revisionNumber)
     if (existing && existing.id !== revision.id) {
       history.invalid = true
+      history.disputed.add(revision.revisionNumber)
       return
     }
     history.revisions.set(revision.revisionNumber, revision)
@@ -153,6 +205,7 @@ export function useProposalRevisions(
       const conflicting = loaded.get(revision.revisionNumber)
       if (conflicting && conflicting.id !== revision.id) {
         history.invalid = true
+        history.disputed.add(revision.revisionNumber)
         history.loaded = true
         return
       }
@@ -160,7 +213,17 @@ export function useProposalRevisions(
       if (revision.revisionNumber > highestLoaded) highestLoaded = revision.revisionNumber
     }
 
-    if (loaded.size === highestLoaded) history.invalid = false
+    // Self-completeness alone is not enough: a stale `[1]` is a whole chain of
+    // its own and still proves nothing about the number two responses have
+    // already contradicted each other on. Clear only when this answer covers
+    // every disputed number as well (#2579 residual 1).
+    const coversDisputed = [...history.disputed].every(
+      revisionNumber => loaded.has(revisionNumber),
+    )
+    if (loaded.size === highestLoaded && coversDisputed) {
+      history.invalid = false
+      history.disputed.clear()
+    }
     for (const [revisionNumber, revision] of loaded) {
       history.revisions.set(revisionNumber, revision)
     }
@@ -222,6 +285,7 @@ export function useProposalRevisions(
     revisionCount.value = metadata.count
     latestRevision.value = metadata.latest
     revisionsLoaded.value = true
+    saveProofGeneration += 1
     return true
   }
 
@@ -248,6 +312,7 @@ export function useProposalRevisions(
   // stay loud.
   async function loadRevisionState(proposalId: string, options?: { silent?: boolean }) {
     const gen = ++loadGeneration
+    const saveProofAtStart = saveProofGeneration
     try {
       const revisions = await proposalRevisionsApi.getRevisions(proposalId)
       if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
@@ -286,7 +351,12 @@ export function useProposalRevisions(
         revisionCount.value = 0
         latestRevision.value = null
       }
-      if (!options?.silent) {
+      // A save published proven metadata while this read was in flight, so the
+      // reviewer is looking at current state that this failure does not
+      // contradict. Reporting it would be a failure toast for a question that
+      // has already been answered (#2579 residual 2).
+      const supersededBySave = saveProofGeneration !== saveProofAtStart && revisionsLoaded.value
+      if (!options?.silent && !supersededBySave) {
         toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
       }
     }

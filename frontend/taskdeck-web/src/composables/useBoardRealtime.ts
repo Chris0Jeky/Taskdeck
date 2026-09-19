@@ -9,6 +9,8 @@ import type { BoardPresenceSnapshot, BoardRealtimeEvent } from '../types/realtim
 import { getToken } from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
 import { apiRootFrom } from '../utils/apiRoot'
+import { isDemoMode } from '../utils/demoMode'
+import { resolveApiBaseUrl } from '../utils/apiBaseUrl'
 
 const BOARD_MUTATION_EVENT = 'boardMutation'
 const BOARD_PRESENCE_EVENT = 'boardPresence'
@@ -21,8 +23,7 @@ const FALLBACK_POLL_INTERVAL_MS = 30000
 const MUTATION_DEBOUNCE_MS = 300
 
 export function resolveHubUrl(): string {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
-  const apiRoot = apiRootFrom(apiBase)
+  const apiRoot = apiRootFrom(resolveApiBaseUrl())
   return `${apiRoot}/hubs/boards`
 }
 
@@ -262,10 +263,12 @@ export function createBoardRealtimeController(
   }
 
   const start = async (boardId: string) => {
+    if (isDemoMode) return
     await requestBoardSubscription(boardId)
   }
 
   const switchBoard = async (boardId: string) => {
+    if (isDemoMode) return
     await requestBoardSubscription(boardId)
   }
 

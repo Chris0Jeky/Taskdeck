@@ -1,6 +1,20 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-18
+Last Updated: 2026-09-19
+
+GitHub Pages (`https://chris0jeky.github.io/Taskdeck/`) now runs as a static demo: empty `VITE_API_BASE_URL` plus `VITE_DEMO_MODE=true`, runtime Pages+loopback detection, and an axios demo adapter so review, chat, and card parent/assignee reads never call `localhost:5000`. Home and Review share the same one pending demo proposal. Local Vite with `.env` still uses the real local API. This is not a hosted backend; that remains later work. Detection: `frontend/taskdeck-web/src/utils/apiBaseUrl.ts`. Operator notes: `docs/product/DEMO_PLAYBOOK.md`.
+
+## Local checklist bootstrap no longer holds an LLM quota slot (#1431 L3)
+
+A deterministic checklist-bootstrap chat turn never reaches a provider, but `ChatService` used to
+reserve an LLM quota slot before selecting that branch and release it in the `finally`. Under a small
+`RequestsPerHour` limit, a burst of purely local requests could therefore transiently deny concurrent
+genuine LLM work. The reservation now happens inside the branch that can reach a provider, so a local
+bootstrap turn makes no quota-service call at all. This supersedes the `#1427` M2 invariant that the
+no-LLM bootstrap path *releases* its reservation: there is no longer a reservation to release. The
+kill-switch check still runs before branch selection, so a disabled Chat surface continues to block
+local bootstrap turns as well. Every provider-reachable path — tool-calling, reusable no-tool, single
+turn and streaming — reserves and settles exactly as before.
 
 ## Source-launcher literal-import readiness (#1900)
 
@@ -12,6 +26,22 @@ and literal dynamic imports while excluding plugin watch files, so the existing 
 covers those lazy routes. Computed runtime imports are not enumerable and remain outside the marker;
 production build, typecheck and route tests are separate evidence. Marker schema version 1 and both
 launcher consumers are unchanged.
+
+Related-proposal review evidence (#2452) now resolves each candidate to its effective operation set
+before filtering, so the conflicts, history and similar-past endpoints agree with the operations
+approval and Apply actually use. Duplicate-pending detection, related card history and the
+similar-past cohort read authorization-scoped candidate pages without operation predicates, batch
+the revision resolution per page through the resolver `AutomationProposalService` also uses, and
+apply the target/action test afterwards. A latest pending revision that moves onto or away from a
+card is followed in both directions; an Applied proposal keeps its approved pin despite a later
+unpinned revision; a Rejected proposal stays frozen on its decision-time revision; a candidate with
+no revision keeps its original operations. Two shipped behaviors narrow with this change: duplicate
+detection is now scoped to the reviewed proposal's board (or, for a board-less proposal, its owner)
+rather than searching every board, and the similar-past lookback of 200 now bounds terminal
+decisions INSPECTED rather than decisions already matched by SQL. Apply rate remains the shipped
+0..1 ratio. Evidence: the full backend solution passes (10,149 tests, 0 failures, 34 pre-existing
+skips), including the three real-SQLite HTTP regressions for this issue, which run and pass rather
+than skip.
 
 Relation proposal navigation (#3077) now has its own pending signal and accurate leave guidance.
 Starting a relation proposal still prevents departure while the request is unsettled, but the
@@ -1537,7 +1567,7 @@ Direction guardrails (explicit):
   - Sidebar IA reduced to 5 primary items (Today, Inbox, Review, Boards, Search) with Settings in footer; demoted surfaces (Activity, Ops, Archive, Agents, etc.) are accessible via command palette
   - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
   - `Today` (daily agenda), `Integrations` (`/workspace/integrations` connector registry UI), and the `Agents` / `Runs` surfaces (`AgentsView` / `AgentRunsView` / `AgentRunDetailView` at `/workspace/agents`, AGT-03 `#338`) are all shipped; only the **`Knowledge` frontend surface** is still unbuilt — its backend ships (`KnowledgeDocument` + `KnowledgeFtsSearchService`, `#339`) but there is no `KnowledgeView` UI yet
-  - a static frontend-only UI mock now exists at `frontend/taskdeck-web/public/mock/` for lightweight GitHub Pages-style walkthroughs of the current `Home` / `Today` / `Review` / `Inbox` / `Board` feel using local example data only, and GitHub Pages now deploys that folder through a dedicated Actions workflow instead of the old branch-based `main` + `/docs` path
+  - GitHub Pages publishes the Vue SPA (`pages-frontend.yml`) in **static demo mode** (`VITE_API_BASE_URL=''`, `VITE_DEMO_MODE=true`): mock fixtures cover Home, Review, chat, and card editor parent/assignee reads, and the HTTP client never falls through to `localhost:5000`. The older `frontend/taskdeck-web/public/mock/` HTML walkthrough remains in-tree as a lightweight alternative, not the Pages root.
 - Feature slices integrated end to end:
   - workspace home summary shell with server-backed workspace mode persistence
   - workspace `Today` agenda with persisted onboarding state, replay/dismiss controls, and first-use board setup shortcuts

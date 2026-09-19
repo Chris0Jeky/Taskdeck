@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEMO_ONBOARDING,
+  DEMO_PROPOSAL_ID,
   buildDemoBoardList,
   buildDemoBoardDetail,
   buildDemoHomeSummary,
   buildDemoTodaySummary,
   buildDemoCaptureItems,
+  buildDemoParticipants,
+  buildDemoProposalPreview,
+  buildDemoProposals,
+  buildDemoCalendarData,
+  buildDemoThinkingDeck,
 } from '../../utils/demoData'
 import { toCalendarDateKey } from '../../utils/dueDates'
 import { installTimeZone } from './timeZone'
@@ -69,6 +75,7 @@ describe('demoData', () => {
       expect(summary.boards.recentBoards.length).toBeGreaterThan(0)
       expect(summary.recommendedActions.length).toBeGreaterThan(0)
       expect(summary.workload.capturesNeedingTriage).toBeGreaterThan(0)
+      expect(summary.workload.proposalsPendingReview).toBe(1)
     })
   })
 
@@ -83,6 +90,13 @@ describe('demoData', () => {
     it('includes due-today cards', () => {
       const summary = buildDemoTodaySummary()
       expect(summary.dueTodayCards.length).toBeGreaterThan(0)
+    })
+
+    it('uses the same board card ids Home and the board editor share', () => {
+      const summary = buildDemoTodaySummary()
+      const { cards } = buildDemoBoardDetail('demo-board-1')
+      expect(cards.some(card => card.id === summary.overdueCards[0]?.cardId)).toBe(true)
+      expect(summary.overdueCards[0]?.cardId).toBe('demo-board-1-card-2')
     })
 
     it.each([
@@ -113,6 +127,63 @@ describe('demoData', () => {
         expect(['New', 'Triaging', 'Triaged', 'ProposalCreated', 'Converted', 'Ignored', 'Failed']).toContain(item.status)
         expect(['Typed', 'Paste', 'TranscriptPaste', 'Import', 'Voice', 'MeetingIntegration']).toContain(item.source)
       }
+    })
+  })
+
+  describe('buildDemoProposals', () => {
+    it('returns one pending-review proposal matching Home', () => {
+      const home = buildDemoHomeSummary()
+      const proposals = buildDemoProposals()
+      expect(proposals).toHaveLength(home.workload.proposalsPendingReview)
+      expect(proposals[0]?.id).toBe(DEMO_PROPOSAL_ID)
+      expect(proposals[0]?.status).toBe('PendingReview')
+      expect(proposals[0]?.boardId).toBe('demo-board-1')
+    })
+  })
+
+  describe('buildDemoProposalPreview', () => {
+    it('uses the supplied in-memory proposal snapshot, not a fresh fixture', () => {
+      const proposal = {
+        ...buildDemoProposals()[0]!,
+        status: 'Approved' as const,
+        updatedAt: '2026-09-17T12:00:00.000Z',
+        approvedRevisionId: 'demo-rev-approved',
+      }
+      const preview = buildDemoProposalPreview(proposal)
+      expect(preview.proposalId).toBe(proposal.id)
+      expect(preview.status).toBe('Approved')
+      expect(preview.proposalUpdatedAt).toBe('2026-09-17T12:00:00.000Z')
+      expect(preview.effectiveRevisionId).toBe('demo-rev-approved')
+    })
+  })
+
+  describe('buildDemoCalendarData', () => {
+    it('returns a CalendarData payload whose cards match Today due items', () => {
+      const data = buildDemoCalendarData('2020-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z')
+      expect(Array.isArray(data.cards)).toBe(true)
+      expect(data.totalCards).toBe(data.cards.length)
+      expect(data.cards.some(card => card.cardId === 'demo-board-1-card-2' && card.isOverdue)).toBe(true)
+    })
+  })
+
+  describe('buildDemoThinkingDeck', () => {
+    it('returns a ThinkingDeck with a layers array', () => {
+      const deck = buildDemoThinkingDeck('demo-board-1-card-3')
+      expect(deck).toEqual({
+        cardId: 'demo-board-1-card-3',
+        revision: 1,
+        schemaVersion: 1,
+        canWrite: true,
+        layers: [],
+      })
+    })
+  })
+
+  describe('buildDemoParticipants', () => {
+    it('includes the demo user so the card editor can load assignees', () => {
+      const people = buildDemoParticipants()
+      expect(people.some(person => person.userId.startsWith('demo-user-'))).toBe(true)
+      expect(people.length).toBeGreaterThan(1)
     })
   })
 })

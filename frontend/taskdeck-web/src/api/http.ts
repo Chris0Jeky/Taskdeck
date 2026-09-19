@@ -3,6 +3,8 @@ import { isTokenExpired } from '../utils/jwt'
 import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
+import { resolveApiBaseUrl, shouldUseDemoMode } from '../utils/apiBaseUrl'
+import { demoHttpAdapter } from './demoAdapter'
 import { notifyAuthExpired } from '../utils/authExpiry'
 import * as tokenStorage from '../utils/tokenStorage'
 import { logError, logWarn } from '../utils/errorReporting'
@@ -55,10 +57,12 @@ function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
 }
 
 const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
+  // Empty in demo/static mode so a missed mock cannot fall through to loopback.
+  baseURL: resolveApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
+  ...(shouldUseDemoMode() ? { adapter: demoHttpAdapter } : {}),
 })
 
 // Request interceptor for auth token

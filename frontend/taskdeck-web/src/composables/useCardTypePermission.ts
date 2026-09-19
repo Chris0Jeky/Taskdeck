@@ -134,15 +134,14 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
 
   /*
    * Whether this composable answers the permission question for the open card at all.
-   * Demo mode has no server to ask (its board fixtures omit `canWrite` by construction, so
-   * a read would be a request to a backend that is not there), and a card whose board
-   * payload is not the loaded one is a deliberate exclusion rather than an impossibility:
-   * that read COULD be made, but this slice keeps the pre-existing behaviour for it (#2952
+   * A card whose board payload is not the loaded one is a deliberate exclusion: that
+   * read COULD be made, but this slice keeps the pre-existing behaviour for it (#2952
    * is about the loaded board's missing field) rather than adding a request to every card
-   * opened from a cross-board surface. In both cases the gates stay exactly as read-only as
-   * they were before this composable existed.
+   * opened from a cross-board surface. Static demo boards carry `canWrite` on the fixture
+   * and must not be forced read-only — Pages still has no real server to ask, so the
+   * fixture is the answer (`readDecides` stays off in demo).
    */
-  const permissionDecides = computed(() => !isDemoMode && boardForCard.value !== null)
+  const permissionDecides = computed(() => boardForCard.value !== null)
 
   /*
    * Whether an unresolved permission is worth a request and a recovery affordance.
@@ -153,7 +152,7 @@ export function useCardTypePermission(options: UseCardTypePermissionOptions) {
    * An explicit reconciliation after a denied write also runs for an archived card, so a
    * refused Restore can recover in place. The initial archived-card path is unchanged.
    */
-  const readDecides = computed(() => permissionDecides.value &&
+  const readDecides = computed(() => permissionDecides.value && !isDemoMode &&
     (permissionRecovery.value || !options.getCardIsArchived()))
 
   /** Board-level write permission: what every write gate in the editor is allowed to assume. */

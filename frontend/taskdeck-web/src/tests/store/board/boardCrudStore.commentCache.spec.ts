@@ -10,10 +10,17 @@ const { mockBoardsApi, mockCardsApi, mockLabelsApi } = vi.hoisted(() => ({
 vi.mock('../../../api/boardsApi', () => ({ boardsApi: mockBoardsApi }))
 vi.mock('../../../api/cardsApi', () => ({ cardsApi: mockCardsApi }))
 vi.mock('../../../api/labelsApi', () => ({ labelsApi: mockLabelsApi }))
-vi.mock('../../../utils/demoData', () => ({
-  buildDemoBoardList: vi.fn(() => []),
-  buildDemoBoardDetail: vi.fn(),
-}))
+// `importOriginal`, not a bare factory: the demo HTTP adapter pulled in through
+// this store's import graph reads other `demoData` builders at module init, and
+// a partial mock would make the module fail to load rather than fail a test.
+vi.mock('../../../utils/demoData', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/demoData')>()
+  return {
+    ...actual,
+    buildDemoBoardList: vi.fn(() => []),
+    buildDemoBoardDetail: vi.fn(),
+  }
+})
 
 import { createBoardCrudActions } from '../../../store/board/boardCrudStore'
 import { initialCardFilters } from '../../../store/board/boardState'

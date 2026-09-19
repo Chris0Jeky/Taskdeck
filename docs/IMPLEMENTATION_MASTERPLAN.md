@@ -1,6 +1,10 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-18
+Last Updated: 2026-09-19
+
+## GitHub Pages static demo (2026-09-17)
+
+Pages stays a backend-less Vue demo until website+infra land. The SPA now detects empty `VITE_API_BASE_URL`, `VITE_DEMO_MODE`, or a Pages origin still aimed at loopback, and serves mock review/chat/card metadata instead of `localhost:5000`. Local-dev `.env` is unchanged. Do not treat this as the hosted production API.
 
 ## Source-launcher lazy-route readiness contract (#1900 candidate)
 

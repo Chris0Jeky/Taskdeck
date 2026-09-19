@@ -1026,6 +1026,11 @@ public class AutomationProposalService : IAutomationProposalService
     /// read paths skip the revision query entirely for proposals that always use their original
     /// operations (any status other than PendingReview/Rejected without a pin).
     /// <para>
+    /// Delegates to <see cref="ProposalEffectiveOperationsResolver"/>, which holds the ONE copy of
+    /// the effective-revision rules shared by this service and by related review evidence (#2452).
+    /// A second copy here is exactly the divergence class #2452 exists to remove.
+    /// </para>
+    /// <para>
     /// This predicate gates <see cref="SelectEffectiveRevisionRef"/> on BOTH read paths, so
     /// "false here ⇒ original operations" holds by construction rather than by test. The parity tests
     /// pin that the two paths AGREE and what each status resolves to; they cannot pin this
@@ -1035,17 +1040,18 @@ public class AutomationProposalService : IAutomationProposalService
     /// </para>
     /// </summary>
     private static bool CanHaveEffectiveRevision(AutomationProposal proposal) =>
-        proposal.ApprovedRevisionId is not null
-        || proposal.Status is ProposalStatus.PendingReview or ProposalStatus.Rejected;
+        ProposalEffectiveOperationsResolver.CanHaveEffectiveRevision(proposal);
 
     /// <summary>
-    /// The single implementation of the effective-revision rules, applied to the revision METADATA of
-    /// ONE proposal. Both the single-proposal read (<see cref="GetEffectiveRevisionAsync"/>) and the
-    /// batched list read (<see cref="GetEffectiveRevisionsAsync"/>) select through this method, so
-    /// there is exactly one copy of the rules rather than a duplicate per read shape.
+    /// The effective-revision rules applied to the revision METADATA of ONE proposal. Both the
+    /// single-proposal read (<see cref="GetEffectiveRevisionAsync"/>) and the batched list read
+    /// (<see cref="GetEffectiveRevisionsAsync"/>) select through this method, which forwards to
+    /// <see cref="ProposalEffectiveOperationsResolver.SelectEffectiveRevisionRef"/> -- the single
+    /// implementation, shared with related-proposal evidence so review evidence and Apply can never
+    /// choose different revisions (#2452).
     /// <para>
     /// Takes <see cref="ProposalRevisionRef"/> rather than the entity because the rules only ever
-    /// compare revision numbers, timestamps and ids — never the payload. That is what lets callers
+    /// compare revision numbers, timestamps and ids -- never the payload. That is what lets callers
     /// avoid loading payloads for revisions that lose (#1444 review).
     /// </para>
     /// <paramref name="refsForProposal"/> must contain only refs of <paramref name="proposal"/>;
@@ -1053,56 +1059,8 @@ public class AutomationProposalService : IAutomationProposalService
     /// </summary>
     private static ProposalRevisionRef? SelectEffectiveRevisionRef(
         AutomationProposal proposal,
-        IReadOnlyList<ProposalRevisionRef> refsForProposal)
-    {
-        if (proposal.ApprovedRevisionId is Guid approvedRevisionId)
-        {
-            // Resolved within the proposal's OWN revisions. A pin is only ever set from a revision of
-            // the same proposal (ApproveProposalAsync pins what GetLatestByProposalIdAsync returned),
-            // so this agrees with a global by-id lookup for every reachable state while making a
-            // cross-proposal id structurally unable to render as this proposal's content.
-            //
-            // Two asymmetries against AutomationExecutorService.MaterializeEffectiveProposalAsync,
-            // stated in full because the containment above is only half the story (#1444 review):
-            //  - Scope: the executor resolves the pin GLOBALLY by id and does not check ProposalId.
-            //    For a pin pointing at ANOTHER proposal's revision, reads would now fall back to the
-            //    originals while Apply would execute the foreign revision — a preview/apply
-            //    divergence in a state where the two previously agreed (both used the foreign one).
-            //  - Missing row: reads fall back to the original operations, while Apply REFUSES
-            //    outright (InvalidOperation) rather than execute an unapproved set.
-            // Both states are unreachable: nothing but Approve writes ApprovedRevisionId, and a
-            // revision is cascade-owned by its proposal with no code path deleting one individually,
-            // so a pin can neither point elsewhere nor dangle while its proposal is readable.
-            return refsForProposal.FirstOrDefault(r => r.Id == approvedRevisionId);
-        }
-
-        if (proposal.Status is ProposalStatus.PendingReview)
-        {
-            // Unconditional latest: what the reviewer sees, and what approve would pin. Highest
-            // RevisionNumber, matching IProposalRevisionRepository.GetLatestByProposalIdAsync's
-            // ordering. Deterministic because (ProposalId, RevisionNumber) is uniquely indexed.
-            return refsForProposal.MaxBy(r => r.RevisionNumber);
-        }
-
-        if (proposal.Status is ProposalStatus.Rejected)
-        {
-            // Freeze the rejected proposal at decision time. DecidedAt is always set by Reject, but
-            // treat a null defensively as "no cutoff" and fall back to the unconditional latest.
-            if (proposal.DecidedAt is not DateTime decidedAt)
-                return refsForProposal.MaxBy(r => r.RevisionNumber);
-
-            // Compare in memory rather than relying on EF's SQLite provider to translate a
-            // DateTimeOffset-vs-DateTime comparison. RevisedAt is a DateTimeOffset in UTC; compare
-            // its UtcDateTime against the UTC DecidedAt.
-            return refsForProposal
-                .Where(r => r.RevisedAt.UtcDateTime <= decidedAt)
-                .OrderByDescending(r => r.RevisedAt)
-                .ThenByDescending(r => r.RevisionNumber)
-                .FirstOrDefault();
-        }
-
-        return null;
-    }
+        IReadOnlyList<ProposalRevisionRef> refsForProposal) =>
+        ProposalEffectiveOperationsResolver.SelectEffectiveRevisionRef(proposal, refsForProposal);
 
     /// <summary>
     /// Maps a proposal to its response DTO with <see cref="ProposalDto.Operations"/> AND

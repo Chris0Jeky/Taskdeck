@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
 import {
@@ -7,15 +8,23 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   rm,
   writeFile,
 } from 'node:fs/promises'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import test from 'node:test'
+import nodeTest from 'node:test'
 import { fileURLToPath } from 'node:url'
+
+import {
+  DEFAULT_DEV_UP_TEST_TIMEOUT_MS,
+  DEFAULT_FIXTURE_DIAGNOSTIC_MARGIN_MS,
+  createFixtureCleanupBudget,
+  createFixtureLayout,
+  describeLiveFixtureProcesses,
+  removeFixture,
+} from './dev-up-fixture-cleanup.mjs'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const powershellLauncher = join(repoRoot, 'scripts', 'dev-up.ps1')
@@ -27,6 +36,37 @@ const RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000
 // #2588: repeated hosted failures reached the former 5s ceiling before the fake frontend bound.
 // Stay bounded below the 30s hosted per-test ceiling while retaining time for TERM and cleanup.
 const FRONTEND_HELPER_READINESS_TIMEOUT_MS = 15_000
+
+function configuredDefaultTestTimeoutMs(argv = process.execArgv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]
+    const inlineMatch = /^--test-timeout=(\d+)$/.exec(argument)
+    const rawValue = inlineMatch?.[1] ?? (argument === '--test-timeout' ? argv[index + 1] : null)
+    if (rawValue == null) continue
+    const timeoutMs = Number(rawValue)
+    if (Number.isFinite(timeoutMs) && timeoutMs > DEFAULT_FIXTURE_DIAGNOSTIC_MARGIN_MS) {
+      return timeoutMs
+    }
+  }
+  return DEFAULT_DEV_UP_TEST_TIMEOUT_MS
+}
+
+const defaultTestTimeoutMs = configuredDefaultTestTimeoutMs()
+const testBudgetStorage = new AsyncLocalStorage()
+
+function test(name, optionsOrCallback, maybeCallback) {
+  const options = typeof optionsOrCallback === 'function' ? {} : (optionsOrCallback ?? {})
+  const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
+  if (typeof callback !== 'function') return nodeTest(name, options)
+
+  return nodeTest(name, options, (context) => {
+    const cleanupBudget = createFixtureCleanupBudget({
+      testStartedAtMs: Date.now(),
+      testTimeoutMs: Number(options.timeout ?? defaultTestTimeoutMs),
+    })
+    return testBudgetStorage.run(cleanupBudget, () => callback(context))
+  })
+}
 
 // #2378: this suite is serial and launches real PowerShell/Bash launchers, which in turn start
 // real API/Vite child processes. `--test-timeout` bounds each individual case, but it cannot bound
@@ -477,89 +517,21 @@ async function readOptional(path) {
   }
 }
 
-// Windows refuses to remove a directory while any live process still uses it as a working
-// directory, and reports that as EBUSY on the rmdir of that exact directory specifically; an open
-// file handle somewhere inside the tree does not produce that signature. The launcher runs its
-// node probes from its own working directory and starts the fake API after `cd "$REPO_ROOT"`, so
-// the fixture root is the working directory of several native processes during a run, and the
-// launcher's "stopped" report is not a synchronization point for their exit: under Git Bash it
-// signals an MSYS pid that stands in for a separate native Windows process. Teardown therefore
-// waits for the directory to actually become removable rather than assuming a fixed retry budget
-// is enough on a loaded runner, and fails loudly with the surviving pids if it never does.
-const FIXTURE_REMOVAL_TIMEOUT_MS = 30_000
-const FIXTURE_REMOVAL_MAX_DELAY_MS = 500
-// Codes Windows raises while something still holds the directory or one of its entries. Every
-// other code is a real defect and is rethrown untouched.
-const FIXTURE_REMOVAL_RETRY_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE'])
-
-function isProcessAlive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    if (error?.code === 'ESRCH') return false
-    if (error?.code === 'EPERM') return true
-    throw error
-  }
-}
-
-async function describeLiveFixtureProcesses(fixture) {
-  if (!fixture?.livePidFile) return 'not recorded'
-  const text = await readOptional(fixture.livePidFile)
-  if (!text) return 'none recorded'
-  const seen = new Set()
-  const alive = []
-  for (const line of text.split(/\r?\n/)) {
-    const [kind, rawPid] = line.trim().split(/\s+/)
-    const pid = Number(rawPid)
-    if (!Number.isSafeInteger(pid) || pid <= 0 || seen.has(pid)) continue
-    seen.add(pid)
-    if (isProcessAlive(pid)) alive.push(`${kind} pid ${pid}`)
-  }
-  return alive.length > 0 ? alive.join(', ') : 'none still alive'
-}
-
-async function describeRemainingEntries(root) {
-  try {
-    const entries = await readdir(root)
-    return entries.length > 0 ? entries.join(', ') : 'none (only the root itself is held)'
-  } catch (error) {
-    if (error?.code === 'ENOENT') return 'none (root already gone)'
-    return `unreadable (${error?.code ?? error})`
-  }
-}
-
-async function removeDirectory(root, fixture = null) {
-  const deadline = Date.now() + FIXTURE_REMOVAL_TIMEOUT_MS
-  let delay = 50
-  for (;;) {
-    try {
-      await rm(root, { recursive: true, force: true })
-      return
-    } catch (error) {
-      if (!FIXTURE_REMOVAL_RETRY_CODES.has(error?.code)) throw error
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `${root} was still in use ${FIXTURE_REMOVAL_TIMEOUT_MS}ms after the test finished ` +
-            `(${error.code} on ${error.syscall} of '${error.path}'). ` +
-            `Fixture processes still alive: ${await describeLiveFixtureProcesses(fixture)}. ` +
-            `Remaining entries: ${await describeRemainingEntries(root)}. ` +
-            'Something is still using it as a working directory or holding one of its entries.',
-          { cause: error },
-        )
-      }
-      await new Promise((resolve) => setTimeout(resolve, delay))
-      delay = Math.min(delay * 2, FIXTURE_REMOVAL_MAX_DELAY_MS)
-    }
-  }
-}
-
-async function removeFixture(fixture) {
-  await removeDirectory(fixture.root, fixture)
+// Standalone seam fixtures are small and do not own launcher processes. Keep their cleanup
+// bounded by Node's native retry count; full launcher fixtures use the absolute per-test budget
+// captured by the imported removeFixture orchestrator.
+async function removeDirectory(root) {
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
 
 async function createFixture(platform) {
-  const root = await mkdtemp(join(tmpdir(), `taskdeck-dev-up-${platform.name.toLowerCase()}-`))
+  const cleanupBudget = testBudgetStorage.getStore()
+  assert.ok(cleanupBudget, 'createFixture must run inside the budgeted node:test wrapper')
+  const envelopeRoot = await mkdtemp(
+    join(tmpdir(), `taskdeck-dev-up-${platform.name.toLowerCase()}-`),
+  )
+  const { root, livePidFile } = createFixtureLayout(envelopeRoot)
+  await mkdir(root, { recursive: true })
   const scriptsDir = join(root, 'scripts')
   const frontendDir = join(root, 'frontend', 'taskdeck-web')
   const fakeBin = join(root, 'fake-bin')
@@ -586,6 +558,8 @@ async function createFixture(platform) {
   const stateDir =
     platform.name === 'PowerShell' ? join(dataRoot, 'Taskdeck') : join(dataRoot, 'taskdeck')
   return {
+    envelopeRoot,
+    cleanupBudget,
     root,
     scriptsDir,
     frontendDir,
@@ -601,7 +575,7 @@ async function createFixture(platform) {
         : join(stateDir, 'dev-up.operation.lock'),
     npmLog: join(root, 'events.jsonl'),
     npmReleaseFile: join(root, '.release-npm-ci'),
-    livePidFile: join(root, 'live-pids.log'),
+    livePidFile,
   }
 }
 

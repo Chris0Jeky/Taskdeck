@@ -7,7 +7,8 @@
 #   ci-required.yml          PR/push/merge_group gate (this file)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
 #     ├── release-workflow-contract            release contract suites: dispatch hardening (#1795/#1806),
-#     │                                         release cache trust, release notes composer (#2234/#2250)
+#     │                                         container publishing (#1854), release cache trust,
+#     │                                         release notes composer (#2234/#2250)
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
@@ -105,10 +106,10 @@ jobs:
     with:
       node-version: 24.13.1
 
-  # A live release dispatch cannot be rehearsed on a PR, so the release-desktop
-  # dispatch hardening (#1795) is held by an executable contract instead: the tag
-  # grammar gate is run for real against injection-shaped inputs, and the
-  # workflow's provenance/credential invariants are asserted structurally.
+  # A live release dispatch cannot be rehearsed on a PR, so release hardening is
+  # held by executable contracts instead: tag/version grammar runs for real and
+  # workflow provenance, fail-fast, credential and cleanup invariants are asserted
+  # structurally.
   # Inline (not a reusable call) — it needs nothing beyond the top-level
   # `contents: read`, and a reusable callee may not declare more than its caller
   # grants (GitHub fails such a call at plan time with startup_failure).
@@ -131,6 +132,9 @@ jobs:
 
       - name: Validate release-desktop dispatch hardening contract
         run: node --test scripts/ci/release-desktop-dispatch.test.mjs
+
+      - name: Validate container release contract
+        run: node --test scripts/ci/release-container-contract.test.mjs
 
       # The changelog base the release page is generated against (#2250). The
       # selection is semver ordering, which a workflow-text assertion cannot

@@ -349,6 +349,18 @@ describe('useCardTypePermission', () => {
     wrapper.unmount()
   })
 
+  it('honors a demo fixture canWrite without asking the server', async () => {
+    demo.enabled = true
+    mockBoardStore.currentBoard = board({ canWrite: true })
+    const { api, wrapper } = create()
+    await flushPromises()
+
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
+    expect(api.canWrite.value).toBe(true)
+    expect(api.canEditType.value).toBe(true)
+    wrapper.unmount()
+  })
+
   it('never answers a board with an older read for the SAME board', async () => {
     mockBoardStore.currentBoard = board()
     let resolveFirst!: (value: BoardDetail) => void
@@ -486,13 +498,13 @@ describe('useCardTypePermission', () => {
       wrapper.unmount()
     })
 
-    it('grants nothing in demo mode, which has no server to ask', async () => {
+    it('honors demo fixture write permission without a server read', async () => {
       demo.enabled = true
       mockBoardStore.currentBoard = board({ canWrite: true })
       const { api, wrapper } = create()
       await flushPromises()
 
-      expect(api.canWrite.value).toBe(false)
+      expect(api.canWrite.value).toBe(true)
       expect(boardsApi.getBoard).not.toHaveBeenCalled()
       wrapper.unmount()
     })
