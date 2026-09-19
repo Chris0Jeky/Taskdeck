@@ -71,6 +71,22 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldNotTreatSharedModalLeadAsTheActionHead()
+    {
+        var extraction = await ExtractSharedOverlapAsync(
+            "We will prepare the launch packet",
+            "We will archive the launch packet");
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            "We will prepare the launch packet",
+            "We will archive the launch packet",
+            "a shared subject or modal phrase must not hide incompatible commitment verbs");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 2);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldCollapseCompatiblePreparationRephrasing()
     {
         var extraction = await ExtractSharedOverlapAsync(
