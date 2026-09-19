@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
@@ -156,13 +157,22 @@ public sealed class ProposalExpiryArchiveConcurrencyTests
             .Callback(() => SetExpiresAt(late, DateTime.UtcNow.AddMinutes(-5)))
             .ReturnsAsync(Result.Success());
 
+        var notifications = new Mock<INotificationService>();
+        notifications
+            .Setup(service => service.PublishAsync(
+                It.IsAny<CreateNotificationRequestDto>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(true));
+
         var inner = new AutomationProposalService(
             unitOfWork.Object,
+            notificationService: notifications.Object,
             policyEngine: policy.Object);
         IAutomationProposalService service = new ProposalExpiryGuardedService(
             inner,
             unitOfWork.Object,
-            policy.Object);
+            policy.Object,
+            notifications.Object);
 
         var result = await service.ExpireProposalsAsync();
 
@@ -180,6 +190,19 @@ public sealed class ProposalExpiryArchiveConcurrencyTests
         unitOfWork.Verify(
             work => work.SaveChangesAsync(It.IsAny<CancellationToken>()),
             Times.Once);
+        notifications.Verify(
+            service => service.PublishAsync(
+                It.Is<CreateNotificationRequestDto>(request =>
+                    request.UserId == ownerId &&
+                    request.Type == NotificationType.ProposalOutcome &&
+                    request.BoardId == guardedBoardId &&
+                    request.SourceEntityType == "proposal" &&
+                    request.SourceEntityId == guarded.Id &&
+                    request.DeduplicationKey == $"proposal:{guarded.Id}:{ProposalStatus.Expired}" &&
+                    request.Message.Contains("now expired", StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "only candidates in the guarded snapshot may publish an expiry outcome");
     }
 
     [Fact]
