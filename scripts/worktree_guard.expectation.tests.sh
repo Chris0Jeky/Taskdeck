@@ -138,7 +138,9 @@ git -C "$FIXTURE_ROOT/primary" \
     commit -q --allow-empty -m "seed" --no-gpg-sign
 git -C "$FIXTURE_ROOT/primary" worktree add -q --detach "$FIXTURE_ROOT/detached" HEAD
 
-unicode_branch=$'\u00a0'
+# Emit UTF-8 bytes directly. Bash's locale-dependent $'\u00a0' expansion can
+# produce a lone 0xA0 byte on Git for Windows while native Git returns C2 A0.
+unicode_branch="$(printf '\302\240')"
 unicode_checked_branch="${unicode_branch}fix/3236-unicode"
 case_branch="fix/ABC-3236"
 case_expected_lower="fix/abc-3236"
