@@ -62,10 +62,26 @@ test('parses the release tags Taskdeck ships', () => {
     patch: 0,
     prerelease: ['dryrun'],
   })
+  assert.deepEqual(parseReleaseTag('v1.2.3-0.alpha.1'), {
+    major: 1,
+    minor: 2,
+    patch: 3,
+    prerelease: [0, 'alpha', 1],
+  })
 })
 
 test('refuses anything outside the release-tag grammar', () => {
-  for (const tag of ['', '0.3.0', 'v0.3', 'main', 'refs/tags/v0.3.0', 'v01.2.3', 'v0.3.0-ré', null]) {
+  for (const tag of [
+    '',
+    '0.3.0',
+    'v0.3',
+    'main',
+    'refs/tags/v0.3.0',
+    'v01.2.3',
+    'v1.2.3-01',
+    'v0.3.0-ré',
+    null,
+  ]) {
     assert.equal(parseReleaseTag(tag), null, `expected ${JSON.stringify(tag)} to be refused`)
   }
 })
