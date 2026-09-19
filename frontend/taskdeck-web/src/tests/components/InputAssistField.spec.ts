@@ -151,4 +151,23 @@ describe('InputAssistField', () => {
     expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
     expect(wrapper.emitted('select')).toBeUndefined()
   })
+
+  it('does not synthesize selection when matching options arrive while disabled', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options: [],
+      },
+    })
+
+    await wrapper.get('input').trigger('focus')
+    await wrapper.setProps({ modelValue: 'health.check' })
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+
+    await wrapper.setProps({ options, disabled: true })
+
+    expect(wrapper.get('input').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
 })
