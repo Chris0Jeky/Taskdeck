@@ -8,14 +8,40 @@ import { cardsApi } from '../../api/cardsApi'
 import type { Card, BoardDetail } from '../../types/board'
 
 vi.mock('../../api/cardsApi', () => ({ cardsApi: { getArchivedCards: vi.fn(), setArchived: vi.fn() } }))
+const demo = vi.hoisted(() => ({ enabled: false }))
+vi.mock('../../utils/demoMode', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../utils/demoMode')>(),
+  get isDemoMode() { return demo.enabled },
+}))
 const card = { id: 'c', boardId: 'b', columnId: 'col', title: 'Retained', description: 'Evidence',
   labels: [], updatedAt: '2026-09-10T10:00:00Z', isArchived: true } as unknown as Card
 const mountHistory = () => mount(BoardCardArchive, { props: { boardId: 'b' }, global: { stubs: { RouterLink: true } } })
 describe('Card archive', () => {
   beforeEach(() => {
+    demo.enabled = false
     setActivePinia(createPinia()); vi.clearAllMocks()
     useBoardStore().currentBoard = { id: 'b', canWrite: true, isArchived: false, columns: [] } as unknown as BoardDetail
     vi.mocked(cardsApi.getArchivedCards).mockResolvedValue([card])
+  })
+  it('does not request backend history even if the demo load handler is invoked repeatedly', async () => {
+    demo.enabled = true
+    const wrapper = mountHistory()
+    const history = wrapper.vm as unknown as { load: () => Promise<void> }
+    await history.load()
+    await history.load()
+    await wrapper.setProps({ boardId: 'demo-board-2' })
+    await history.load()
+    expect(cardsApi.getArchivedCards).not.toHaveBeenCalled()
+    expect(cardsApi.setArchived).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+  it('explains unavailable demo history without live archive controls', () => {
+    demo.enabled = true
+    const wrapper = mountHistory()
+    expect(wrapper.text()).toContain('Archived card history is not available in this demo.')
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.findComponent(CardArchiveAction).exists()).toBe(false)
+    expect(cardsApi.getArchivedCards).not.toHaveBeenCalled()
   })
   it('loads on explicit request and restores the displayed revision', async () => {
     const wrapper = mountHistory()
