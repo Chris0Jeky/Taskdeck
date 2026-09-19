@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { DEFAULT_LOCALE, ensureLocaleMessages, i18n } from '../../i18n'
 import ReviewView from '../../views/ReviewView.vue'
@@ -25,14 +25,18 @@ vi.mock('../../views/LegacyReviewView.vue', () => ({
   },
 }))
 
-async function mountView() {
+async function mountView(path = '/workspace/review') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/workspace/review', component: ReviewView }],
   })
-  await router.push('/workspace/review')
+  await router.push(path)
   await router.isReady()
-  return mount(ReviewView, { global: { plugins: [router] } })
+  const wrapper = mount(ReviewView, {
+    attachTo: document.body,
+    global: { plugins: [router] },
+  })
+  return { wrapper, router }
 }
 
 describe('Review unavailable-return landmark locale (GH-2599)', () => {
@@ -46,6 +50,7 @@ describe('Review unavailable-return landmark locale (GH-2599)', () => {
   })
 
   afterEach(() => {
+    document.body.innerHTML = ''
     i18n.global.locale.value = DEFAULT_LOCALE
   })
 
@@ -54,7 +59,7 @@ describe('Review unavailable-return landmark locale (GH-2599)', () => {
     ['Legacy', false, 'it'],
   ] as const)('keeps the %s fallback landmark in the active language', async (_label, isOn, locale) => {
     skin.isOn = isOn
-    const wrapper = await mountView()
+    const { wrapper } = await mountView()
     try {
       const landmark = wrapper.get('[data-testid="review-landmark"]')
       const english = i18n.global.t('review.surfaceLabel')
@@ -71,6 +76,43 @@ describe('Review unavailable-return landmark locale (GH-2599)', () => {
       expect(landmark.attributes('role')).toBe('region')
       // No PERSISTENT tabindex: a focusable root would swallow every click on
       // inert review content and silence both skins' own focus handoffs.
+      expect(landmark.attributes('tabindex')).toBeUndefined()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('releases transient focusability on the first pointer interaction after the fallback handoff', async () => {
+    const { wrapper, router } = await mountView('/workspace/review#proposal-proposal-missing')
+    try {
+      const landmark = wrapper.get('[data-testid="review-landmark"]')
+
+      await router.push('/workspace/review')
+      await flushPromises()
+      await nextTick()
+
+      expect(landmark.attributes('tabindex')).toBe('-1')
+      expect(document.activeElement).toBe(landmark.element)
+
+      await landmark.trigger('pointerdown')
+      expect(landmark.attributes('tabindex')).toBeUndefined()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('removes transient focusability when a connected landmark cannot take focus', async () => {
+    const { wrapper, router } = await mountView('/workspace/review#proposal-proposal-missing')
+    try {
+      const landmark = wrapper.get('[data-testid="review-landmark"]')
+      const focus = vi.spyOn(landmark.element as HTMLElement, 'focus').mockImplementation(() => {})
+
+      await router.push('/workspace/review')
+      await flushPromises()
+      await nextTick()
+
+      expect(focus).toHaveBeenCalledTimes(1)
+      expect(document.activeElement).not.toBe(landmark.element)
       expect(landmark.attributes('tabindex')).toBeUndefined()
     } finally {
       wrapper.unmount()
