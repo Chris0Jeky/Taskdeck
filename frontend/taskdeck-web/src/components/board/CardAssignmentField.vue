@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { cardsApi } from '../../api/cardsApi'
+import { assignmentSaveRegistryKey } from '../../composables/useAssignmentSaveRegistry'
 import { useSessionStore } from '../../store/sessionStore'
 import type { BoardParticipant, Card, CardAssignment } from '../../types/board'
 import CardAssignees from './CardAssignees.vue'
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   'permission-denied': []
 }>()
 const session = useSessionStore()
+const assignmentSaveRegistry = inject(assignmentSaveRegistryKey, null)
 const participants = ref<BoardParticipant[]>([])
 const selected = ref<string[]>([])
 const baseline = ref<string[]>([])
@@ -60,8 +62,6 @@ let loadGeneration = 0
 let saveGeneration = 0
 const permissionLost = computed(() => saveFailure.value === 'permission')
 const error = computed(() => {
-  // The sticky permission message must not swallow a read that failed AFTER it,
-  // nor keep promising readable assignees once the refresh stopped confirming them.
   if (permissionLost.value && loadFailed.value) return 'This assignment save was refused, and the latest refresh also failed; the assignees shown may be out of date. Editing stays locked until board write permission is confirmed again. Your draft is kept, and Clear and Cancel still work.'
   if (permissionLost.value) return 'This assignment save was refused. Editing stays locked until board write permission is confirmed again. Your draft is kept, and Clear and Cancel still work.'
   if (loadFailed.value) return 'Could not load current participants. Your draft is kept.'
@@ -75,23 +75,8 @@ const dirty = computed(() => [...selected.value].sort().join() !== [...baseline.
  * Three gates, because a write and a draft discard are not the same act (#2982).
  *
  * `busy`       — the shared base: every reason this field is inert right now.
- * `locked`     — `busy` plus a revoked permission. Gates the WRITE path: the
- *                participant selector, Save assignments, and save() itself.
+ * `locked`     — `busy` plus a revoked permission. Gates the WRITE path.
  * `draftLocked`— gates Clear and Cancel, which only edit the local draft.
- *
- * Why `draftLocked` is not just `busy`: discarding a draft is a local action, so
- * a revoked permission must never strand one. The host reads `dirty-change`, so
- * a field stuck dirty keeps the card modal's own save and archive disabled and
- * raises a discard prompt on every close path, for the life of the mount. There
- * were three routes into that, all closed here — folding the permission lock
- * into a single gate killed Cancel directly; the board refetch confirming the
- * downgrade turns `readOnly` true; and a Refresh that then fails (access fully
- * revoked, or the network still down) sets `needsRefresh`. So while
- * `permissionLost` holds, neither `readOnly` nor `needsRefresh` blocks the
- * draft-side controls. What still blocks them is only what makes discarding
- * meaningless or unsafe: an archived card, an in-flight read or write, or a host
- * that disabled the field. Save disappears outright once the board says
- * read-only, because that one IS a write.
  */
 const busy = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value)
 const locked = computed(() => busy.value || permissionLost.value)
@@ -99,11 +84,9 @@ const draftLocked = computed(() => archived.value || props.disabled || loading.v
 watch(dirty, value => emit('dirty-change', value))
 /*
  * A submitted PUT cannot be recalled. The host editor needs the in-flight state
- * synchronously so its close, discard and navigation affordances never promise
- * to cancel a mutation the server already has (#2981). `flush: 'sync'` keeps the
- * host truthful inside the same click that starts or settles the save; the card
- * identity watcher below resets it, so a host that keeps this field mounted
- * across cards is told the new card is not saving.
+ * synchronously so its local close/discard affordances stay truthful. Legacy
+ * board navigation additionally uses the injected operation registry below;
+ * unlike this component event, that token survives this field and its lane.
  */
 watch(saving, value => emit('saving-change', value), { immediate: true, flush: 'sync' })
 function reset(card: Card) {
@@ -113,8 +96,6 @@ function reset(card: Card) {
   selected.value = [...baseline.value]
   version.value = card.updatedAt
 }
-// A late archive/restore receipt owns lifecycle and the next CAS token only.
-// Preserve the assignment baseline and local selection so a newer draft is not overwritten.
 watch(
   () => props.committedCard,
   committed => {
@@ -130,7 +111,6 @@ async function load(refresh = false) {
   const card = props.card
   loading.value = true
   loadFailed.value = false
-  // A read refresh clears what a retry can fix, never the revoked-permission lock.
   if (!permissionLost.value) saveFailure.value = null
   try {
     const [people, current] = await Promise.all([
@@ -144,24 +124,17 @@ async function load(refresh = false) {
       archived.value = !!current.isArchived
       baseline.value = (current.assignments ?? []).map(a => a.userId)
       version.value = current.updatedAt
-      // Keep the user's draft, including removed participants, for explicit correction.
       emit('saved', current)
     }
-    /*
-     * This read cleared `saveFailure` before it started, so anything set there
-     * now came from a save that settled DURING it — the one overlap `readOnly`
-     * makes reachable (#3017). Clearing `needsRefresh` under it would withdraw
-     * the "Refresh current assignments" button while the alert still tells the
-     * user to press it, and re-enable Save against the version the refusal just
-     * invalidated. A read never answers a write's refusal.
-     */
     if (!saveFailure.value) needsRefresh.value = false
   } catch {
     if (request === loadGeneration) {
       loadFailed.value = true
       needsRefresh.value = true
     }
-  } finally { if (request === loadGeneration) loading.value = false }
+  } finally {
+    if (request === loadGeneration) loading.value = false
+  }
 }
 watch(() => `${props.card.boardId}:${props.card.id}:${session.userId}`, () => {
   loadGeneration++
@@ -174,20 +147,12 @@ watch(() => `${props.card.boardId}:${props.card.id}:${session.userId}`, () => {
   reset(props.card)
   if (!props.readOnly) void load()
 }, { immediate: true })
-/*
- * `readOnly` is the parent's server-derived write permission for this card. A
- * transition back to writable is the only in-place evidence this field gets that
- * authoritative permission was re-read and now allows writing, so it — never a
- * successful participant read — releases a revoked-permission lock.
- */
 watch(() => props.readOnly, readOnly => {
   if (!readOnly) {
     saveFailure.value = null
     void load()
   }
 })
-// Stop an older participant/card read from displaying a result after board access was
-// invalidated. This never invalidates a PUT or discards its outcome or the local draft.
 watch(() => props.readsBlocked, blocked => {
   if (!blocked) return
   loadGeneration++
@@ -196,12 +161,18 @@ watch(() => props.readsBlocked, blocked => {
 watch(() => props.card.updatedAt, () => {
   if (!dirty.value && !saving.value) reset(props.card)
 })
-function cancel() { selected.value = [...baseline.value] }
+function cancel() {
+  selected.value = [...baseline.value]
+}
 async function save() {
   if (locked.value || !dirty.value) return
   const request = ++saveGeneration
   const card = props.card
   saving.value = true
+  // The operation token is owned by the submitted PUT, not this component.
+  // Its idempotent release remains callable from this async closure after a
+  // remote refresh removes the card/lane and Vue stops component watchers.
+  const releaseSaveOwner = assignmentSaveRegistry?.begin(`${card.boardId}:${card.id}`)
   saveFailure.value = null
   const previousVersion = version.value
   try {
@@ -216,18 +187,18 @@ async function save() {
       : status === 409 ? 'conflict'
         : status === 400 ? 'ineligible'
           : 'unknown'
-    /*
-     * A refusal is not a stale-state claim, and `needsRefresh` also disables the
-     * draft-side controls — so the permission class carries its own lock instead.
-     * A later board read decides whether the assignment refresh can run; the
-     * write refusal itself makes no promise about surviving read access.
-     */
     needsRefresh.value = !permissionLost.value
     if (permissionLost.value) emit('permission-denied')
-  } finally { if (request === saveGeneration) saving.value = false }
+  } finally {
+    if (request === saveGeneration) saving.value = false
+    releaseSaveOwner?.()
+  }
 }
 const unavailable = computed(() => props.readOnly ? [] : selected.value.filter(id => !participants.value.some(p => p.userId === id)))
-onBeforeUnmount(() => { loadGeneration++; saveGeneration++ })
+onBeforeUnmount(() => {
+  loadGeneration++
+  saveGeneration++
+})
 </script>
 
 <template>
@@ -250,11 +221,6 @@ onBeforeUnmount(() => { loadGeneration++; saveGeneration++ })
       </label>
       <p v-if="!loading && !selected.length" class="text-sm">Unassigned</p>
     </fieldset>
-    <!-- Outside the selector fieldset on purpose: Clear and Cancel only edit the local
-         draft, so they follow `draftLocked` and survive a revoked permission — including
-         after the board refetch turns this field read-only, which is why the row itself
-         still renders then. Save is the write: it names `locked`, rather than relying on
-         ancestor propagation, and disappears entirely once the board says read-only. -->
     <div v-if="!readOnly || permissionLost" class="flex gap-3">
       <button type="button" :disabled="draftLocked || !selected.length" @click="selected = []">Clear</button>
       <button type="button" :disabled="draftLocked || !dirty" @click="cancel">Cancel assignment changes</button>
