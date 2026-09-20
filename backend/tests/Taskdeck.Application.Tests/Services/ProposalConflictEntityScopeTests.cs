@@ -29,6 +29,9 @@ public sealed class ProposalConflictEntityScopeTests
         _ownCard = new Card(_board, Guid.NewGuid(), "visible-card");
         _unit.Setup(u => u.Cards.GetByIdAsync(_foreignCard.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_foreignCard);
         _unit.Setup(u => u.Cards.GetByIdAsync(_ownCard.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_ownCard);
+        // The unrelated source column is absent from this fixture. Return null,
+        // rather than asking Moq to synthesize a domain aggregate with no public ctor.
+        _unit.Setup(u => u.Columns.GetByIdWithCardsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((Column?)null);
         _unit.Setup(u => u.Columns.GetByIdWithCardsAsync(_foreignColumn.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_foreignColumn);
         _unit.Setup(u => u.CardComments.CountByCardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(7);
         _unit.Setup(u => u.OutboundWebhookSubscriptions.GetActiveByBoardAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
