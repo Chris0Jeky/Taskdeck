@@ -90,3 +90,22 @@ caller-owned contract.
 The reviewed source passes all 28 CLI tests and 593 Smart CI tests on Linux /
 Node 22.16.0. Earlier 589/590-test results apply only to their recorded heads;
 the current GitHub head needs its own hosted run and review.
+
+## Output-alias review correction
+
+A second Codex review found that `--out` and `--summary` could share a path:
+Markdown was appended to a valid verdict and the CLI still authorized bounded
+work. Six initial regressions reproduced unsafe shared, relative, symlink-parent
+and hard-link destinations, including pairs involving the Actions output file.
+The CLI now rejects overlapping destinations before writing reports, and again
+after creating the verdict because a dangling directory alias may only then
+resolve. A separate negative control reproduced that delayed-resolution case.
+
+On an error, a verdict that aliases the Actions output file is not written as
+JSON into that protocol stream. Denial outputs take precedence; incompatible
+formats cannot both be persisted to one file. A distinct writable verdict sink
+still receives a full JSON verdict. All 35 CLI cases and 600 Smart CI tests pass
+locally. This is not a lock against an external process racing filesystem
+changes: trusted, per-invocation destinations and the successful-step/explicit-
+true consumer contract still apply. Earlier hosted runs do not qualify this
+review follow-up until its exact head is checked.

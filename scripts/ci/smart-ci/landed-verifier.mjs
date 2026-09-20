@@ -11,10 +11,11 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { policyDigest } from './lib/plan.mjs';
 
@@ -426,6 +427,47 @@ function failureVerdict(args) {
   return fullVerdict({ repository: args.repo, headSha: args.headSha }, 'verifier-error');
 }
 
+function canonicalOutputPath(path) {
+  let ancestor = resolve(path);
+  const suffix = [];
+  for (;;) {
+    try {
+      const canonical = resolve(realpathSync(ancestor), ...suffix);
+      return process.platform === 'win32' ? canonical.toLowerCase() : canonical;
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
+      const parent = dirname(ancestor);
+      if (parent === ancestor) throw error;
+      suffix.unshift(basename(ancestor));
+      ancestor = parent;
+    }
+  }
+}
+
+function sameOutputDestination(left, right) {
+  if (!left || !right) return false;
+  if (canonicalOutputPath(left) === canonicalOutputPath(right)) return true;
+  try {
+    const a = statSync(left);
+    const b = statSync(right);
+    return a.ino !== 0 && a.dev === b.dev && a.ino === b.ino;
+  } catch (error) {
+    if (['ENOENT', 'ENOTDIR'].includes(error.code)) return false;
+    throw error;
+  }
+}
+
+function assertDistinctOutputDestinations(args) {
+  const paths = [args.out, args.summary, args.githubOutput].filter(Boolean);
+  for (let left = 0; left < paths.length; left += 1) {
+    for (let right = left + 1; right < paths.length; right += 1) {
+      if (sameOutputDestination(paths[left], paths[right])) {
+        throw new Error('Output destinations overlap');
+      }
+    }
+  }
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const args = defaultArgs();
@@ -446,8 +488,11 @@ function main() {
       writeSync(1, 'usage: landed-verifier.mjs [--repo owner/name] --head-sha <sha> [--head-tree-sha <sha>] --policy <file> --input <evidence.json> --landing-kind pull-request|direct-push [--landing-pr N] [--out <verdict.json>] [--summary <file>] [--github-output <file>]\n');
       return;
     }
+    assertDistinctOutputDestinations(args);
     const verdict = evaluateInputs(args);
     writeJson(args.out, verdict);
+    // Creating the verdict can make a previously dangling alias resolve.
+    assertDistinctOutputDestinations(args);
     const summary = renderSummary(verdict);
     if (args.summary) {
       mkdirSync(dirname(args.summary), { recursive: true });
@@ -459,7 +504,10 @@ function main() {
   } catch {
     const verdict = failureVerdict(args);
     // Either sink can itself be unavailable. Never print paths or raw input here.
-    try { writeJson(args.out, verdict); } catch { /* Unwritable verdict sink. */ }
+    try {
+      // A shared sink can carry the denial protocol or JSON, not both. Preserve denial.
+      if (!sameOutputDestination(args.out, args.githubOutput)) writeJson(args.out, verdict);
+    } catch { /* Unwritable or ambiguous verdict sink. */ }
     try { appendOutputs(args.githubOutput, verdict); } catch { /* Unwritable output sink. */ }
     try { writeSync(2, 'Smart CI landed verifier failed; full qualification is required.\n'); } catch { /* Closed stderr. */ }
     process.exitCode = 1;

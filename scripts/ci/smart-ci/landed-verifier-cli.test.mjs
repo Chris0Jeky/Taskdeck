@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -257,3 +257,61 @@ for (const objectKind of ['tree', 'tag', 'blob']) {
     assert.equal(JSON.parse(readFileSync(paths.out, 'utf8')).headTreeSha, null);
   });
 }
+
+for (const pair of ['verdict-summary', 'verdict-output', 'summary-output']) {
+  test(`aliased ${pair} destinations cannot authorize bounded work`, (t) => {
+    const paths = fixture(t);
+    const overrides = pair === 'verdict-summary'
+      ? { '--summary': paths.out }
+      : pair === 'verdict-output'
+        ? { '--out': paths.output }
+        : { '--summary': paths.output };
+    const result = invoke(paths, overrides);
+    assert.equal(result.status, 1);
+    assertFull(paths);
+    assert.doesNotMatch(readFileSync(paths.output, 'utf8'), /^bounded=true$/m);
+    if (pair !== 'verdict-output') {
+      assert.equal(JSON.parse(readFileSync(paths.out, 'utf8')).qualification, 'full');
+    }
+  });
+}
+
+test('relative spelling of the verdict destination cannot alias the summary', (t) => {
+  const paths = fixture(t);
+  const result = invoke(paths, { '--summary': './verdict.json' });
+  assert.equal(result.status, 1);
+  assertFull(paths);
+});
+
+test('a symlinked parent cannot conceal an overlapping verdict and summary', (t) => {
+  const paths = fixture(t);
+  const actual = join(paths.root, 'actual');
+  const alias = join(paths.root, 'alias');
+  mkdirSync(actual);
+  symlinkSync(actual, alias, 'junction');
+  paths.out = join(actual, 'new-verdict.json');
+  const result = invoke(paths, { '--summary': join(alias, 'new-verdict.json') });
+  assert.equal(result.status, 1);
+  assertFull(paths);
+});
+
+test('existing hard-linked verdict and summary files cannot alias each other', (t) => {
+  const paths = fixture(t);
+  const summary = join(paths.root, 'summary.md');
+  writeFileSync(paths.out, 'old');
+  linkSync(paths.out, summary);
+  const result = invoke(paths, { '--summary': summary });
+  assert.equal(result.status, 1);
+  assertFull(paths);
+});
+
+test('a dangling directory alias is rechecked after verdict creation', (t) => {
+  const paths = fixture(t);
+  const actual = join(paths.root, 'not-created-yet');
+  const alias = join(paths.root, 'alias');
+  symlinkSync(actual, alias, 'junction');
+  paths.out = join(actual, 'verdict.json');
+  const result = invoke(paths, { '--summary': join(alias, 'verdict.json') });
+  assert.equal(result.status, 1);
+  assertFull(paths);
+});
