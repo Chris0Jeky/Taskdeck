@@ -105,7 +105,7 @@
       "id": ".github/workflows/reusable-frontend-unit.yml#frontend-unit",
       "file": ".github/workflows/reusable-frontend-unit.yml",
       "job": "frontend-unit",
-      "events": "workflow_call:\n  inputs:\n    node-version:\n      description: Node.js version for frontend quality gates\n      required: false\n      default: \"24.13.1\"\n      type: string",
+      "events": "workflow_call:\n  inputs:\n    node-version:\n      description: Node.js version used for frontend quality gates\n      required: false\n      default: \"24.13.1\"\n      type: string",
       "condition": null,
       "needs": null,
       "strategy": "fail-fast: false\nmatrix:\n  os:\n    - ubuntu-latest\n    - windows-latest",
