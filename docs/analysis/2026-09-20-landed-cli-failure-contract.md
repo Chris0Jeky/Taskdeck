@@ -72,3 +72,14 @@ PR, and the Windows-junction test is not Windows qualification merely because it
 passes on Linux. The R4 maintainer plus fresh-context review gate remains in
 force. Neither policy mode nor main/full-CI topology, repository settings, private
 runner acceptance, the observation window or any human-action checkbox changes.
+
+## Guard-isolation follow-up
+
+A local mutation check removed only the `wouldFail` predicate from receipt
+admission. All 21 parent receipt tests still passed because the negative fixtures
+also had another rejecting field. A new `ok: true`, `wouldFail: true`, empty-
+failures fixture now fails under that mutation and passes with the original
+production guard restored. This was a coverage gap, not a change to production
+acceptance. The final stack has 22 focused receipt tests and 590 Smart CI tests;
+the new fixture belongs with this follow-up rather than changing the parent PR's
+already-recorded head. No mutation is committed.
