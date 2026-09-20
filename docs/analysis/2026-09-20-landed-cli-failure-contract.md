@@ -73,13 +73,20 @@ passes on Linux. The R4 maintainer plus fresh-context review gate remains in
 force. Neither policy mode nor main/full-CI topology, repository settings, private
 runner acceptance, the observation window or any human-action checkbox changes.
 
-## Guard-isolation follow-up
+## Review follow-up
 
-A local mutation check removed only the `wouldFail` predicate from receipt
-admission. All 21 parent receipt tests still passed because the negative fixtures
-also had another rejecting field. A new `ok: true`, `wouldFail: true`, empty-
-failures fixture now fails under that mutation and passes with the original
-production guard restored. This was a coverage gap, not a change to production
-acceptance. The final stack has 22 focused receipt tests and 590 Smart CI tests;
-the new fixture belongs with this follow-up rather than changing the parent PR's
-already-recorded head. No mutation is committed.
+The receipt guard-isolation test is now included in the parent PR as well, with
+an exact `receipt-not-green` diagnostic assertion. Its correction and mutation
+proof are recorded in the parent receipt evidence note.
+
+Codex review also identified that `<sha>^{tree}` accepts a tree object, and a
+real Git fixture demonstrated the same problem with an annotated tag. Before
+the correction, two of the 28 CLI tests failed because these non-commit objects
+received bounded qualification; the blob control already failed closed. The
+CLI now requires `git cat-file -t <headSha>` to return `commit` before resolving
+its tree. The explicit trusted `--head-tree-sha` input retains the documented
+caller-owned contract.
+
+The reviewed source passes all 28 CLI tests and 593 Smart CI tests on Linux /
+Node 22.16.0. Earlier 589/590-test results apply only to their recorded heads;
+the current GitHub head needs its own hosted run and review.

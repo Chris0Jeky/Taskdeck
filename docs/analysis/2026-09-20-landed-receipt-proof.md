@@ -52,3 +52,14 @@ The CLI's exact-commit tree lookup, abort/output behavior and symlink invocation
 are separate work from this receipt decision. Neither a green fixture nor this
 primitive qualifies the future collector, main wiring, private-runner rehearsal,
 or the observation window. Human-action boxes remain unchanged.
+
+## Review correction: isolate the would-fail guard
+
+Codex review at head `9233601bbe5fb04a089b26f454a836b6d7dbe3d2`
+identified that a fixture with both `wouldFail: true` and nonempty failures did
+not independently protect the would-fail predicate. The parent PR now includes
+an otherwise-green, empty-failures fixture and asserts `receipt-not-green` for
+both would-fail cases. Removing only that predicate produces two failed tests
+(the newly accepted receipt and the wrong diagnostic); restoring the unchanged
+production code passes all 22 focused cases and 565 Smart CI tests. No mutation
+is committed. Earlier 564-test results qualify only their recorded older head.

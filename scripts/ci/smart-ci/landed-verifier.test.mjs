@@ -254,5 +254,8 @@ for (const receiptOverrides of [
     const verdict = decide([makeEvidence({ receiptOverrides })]);
     assert.equal(verdict.qualification, 'full');
     assert.equal(verdict.receipt, null);
+    if (receiptOverrides.wouldFail === true) {
+      assert.deepEqual(verdict.diagnostics, [{ artifactId: 101, code: 'receipt-not-green' }]);
+    }
   });
 }

@@ -237,3 +237,23 @@ for (const requestedHead of ['HEAD', '--help', sha('f')]) {
     assert.equal(JSON.parse(readFileSync(paths.out, 'utf8')).headTreeSha, null);
   });
 }
+
+for (const objectKind of ['tree', 'tag', 'blob']) {
+  test(`a requested ${objectKind} object is not a commit qualification identity`, (t) => {
+    const paths = fixture(t);
+    const { second } = twoCommitRepo(paths);
+    let objectSha = second.tree;
+    if (objectKind === 'tag') {
+      git(paths.root, '-c', 'tag.gpgsign=false', 'tag', '-a', 'annotated', '-m', 'fixture', second.sha);
+      objectSha = git(paths.root, 'rev-parse', 'refs/tags/annotated');
+    } else if (objectKind === 'blob') {
+      objectSha = git(paths.root, 'rev-parse', `${second.sha}:tracked.txt`);
+    }
+    assert.equal(git(paths.root, 'cat-file', '-t', objectSha), objectKind);
+    writeFileSync(paths.input, JSON.stringify([makeEvidence({ mergeTreeSha: second.tree })]));
+    const result = invoke(paths, { '--head-sha': objectSha, '--head-tree-sha': null });
+    assert.equal(result.status, 0);
+    assertFull(paths);
+    assert.equal(JSON.parse(readFileSync(paths.out, 'utf8')).headTreeSha, null);
+  });
+}

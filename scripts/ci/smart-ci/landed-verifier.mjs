@@ -357,9 +357,10 @@ function resolveTreeSha(explicit, headSha) {
   if (explicit) return explicit;
   if (typeof headSha !== 'string' || !validSha(headSha)) return null;
   try {
-    return execFileSync('git', ['rev-parse', `${headSha}^{tree}`], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000,
-    }).trim();
+    const options = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 };
+    // ^{tree} also peels trees and tags. Only the exact supplied commit is eligible.
+    if (execFileSync('git', ['cat-file', '-t', headSha], options).trim() !== 'commit') return null;
+    return execFileSync('git', ['rev-parse', `${headSha}^{tree}`], options).trim();
   } catch {
     return null;
   }
