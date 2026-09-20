@@ -52,8 +52,18 @@ function accept(file: File) {
 function choose(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
+  if (!file) {
+    input.value = ''
+    return
+  }
+  if (props.disabled || requesting.value || recording.value) {
+    input.value = ''
+    error.value = 'Audio selection is temporarily unavailable. Wait for the current action to finish, then choose the file again.'
+    return
+  }
   input.value = ''
-  if (!props.disabled && !requesting.value && !recording.value && file) { emit('draft-started'); accept(file) }
+  emit('draft-started')
+  accept(file)
 }
 async function start() {
   if (props.disabled || requesting.value || recording.value || !supported.value) return
