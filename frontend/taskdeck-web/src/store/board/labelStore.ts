@@ -7,27 +7,82 @@
  * resolves after the write (#2435).
  */
 import { labelsApi } from '../../api/labelsApi'
-import type { CreateLabelDto, UpdateLabelDto } from '../../types/board'
+import type { CreateLabelDto, Label, UpdateLabelDto } from '../../types/board'
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
+interface LabelCacheVisit {
+  boardId: string
+  labels: Label[]
+}
+
+interface LabelMutationRequest {
+  key: string
+  version: number
+}
+
 export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
-  // Label state is one selected-board collection. A request may outlive its
-  // route, so every post-await commit must prove that its initiating board still
-  // owns the collection. Null preserves the existing pre-load/store-test
-  // convention used by card actions; optional access keeps lightweight unit
-  // fixtures that predate currentBoard compatible.
-  function ownsCurrentLabels(boardId: string) {
+  // Label state is one selected-board collection. Board-detail commits replace
+  // the array, so its identity is the visit/session boundary; same-visit label
+  // operations mutate that array in place. Separate read and mutation versions
+  // then order overlapping work inside one visit.
+  const readVersionByBoardId = new Map<string, number>()
+  const mutationVersionByBoardId = new Map<string, number>()
+  const mutationRequestVersionByLabelKey = new Map<string, number>()
+
+  function captureLabelVisit(boardId: string): LabelCacheVisit {
+    return {
+      boardId,
+      labels: state.currentBoardLabels.value,
+    }
+  }
+
+  function ownsCurrentLabels(visit: LabelCacheVisit) {
     const currentBoard = state.currentBoard?.value
-    return currentBoard == null || currentBoard.id === boardId
+    return (
+      (currentBoard == null || currentBoard.id === visit.boardId) &&
+      state.currentBoardLabels.value === visit.labels
+    )
+  }
+
+  function nextReadVersion(boardId: string) {
+    const version = (readVersionByBoardId.get(boardId) ?? 0) + 1
+    readVersionByBoardId.set(boardId, version)
+    return version
+  }
+
+  function currentMutationVersion(boardId: string) {
+    return mutationVersionByBoardId.get(boardId) ?? 0
+  }
+
+  function markLabelMutation(boardId: string) {
+    mutationVersionByBoardId.set(boardId, currentMutationVersion(boardId) + 1)
+  }
+
+  function beginLabelMutation(boardId: string, labelId: string): LabelMutationRequest {
+    const key = `${boardId}:${labelId}`
+    const version = (mutationRequestVersionByLabelKey.get(key) ?? 0) + 1
+    mutationRequestVersionByLabelKey.set(key, version)
+    return { key, version }
+  }
+
+  function isCurrentLabelMutation(request: LabelMutationRequest) {
+    return mutationRequestVersionByLabelKey.get(request.key) === request.version
   }
 
   async function fetchLabels(boardId: string) {
     if (helpers.isDemoMode) return
+    const visit = captureLabelVisit(boardId)
+    const readVersion = nextReadVersion(boardId)
+    const mutationVersion = currentMutationVersion(boardId)
     try {
       const labels = await labelsApi.getLabels(boardId)
-      if (ownsCurrentLabels(boardId)) {
-        state.currentBoardLabels.value = labels
+      if (
+        ownsCurrentLabels(visit) &&
+        readVersionByBoardId.get(boardId) === readVersion &&
+        currentMutationVersion(boardId) === mutationVersion
+      ) {
+        visit.labels.splice(0, visit.labels.length, ...labels)
       }
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to fetch labels')
@@ -37,20 +92,21 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
 
   async function createLabel(boardId: string, label: CreateLabelDto) {
     helpers.guardDemoMutation()
+    const visit = captureLabelVisit(boardId)
     try {
       state.loading.value = true
       state.error.value = null
       const newLabel = await labelsApi.createLabel(boardId, label)
       helpers.markBoardDetailMutation(boardId)
-      if (
-        ownsCurrentLabels(boardId) &&
-        !state.currentBoardLabels.value.some(existingLabel => existingLabel.id === newLabel.id)
-      ) {
-        // A board-detail refresh can commit the new stable id before the POST
-        // resolves. Preserve that fresher object instead of appending a duplicate.
-        state.currentBoardLabels.value.push(newLabel)
+      if (ownsCurrentLabels(visit)) {
+        markLabelMutation(boardId)
+        if (!visit.labels.some(existingLabel => existingLabel.id === newLabel.id)) {
+          // A board-detail refresh can commit the new stable id before the POST
+          // resolves. Preserve that fresher object instead of appending a duplicate.
+          visit.labels.push(newLabel)
+        }
+        helpers.toast.success(`Label "${newLabel.name}" created successfully`)
       }
-      helpers.toast.success(`Label "${newLabel.name}" created successfully`)
       return newLabel
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to create label')
@@ -62,21 +118,23 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
 
   async function updateLabel(boardId: string, labelId: string, label: UpdateLabelDto) {
     helpers.guardDemoMutation()
+    const visit = captureLabelVisit(boardId)
+    const mutationRequest = beginLabelMutation(boardId, labelId)
     try {
       state.loading.value = true
       state.error.value = null
       const updatedLabel = await labelsApi.updateLabel(boardId, labelId, label)
       helpers.markBoardDetailMutation(boardId)
 
-      if (ownsCurrentLabels(boardId)) {
-        // Re-resolve after the await so a detail refresh can replace the array safely.
-        const index = state.currentBoardLabels.value.findIndex((l) => l.id === labelId)
+      if (ownsCurrentLabels(visit) && isCurrentLabelMutation(mutationRequest)) {
+        markLabelMutation(boardId)
+        const index = visit.labels.findIndex((candidate) => candidate.id === labelId)
         if (index !== -1) {
-          state.currentBoardLabels.value[index] = updatedLabel
+          visit.labels[index] = updatedLabel
         }
+        helpers.toast.success('Label updated successfully')
       }
 
-      helpers.toast.success('Label updated successfully')
       return updatedLabel
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to update label')
@@ -88,19 +146,20 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
 
   async function deleteLabel(boardId: string, labelId: string) {
     helpers.guardDemoMutation()
+    const visit = captureLabelVisit(boardId)
+    const mutationRequest = beginLabelMutation(boardId, labelId)
     try {
       state.loading.value = true
       state.error.value = null
       await labelsApi.deleteLabel(boardId, labelId)
       helpers.markBoardDetailMutation(boardId)
 
-      if (ownsCurrentLabels(boardId)) {
-        state.currentBoardLabels.value = state.currentBoardLabels.value.filter(
-          (l) => l.id !== labelId,
-        )
+      if (ownsCurrentLabels(visit) && isCurrentLabelMutation(mutationRequest)) {
+        markLabelMutation(boardId)
+        const index = visit.labels.findIndex((candidate) => candidate.id === labelId)
+        if (index !== -1) visit.labels.splice(index, 1)
+        helpers.toast.success('Label deleted successfully')
       }
-
-      helpers.toast.success('Label deleted successfully')
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to delete label')
       throw e
