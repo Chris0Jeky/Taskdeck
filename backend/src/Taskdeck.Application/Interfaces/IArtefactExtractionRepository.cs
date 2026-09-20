@@ -52,6 +52,20 @@ public interface IArtefactExtractionRepository
         Guid userId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Streams owned extraction histories in the first-occurrence order of the supplied artefact
+    /// ids, preserving each artefact's existing CreatedAt/Id ordering. Snapshots and validates at
+    /// most 900 raw ids before deferred enumeration; duplicates and absent/foreign histories do
+    /// not produce extra groups. SQLite materialises at most 50 untracked payload rows per query,
+    /// selecting bounded metadata before loading text. No reader remains open across a yield.
+    /// Other providers retain bounded per-artefact paging and their native ordering.
+    /// This is not a transaction-wide snapshot or a bound on memory retained by the consumer.
+    /// </summary>
+    IAsyncEnumerable<ArtefactExtraction> StreamByArtefactsForUserAsync(
+        IReadOnlyCollection<Guid> sourceArtefactIds,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task<long> GetTotalTextLengthByUserAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
