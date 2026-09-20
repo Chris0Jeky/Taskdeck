@@ -68,15 +68,24 @@ public static partial class ProposalOperationContractValidator
                 Record(Result.Failure(ErrorCodes.Conflict, "Create card id is duplicated within the proposal"), [index]);
         }
 
-        var relations = parsed.Where(item => IsRelationOperation(item.Operation)).ToArray();
+        // Preserve the original preflight error precedence: unsupported relation
+        // combinations are rejected before either member's payload is inspected.
+        // Still collect every malformed index for the bounded Review count.
+        var relationSetFailure = Result.Success();
+        var relations = ordered.Where(item => IsRelationOperation(item.Operation)).ToArray();
         if (relations.Length > 1)
-            Record(Result.Failure(ErrorCodes.ValidationError, "A proposal may contain only one typed relation operation."),
-                relations.Select(item => item.Index));
-        var lifecycle = parsed.Where(item => IsRelationLifecycleMutation(item.Operation)).ToArray();
+        {
+            relationSetFailure = Result.Failure(ErrorCodes.ValidationError, "A proposal may contain only one typed relation operation.");
+            Record(relationSetFailure, relations.Select(item => item.Index));
+        }
+        var lifecycle = ordered.Where(item => IsRelationLifecycleMutation(item.Operation)).ToArray();
         if (relations.Length > 0 && lifecycle.Length > 0)
-            Record(Result.Failure(ErrorCodes.ValidationError,
-                "A typed relation operation cannot be combined with card archive, restore, or delete operations."),
-                relations.Concat(lifecycle).Select(item => item.Index));
+        {
+            var mixedSetFailure = Result.Failure(ErrorCodes.ValidationError,
+                "A typed relation operation cannot be combined with card archive, restore, or delete operations.");
+            if (relationSetFailure.IsSuccess) relationSetFailure = mixedSetFailure;
+            Record(mixedSetFailure, relations.Concat(lifecycle).Select(item => item.Index));
+        }
 
         var hierarchy = parsed.Where(item => ProposalHierarchyValidator.AffectsHierarchy(
             item.Operation.ActionType, item.Operation.TargetType, item.Parameters)).ToArray();
@@ -102,7 +111,7 @@ public static partial class ProposalOperationContractValidator
         }
 
         unevaluatedOperationCount = invalid.Count;
-        return firstFailure;
+        return relationSetFailure.IsSuccess ? firstFailure : relationSetFailure;
     }
 
     private static Result ValidateSingleShape(ProposalOperationDto operation, IReadOnlySet<Guid> plannedCardIds)
