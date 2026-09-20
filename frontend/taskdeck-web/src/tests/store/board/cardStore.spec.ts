@@ -435,6 +435,54 @@ describe('cardStore', () => {
   })
 
   describe('moveCard', () => {
+    /*
+     * moveCard captured the card's array index BEFORE awaiting the API and
+     * spliced that index after it resolved. Any mutation landing first -- a
+     * second concurrent move, a realtime-triggered refetch, a teammate's delete
+     * -- shifts the array, so the stale index removes the WRONG card: the moved
+     * card survives as a duplicate while an innocent one disappears. updateCard
+     * always re-resolved by id after its await; moveCard did not.
+     */
+    it('re-resolves the card by id after the await, so a shifted array cannot splice the wrong card', async () => {
+      state.currentBoard.value!.columns.push({ id: 'col-2', name: 'Done', cardCount: 0 })
+      // Baseline: card-1 at index 0, card-2 at index 1.
+      expect(state.currentBoardCards.value.map((c: { id: string }) => c.id)).toEqual(['card-1', 'card-2'])
+
+      const movedCard = {
+        ...state.currentBoardCards.value[0], id: 'card-1', columnId: 'col-2', updatedAt: '2024-01-06T00:00:00Z',
+      }
+      mockCardsApi.moveCard.mockImplementationOnce(async () => {
+        // While the move is in flight, card-1 is removed by something else (a
+        // realtime refetch, a teammate's delete). The pre-await index 0 now
+        // points at card-2 -- an innocent bystander.
+        state.currentBoardCards.value.shift()
+        return movedCard
+      })
+
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+      await moveCard('board-1', 'card-1', 'col-2', 0)
+
+      // card-2 must survive. Against the stale-index commit it was spliced out
+      // and the array came back as ['card-1'] alone.
+      const ids = state.currentBoardCards.value.map((c: { id: string }) => c.id).sort()
+      expect(ids).toEqual(['card-1', 'card-2'])
+    })
+
+    it('does not commit into another board array when the board changed mid-flight', async () => {
+      state.currentBoard.value!.columns.push({ id: 'col-2', name: 'Done', cardCount: 0 })
+      const movedCard = { ...state.currentBoardCards.value[0], columnId: 'col-2' }
+      mockCardsApi.moveCard.mockImplementationOnce(async () => {
+        state.currentBoard.value = { id: 'board-2', columns: [] }
+        state.currentBoardCards.value = [{ id: 'other-board-card' }] as never
+        return movedCard
+      })
+
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+      await moveCard('board-1', 'card-1', 'col-2', 0)
+
+      expect(state.currentBoardCards.value.map((c: { id: string }) => c.id)).toEqual(['other-board-card'])
+    })
+
     it('removes from old position and pushes updated card', async () => {
       const movedCard = {
         id: 'card-1',
