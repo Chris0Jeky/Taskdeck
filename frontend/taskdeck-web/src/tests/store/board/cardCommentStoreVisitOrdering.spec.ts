@@ -240,7 +240,8 @@ describe('cardCommentStore visit and mutation ownership', () => {
     await pendingFirst
     const cancellation = await pendingSecond
 
-    expect(cancellation.name).toBe('StaleBoardVisitError')
+    expect(cancellation).toBeInstanceOf(Error)
+    expect((cancellation as Error).name).toBe('StaleBoardVisitError')
     expect(mockCardCommentsApi.updateComment).toHaveBeenCalledTimes(1)
     expect(helpers.handleApiError).not.toHaveBeenCalled()
     expect(state.cardCommentsByCardId.value).toEqual({})
