@@ -142,7 +142,7 @@ describe('labelStore board ownership', () => {
     const pendingDelete = deleteLabel('board-1', 'lbl-1')
 
     state.currentBoard.value = { id: 'board-2' }
-    response.resolve()
+    response.resolve(undefined)
     await pendingDelete
 
     expect(state.currentBoardLabels.value.map(label => label.id)).toEqual(['lbl-1', 'lbl-2'])
