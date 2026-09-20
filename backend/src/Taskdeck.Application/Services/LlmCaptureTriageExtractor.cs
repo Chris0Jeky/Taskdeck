@@ -301,24 +301,25 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             quotaEstimatedTokens = reservation.EstimatedTokens;
         }
 
-        var request = new ChatCompletionRequest(
-            Messages: [new ChatCompletionMessage("user", payload.Text)],
-            MaxTokens: _settings.MaxOutputTokens,
-            Temperature: _settings.Temperature,
-            Attribution: new LlmRequestAttribution(
-                userId,
-                LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
-                LlmRequestSourceSurface.Capture,
-                boardId),
-            // A non-null SystemPrompt opts out of the providers' chat instruction-extraction mode;
-            // the prompt itself demands raw JSON and TryParseTasks tolerates fenced output.
-            SystemPrompt: systemPrompt);
-
         LlmCompletionResult result;
         LlmCompletionResult? completed = null;
         var quotaSettled = quotaReservationId is null;
+        ChatCompletionRequest? request = null;
         try
         {
+            request = new ChatCompletionRequest(
+                Messages: [new ChatCompletionMessage("user", payload.Text)],
+                MaxTokens: _settings.MaxOutputTokens,
+                Temperature: _settings.Temperature,
+                Attribution: new LlmRequestAttribution(
+                    userId,
+                    LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
+                    LlmRequestSourceSurface.Capture,
+                    boardId),
+                // A non-null SystemPrompt opts out of the providers' chat instruction-extraction mode;
+                // the prompt itself demands raw JSON and TryParseTasks tolerates fenced output.
+                SystemPrompt: systemPrompt);
+
             // A map-reduce run can span many legal provider calls. Pulse at each call boundary so
             // the worker-health budget covers one configured provider timeout, rather than the
             // whole bounded run. This is best-effort telemetry; it must never affect triage.
@@ -368,29 +369,36 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             {
                 try
                 {
-                    var dispatch = request.DispatchContext.ReadSnapshot();
-                    var quotaTokens = completed is null
-                        ? dispatch.Phase == LlmDispatchPhase.Dispatched
-                            ? quotaEstimatedTokens
-                            : 0
-                        : ResolveQuotaTokens(completed, quotaEstimatedTokens, request.DispatchContext);
-                    var billedProvider = completed?.Provider ?? dispatch.Provider;
-                    var billedModel = completed?.Model ?? dispatch.Model;
-                    if (quotaTokens > 0 && billedProvider is not null && billedModel is not null)
+                    if (request is null)
                     {
-                        await _quotaService!.CommitReservationAsync(
-                            unsettledId,
-                            userId,
-                            LlmSurface.CaptureTriage,
-                            billedProvider,
-                            billedModel,
-                            quotaTokens,
-                            0,
-                            CancellationToken.None);
+                        await _quotaService!.ReleaseReservationAsync(unsettledId, CancellationToken.None);
                     }
                     else
                     {
-                        await _quotaService!.ReleaseReservationAsync(unsettledId, CancellationToken.None);
+                        var dispatch = request.DispatchContext.ReadSnapshot();
+                        var quotaTokens = completed is null
+                            ? dispatch.Phase == LlmDispatchPhase.Dispatched
+                                ? quotaEstimatedTokens
+                                : 0
+                            : ResolveQuotaTokens(completed, quotaEstimatedTokens, request.DispatchContext);
+                        var billedProvider = completed?.Provider ?? dispatch.Provider;
+                        var billedModel = completed?.Model ?? dispatch.Model;
+                        if (quotaTokens > 0 && billedProvider is not null && billedModel is not null)
+                        {
+                            await _quotaService!.CommitReservationAsync(
+                                unsettledId,
+                                userId,
+                                LlmSurface.CaptureTriage,
+                                billedProvider,
+                                billedModel,
+                                quotaTokens,
+                                0,
+                                CancellationToken.None);
+                        }
+                        else
+                        {
+                            await _quotaService!.ReleaseReservationAsync(unsettledId, CancellationToken.None);
+                        }
                     }
                 }
                 catch (Exception settleEx)
@@ -400,11 +408,13 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                         "Quota reservation {ReservationId} settle failed in transcript triage (billed tokens: {Tokens}); " +
                         "the row stays Reserved until the TTL sweep.",
                         unsettledId,
-                        completed is null
-                            ? request.DispatchContext.ReadSnapshot().Phase == LlmDispatchPhase.Dispatched
-                                ? quotaEstimatedTokens
-                                : 0
-                            : ResolveQuotaTokens(completed, quotaEstimatedTokens, request.DispatchContext));
+                        request is null
+                            ? 0
+                            : completed is null
+                                ? request.DispatchContext.ReadSnapshot().Phase == LlmDispatchPhase.Dispatched
+                                    ? quotaEstimatedTokens
+                                    : 0
+                                : ResolveQuotaTokens(completed, quotaEstimatedTokens, request.DispatchContext));
                 }
             }
         }
