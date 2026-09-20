@@ -1,118 +1,257 @@
 /**
  * Column operations: create, update, delete, reorder columns.
  */
+import { watch } from 'vue'
 import { columnsApi } from '../../api/columnsApi'
 import type { CreateColumnDto, UpdateColumnDto } from '../../types/board'
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
+interface ColumnMutationVisit {
+  boardId: string
+  ownerBoardId: string | null
+  generation: number
+}
+
+class StaleBoardVisitError extends Error {
+  constructor() {
+    super('The board visit that queued this column change has ended.')
+    this.name = 'StaleBoardVisitError'
+  }
+}
+
 export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
+  // Every column write can affect the board's ordered column set. The API has
+  // no revision precondition, so serialize one lane per board: server commit
+  // order then follows user-intent order while unrelated boards remain free to
+  // progress independently. The visit generation prevents a queued pre-logout
+  // intent from starting transport with a later session's credentials.
+  const mutationTailByBoardId = new Map<string, Promise<void>>()
+  const mutationVersionByBoardId = new Map<string, number>()
+  let boardVisitGeneration = 0
+
+  watch(
+    () => state.currentBoard.value?.id ?? null,
+    (nextBoardId, previousBoardId) => {
+      if (nextBoardId !== previousBoardId) boardVisitGeneration++
+    },
+    { flush: 'sync' },
+  )
+
+  function captureColumnVisit(boardId: string): ColumnMutationVisit {
+    return {
+      boardId,
+      ownerBoardId: state.currentBoard.value?.id ?? null,
+      generation: boardVisitGeneration,
+    }
+  }
+
+  function isCurrentVisit(visit: ColumnMutationVisit) {
+    return (
+      (state.currentBoard.value?.id ?? null) === visit.ownerBoardId &&
+      boardVisitGeneration === visit.generation
+    )
+  }
+
+  function ownsTargetBoard(visit: ColumnMutationVisit) {
+    return isCurrentVisit(visit) && state.currentBoard.value?.id === visit.boardId
+  }
+
+  function currentMutationVersion(boardId: string) {
+    return mutationVersionByBoardId.get(boardId) ?? 0
+  }
+
+  function markColumnMutation(boardId: string) {
+    mutationVersionByBoardId.set(boardId, currentMutationVersion(boardId) + 1)
+  }
+
+  async function runColumnMutation<T>(
+    visit: ColumnMutationVisit,
+    mutation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = mutationTailByBoardId.get(visit.boardId)
+    let operation: Promise<T>
+
+    if (previous) {
+      operation = previous.catch(() => undefined).then(() => {
+        if (!isCurrentVisit(visit)) throw new StaleBoardVisitError()
+        return mutation()
+      })
+    } else {
+      // The first intent starts transport in the initiating call stack. Only a
+      // later intent is queued and therefore needs a pre-transport session gate.
+      if (!isCurrentVisit(visit)) throw new StaleBoardVisitError()
+      operation = mutation()
+    }
+
+    const tail = operation.then(
+      () => undefined,
+      () => undefined,
+    )
+    mutationTailByBoardId.set(visit.boardId, tail)
+
+    try {
+      return await operation
+    } finally {
+      if (mutationTailByBoardId.get(visit.boardId) === tail) {
+        mutationTailByBoardId.delete(visit.boardId)
+      }
+    }
+  }
+
+  async function reconcileReopenedBoard(boardId: string) {
+    if (state.currentBoard.value?.id !== boardId) return
+
+    const visit = captureColumnVisit(boardId)
+    const mutationVersion = currentMutationVersion(boardId)
+    try {
+      const columns = await columnsApi.getColumns(boardId)
+      if (
+        ownsTargetBoard(visit) &&
+        currentMutationVersion(boardId) === mutationVersion
+      ) {
+        state.currentBoard.value!.columns = columns
+      }
+    } catch {
+      if (ownsTargetBoard(visit)) {
+        helpers.toast.warning(
+          'Column change saved, but columns could not be refreshed. Refresh the board before editing again.',
+        )
+      }
+    }
+  }
+
   async function createColumn(boardId: string, column: CreateColumnDto) {
     helpers.guardDemoMutation()
-    try {
-      state.loading.value = true
-      state.error.value = null
-      const newColumn = await columnsApi.createColumn(boardId, column)
-      helpers.markBoardDetailMutation(boardId)
+    const visit = captureColumnVisit(boardId)
+    return runColumnMutation(visit, async () => {
+      try {
+        state.loading.value = true
+        state.error.value = null
+        const newColumn = await columnsApi.createColumn(boardId, column)
+        helpers.markBoardDetailMutation(boardId)
+        markColumnMutation(boardId)
 
-      if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
-        // A realtime refresh can install the new column before this request resolves.
-        // Preserve that fresher object and only append when the stable id is absent.
-        const alreadyPresent = state.currentBoard.value.columns.some(
-          (existingColumn) => existingColumn.id === newColumn.id,
-        )
-
-        if (!alreadyPresent) {
-          state.currentBoard.value.columns.push(newColumn)
+        if (ownsTargetBoard(visit)) {
+          // A same-board detail refresh can install the new column before this
+          // request resolves. Preserve that fresher object when the stable id exists.
+          const currentColumns = state.currentBoard.value!.columns
+          if (!currentColumns.some(existingColumn => existingColumn.id === newColumn.id)) {
+            currentColumns.push(newColumn)
+          }
+        } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
+          await reconcileReopenedBoard(boardId)
         }
-      }
 
-      helpers.toast.success(`Column "${newColumn.name}" created successfully`)
-      return newColumn
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to create column')
-      throw e
-    } finally {
-      state.loading.value = false
-    }
+        if (isCurrentVisit(visit)) {
+          helpers.toast.success(`Column "${newColumn.name}" created successfully`)
+        }
+        return newColumn
+      } catch (e: unknown) {
+        if (isCurrentVisit(visit)) {
+          helpers.handleApiError(e, 'Failed to create column')
+        }
+        throw e
+      } finally {
+        if (isCurrentVisit(visit)) state.loading.value = false
+      }
+    })
   }
 
   async function updateColumn(boardId: string, columnId: string, column: UpdateColumnDto) {
     helpers.guardDemoMutation()
-    try {
-      state.loading.value = true
-      state.error.value = null
-      const updatedColumn = await columnsApi.updateColumn(boardId, columnId, column)
-      helpers.markBoardDetailMutation(boardId)
+    const visit = captureColumnVisit(boardId)
+    return runColumnMutation(visit, async () => {
+      try {
+        state.loading.value = true
+        state.error.value = null
+        const updatedColumn = await columnsApi.updateColumn(boardId, columnId, column)
+        helpers.markBoardDetailMutation(boardId)
+        markColumnMutation(boardId)
 
-      // Update column in current board
-      if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
-        const index = state.currentBoard.value.columns.findIndex((c) => c.id === columnId)
-        if (index !== -1) {
-          state.currentBoard.value.columns[index] = updatedColumn
+        if (ownsTargetBoard(visit)) {
+          const currentColumns = state.currentBoard.value!.columns
+          const index = currentColumns.findIndex(candidate => candidate.id === columnId)
+          if (index !== -1) currentColumns[index] = updatedColumn
+        } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
+          await reconcileReopenedBoard(boardId)
         }
-      }
 
-      helpers.toast.success('Column updated successfully')
-      return updatedColumn
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to update column')
-      throw e
-    } finally {
-      state.loading.value = false
-    }
+        if (isCurrentVisit(visit)) helpers.toast.success('Column updated successfully')
+        return updatedColumn
+      } catch (e: unknown) {
+        if (isCurrentVisit(visit)) {
+          helpers.handleApiError(e, 'Failed to update column')
+        }
+        throw e
+      } finally {
+        if (isCurrentVisit(visit)) state.loading.value = false
+      }
+    })
   }
 
   async function deleteColumn(boardId: string, columnId: string) {
     helpers.guardDemoMutation()
-    try {
-      state.loading.value = true
-      state.error.value = null
-      await columnsApi.deleteColumn(boardId, columnId)
-      helpers.markBoardDetailMutation(boardId)
+    const visit = captureColumnVisit(boardId)
+    return runColumnMutation(visit, async () => {
+      try {
+        state.loading.value = true
+        state.error.value = null
+        await columnsApi.deleteColumn(boardId, columnId)
+        helpers.markBoardDetailMutation(boardId)
+        markColumnMutation(boardId)
 
-      // Remove column from current board
-      if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
-        state.currentBoard.value.columns = state.currentBoard.value.columns.filter(
-          (c) => c.id !== columnId,
-        )
+        if (ownsTargetBoard(visit)) {
+          state.currentBoard.value!.columns = state.currentBoard.value!.columns.filter(
+            candidate => candidate.id !== columnId,
+          )
+          state.currentBoardCards.value = state.currentBoardCards.value.filter(
+            card => card.columnId !== columnId,
+          )
+        } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
+          await reconcileReopenedBoard(boardId)
+        }
+
+        if (isCurrentVisit(visit)) helpers.toast.success('Column deleted successfully')
+      } catch (e: unknown) {
+        if (isCurrentVisit(visit)) {
+          helpers.handleApiError(e, 'Failed to delete column')
+        }
+        throw e
+      } finally {
+        if (isCurrentVisit(visit)) state.loading.value = false
       }
-
-      // Remove cards from deleted column
-      state.currentBoardCards.value = state.currentBoardCards.value.filter(
-        (card) => card.columnId !== columnId,
-      )
-
-      helpers.toast.success('Column deleted successfully')
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to delete column')
-      throw e
-    } finally {
-      state.loading.value = false
-    }
+    })
   }
 
   async function reorderColumns(boardId: string, columnIds: string[]) {
     helpers.guardDemoMutation()
-    try {
-      state.loading.value = true
-      state.error.value = null
-      const reorderedColumns = await columnsApi.reorderColumns(boardId, columnIds)
-      helpers.markBoardDetailMutation(boardId)
+    const visit = captureColumnVisit(boardId)
+    return runColumnMutation(visit, async () => {
+      try {
+        state.loading.value = true
+        state.error.value = null
+        const reorderedColumns = await columnsApi.reorderColumns(boardId, columnIds)
+        helpers.markBoardDetailMutation(boardId)
+        markColumnMutation(boardId)
 
-      // Update columns in current board with reordered list
-      if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
-        state.currentBoard.value.columns = reorderedColumns
+        if (ownsTargetBoard(visit)) {
+          state.currentBoard.value!.columns = reorderedColumns
+        } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
+          await reconcileReopenedBoard(boardId)
+        }
+
+        if (isCurrentVisit(visit)) helpers.toast.success('Columns reordered successfully')
+        return reorderedColumns
+      } catch (e: unknown) {
+        if (isCurrentVisit(visit)) {
+          helpers.handleApiError(e, 'Failed to reorder columns')
+        }
+        throw e
+      } finally {
+        if (isCurrentVisit(visit)) state.loading.value = false
       }
-
-      helpers.toast.success('Columns reordered successfully')
-      return reorderedColumns
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to reorder columns')
-      throw e
-    } finally {
-      state.loading.value = false
-    }
+    })
   }
 
   return {
