@@ -24,6 +24,8 @@ public sealed class ProposalConflictOperationShapeTests
     {
         _column = new Column(_boardId, "Available", 0, wipLimit: 10);
         _card = new Card(_boardId, _column.Id, "Existing target");
+        // The malformed identity-mismatch case references a card absent from this fixture.
+        _unit.Setup(u => u.Cards.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((Card?)null);
         _unit.Setup(u => u.Cards.GetByIdAsync(_card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_card);
         _unit.Setup(u => u.Columns.GetByIdWithCardsAsync(_column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_column);
         _unit.Setup(u => u.CardComments.CountByCardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
