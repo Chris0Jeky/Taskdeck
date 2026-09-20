@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
