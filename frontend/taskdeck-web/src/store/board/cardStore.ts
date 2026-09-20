@@ -172,9 +172,8 @@ export function createCardActions(
       state.loading.value = true
       state.error.value = null
 
-      const existingCardIndex = state.currentBoardCards.value.findIndex((c) => c.id === cardId)
       const existingCard =
-        existingCardIndex !== -1 ? state.currentBoardCards.value[existingCardIndex] : null
+        state.currentBoardCards.value.find((c) => c.id === cardId) ?? null
       const previousColumnId = existingCard?.columnId ?? null
       const updatedCard = await cardsApi.moveCard(boardId, cardId, {
         targetColumnId,
@@ -182,8 +181,23 @@ export function createCardActions(
       })
       helpers.markBoardDetailMutation(boardId)
 
-      if (existingCardIndex !== -1) {
-        state.currentBoardCards.value.splice(existingCardIndex, 1)
+      // The board can change while the move is in flight. Committing to another
+      // board's array would splice an unrelated card out and push this one in.
+      // Skip only when a board IS selected and it is a different one; a null
+      // currentBoard still owns currentBoardCards (integration tests and the
+      // pre-load window).
+      if (state.currentBoard.value && state.currentBoard.value.id !== boardId) {
+        return updatedCard
+      }
+
+      // Re-resolve by id AFTER the await, exactly as updateCard does. An index
+      // captured before the await goes stale whenever anything else mutates the
+      // array first -- a second concurrent move, a realtime-triggered refetch, a
+      // teammate's delete -- and splicing it removes the WRONG card: the moved
+      // card survives as a duplicate while an innocent one disappears.
+      const commitIndex = state.currentBoardCards.value.findIndex((c) => c.id === cardId)
+      if (commitIndex !== -1) {
+        state.currentBoardCards.value.splice(commitIndex, 1)
       }
 
       state.currentBoardCards.value.push(updatedCard)
