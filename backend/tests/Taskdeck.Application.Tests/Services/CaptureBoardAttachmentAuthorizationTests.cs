@@ -5,6 +5,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
