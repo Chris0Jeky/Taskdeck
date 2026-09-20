@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
@@ -85,8 +86,8 @@ public sealed class ProposalExpiryArchiveConcurrencyTests
             result.ErrorCode.Should().Be(ErrorCodes.Conflict);
             proposals.Verify(
                 repository => repository.GetExpiredAsync(It.IsAny<CancellationToken>()),
-                Times.Exactly(2),
-                "the decorator guards one snapshot and the inner lifecycle service owns the authoritative sweep");
+                Times.Once,
+                "the guard and lifecycle mutation must consume the same authoritative sweep");
             await using var verifyDb = new TaskdeckDbContext(options);
             (await verifyDb.Boards.SingleAsync(board => board.Id == seeded.BoardId))
                 .IsArchived.Should().BeTrue();
@@ -99,6 +100,109 @@ public sealed class ProposalExpiryArchiveConcurrencyTests
         {
             DeleteTemporaryDatabase(databasePath);
         }
+    }
+
+    [Fact]
+    public async Task Service_WhenProposalExpiresAfterGuardSnapshot_DoesNotMutateTheUnguardedCandidate()
+    {
+        var ownerId = Guid.NewGuid();
+        var guardedBoardId = Guid.NewGuid();
+        var lateBoard = new Board("Late expiry board", ownerId: ownerId);
+        var guarded = new AutomationProposal(
+            ProposalSourceType.Queue,
+            ownerId,
+            "Already expired",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString("N"),
+            guardedBoardId,
+            expiryMinutes: 1);
+        var late = new AutomationProposal(
+            ProposalSourceType.Queue,
+            ownerId,
+            "Crosses the threshold after the guard snapshot",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString("N"),
+            lateBoard.Id,
+            expiryMinutes: 60);
+        SetExpiresAt(guarded, DateTime.UtcNow.AddMinutes(-5));
+
+        var sweeps = new Queue<ExpiredProposalSweep>(new[]
+        {
+            new ExpiredProposalSweep(new[] { guarded }, 0),
+            new ExpiredProposalSweep(new[] { guarded, late }, 0),
+        });
+        var proposals = new Mock<IAutomationProposalRepository>();
+        proposals
+            .Setup(repository => repository.GetExpiredAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => sweeps.Dequeue());
+
+        var unitOfWork = new Mock<IUnitOfWork>();
+        unitOfWork.SetupGet(work => work.AutomationProposals).Returns(proposals.Object);
+        unitOfWork
+            .Setup(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                // The second candidate's board archives after the authoritative query but before
+                // save. Because that candidate was absent from the guarded snapshot, it must not
+                // join this mutation batch even though it became stale in the meantime.
+                lateBoard.Archive();
+                return 1;
+            });
+
+        var policy = new Mock<IAutomationPolicyEngine>();
+        policy
+            .Setup(engine => engine.GuardProposalDecisionWritesAsync(
+                It.Is<IEnumerable<Guid?>>(ids => ids.SequenceEqual(new Guid?[] { guardedBoardId })),
+                It.IsAny<CancellationToken>()))
+            .Callback(() => SetExpiresAt(late, DateTime.UtcNow.AddMinutes(-5)))
+            .ReturnsAsync(Result.Success());
+
+        var notifications = new Mock<INotificationService>();
+        notifications
+            .Setup(service => service.PublishAsync(
+                It.IsAny<CreateNotificationRequestDto>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(true));
+
+        var inner = new AutomationProposalService(
+            unitOfWork.Object,
+            notificationService: notifications.Object,
+            policyEngine: policy.Object);
+        IAutomationProposalService service = new ProposalExpiryGuardedService(
+            inner,
+            unitOfWork.Object,
+            policy.Object,
+            notifications.Object);
+
+        var result = await service.ExpireProposalsAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        guarded.Status.Should().Be(ProposalStatus.Expired);
+        late.Status.Should().Be(
+            ProposalStatus.PendingReview,
+            "a proposal outside the guarded authoritative snapshot must wait for the next sweep");
+        lateBoard.IsArchived.Should().BeTrue();
+        proposals.Verify(
+            repository => repository.GetExpiredAsync(It.IsAny<CancellationToken>()),
+            Times.Once,
+            "guard and mutation must consume one authoritative candidate snapshot");
+        unitOfWork.Verify(
+            work => work.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+        notifications.Verify(
+            service => service.PublishAsync(
+                It.Is<CreateNotificationRequestDto>(request =>
+                    request.UserId == ownerId &&
+                    request.Type == NotificationType.ProposalOutcome &&
+                    request.BoardId == guardedBoardId &&
+                    request.SourceEntityType == "proposal" &&
+                    request.SourceEntityId == guarded.Id &&
+                    request.DeduplicationKey == $"proposal:{guarded.Id}:{ProposalStatus.Expired}" &&
+                    request.Message.Contains("now expired", StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "only candidates in the guarded snapshot may publish an expiry outcome");
     }
 
     [Fact]

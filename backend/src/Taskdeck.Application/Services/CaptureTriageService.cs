@@ -632,7 +632,13 @@ public class CaptureTriageService : ICaptureTriageService
             .OrderBy(operation => operation.Sequence)
             .Select(MapOperation)
             .ToList();
-        var ownership = ResolveCaptureMetadataOwnership(originalOperations, payload);
+        var ownershipResult = ResolveCaptureMetadataOwnership(originalOperations, payload);
+        if (!ownershipResult.IsSuccess)
+        {
+            return Result.Failure<int>(ownershipResult.ErrorCode, ownershipResult.ErrorMessage);
+        }
+
+        var ownership = ownershipResult.Value;
         if (!ownership.HasAny)
         {
             return Result.Success(originalOperations.Count);
@@ -650,13 +656,21 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         var effectiveOperations = effectiveOperationsResult.Value;
-        var patchedOperations = effectiveOperations
-            .Select(operation => PatchCaptureCardMetadata(
+        var patchedOperations = new List<ProposalOperationDto>(effectiveOperations.Count);
+        foreach (var operation in effectiveOperations)
+        {
+            var patched = PatchCaptureCardMetadata(
                 operation,
                 payload.DueDate,
                 payload.Labels,
-                ownership))
-            .ToList();
+                ownership);
+            if (!patched.IsSuccess)
+            {
+                return Result.Failure<int>(patched.ErrorCode, patched.ErrorMessage);
+            }
+
+            patchedOperations.Add(patched.Value);
+        }
 
         var changed = effectiveOperations.Zip(patchedOperations, (before, after) => before.Parameters != after.Parameters)
             .Any(parameterChanged => parameterChanged);
@@ -749,7 +763,7 @@ public class CaptureTriageService : ICaptureTriageService
         return ParseRevisionOperations(proposal.Id, pinnedRevision.RevisedPayload);
     }
 
-    private static CaptureMetadataOwnership ResolveCaptureMetadataOwnership(
+    private static Result<CaptureMetadataOwnership> ResolveCaptureMetadataOwnership(
         IReadOnlyList<ProposalOperationDto> originalOperations,
         CapturePayloadV1 payload)
     {
@@ -758,14 +772,13 @@ public class CaptureTriageService : ICaptureTriageService
 
         foreach (var operation in originalOperations.Where(IsCreateCardOperation))
         {
-            using var document = JsonDocument.Parse(operation.Parameters);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            var parsed = TryParseOperationParameters(operation);
+            if (!parsed.IsSuccess)
             {
-                throw new DomainException(
-                    ErrorCodes.InvalidOperation,
-                    "Cannot reconcile capture metadata for an operation with non-object parameters");
+                return Result.Failure<CaptureMetadataOwnership>(parsed.ErrorCode, parsed.ErrorMessage);
             }
 
+            using var document = parsed.Value;
             ownsLabels |= !CaptureLabelsMatch(document.RootElement, payload.Labels!);
 
             if (!CaptureDueDateMatches(document.RootElement, payload.DueDate))
@@ -779,7 +792,38 @@ public class CaptureTriageService : ICaptureTriageService
             }
         }
 
-        return new CaptureMetadataOwnership(ownsDueDate, ownsLabels);
+        return Result.Success(new CaptureMetadataOwnership(ownsDueDate, ownsLabels));
+    }
+
+    /// <summary>
+    /// Parses a persisted operation's parameters as a JSON object. Persisted parameters are opaque
+    /// to this service: a non-object or unparseable payload is a reconcile FAILURE to be returned
+    /// as an outcome, never an exception. Throwing escaped into the workers' generic catch-alls and
+    /// was recorded as a retryable UnexpectedError instead of a terminal InvalidOperation.
+    /// </summary>
+    private static Result<JsonDocument> TryParseOperationParameters(ProposalOperationDto operation)
+    {
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(operation.Parameters);
+        }
+        catch (JsonException)
+        {
+            return Result.Failure<JsonDocument>(
+                ErrorCodes.InvalidOperation,
+                "Cannot reconcile capture metadata for an operation with unparseable parameters");
+        }
+
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            document.Dispose();
+            return Result.Failure<JsonDocument>(
+                ErrorCodes.InvalidOperation,
+                "Cannot reconcile capture metadata for an operation with non-object parameters");
+        }
+
+        return Result.Success(document);
     }
 
     private static bool IsCreateCardOperation(ProposalOperationDto operation) =>
@@ -810,7 +854,7 @@ public class CaptureTriageService : ICaptureTriageService
             operations.OrderBy(operation => operation.Sequence).ToList());
     }
 
-    private static ProposalOperationDto PatchCaptureCardMetadata(
+    private static Result<ProposalOperationDto> PatchCaptureCardMetadata(
         ProposalOperationDto operation,
         DateOnly? dueDate,
         IReadOnlyList<string> labels,
@@ -818,22 +862,21 @@ public class CaptureTriageService : ICaptureTriageService
     {
         if (!IsCreateCardOperation(operation))
         {
-            return operation;
+            return Result.Success(operation);
         }
 
-        using var document = JsonDocument.Parse(operation.Parameters);
-        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        var parsed = TryParseOperationParameters(operation);
+        if (!parsed.IsSuccess)
         {
-            throw new DomainException(
-                ErrorCodes.InvalidOperation,
-                "Cannot reconcile capture metadata for an operation with non-object parameters");
+            return Result.Failure<ProposalOperationDto>(parsed.ErrorCode, parsed.ErrorMessage);
         }
 
+        using var document = parsed.Value;
         var dueDateMatches = !ownership.DueDate || CaptureDueDateMatches(document.RootElement, dueDate);
         var labelsMatch = !ownership.Labels || CaptureLabelsMatch(document.RootElement, labels);
         if (dueDateMatches && labelsMatch)
         {
-            return operation;
+            return Result.Success(operation);
         }
 
         var parameters = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -860,7 +903,7 @@ public class CaptureTriageService : ICaptureTriageService
             parameters["labels"] = JsonSerializer.SerializeToElement(labels);
         }
 
-        return operation with { Parameters = JsonSerializer.Serialize(parameters) };
+        return Result.Success(operation with { Parameters = JsonSerializer.Serialize(parameters) });
     }
 
     private static bool CaptureDueDateMatches(JsonElement parameters, DateOnly? dueDate)
