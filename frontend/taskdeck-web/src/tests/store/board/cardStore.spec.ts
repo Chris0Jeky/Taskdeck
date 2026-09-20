@@ -468,6 +468,18 @@ describe('cardStore', () => {
       expect(ids).toEqual(['card-1', 'card-2'])
     })
 
+    it('still commits into currentBoardCards when currentBoard is unset', async () => {
+      state.currentBoard.value = null
+      const movedCard = { ...state.currentBoardCards.value[0], columnId: 'col-2' }
+      mockCardsApi.moveCard.mockResolvedValueOnce(movedCard)
+
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+      await moveCard('board-1', 'card-1', 'col-2', 0)
+
+      const moved = state.currentBoardCards.value.find((c: { id: string }) => c.id === 'card-1')
+      expect(moved?.columnId).toBe('col-2')
+    })
+
     it('does not commit into another board array when the board changed mid-flight', async () => {
       state.currentBoard.value!.columns.push({ id: 'col-2', name: 'Done', cardCount: 0 })
       const movedCard = { ...state.currentBoardCards.value[0], columnId: 'col-2' }

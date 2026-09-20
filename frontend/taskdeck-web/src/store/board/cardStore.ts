@@ -183,7 +183,10 @@ export function createCardActions(
 
       // The board can change while the move is in flight. Committing to another
       // board's array would splice an unrelated card out and push this one in.
-      if (state.currentBoard.value?.id !== boardId) {
+      // Skip only when a board IS selected and it is a different one; a null
+      // currentBoard still owns currentBoardCards (integration tests and the
+      // pre-load window).
+      if (state.currentBoard.value && state.currentBoard.value.id !== boardId) {
         return updatedCard
       }
 
