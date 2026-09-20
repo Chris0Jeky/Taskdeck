@@ -59,6 +59,11 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+async function flushPromises() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 describe('labelStore visit and settlement ordering', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -123,7 +128,7 @@ describe('labelStore visit and settlement ordering', () => {
     expect(state.currentBoardLabels.value).toEqual([updated])
   })
 
-  it('does not let an older label update settle over a newer update or invalidate its refresh', async () => {
+  it('serializes overlapping updates so the later intent commits last and owns the cache', async () => {
     const state = createState()
     const helpers = createHelpers()
     const firstUpdate = deferred<TestLabel>()
@@ -138,6 +143,21 @@ describe('labelStore visit and settlement ordering', () => {
     const pendingFirst = actions.updateLabel('board-1', 'lbl-1', { name: 'First' })
     const pendingSecond = actions.updateLabel('board-1', 'lbl-1', { name: 'Second' })
 
+    await flushPromises()
+    expect(mockLabelsApi.updateLabel).toHaveBeenCalledTimes(1)
+
+    const firstResult = {
+      ...originalLabel,
+      name: 'First',
+      updatedAt: '2026-09-20T10:01:00Z',
+    }
+    firstUpdate.resolve(firstResult)
+    await pendingFirst
+    await flushPromises()
+    expect(mockLabelsApi.updateLabel).toHaveBeenCalledTimes(2)
+    expect(state.currentBoardLabels.value).toEqual([firstResult])
+
+    const pendingRead = actions.fetchLabels('board-1')
     const secondResult = {
       ...originalLabel,
       name: 'Second',
@@ -145,19 +165,12 @@ describe('labelStore visit and settlement ordering', () => {
     }
     secondUpdate.resolve(secondResult)
     await pendingSecond
-    const pendingRead = actions.fetchLabels('board-1')
-
-    firstUpdate.resolve({
-      ...originalLabel,
-      name: 'First',
-      updatedAt: '2026-09-20T10:01:00Z',
-    })
-    await pendingFirst
     authoritativeRead.resolve([secondResult])
     await pendingRead
 
     expect(state.currentBoardLabels.value).toEqual([secondResult])
-    expect(helpers.toast.success).toHaveBeenCalledTimes(1)
-    expect(helpers.toast.success).toHaveBeenCalledWith('Label updated successfully')
+    expect(helpers.toast.success).toHaveBeenCalledTimes(2)
+    expect(helpers.toast.success).toHaveBeenNthCalledWith(1, 'Label updated successfully')
+    expect(helpers.toast.success).toHaveBeenNthCalledWith(2, 'Label updated successfully')
   })
 })
