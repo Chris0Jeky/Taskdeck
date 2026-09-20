@@ -6,11 +6,22 @@ import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '..
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
+interface CommentCacheVisit {
+  boardId: string
+  cache: Record<string, CardComment[]>
+}
+
+interface CommentMutationRequest {
+  key: string
+  version: number
+}
+
 export function createCardCommentActions(state: BoardState, helpers: BoardHelpers) {
   // Reads and writes share one per-card cache. Keep their ordering metadata in
   // the store closure rather than exposing transport generations in UI callers.
   const readVersionByCardId = new Map<string, number>()
   const mutationVersionByCardId = new Map<string, number>()
+  const mutationRequestVersionByCommentKey = new Map<string, number>()
 
   function nextReadVersion(cardId: string) {
     const version = (readVersionByCardId.get(cardId) ?? 0) + 1
@@ -26,11 +37,30 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
     mutationVersionByCardId.set(cardId, currentMutationVersion(cardId) + 1)
   }
 
-  function ownsCurrentCommentCache(boardId: string) {
-    // Null preserves the existing pre-load/store-test convention. Optional
-    // access keeps lightweight unit fixtures that predate currentBoard valid.
+  function captureCommentCacheVisit(boardId: string): CommentCacheVisit {
+    return {
+      boardId,
+      cache: state.cardCommentsByCardId.value,
+    }
+  }
+
+  function ownsCurrentCommentCache(visit: CommentCacheVisit) {
     const currentBoard = state.currentBoard?.value
-    return currentBoard == null || currentBoard.id === boardId
+    return (
+      (currentBoard == null || currentBoard.id === visit.boardId) &&
+      state.cardCommentsByCardId.value === visit.cache
+    )
+  }
+
+  function beginCommentMutation(cardId: string, commentId: string): CommentMutationRequest {
+    const key = `${cardId}:${commentId}`
+    const version = (mutationRequestVersionByCommentKey.get(key) ?? 0) + 1
+    mutationRequestVersionByCommentKey.set(key, version)
+    return { key, version }
+  }
+
+  function isCurrentCommentMutation(request: CommentMutationRequest) {
+    return mutationRequestVersionByCommentKey.get(request.key) === request.version
   }
 
   function getCardComments(cardId: string): CardComment[] {
@@ -39,6 +69,7 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
 
   async function fetchCardComments(boardId: string, cardId: string) {
     if (helpers.isDemoMode) return []
+    const visit = captureCommentCacheVisit(boardId)
     const readVersion = nextReadVersion(cardId)
     const mutationVersion = currentMutationVersion(cardId)
     try {
@@ -47,14 +78,14 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       // invalidates every snapshot that began before it, even when that older
       // request returns later. The payload is still returned to its caller.
       if (
-        ownsCurrentCommentCache(boardId) &&
+        ownsCurrentCommentCache(visit) &&
         readVersionByCardId.get(cardId) === readVersion &&
         currentMutationVersion(cardId) === mutationVersion
       ) {
-        state.cardCommentsByCardId.value = {
-          ...state.cardCommentsByCardId.value,
-          [cardId]: comments,
-        }
+        // Mutate the per-card slot rather than replacing the cache container.
+        // Board-detail commits and logout replace that container, so its identity
+        // is the visit/session generation without invalidating same-visit writes.
+        state.cardCommentsByCardId.value[cardId] = comments
       }
       return comments
     } catch (e: unknown) {
@@ -65,27 +96,24 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
 
   async function createCardComment(boardId: string, cardId: string, dto: CreateCardCommentDto) {
     helpers.guardDemoMutation()
+    const visit = captureCommentCacheVisit(boardId)
     try {
       state.loading.value = true
       state.error.value = null
       const createdComment = await cardCommentsApi.createComment(boardId, cardId, dto)
-      markCommentMutation(cardId)
-      if (ownsCurrentCommentCache(boardId)) {
+      if (ownsCurrentCommentCache(visit)) {
+        markCommentMutation(cardId)
         const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
         // A board refresh can commit the stable id before this response arrives.
         // Preserve that fresher object instead of appending a duplicate.
         if (!existingComments.some(comment => comment.id === createdComment.id)) {
-          state.cardCommentsByCardId.value = {
-            ...state.cardCommentsByCardId.value,
-            [cardId]: [...existingComments, createdComment].sort(
-              (left, right) =>
-                new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
-            ),
-          }
+          state.cardCommentsByCardId.value[cardId] = [...existingComments, createdComment].sort(
+            (left, right) =>
+              new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+          )
         }
+        helpers.toast.success('Comment added')
       }
-
-      helpers.toast.success('Comment added')
       return createdComment
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to create card comment')
@@ -102,22 +130,20 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
     dto: UpdateCardCommentDto,
   ) {
     helpers.guardDemoMutation()
+    const visit = captureCommentCacheVisit(boardId)
+    const mutationRequest = beginCommentMutation(cardId, commentId)
     try {
       state.loading.value = true
       state.error.value = null
       const updatedComment = await cardCommentsApi.updateComment(boardId, cardId, commentId, dto)
-      markCommentMutation(cardId)
-      if (ownsCurrentCommentCache(boardId)) {
+      if (ownsCurrentCommentCache(visit) && isCurrentCommentMutation(mutationRequest)) {
+        markCommentMutation(cardId)
         const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
-        state.cardCommentsByCardId.value = {
-          ...state.cardCommentsByCardId.value,
-          [cardId]: existingComments.map((comment) =>
-            comment.id === commentId ? updatedComment : comment,
-          ),
-        }
+        state.cardCommentsByCardId.value[cardId] = existingComments.map((comment) =>
+          comment.id === commentId ? updatedComment : comment,
+        )
+        helpers.toast.success('Comment updated')
       }
-
-      helpers.toast.success('Comment updated')
       return updatedComment
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to update card comment')
@@ -129,19 +155,20 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
 
   async function deleteCardComment(boardId: string, cardId: string, commentId: string) {
     helpers.guardDemoMutation()
+    const visit = captureCommentCacheVisit(boardId)
+    const mutationRequest = beginCommentMutation(cardId, commentId)
     try {
       state.loading.value = true
       state.error.value = null
       await cardCommentsApi.deleteComment(boardId, cardId, commentId)
-      markCommentMutation(cardId)
-      if (ownsCurrentCommentCache(boardId)) {
+      if (ownsCurrentCommentCache(visit) && isCurrentCommentMutation(mutationRequest)) {
+        markCommentMutation(cardId)
         const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
-        state.cardCommentsByCardId.value = {
-          ...state.cardCommentsByCardId.value,
-          [cardId]: existingComments.filter((comment) => comment.id !== commentId),
-        }
+        state.cardCommentsByCardId.value[cardId] = existingComments.filter(
+          (comment) => comment.id !== commentId,
+        )
+        helpers.toast.success('Comment deleted')
       }
-      helpers.toast.success('Comment deleted')
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to delete card comment')
       throw e
