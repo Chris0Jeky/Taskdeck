@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "graphComplete": true,
+  "candidates": [
+    {
+      "id": ".github/workflows/release-desktop.yml#build-backend",
+      "file": ".github/workflows/release-desktop.yml",
+      "job": "build-backend",
+      "events": "workflow_dispatch:\n  inputs:\n    tag:\n      description: \"Existing version tag to build and PUBLISH (e.g. v0.1.1). Leave BLANK when dispatching from a BRANCH for a rehearsal: builds and smoke-tests the Windows x64 archive, uploads artifacts, and publishes nothing. Dispatching from a TAG ref publishes that tag even with this left blank.\"\n      required: false\n      type: string\n    preview_tag:\n      description: \"REHEARSAL ONLY (e.g. v0.3.0). Renders the release page as if this tag existed, so a no-publish dispatch previews the real stable page instead of the v0.0.0-dryrun placeholder. It NEVER names, creates, touches or publishes a Release, and it never reaches the built archive name or the version stamped into the binaries. A dispatch that also PUBLISHES (a tag input, or a tag ref) is REFUSED before any build runs — use exactly one of the two.\"\n      required: false\n      type: string\npush:\n  tags:\n    - \"v*\"",
+      "condition": null,
+      "needs": "[resolve-source, build-frontend]",
+      "strategy": "fail-fast: false\nmatrix:\n  include:\n    - rid: win-x64\n      os: windows-latest\n      archive_ext: zip",
+      "selector": "${{ matrix.os }}",
+      "classification": "opaque",
+      "callers": []
+    },
+    {
+      "id": ".github/workflows/reusable-api-integration.yml#api-integration",
+      "file": ".github/workflows/reusable-api-integration.yml",
+      "job": "api-integration",
+      "events": "workflow_call:\n  inputs:\n    platform:\n      description: linux or windows for independent scheduling; all other values retain both platforms\n      required: false\n      default: all\n      type: string\n    dotnet-version:\n      description: .NET SDK version used for API integration tests\n      required: false\n      default: \"8.0.x\"\n      type: string",
+      "condition": null,
+      "needs": null,
+      "strategy": "fail-fast: false\nmatrix:\n  os: ${{ fromJSON(inputs.platform == 'linux' && '[\"ubuntu-latest\"]' || inputs.platform == 'windows' && '[\"windows-latest\"]' || '[\"ubuntu-latest\", \"windows-latest\"]') }}",
+      "selector": "${{ matrix.os }}",
+      "classification": "opaque",
+      "callers": [
+        {
+          "id": ".github/workflows/ci-required.yml#api-integration",
+          "file": ".github/workflows/ci-required.yml",
+          "job": "api-integration",
+          "events": "push:\n  branches:\n    - main\n    - master\npull_request:\nmerge_group:",
+          "condition": null,
+          "needs": "- backend-architecture\n- release-workflow-contract",
+          "strategy": null,
+          "reference": "./.github/workflows/reusable-api-integration.yml",
+          "callee": ".github/workflows/reusable-api-integration.yml",
+          "inputs": "platform: linux\ndotnet-version: 8.0.x\n\n  # Windows still qualifies the same complete suite, but does not serialize Linux E2E."
+        },
+        {
+          "id": ".github/workflows/ci-required.yml#api-integration-windows",
+          "file": ".github/workflows/ci-required.yml",
+          "job": "api-integration-windows",
+          "events": "push:\n  branches:\n    - main\n    - master\npull_request:\nmerge_group:",
+          "condition": null,
+          "needs": "- backend-architecture\n- release-workflow-contract",
+          "strategy": null,
+          "reference": "./.github/workflows/reusable-api-integration.yml",
+          "callee": ".github/workflows/reusable-api-integration.yml",
+          "inputs": "platform: windows\ndotnet-version: 8.0.x"
+        }
+      ]
+    },
+    {
+      "id": ".github/workflows/reusable-backend-unit.yml#backend-unit",
+      "file": ".github/workflows/reusable-backend-unit.yml",
+      "job": "backend-unit",
+      "events": "workflow_call:\n  inputs:\n    dotnet-version:\n      description: .NET SDK version used for backend unit and contract tests\n      required: false\n      default: \"8.0.x\"\n      type: string",
+      "condition": null,
+      "needs": null,
+      "strategy": "fail-fast: false\nmatrix:\n  os:\n    - ubuntu-latest\n    - windows-latest",
+      "selector": "${{ matrix.os }}",
+      "classification": "opaque",
+      "callers": [
+        {
+          "id": ".github/workflows/ci-required.yml#backend-unit",
+          "file": ".github/workflows/ci-required.yml",
+          "job": "backend-unit",
+          "events": "push:\n  branches:\n    - main\n    - master\npull_request:\nmerge_group:",
+          "condition": null,
+          "needs": "- backend-architecture\n- release-workflow-contract",
+          "strategy": null,
+          "reference": "./.github/workflows/reusable-backend-unit.yml",
+          "callee": ".github/workflows/reusable-backend-unit.yml",
+          "inputs": "dotnet-version: 8.0.x"
+        }
+      ]
+    },
+    {
+      "id": ".github/workflows/reusable-docs-governance.yml#worktree-helper-windows",
+      "file": ".github/workflows/reusable-docs-governance.yml",
+      "job": "worktree-helper-windows",
+      "events": "workflow_call:\n  inputs:\n    node-version:\n      description: Node.js version for docs governance checks\n      required: false\n      default: \"24.13.1\"\n      type: string",
+      "condition": null,
+      "needs": null,
+      "strategy": null,
+      "selector": "windows-latest",
+      "classification": "windows-literal",
+      "callers": [
+        {
+          "id": ".github/workflows/ci-required.yml#docs-governance",
+          "file": ".github/workflows/ci-required.yml",
+          "job": "docs-governance",
+          "events": "push:\n  branches:\n    - main\n    - master\npull_request:\nmerge_group:",
+          "condition": null,
+          "needs": null,
+          "strategy": null,
+          "reference": "./.github/workflows/reusable-docs-governance.yml",
+          "callee": ".github/workflows/reusable-docs-governance.yml",
+          "inputs": "node-version: 24.13.1\n\n  # A live release dispatch cannot be rehearsed on a PR, so release hardening is\n  # held by executable contracts instead: tag/version grammar runs for real and\n  # workflow provenance, fail-fast, credential and cleanup invariants are asserted\n  # structurally.\n  # Inline (not a reusable call) — it needs nothing beyond the top-level\n  # `contents: read`, and a reusable callee may not declare more than its caller\n  # grants (GitHub fails such a call at plan time with startup_failure)."
+        }
+      ]
+    },
+    {
+      "id": ".github/workflows/reusable-frontend-unit.yml#frontend-unit",
+      "file": ".github/workflows/reusable-frontend-unit.yml",
+      "job": "frontend-unit",
+      "events": "workflow_call:\n  inputs:\n    node-version:\n      description: Node.js version for frontend quality gates\n      required: false\n      default: \"24.13.1\"\n      type: string",
+      "condition": null,
+      "needs": null,
+      "strategy": "fail-fast: false\nmatrix:\n  os:\n    - ubuntu-latest\n    - windows-latest",
+      "selector": "${{ matrix.os }}",
+      "classification": "opaque",
+      "callers": [
+        {
+          "id": ".github/workflows/ci-required.yml#frontend-unit",
+          "file": ".github/workflows/ci-required.yml",
+          "job": "frontend-unit",
+          "events": "push:\n  branches:\n    - main\n    - master\npull_request:\nmerge_group:",
+          "condition": null,
+          "needs": "- release-workflow-contract\n- paper-color-audit",
+          "strategy": null,
+          "reference": "./.github/workflows/reusable-frontend-unit.yml",
+          "callee": ".github/workflows/reusable-frontend-unit.yml",
+          "inputs": "node-version: 24.13.1"
+        }
+      ]
+    }
+  ]
+}
