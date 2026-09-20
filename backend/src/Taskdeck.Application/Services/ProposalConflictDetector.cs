@@ -68,7 +68,8 @@ public class ProposalConflictDetector : IProposalConflictDetector
         var rows = new List<ConflictRow>();
         var flaggedCardIds = new HashSet<Guid>();
         var flaggedColumnIds = new HashSet<Guid>();
-        var unevaluatedOperationCount = CountUnevaluatedOperations(proposal.Operations);
+        // Do not echo the validator error: historical parameters can contain private text.
+        ProposalOperationContractValidator.ValidateShape(proposal.Operations, out var unevaluatedOperationCount);
         if (unevaluatedOperationCount > 0)
         {
             var operationLabel = unevaluatedOperationCount == 1 ? "operation" : "operations";
@@ -395,90 +396,6 @@ public class ProposalConflictDetector : IProposalConflictDetector
                     $"Card \"{card.Title}\" data is current"));
             }
         }
-    }
-
-    private static int CountUnevaluatedOperations(IEnumerable<ProposalOperationDto> operations)
-    {
-        return operations.Count(operation => !CanEvaluateOperation(operation));
-    }
-
-    private static bool CanEvaluateOperation(ProposalOperationDto operation)
-    {
-        if (!ProposalOperationVocabulary.IsSupported(operation.TargetType, operation.ActionType))
-            return false;
-
-        if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out _))
-            return false;
-
-        var action = operation.ActionType.ToLowerInvariant();
-        var targetType = operation.TargetType.ToLowerInvariant();
-
-        if (!string.IsNullOrWhiteSpace(operation.TargetId) && !Guid.TryParse(operation.TargetId, out _))
-            return false;
-
-        if (targetType == "card" && action != "create" && !TryGetCardId(operation, parameters, out _))
-            return false;
-
-        if (action == "move")
-        {
-            if (targetType == "card" && !TryGetCardId(operation, parameters, out _))
-                return false;
-
-            return TryGetTargetColumnId(operation, parameters, out _);
-        }
-
-        return action != "create" || targetType != "card" ||
-               TryGetTargetColumnId(operation, parameters, out _);
-    }
-
-    private static bool TryGetCardId(
-        ProposalOperationDto operation,
-        System.Text.Json.JsonElement parameters,
-        out Guid cardId)
-    {
-        if (parameters.TryGetProperty("cardId", out _))
-            return OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out cardId, out _);
-
-        return Guid.TryParse(operation.TargetId, out cardId);
-    }
-
-    private static bool TryGetTargetColumnId(
-        ProposalOperationDto operation,
-        System.Text.Json.JsonElement parameters,
-        out Guid columnId)
-    {
-        columnId = Guid.Empty;
-        Guid? parsedColumnId = null;
-
-        foreach (var parameterName in new[] { "columnId", "targetColumnId" })
-        {
-            if (!parameters.TryGetProperty(parameterName, out _))
-                continue;
-
-            if (!OperationParameterParser.TryGetRequiredGuid(parameters, parameterName, out var candidate, out _))
-                return false;
-
-            if (parsedColumnId.HasValue && parsedColumnId.Value != candidate)
-                return false;
-
-            parsedColumnId = candidate;
-        }
-
-        if (operation.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase) &&
-            Guid.TryParse(operation.TargetId, out var targetColumnId))
-        {
-            if (parsedColumnId.HasValue && parsedColumnId.Value != targetColumnId)
-                return false;
-
-            columnId = targetColumnId;
-            return true;
-        }
-
-        if (!parsedColumnId.HasValue)
-            return false;
-
-        columnId = parsedColumnId.Value;
-        return true;
     }
 
     /// <summary>

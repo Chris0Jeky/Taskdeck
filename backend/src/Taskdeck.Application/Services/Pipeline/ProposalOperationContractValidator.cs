@@ -13,31 +13,8 @@ namespace Taskdeck.Application.Services.Pipeline;
 /// change parameters after proposal creation, so entity scope and field semantics
 /// must be re-established immediately before either trust boundary.
 /// </summary>
-public static class ProposalOperationContractValidator
+public static partial class ProposalOperationContractValidator
 {
-    // These mirror the Card/Board domain aggregate limits so the shared preview
-    // contract rejects exactly what Apply would reject (#1319 preview == apply).
-    private const int MaxCardTitleLength = 200;
-    private const int MaxCardDescriptionLength = 2000;
-    private const int MaxBoardNameLength = 100;
-    private const int MaxBoardDescriptionLength = 1000;
-    private const int MaxColumnNameLength = 50;
-    private static readonly HashSet<string> CreateColumnParameterNames = new(StringComparer.Ordinal)
-    {
-        "boardId",
-        "name",
-        "position",
-        "wipLimit"
-    };
-
-    // These fields are consumed only by card create/update handlers. Identity, column,
-    // revision and singular label parameters are deliberately not part of this list.
-    private static readonly string[] CardCreateUpdateParameterNames =
-    [
-        "title", "description", "dueDate", "clearDueDate", "labels", "labelIds",
-        "workItemType", "parentCardId", "clearParent"
-    ];
-
     public static async Task<Result> ValidateAsync(
         IUnitOfWork unitOfWork,
         Guid? proposalBoardId,
@@ -46,22 +23,8 @@ public static class ProposalOperationContractValidator
         IBoardDependencyRepository? dependencies = null)
     {
         var materializedOperations = operations.ToList();
-        var relationOperations = materializedOperations.Where(IsRelationOperation).ToList();
-        if (relationOperations.Count > 1)
-            return Result.Failure(ErrorCodes.ValidationError, "A proposal may contain only one typed relation operation.");
-        if (relationOperations.Count == 1 && materializedOperations.Any(IsRelationLifecycleMutation))
-        {
-            return Result.Failure(
-                ErrorCodes.ValidationError,
-                "A typed relation operation cannot be combined with card archive, restore, or delete operations.");
-        }
-        // Do this before hierarchy reads: even null/false parent fields on an unrelated
-        // action are unsupported, not a request to validate or preview a parent change.
-        foreach (var operation in materializedOperations.OrderBy(operation => operation.Sequence))
-        {
-            var supportResult = ValidateCardParameterSupport(operation);
-            if (!supportResult.IsSuccess) return supportResult;
-        }
+        var shape = ValidateShape(materializedOperations, out _);
+        if (!shape.IsSuccess) return shape;
         var hierarchyResult = await ProposalHierarchyValidator.ValidateAsync(unitOfWork, proposalBoardId, materializedOperations, cancellationToken);
         if (!hierarchyResult.IsSuccess) return Result.Failure(hierarchyResult.ErrorCode, hierarchyResult.ErrorMessage);
         var validationContext = new BoardValidationContext(unitOfWork, proposalBoardId);
@@ -78,40 +41,11 @@ public static class ProposalOperationContractValidator
                     return Result.Failure(ErrorCodes.ValidationError, "Assignment operation requires a card and valid parameters.");
                 var assignment = await ProposalAssignmentContract.ValidateAsync(unitOfWork, proposalBoardId, assignmentParameters, cancellationToken);
                 if (!assignment.IsSuccess) return Result.Failure(assignment.ErrorCode, assignment.ErrorMessage);
-                var assignmentCardId = assignmentParameters.GetProperty("cardId").GetGuid();
-                foreach (var other in materializedOperations.Where(other => !ReferenceEquals(other, operation) &&
-                             other.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)))
-                {
-                    if (Guid.TryParse(other.TargetId, out var target) && target == assignmentCardId ||
-                        OperationParameterParser.TryDeserializeParameters(other.Parameters, out var otherParameters, out _) &&
-                        OperationParameterParser.TryGetRequiredGuid(otherParameters, "cardId", out var otherCardId, out _) && otherCardId == assignmentCardId)
-                        return Result.Failure(ErrorCodes.ValidationError,
-                            "An assignment replacement must be the only operation on that card in a proposal.");
-                }
             }
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
 
-            if ((parameters.TryGetProperty("estimatedEffortMinutes", out _) || parameters.TryGetProperty("clearEstimatedEffort", out _)) &&
-                (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
-                 operation.ActionType.ToLowerInvariant() is not ("create" or "update")))
-                return Result.Failure(ErrorCodes.ValidationError, "Effort estimate parameters are supported only by card create and update operations");
-
             var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
-            if (labelAction == CardLabelOperationAction.InvalidAlias)
-            {
-                return Result.Failure(
-                    ErrorCodes.ValidationError,
-                    $"Unsupported card label action alias: {operation.ActionType}");
-            }
-
-            if ((labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove) &&
-                !operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
-            {
-                return Result.Failure(
-                    ErrorCodes.ValidationError,
-                    $"Card label action '{operation.ActionType}' requires targetType 'card'");
-            }
 
             var scopeResult = await ValidateEntityScopeAsync(
                 validationContext,
@@ -170,37 +104,6 @@ public static class ProposalOperationContractValidator
 
         return Result.Success();
     }
-
-    private static Result ValidateCardParameterSupport(ProposalOperationDto operation)
-    {
-        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
-            operation.ActionType.ToLowerInvariant() is "create" or "update")
-            return Result.Success();
-
-        if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var error))
-            return Result.Failure(ErrorCodes.ValidationError, error);
-
-        foreach (var name in CardCreateUpdateParameterNames)
-            if (parameters.TryGetProperty(name, out _))
-                return Result.Failure(ErrorCodes.ValidationError,
-                    $"Parameter '{name}' is not supported by card action '{operation.ActionType}'");
-
-        return Result.Success();
-    }
-
-    private static bool IsRelationOperation(ProposalOperationDto operation) =>
-        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-        operation.ActionType.Equals("add-relation", StringComparison.OrdinalIgnoreCase) ||
-        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-        operation.ActionType.Equals("remove-relation", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsRelationLifecycleMutation(ProposalOperationDto operation) =>
-        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-        operation.ActionType.Equals("archive-lifecycle", StringComparison.OrdinalIgnoreCase) ||
-        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-        operation.ActionType.Equals("restore-lifecycle", StringComparison.OrdinalIgnoreCase) ||
-        operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-        operation.ActionType.Equals("delete", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<Result> ValidateRelationOperationAsync(
         BoardValidationContext validationContext,
@@ -345,348 +248,47 @@ public static class ProposalOperationContractValidator
         return Result.Success();
     }
 
-    private static Task<Result> ValidateOperationFieldsAsync(
+    private static async Task<Result> ValidateOperationFieldsAsync(
         BoardValidationContext validationContext,
         ProposalOperationDto operation,
         JsonElement parameters,
         CardLabelOperationAction labelAction,
         CancellationToken cancellationToken)
     {
-        if (operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
+        // Shape and parameter support have already passed ValidateShape. This half
+        // resolves only facts that depend on the proposal's board and stored state.
+        if (operation.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase) &&
+            operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
         {
-            return ValidateCardFieldsAsync(
-                validationContext,
-                operation,
-                parameters,
-                labelAction,
-                cancellationToken);
+            var column = ParseCreateColumnParameters(operation, parameters);
+            return await validationContext.ValidateAndRegisterNewColumnAsync(column.Value, cancellationToken);
         }
-
-        if (operation.TargetType.Equals("board", StringComparison.OrdinalIgnoreCase))
-            return Task.FromResult(ValidateBoardFields(operation, parameters));
-
-        if (operation.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase))
-        {
-            return ValidateColumnFieldsAsync(
-                validationContext,
-                operation,
-                parameters,
-                cancellationToken);
-        }
-
-        return Task.FromResult(Result.Failure(
-            ErrorCodes.ValidationError,
-            $"Unsupported target type: {operation.TargetType}"));
-    }
-
-    private static async Task<Result> ValidateCardFieldsAsync(
-        BoardValidationContext validationContext,
-        ProposalOperationDto operation,
-        JsonElement parameters,
-        CardLabelOperationAction labelAction,
-        CancellationToken cancellationToken)
-    {
         if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
             return Result.Success();
 
-        var normalizedAction = operation.ActionType.ToLowerInvariant();
-
-        if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) ||
-            normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
+        if (operation.ActionType.ToLowerInvariant() is "create" or "update")
         {
-            if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) &&
-                !OperationParameterParser.TryGetRequiredString(parameters, "title", out _, out var titleError))
+            OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimate, out _);
+            OperationParameterParser.TryGetOptionalBoolean(parameters, "clearEstimatedEffort", out _, out var clearEstimate, out _);
+            if (operation.ActionType.Equals("update", StringComparison.OrdinalIgnoreCase) && (estimate.HasValue || clearEstimate))
             {
-                return Result.Failure(ErrorCodes.ValidationError, titleError);
+                var version = await validationContext.ValidateEstimateVersionAsync(parameters, cancellationToken);
+                if (!version.IsSuccess) return version;
             }
-
-            if (normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase) &&
-                !OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
-            {
-                return Result.Failure(ErrorCodes.ValidationError, cardIdError);
-            }
-
-            if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
-                return Result.Failure(ErrorCodes.ValidationError, typeError);
-
-            // Enforce the Card aggregate string limits before preview so an
-            // over-length title/description cannot preview successfully and then
-            // fail during Apply.
-            var titleValue = OperationParameterParser.GetOptionalString(parameters, "title");
-            if (titleValue != null && titleValue.Length > MaxCardTitleLength)
-                return Result.Failure(ErrorCodes.ValidationError, $"Card title cannot exceed {MaxCardTitleLength} characters");
-
-            var descriptionValue = OperationParameterParser.GetOptionalString(parameters, "description");
-            if (descriptionValue != null && descriptionValue.Length > MaxCardDescriptionLength)
-                return Result.Failure(ErrorCodes.ValidationError, $"Card description cannot exceed {MaxCardDescriptionLength} characters");
-
-            if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
-                    parameters, "dueDate", out var dueDateProvided, out var dueDate, out var dueDateError))
-                return Result.Failure(ErrorCodes.ValidationError, dueDateError);
-
-            if (!OperationParameterParser.TryGetOptionalBoolean(
-                    parameters, "clearDueDate", out _, out var clearDueDate, out var clearDueDateError))
-                return Result.Failure(ErrorCodes.ValidationError, clearDueDateError);
-
-            if (dueDate.HasValue && clearDueDate)
-                return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
-
-            if (!OperationParameterParser.TryGetEstimatedEffortMinutes(parameters, out var estimatedEffortMinutes, out var estimateError))
-                return Result.Failure(ErrorCodes.ValidationError, estimateError);
-            if (!OperationParameterParser.TryGetOptionalBoolean(parameters, "clearEstimatedEffort", out var clearEstimateProvided, out var clearEstimatedEffort, out var clearEstimateError))
-                return Result.Failure(ErrorCodes.ValidationError, clearEstimateError);
-            if (normalizedAction == "create" && clearEstimateProvided)
-                return Result.Failure(ErrorCodes.ValidationError, "Parameter 'clearEstimatedEffort' is supported only by card update operations");
-            if (estimatedEffortMinutes.HasValue && clearEstimatedEffort)
-                return Result.Failure(ErrorCodes.ValidationError, "Parameters 'estimatedEffortMinutes' and 'clearEstimatedEffort' cannot both be specified");
-            if (normalizedAction == "update" && (estimatedEffortMinutes.HasValue || clearEstimatedEffort))
-            {
-                var estimateVersion = await validationContext.ValidateEstimateVersionAsync(parameters, cancellationToken);
-                if (!estimateVersion.IsSuccess) return estimateVersion;
-            }
-
-            if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
-                    return Result.Failure(ErrorCodes.ValidationError, columnIdError);
-                if (!OperationParameterParser.TryGetRequiredGuid(parameters, "boardId", out _, out var boardIdError))
-                    return Result.Failure(ErrorCodes.ValidationError, boardIdError);
-            }
-
-            var labelsResult = await ValidateLabelsAsync(validationContext, parameters, cancellationToken);
-            if (!labelsResult.IsSuccess)
-                return labelsResult;
-
-            if (normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
-            {
-                var title = OperationParameterParser.GetOptionalString(parameters, "title");
-                var description = OperationParameterParser.GetOptionalString(parameters, "description");
-                var labelsProvided = parameters.TryGetProperty("labels", out _);
-                var labelIdsProvided = parameters.TryGetProperty("labelIds", out _);
-                if (title == null && description == null && !dueDateProvided && !clearDueDate &&
-                    !labelsProvided && !labelIdsProvided && workItemType is null && !estimatedEffortMinutes.HasValue && !clearEstimatedEffort && !parameters.TryGetProperty("parentCardId", out _) && !parameters.TryGetProperty("clearParent", out _))
-                {
-                    return Result.Failure(
-                        ErrorCodes.ValidationError,
-                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', 'workItemType', 'estimatedEffortMinutes', or 'clearEstimatedEffort'");
-                }
-            }
+            return await ValidateLabelsAsync(validationContext, parameters, cancellationToken);
         }
 
-        if (labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove)
-        {
-            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
-                return Result.Failure(ErrorCodes.ValidationError, cardIdError);
-
-            var hasLabelId = parameters.TryGetProperty("labelId", out _);
-            var hasLabelName = parameters.TryGetProperty("labelName", out _);
-            if (hasLabelId == hasLabelName)
-                return Result.Failure(ErrorCodes.ValidationError, "Provide exactly one of 'labelId' or 'labelName'");
-
-            if (!validationContext.BoardId.HasValue)
-                return ScopeFailure("Label operation requires a proposal board scope");
-
-            if (hasLabelId)
-            {
-                if (!OperationParameterParser.TryGetRequiredGuid(parameters, "labelId", out var labelId, out var labelError))
-                    return Result.Failure(ErrorCodes.ValidationError, labelError);
-                if (!await validationContext.ContainsLabelIdAsync(labelId, cancellationToken))
-                    return Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
-            }
-            else
-            {
-                if (!OperationParameterParser.TryGetRequiredString(parameters, "labelName", out var labelName, out var labelError))
-                    return Result.Failure(ErrorCodes.ValidationError, labelError);
-                var matchingLabelCount = await validationContext.GetLabelNameMatchCountAsync(labelName, cancellationToken);
-                if (matchingLabelCount == 0)
-                    return Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
-                if (matchingLabelCount > 1)
-                    return AmbiguousLabelFailure(labelName);
-            }
-
+        if (labelAction is not (CardLabelOperationAction.Add or CardLabelOperationAction.Remove))
             return Result.Success();
-        }
-
-        if (normalizedAction is "create" or "update")
-            return Result.Success();
-
-        if (normalizedAction == ProposalAssignmentContract.Action)
-        {
-            try { ProposalAssignmentContract.Read(parameters); }
-            catch (DomainException ex) { return Result.Failure(ex.ErrorCode, ex.Message); }
-            return OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var assignmentError)
-                ? Result.Success() : Result.Failure(ErrorCodes.ValidationError, assignmentError);
-        }
-
-        if (normalizedAction is "add-relation" or "remove-relation")
-        {
-            return OperationParameterParser.TryGetRelationOperationParameters(parameters, out _, out var relationError)
-                ? Result.Success()
-                : Result.Failure(ErrorCodes.ValidationError, relationError);
-        }
-
-        if (normalizedAction is "move" or "archive" or "archive-lifecycle" or "restore-lifecycle" or "delete")
-        {
-            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
-                return Result.Failure(ErrorCodes.ValidationError, cardIdError);
-
-            if (normalizedAction == "move" &&
-                !OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
-            {
-                return Result.Failure(ErrorCodes.ValidationError, columnIdError);
-            }
-
-            return Result.Success();
-        }
-
-        return Result.Failure(
-            ErrorCodes.ValidationError,
-            $"Unsupported card action: {operation.ActionType}");
-    }
-
-    private static Result ValidateBoardFields(ProposalOperationDto operation, JsonElement parameters)
-    {
-        if (!operation.ActionType.Equals("update", StringComparison.OrdinalIgnoreCase))
-        {
-            return Result.Failure(
-                ErrorCodes.ValidationError,
-                $"Unsupported board action: {operation.ActionType}");
-        }
-
-        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "boardId", out _, out var boardIdError))
-            return Result.Failure(ErrorCodes.ValidationError, boardIdError);
-
-        var name = OperationParameterParser.GetOptionalString(parameters, "name");
-        var description = OperationParameterParser.GetOptionalString(parameters, "description");
-        var isArchived = OperationParameterParser.GetOptionalBoolean(parameters, "isArchived");
-
-        // Mirror the Board aggregate string limits before preview.
-        if (name != null && name.Length > MaxBoardNameLength)
-            return Result.Failure(ErrorCodes.ValidationError, $"Board name cannot exceed {MaxBoardNameLength} characters");
-        if (description != null && description.Length > MaxBoardDescriptionLength)
-            return Result.Failure(ErrorCodes.ValidationError, $"Board description cannot exceed {MaxBoardDescriptionLength} characters");
-
-        return name == null && description == null && !isArchived.HasValue
-            ? Result.Failure(
-                ErrorCodes.ValidationError,
-                "Update board operation requires at least one of 'name', 'description', or 'isArchived'")
-            : Result.Success();
-    }
-
-    private static async Task<Result> ValidateColumnFieldsAsync(
-        BoardValidationContext validationContext,
-        ProposalOperationDto operation,
-        JsonElement parameters,
-        CancellationToken cancellationToken)
-    {
-        if (operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
-        {
-            var contractResult = ParseCreateColumnParameters(operation, parameters);
-            if (!contractResult.IsSuccess)
-                return Result.Failure(contractResult.ErrorCode, contractResult.ErrorMessage);
-
-            return await validationContext.ValidateAndRegisterNewColumnAsync(
-                contractResult.Value,
-                cancellationToken);
-        }
-
-        if (operation.ActionType.Equals("reorder", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
-                return Result.Failure(ErrorCodes.ValidationError, columnIdError);
-
-            if (!OperationParameterParser.TryGetRequiredInt32(parameters, "position", out var position, out var positionError))
-                return Result.Failure(ErrorCodes.ValidationError, positionError);
-
-            return position < 0
-                ? Result.Failure(ErrorCodes.ValidationError, "Invalid position: must be non-negative")
-                : Result.Success();
-        }
-
-        return Result.Failure(
-            ErrorCodes.ValidationError,
-            $"Unsupported column action: {operation.ActionType}");
-    }
-
-    internal static Result<CreateColumnOperationParameters> ParseCreateColumnParameters(
-        ProposalOperationDto operation,
-        JsonElement parameters)
-    {
-        if (operation.TargetId is not null)
-        {
-            return Result.Failure<CreateColumnOperationParameters>(
-                ErrorCodes.ValidationError,
-                "Create column operation must not specify targetId");
-        }
-
-        var seenParameterNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var property in parameters.EnumerateObject())
-        {
-            if (!CreateColumnParameterNames.Contains(property.Name))
-            {
-                return Result.Failure<CreateColumnOperationParameters>(
-                    ErrorCodes.ValidationError,
-                    $"Unsupported create column parameter '{property.Name}'");
-            }
-
-            if (!seenParameterNames.Add(property.Name))
-            {
-                return Result.Failure<CreateColumnOperationParameters>(
-                    ErrorCodes.ValidationError,
-                    $"Duplicate create column parameter '{property.Name}'");
-            }
-        }
-
-        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "boardId", out var boardId, out var boardIdError))
-            return Result.Failure<CreateColumnOperationParameters>(ErrorCodes.ValidationError, boardIdError);
-        if (boardId == Guid.Empty)
-        {
-            return Result.Failure<CreateColumnOperationParameters>(
-                ErrorCodes.ValidationError,
-                "Parameter 'boardId' must be a non-empty identifier");
-        }
-
-        if (!OperationParameterParser.TryGetRequiredString(parameters, "name", out var name, out var nameError))
-            return Result.Failure<CreateColumnOperationParameters>(ErrorCodes.ValidationError, nameError);
-        if (name.Length > MaxColumnNameLength)
-        {
-            return Result.Failure<CreateColumnOperationParameters>(
-                ErrorCodes.ValidationError,
-                $"Column name cannot exceed {MaxColumnNameLength} characters");
-        }
-
-        if (!OperationParameterParser.TryGetRequiredInt32(parameters, "position", out var position, out var positionError))
-            return Result.Failure<CreateColumnOperationParameters>(ErrorCodes.ValidationError, positionError);
-        if (position < 0)
-        {
-            return Result.Failure<CreateColumnOperationParameters>(
-                ErrorCodes.ValidationError,
-                "Invalid position: must be non-negative");
-        }
-
-        int? wipLimit = null;
-        if (parameters.TryGetProperty("wipLimit", out var wipLimitProperty) &&
-            wipLimitProperty.ValueKind != JsonValueKind.Null)
-        {
-            if (wipLimitProperty.ValueKind != JsonValueKind.Number ||
-                !wipLimitProperty.TryGetInt32(out var parsedWipLimit))
-            {
-                return Result.Failure<CreateColumnOperationParameters>(
-                    ErrorCodes.ValidationError,
-                    "Parameter 'wipLimit' must be an integer or null");
-            }
-
-            if (parsedWipLimit <= 0)
-            {
-                return Result.Failure<CreateColumnOperationParameters>(
-                    ErrorCodes.ValidationError,
-                    "WIP limit must be greater than 0");
-            }
-
-            wipLimit = parsedWipLimit;
-        }
-
-        return Result.Success(new CreateColumnOperationParameters(boardId, name, position, wipLimit));
+        if (!validationContext.BoardId.HasValue)
+            return ScopeFailure("Label operation requires a proposal board scope");
+        if (parameters.TryGetProperty("labelId", out var labelId))
+            return await validationContext.ContainsLabelIdAsync(labelId.GetGuid(), cancellationToken)
+                ? Result.Success() : Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
+        var name = parameters.GetProperty("labelName").GetString()!;
+        var count = await validationContext.GetLabelNameMatchCountAsync(name, cancellationToken);
+        return count == 0 ? Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board")
+            : count > 1 ? AmbiguousLabelFailure(name) : Result.Success();
     }
 
     internal static Result ValidateCreateColumnPositionAvailability(
@@ -805,8 +407,6 @@ public static class ProposalOperationContractValidator
 
         public Guid? BoardId { get; } = boardId;
         private bool _isBoardArchivedInProposal;
-        private readonly HashSet<Guid> _mutatedCards = [];
-        private readonly HashSet<Guid> _lifecycleCards = [];
 
         // Ordered projection of what this proposal does to each column's active-card count,
         // plus the column each card is projected to occupy once the preceding operations have
@@ -825,13 +425,7 @@ public static class ProposalOperationContractValidator
             var action = operation.ActionType.ToLowerInvariant();
             var lifecycle = action is "archive-lifecycle" or "restore-lifecycle";
             var typeChange = action == "update" && (parameters.TryGetProperty("workItemType", out _) || parameters.TryGetProperty("parentCardId", out _) || parameters.TryGetProperty("clearParent", out _));
-            var pinned = lifecycle || typeChange || action == "delete";
-            // A lifecycle approval pins one exact card revision. Mixing another write to that
-            // card would invalidate its timestamp during Apply; reject this at Preview too.
-            if (_lifecycleCards.Contains(cardId) || (pinned && _mutatedCards.Contains(cardId)))
-                return Result.Failure(ErrorCodes.ValidationError, "Archive, restore, or work-item type change must be the only operation for that card in a proposal.");
-            _mutatedCards.Add(cardId);
-            if (pinned) _lifecycleCards.Add(cardId);
+            var pinned = RequiresExclusiveCardWrite(operation, parameters);
             var card = await ReadCardAsync(cardId, ct);
             if (card is null) return pinned
                 ? Result.Failure(ErrorCodes.NotFound, "Archive, restore, and type changes require an existing card") : Result.Success();
