@@ -1404,14 +1404,17 @@ public class DataExportServiceStreamingTests
                 await destination.WriteAsync(content.AsMemory(2), token);
                 return true;
             });
+        async IAsyncEnumerable<ArtefactExtraction> StreamExtraction()
+        {
+            await Task.CompletedTask;
+            yield return extraction;
+        }
         _extractionRepoMock
-            .Setup(r => r.GetByArtefactForUserAsync(
-                artefact.Id,
+            .Setup(r => r.StreamByArtefactsForUserAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(artefact.Id)),
                 _userId,
-                50,
-                0,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync([extraction]);
+            .Returns(StreamExtraction());
 
         using var stream = new MemoryStream();
         var result = await _service.StreamUserDataExportAsync(_userId, stream);
