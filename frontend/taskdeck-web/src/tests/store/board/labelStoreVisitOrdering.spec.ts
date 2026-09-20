@@ -81,8 +81,8 @@ describe('labelStore visit and settlement ordering', () => {
     state.currentBoard.value = { id: 'board-2' }
     state.currentBoardLabels.value = []
     state.currentBoard.value = { id: 'board-1' }
-    const reopenedCache: TestLabel[] = []
-    state.currentBoardLabels.value = reopenedCache
+    state.currentBoardLabels.value = []
+    const reopenedCache = state.currentBoardLabels.value
     const pendingReopenedRead = fetchLabels('board-1')
 
     oldVisitRead.resolve([{ ...originalLabel, name: 'Old visit' }])
