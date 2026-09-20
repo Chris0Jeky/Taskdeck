@@ -69,6 +69,29 @@ describe('audio answer draft capture', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     wrapper.unmount()
   })
+  it('reports a file selection that returns after the control becomes disabled and accepts a retry once ready', async () => {
+    const wrapper = mount(AudioAnswerRecorder, { props: { modelValue: null } })
+    const input = wrapper.get('input[type="file"]')
+    const file = new File(['valid audio'], 'original.wav', { type: 'audio/wav' })
+
+    // Model a native picker that opened while enabled, then returned after the
+    // parent entered a transient busy state. VTU intentionally suppresses
+    // trigger() on disabled controls, so dispatch the browser event directly.
+    await wrapper.setProps({ disabled: true })
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    input.element.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('temporarily unavailable')
+    expect(wrapper.emitted('draft-started')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    await wrapper.setProps({ disabled: false })
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    expect(wrapper.emitted('draft-started')).toHaveLength(1)
+    expect(wrapper.emitted('update:modelValue')![0]![0]).toBe(file)
+    wrapper.unmount()
+  })
   it('rejects oversized and non-audio files without replacing the draft', async () => {
     const wrapper = mount(AudioAnswerRecorder, { props: { modelValue: null } })
     const input = wrapper.get('input[type="file"]')

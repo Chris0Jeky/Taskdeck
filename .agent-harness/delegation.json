@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "muse": {
+    "max_workers": 5,
+    "max_steps": 200,
+    "max_timeout_seconds": 7200,
+    "max_sweep_targets": 20,
+    "max_effort": "max",
+    "worker_network": "proxy-only"
+  },
+  "notes": "Owner decision 2026-09-20: run the Muse delegation lane at the harness ceiling on every dial, to exercise muse-spark-1.3 hard and measure where it breaks. max_workers 5, max_steps 200, max_timeout_seconds 7200 and max_sweep_targets 20 are each the HARD_MAX in delegation_policy.py; max_effort 'max' is the top of EFFORT_ORDER (effort has no hard cap). These are CEILINGS a call may request, not defaults a call receives: each delegation still passes its own --effort and --max-steps, and recipe defaults (12-40 steps) are unchanged. Measured this session: a wide lens starves on SCOPE, not steps -- a 55-step re-run used ~14 -- so raising the ceiling buys headroom for deliberately deep single-seam runs, it does not fix a badly scoped one. Owner decision 2026-09-20 (claude-config q-30): worker_network is 'proxy-only' so a proving check that installs packages can be delegated (restricted network hangs rather than fails). Deliberately NOT relaxed: web stays off for investigate/worker, commit and trust_workspace keep their defaults, and model stays unpinned (CLI pin muse-spark-1.3-contributor applies; tier.json flags.sensitive_data is false). Push, pull-request, merge and deploy are not declarable here and remain undelegated."
+}
