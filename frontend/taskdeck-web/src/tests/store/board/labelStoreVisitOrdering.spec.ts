@@ -141,6 +141,7 @@ describe('labelStore visit and settlement ordering', () => {
 
     const refreshedCache = [{ ...originalLabel, name: 'Pre-write refresh' }]
     state.currentBoardLabels.value = refreshedCache
+    const installedCache = state.currentBoardLabels.value
     const updated = {
       ...originalLabel,
       name: 'Critical',
@@ -149,7 +150,7 @@ describe('labelStore visit and settlement ordering', () => {
     update.resolve(updated)
     await pendingUpdate
 
-    expect(state.currentBoardLabels.value).toBe(refreshedCache)
+    expect(state.currentBoardLabels.value).toBe(installedCache)
     expect(state.currentBoardLabels.value).toEqual([updated])
     expect(mockLabelsApi.getLabels).not.toHaveBeenCalled()
   })
