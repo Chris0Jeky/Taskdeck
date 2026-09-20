@@ -1,6 +1,7 @@
 /**
  * Card comment operations: fetch, create, update, delete comments.
  */
+import { watch } from 'vue'
 import { cardCommentsApi } from '../../api/cardCommentsApi'
 import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '../../types/comments'
 import type { BoardState } from './boardState'
@@ -9,14 +10,34 @@ import type { BoardHelpers } from './boardStoreHelpers'
 interface CommentCacheVisit {
   boardId: string
   cache: Record<string, CardComment[]>
+  generation: number
+}
+
+class StaleBoardVisitError extends Error {
+  constructor() {
+    super('The board visit that queued this comment change has ended.')
+    this.name = 'StaleBoardVisitError'
+  }
 }
 
 export function createCardCommentActions(state: BoardState, helpers: BoardHelpers) {
-  // Reads and writes share one per-card cache. Keep their ordering metadata in
-  // the store closure rather than exposing transport generations in UI callers.
+  // Reads and writes share one per-card cache. Cache-container identity protects
+  // ordinary reads, while a synchronous board-id generation distinguishes one
+  // visit/session from A→B→A or logout→login. Same-board detail refreshes keep
+  // that generation and may therefore receive a confirmed write into their new
+  // cache container.
   const readVersionByCardId = new Map<string, number>()
   const mutationVersionByCardId = new Map<string, number>()
   const mutationTailByCommentKey = new Map<string, Promise<void>>()
+  let boardVisitGeneration = 0
+
+  watch(
+    () => state.currentBoard?.value?.id ?? null,
+    (nextBoardId, previousBoardId) => {
+      if (nextBoardId !== previousBoardId) boardVisitGeneration++
+    },
+    { flush: 'sync' },
+  )
 
   function nextReadVersion(cardId: string) {
     const version = (readVersionByCardId.get(cardId) ?? 0) + 1
@@ -36,27 +57,39 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
     return {
       boardId,
       cache: state.cardCommentsByCardId.value,
+      generation: boardVisitGeneration,
     }
   }
 
-  function ownsCurrentCommentCache(visit: CommentCacheVisit) {
+  function isCurrentBoardVisit(visit: CommentCacheVisit) {
     const currentBoard = state.currentBoard?.value
     return (
       (currentBoard == null || currentBoard.id === visit.boardId) &&
-      state.cardCommentsByCardId.value === visit.cache
+      boardVisitGeneration === visit.generation
     )
+  }
+
+  function ownsExactCommentCache(visit: CommentCacheVisit) {
+    return isCurrentBoardVisit(visit) && state.cardCommentsByCardId.value === visit.cache
   }
 
   async function runCommentMutation<T>(
     cardId: string,
     commentId: string,
+    visit: CommentCacheVisit,
     mutation: () => Promise<T>,
   ): Promise<T> {
     const key = `${cardId}:${commentId}`
     const previous = mutationTailByCommentKey.get(key) ?? Promise.resolve()
     // A failed predecessor must not cancel a later user intent. It still settles
     // through its own caller/error path; the next request starts afterward.
-    const operation = previous.catch(() => undefined).then(mutation)
+    const operation = previous.catch(() => undefined).then(() => {
+      // The HTTP interceptor reads the token when transport starts. Reject a
+      // queued pre-logout intent before the API callback can run under another
+      // session's credentials.
+      if (!isCurrentBoardVisit(visit)) throw new StaleBoardVisitError()
+      return mutation()
+    })
     const tail = operation.then(
       () => undefined,
       () => undefined,
@@ -68,6 +101,33 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
     } finally {
       if (mutationTailByCommentKey.get(key) === tail) {
         mutationTailByCommentKey.delete(key)
+      }
+    }
+  }
+
+  async function reconcileCurrentCommentsAfterStaleVisit(boardId: string, cardId: string) {
+    if (state.currentBoard?.value?.id !== boardId) return
+
+    const visit = captureCommentCacheVisit(boardId)
+    const readVersion = nextReadVersion(cardId)
+    const mutationVersion = currentMutationVersion(cardId)
+    try {
+      const comments = await cardCommentsApi.getComments(boardId, cardId)
+      if (
+        isCurrentBoardVisit(visit) &&
+        readVersionByCardId.get(cardId) === readVersion &&
+        currentMutationVersion(cardId) === mutationVersion
+      ) {
+        // This read begins only after the write succeeded. It is authoritative
+        // for the currently reopened visit, while any older read is rejected by
+        // the version/mutation guards above.
+        state.cardCommentsByCardId.value[cardId] = comments
+      }
+    } catch {
+      if (isCurrentBoardVisit(visit)) {
+        helpers.toast.warning(
+          'Comment saved, but comments could not be refreshed. Reopen the card before editing again.',
+        )
       }
     }
   }
@@ -87,18 +147,17 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       // invalidates every snapshot that began before it, even when that older
       // request returns later. The payload is still returned to its caller.
       if (
-        ownsCurrentCommentCache(visit) &&
+        ownsExactCommentCache(visit) &&
         readVersionByCardId.get(cardId) === readVersion &&
         currentMutationVersion(cardId) === mutationVersion
       ) {
-        // Mutate the per-card slot rather than replacing the cache container.
-        // Board-detail commits and logout replace that container, so its identity
-        // is the visit/session generation without invalidating same-visit writes.
-        state.cardCommentsByCardId.value[cardId] = comments
+        visit.cache[cardId] = comments
       }
       return comments
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to fetch card comments')
+      if (ownsExactCommentCache(visit)) {
+        helpers.handleApiError(e, 'Failed to fetch card comments')
+      }
       throw e
     }
   }
@@ -110,25 +169,31 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       state.loading.value = true
       state.error.value = null
       const createdComment = await cardCommentsApi.createComment(boardId, cardId, dto)
-      if (ownsCurrentCommentCache(visit)) {
-        markCommentMutation(cardId)
-        const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
-        // A board refresh can commit the stable id before this response arrives.
-        // Preserve that fresher object instead of appending a duplicate.
+      markCommentMutation(cardId)
+
+      if (isCurrentBoardVisit(visit)) {
+        const currentCache = state.cardCommentsByCardId.value
+        const existingComments = currentCache[cardId] ?? []
+        // A same-board refresh can commit the stable id before this response
+        // arrives. Preserve that fresher object instead of appending a duplicate.
         if (!existingComments.some(comment => comment.id === createdComment.id)) {
-          state.cardCommentsByCardId.value[cardId] = [...existingComments, createdComment].sort(
+          currentCache[cardId] = [...existingComments, createdComment].sort(
             (left, right) =>
               new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
           )
         }
         helpers.toast.success('Comment added')
+      } else if (state.currentBoard?.value?.id === boardId) {
+        await reconcileCurrentCommentsAfterStaleVisit(boardId, cardId)
       }
       return createdComment
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to create card comment')
+      if (isCurrentBoardVisit(visit)) {
+        helpers.handleApiError(e, 'Failed to create card comment')
+      }
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentBoardVisit(visit)) state.loading.value = false
     }
   }
 
@@ -149,22 +214,29 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       const updatedComment = await runCommentMutation(
         cardId,
         commentId,
+        visit,
         () => cardCommentsApi.updateComment(boardId, cardId, commentId, dto),
       )
-      if (ownsCurrentCommentCache(visit)) {
-        markCommentMutation(cardId)
-        const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
-        state.cardCommentsByCardId.value[cardId] = existingComments.map((comment) =>
+      markCommentMutation(cardId)
+
+      if (isCurrentBoardVisit(visit)) {
+        const currentCache = state.cardCommentsByCardId.value
+        const existingComments = currentCache[cardId] ?? []
+        currentCache[cardId] = existingComments.map((comment) =>
           comment.id === commentId ? updatedComment : comment,
         )
         helpers.toast.success('Comment updated')
+      } else if (state.currentBoard?.value?.id === boardId) {
+        await reconcileCurrentCommentsAfterStaleVisit(boardId, cardId)
       }
       return updatedComment
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to update card comment')
+      if (!(e instanceof StaleBoardVisitError) && isCurrentBoardVisit(visit)) {
+        helpers.handleApiError(e, 'Failed to update card comment')
+      }
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentBoardVisit(visit)) state.loading.value = false
     }
   }
 
@@ -177,21 +249,28 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       await runCommentMutation(
         cardId,
         commentId,
+        visit,
         () => cardCommentsApi.deleteComment(boardId, cardId, commentId),
       )
-      if (ownsCurrentCommentCache(visit)) {
-        markCommentMutation(cardId)
-        const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
-        state.cardCommentsByCardId.value[cardId] = existingComments.filter(
+      markCommentMutation(cardId)
+
+      if (isCurrentBoardVisit(visit)) {
+        const currentCache = state.cardCommentsByCardId.value
+        const existingComments = currentCache[cardId] ?? []
+        currentCache[cardId] = existingComments.filter(
           (comment) => comment.id !== commentId,
         )
         helpers.toast.success('Comment deleted')
+      } else if (state.currentBoard?.value?.id === boardId) {
+        await reconcileCurrentCommentsAfterStaleVisit(boardId, cardId)
       }
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to delete card comment')
+      if (!(e instanceof StaleBoardVisitError) && isCurrentBoardVisit(visit)) {
+        helpers.handleApiError(e, 'Failed to delete card comment')
+      }
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentBoardVisit(visit)) state.loading.value = false
     }
   }
 
