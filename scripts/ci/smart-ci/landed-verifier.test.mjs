@@ -13,85 +13,9 @@ import { fileURLToPath } from 'node:url';
 import {
   decideLandedQualification,
 } from './landed-verifier.mjs';
-import { policyDigest } from './lib/plan.mjs';
+import { currentPolicyDigest, makeEvidence, policyText, sha } from './test-support/landed-evidence.mjs';
 
 const verifierPath = fileURLToPath(new URL('./landed-verifier.mjs', import.meta.url));
-const policyPath = fileURLToPath(new URL('../../../ci/policy.v1.json', import.meta.url));
-const currentPolicyDigest = policyDigest(readFileSync(policyPath, 'utf8'));
-
-function sha(character) {
-  return character.repeat(40);
-}
-
-function makeEvidence({
-  artifactId = 101,
-  runId = 201,
-  artifactWorkflowRunId = runId,
-  pullRequest = 2327,
-  baseSha = sha('1'),
-  headSha = sha('2'),
-  mergeSha = sha('3'),
-  mergeTreeSha = sha('4'),
-  digest = currentPolicyDigest,
-  createdAt = '2026-09-17T20:00:00Z',
-  updatedAt = createdAt,
-  artifactExpired = false,
-  artifactName = null,
-  workflowPath = '.github/workflows/smart-ci-shadow.yml',
-  workflowEvent = 'pull_request_target',
-  workflowStatus = 'completed',
-  workflowConclusion = 'success',
-  receiptOverrides = {},
-} = {}) {
-  const receipt = {
-    schemaVersion: 1,
-    kind: 'smart-ci-gate-receipt',
-    mode: 'shadow',
-    ok: true,
-    wouldFail: false,
-    failures: [],
-    notes: [],
-    policyId: 'taskdeck-smart-ci-v1',
-    policyDigest: digest,
-    event: {
-      name: 'pull_request_target',
-      repository: 'Chris0Jeky/Taskdeck',
-      pullRequest,
-      ref: 'main',
-    },
-    baseSha,
-    headSha,
-    mergeSha,
-    mergeTreeSha,
-    mergeBaseSha: baseSha,
-    mergeBaseTipSha: null,
-    risk: 'R4',
-    trust: 'T2',
-    escalated: false,
-    selected: [],
-    skipped: [],
-    generatedAtUtc: updatedAt,
-    ...receiptOverrides,
-  };
-  return {
-    artifact: {
-      id: artifactId,
-      name: artifactName ?? `smart-ci-receipt-${pullRequest}-${headSha}`,
-      workflowRunId: artifactWorkflowRunId,
-      expired: artifactExpired,
-      createdAt,
-      updatedAt,
-    },
-    workflowRun: {
-      id: runId,
-      path: workflowPath,
-      event: workflowEvent,
-      status: workflowStatus,
-      conclusion: workflowConclusion,
-    },
-    receipt,
-  };
-}
 
 function decide(evidence, overrides = {}) {
   return decideLandedQualification({
@@ -249,6 +173,8 @@ test('conflicting exact-tree identities for the associated PR fail closed instea
 test('CLI writes a content-free verdict, landing binding and GitHub outputs', () => {
   const root = mkdtempSync(join(tmpdir(), 'taskdeck-landed-verifier-'));
   try {
+    const policyPath = join(root, 'policy.json');
+    writeFileSync(policyPath, policyText);
     const inputPath = join(root, 'evidence.json');
     const verdictPath = join(root, 'verdict.json');
     const outputPath = join(root, 'github-output.txt');
@@ -283,3 +209,49 @@ test('CLI writes a content-free verdict, landing binding and GitHub outputs', ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test('a real planner-only shadow receipt cannot qualify a landed commit', () => {
+  const evidence = makeEvidence({ mode: 'shadow', supplyResults: false });
+  assert.equal(evidence.receipt.ok, true);
+  assert.equal(evidence.receipt.wouldFail, false);
+  assert.ok(evidence.receipt.selected.length > 0);
+  const verdict = decide([evidence], { expectedPolicyDigest: evidence.receipt.policyDigest });
+  assert.equal(verdict.qualification, 'full');
+  assert.equal(verdict.receipt, null);
+  assert.ok(verdict.diagnostics.some((entry) => entry.code === 'receipt-not-enforced'));
+});
+
+test('a real enforce receipt with missing lane evidence fails closed', () => {
+  const evidence = makeEvidence({ supplyResults: false });
+  assert.equal(evidence.receipt.mode, 'enforce');
+  assert.equal(evidence.receipt.ok, false);
+  assert.equal(evidence.receipt.wouldFail, true);
+  assert.equal(decide([evidence]).qualification, 'full');
+});
+
+for (const location of ['artifact', 'workflowRun']) {
+  for (const value of [undefined, 'SomeoneElse/OtherRepo']) {
+    test(`${location} repository must be externally bound (${value ?? 'missing'})`, () => {
+      const evidence = makeEvidence();
+      if (value === undefined) delete evidence[location].repository;
+      else evidence[location].repository = value;
+      const verdict = decide([evidence]);
+      assert.equal(verdict.qualification, 'full');
+      assert.ok(verdict.diagnostics.some((entry) => entry.code === 'repository-mismatch'));
+    });
+  }
+}
+
+for (const receiptOverrides of [
+  { ok: true, wouldFail: true, failures: [{ code: 'selected-not-success' }] },
+  { ok: true, wouldFail: false, failures: [{ code: 'selected-not-success' }] },
+  { selected: [] },
+  { selected: null },
+]) {
+  test(`green-looking incomplete receipt is rejected: ${JSON.stringify(receiptOverrides)}`, () => {
+    const verdict = decide([makeEvidence({ receiptOverrides })]);
+    assert.equal(verdict.qualification, 'full');
+    assert.equal(verdict.receipt, null);
+  });
+}
