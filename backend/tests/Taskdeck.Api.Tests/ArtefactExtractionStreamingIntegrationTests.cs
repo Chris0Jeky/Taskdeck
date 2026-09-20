@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -259,8 +260,10 @@ public sealed class ArtefactExtractionStreamingIntegrationTests
         private SqliteFixture()
         {
             var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-                .UseSqlite(TestSqlite.ConnectionString(_path)).AddInterceptors(Counter).Options;
+                .UseSqlite(TestSqlite.ConnectionString(_path))
+                .AddInterceptors(Counter, MaterialisationObserver.Instance).Options;
             Db = new TaskdeckDbContext(options);
+            MaterialisationObserver.Instance.Register(Db, Counter);
             Repo = new ArtefactExtractionRepository(Db);
         }
 
@@ -282,7 +285,22 @@ public sealed class ArtefactExtractionStreamingIntegrationTests
         }
     }
 
-    private sealed class ReadCounter : DbCommandInterceptor, IMaterializationInterceptor
+    // IMaterializationInterceptor is an EF singleton service. Reuse one observer rather than
+    // creating a new internal service provider per fixture; route counts by weak context identity.
+    private sealed class MaterialisationObserver : IMaterializationInterceptor
+    {
+        public static MaterialisationObserver Instance { get; } = new();
+        private readonly ConditionalWeakTable<DbContext, ReadCounter> _counters = new();
+        public void Register(DbContext context, ReadCounter counter) => _counters.Add(context, counter);
+        public object InitializedInstance(MaterializationInterceptionData data, object entity)
+        {
+            if (entity is ArtefactExtraction && _counters.TryGetValue(data.Context, out var counter))
+                counter.RecordMaterialised();
+            return entity;
+        }
+    }
+
+    private sealed class ReadCounter : DbCommandInterceptor
     {
         private readonly ConcurrentQueue<string> _commands = new();
         private int _materialised;
@@ -291,11 +309,7 @@ public sealed class ArtefactExtractionStreamingIntegrationTests
             sql.Contains("ArtefactExtractions", StringComparison.OrdinalIgnoreCase) &&
             sql.Contains("SELECT", StringComparison.OrdinalIgnoreCase)).ToArray();
         public void Reset() { _commands.Clear(); Interlocked.Exchange(ref _materialised, 0); }
-        public object InitializedInstance(MaterializationInterceptionData data, object entity)
-        {
-            if (entity is ArtefactExtraction) Interlocked.Increment(ref _materialised);
-            return entity;
-        }
+        public void RecordMaterialised() => Interlocked.Increment(ref _materialised);
         public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command,
             CommandEventData eventData, InterceptionResult<DbDataReader> result)
         {
