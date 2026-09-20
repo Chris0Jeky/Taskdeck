@@ -80,16 +80,28 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
     mutation: () => Promise<T>,
   ): Promise<T> {
     const key = `${cardId}:${commentId}`
-    const previous = mutationTailByCommentKey.get(key) ?? Promise.resolve()
-    // A failed predecessor must not cancel a later user intent. It still settles
-    // through its own caller/error path; the next request starts afterward.
-    const operation = previous.catch(() => undefined).then(() => {
-      // The HTTP interceptor reads the token when transport starts. Reject a
-      // queued pre-logout intent before the API callback can run under another
-      // session's credentials.
+    const previous = mutationTailByCommentKey.get(key)
+    let operation: Promise<T>
+
+    if (previous) {
+      // A failed predecessor must not cancel a later user intent. It still
+      // settles through its own caller/error path; the next request starts
+      // afterward if the initiating board session still owns it.
+      operation = previous.catch(() => undefined).then(() => {
+        // The HTTP interceptor reads the token when transport starts. Reject a
+        // queued pre-logout intent before the API callback can run under another
+        // session's credentials.
+        if (!isCurrentBoardVisit(visit)) throw new StaleBoardVisitError()
+        return mutation()
+      })
+    } else {
+      // The first intent is not queued. Start its transport in the initiating
+      // call stack so immediate navigation cannot retroactively cancel a request
+      // that the UI already submitted. Only later intents wait behind a tail.
       if (!isCurrentBoardVisit(visit)) throw new StaleBoardVisitError()
-      return mutation()
-    })
+      operation = mutation()
+    }
+
     const tail = operation.then(
       () => undefined,
       () => undefined,
