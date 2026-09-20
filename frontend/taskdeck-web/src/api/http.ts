@@ -4,7 +4,7 @@ import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
 import { resolveApiBaseUrl, shouldUseDemoMode } from '../utils/apiBaseUrl'
-import { demoHttpAdapter } from './demoAdapter'
+import { lazyDemoHttpAdapter } from './lazyDemoAdapter'
 import { notifyAuthExpired } from '../utils/authExpiry'
 import * as tokenStorage from '../utils/tokenStorage'
 import { logError, logWarn } from '../utils/errorReporting'
@@ -62,7 +62,7 @@ const http = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  ...(shouldUseDemoMode() ? { adapter: demoHttpAdapter } : {}),
+  ...(shouldUseDemoMode() ? { adapter: lazyDemoHttpAdapter } : {}),
 })
 
 // Request interceptor for auth token
