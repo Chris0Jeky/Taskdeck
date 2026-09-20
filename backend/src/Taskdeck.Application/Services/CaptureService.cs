@@ -191,12 +191,17 @@ public class CaptureService : ICaptureService
 
             if (dto.BoardId.HasValue)
             {
-                var permissionResult = await _authorizationService.CanReadBoardAsync(userId, dto.BoardId.Value);
+                // A board-scoped capture can enter that board's proposal queue. Keep the
+                // attachment boundary aligned with triage: readable Viewer access is not
+                // authority to inject work into a board only writers can modify (#3291).
+                var permissionResult = await _authorizationService.CanWriteBoardAsync(userId, dto.BoardId.Value);
                 if (!permissionResult.IsSuccess)
                     return Result.Failure<CaptureItemDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
 
                 if (!permissionResult.Value)
-                    return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have access to this board");
+                    return Result.Failure<CaptureItemDto>(
+                        ErrorCodes.Forbidden,
+                        "You do not have permission to attach captures to this board");
             }
 
             var sourceResult = ResolveSource(dto.Source);
