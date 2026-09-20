@@ -58,6 +58,11 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+async function flushPromises() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 describe('cardCommentStore visit and mutation ownership', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -108,7 +113,7 @@ describe('cardCommentStore visit and mutation ownership', () => {
     expect(helpers.toast.success).not.toHaveBeenCalledWith('Comment updated')
   })
 
-  it('does not let an older edit settle over a newer edit or invalidate its refresh', async () => {
+  it('serializes overlapping edits so the later intent commits last and owns the cache', async () => {
     const state = createState()
     const helpers = createHelpers()
     const firstEdit = deferred<TestComment>()
@@ -133,6 +138,21 @@ describe('cardCommentStore visit and mutation ownership', () => {
       { content: 'Second edit' },
     )
 
+    await flushPromises()
+    expect(mockCardCommentsApi.updateComment).toHaveBeenCalledTimes(1)
+
+    const firstResult = {
+      ...originalComment,
+      content: 'First edit',
+      updatedAt: '2026-09-20T10:01:00Z',
+    }
+    firstEdit.resolve(firstResult)
+    await pendingFirst
+    await flushPromises()
+    expect(mockCardCommentsApi.updateComment).toHaveBeenCalledTimes(2)
+    expect(state.cardCommentsByCardId.value['card-1']).toEqual([firstResult])
+
+    const pendingRead = actions.fetchCardComments('board-1', 'card-1')
     const secondResult = {
       ...originalComment,
       content: 'Second edit',
@@ -140,19 +160,12 @@ describe('cardCommentStore visit and mutation ownership', () => {
     }
     secondEdit.resolve(secondResult)
     await pendingSecond
-    const pendingRead = actions.fetchCardComments('board-1', 'card-1')
-
-    firstEdit.resolve({
-      ...originalComment,
-      content: 'First edit',
-      updatedAt: '2026-09-20T10:01:00Z',
-    })
-    await pendingFirst
     authoritativeRead.resolve([secondResult])
     await pendingRead
 
     expect(state.cardCommentsByCardId.value['card-1']).toEqual([secondResult])
-    expect(helpers.toast.success).toHaveBeenCalledTimes(1)
-    expect(helpers.toast.success).toHaveBeenCalledWith('Comment updated')
+    expect(helpers.toast.success).toHaveBeenCalledTimes(2)
+    expect(helpers.toast.success).toHaveBeenNthCalledWith(1, 'Comment updated')
+    expect(helpers.toast.success).toHaveBeenNthCalledWith(2, 'Comment updated')
   })
 })
