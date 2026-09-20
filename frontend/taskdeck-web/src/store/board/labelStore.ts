@@ -85,14 +85,25 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
     mutation: () => Promise<T>,
   ): Promise<T> {
     const key = `${boardId}:${labelId}`
-    const previous = mutationTailByLabelKey.get(key) ?? Promise.resolve()
-    const operation = previous.catch(() => undefined).then(() => {
-      // The HTTP interceptor reads the token when transport starts. A queued
-      // pre-logout intent must therefore be rejected BEFORE invoking the API,
-      // not merely ignored when its response arrives under another session.
+    const previous = mutationTailByLabelKey.get(key)
+    let operation: Promise<T>
+
+    if (previous) {
+      operation = previous.catch(() => undefined).then(() => {
+        // The HTTP interceptor reads the token when transport starts. A queued
+        // pre-logout intent must therefore be rejected BEFORE invoking the API,
+        // not merely ignored when its response arrives under another session.
+        if (!isCurrentBoardVisit(visit)) throw new StaleBoardVisitError()
+        return mutation()
+      })
+    } else {
+      // The first intent is not queued. Start its transport in the initiating
+      // call stack so immediate navigation cannot retroactively cancel a request
+      // that the UI already submitted. Only later intents wait behind a tail.
       if (!isCurrentBoardVisit(visit)) throw new StaleBoardVisitError()
-      return mutation()
-    })
+      operation = mutation()
+    }
+
     const tail = operation.then(
       () => undefined,
       () => undefined,
