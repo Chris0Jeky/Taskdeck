@@ -16,19 +16,15 @@ interface LabelCacheVisit {
   labels: Label[]
 }
 
-interface LabelMutationRequest {
-  key: string
-  version: number
-}
-
 export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
   // Label state is one selected-board collection. Board-detail commits replace
   // the array, so its identity is the visit/session boundary; same-visit label
   // operations mutate that array in place. Separate read and mutation versions
-  // then order overlapping work inside one visit.
+  // order reads, while same-label writes are serialized because the API has no
+  // revision precondition to reject an older request that reaches the server last.
   const readVersionByBoardId = new Map<string, number>()
   const mutationVersionByBoardId = new Map<string, number>()
-  const mutationRequestVersionByLabelKey = new Map<string, number>()
+  const mutationTailByLabelKey = new Map<string, Promise<void>>()
 
   function captureLabelVisit(boardId: string): LabelCacheVisit {
     return {
@@ -59,15 +55,27 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
     mutationVersionByBoardId.set(boardId, currentMutationVersion(boardId) + 1)
   }
 
-  function beginLabelMutation(boardId: string, labelId: string): LabelMutationRequest {
+  async function runLabelMutation<T>(
+    boardId: string,
+    labelId: string,
+    mutation: () => Promise<T>,
+  ): Promise<T> {
     const key = `${boardId}:${labelId}`
-    const version = (mutationRequestVersionByLabelKey.get(key) ?? 0) + 1
-    mutationRequestVersionByLabelKey.set(key, version)
-    return { key, version }
-  }
+    const previous = mutationTailByLabelKey.get(key) ?? Promise.resolve()
+    const operation = previous.catch(() => undefined).then(mutation)
+    const tail = operation.then(
+      () => undefined,
+      () => undefined,
+    )
+    mutationTailByLabelKey.set(key, tail)
 
-  function isCurrentLabelMutation(request: LabelMutationRequest) {
-    return mutationRequestVersionByLabelKey.get(request.key) === request.version
+    try {
+      return await operation
+    } finally {
+      if (mutationTailByLabelKey.get(key) === tail) {
+        mutationTailByLabelKey.delete(key)
+      }
+    }
   }
 
   async function fetchLabels(boardId: string) {
@@ -119,14 +127,17 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
   async function updateLabel(boardId: string, labelId: string, label: UpdateLabelDto) {
     helpers.guardDemoMutation()
     const visit = captureLabelVisit(boardId)
-    const mutationRequest = beginLabelMutation(boardId, labelId)
     try {
       state.loading.value = true
       state.error.value = null
-      const updatedLabel = await labelsApi.updateLabel(boardId, labelId, label)
+      const updatedLabel = await runLabelMutation(
+        boardId,
+        labelId,
+        () => labelsApi.updateLabel(boardId, labelId, label),
+      )
       helpers.markBoardDetailMutation(boardId)
 
-      if (ownsCurrentLabels(visit) && isCurrentLabelMutation(mutationRequest)) {
+      if (ownsCurrentLabels(visit)) {
         markLabelMutation(boardId)
         const index = visit.labels.findIndex((candidate) => candidate.id === labelId)
         if (index !== -1) {
@@ -147,14 +158,17 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
   async function deleteLabel(boardId: string, labelId: string) {
     helpers.guardDemoMutation()
     const visit = captureLabelVisit(boardId)
-    const mutationRequest = beginLabelMutation(boardId, labelId)
     try {
       state.loading.value = true
       state.error.value = null
-      await labelsApi.deleteLabel(boardId, labelId)
+      await runLabelMutation(
+        boardId,
+        labelId,
+        () => labelsApi.deleteLabel(boardId, labelId),
+      )
       helpers.markBoardDetailMutation(boardId)
 
-      if (ownsCurrentLabels(visit) && isCurrentLabelMutation(mutationRequest)) {
+      if (ownsCurrentLabels(visit)) {
         markLabelMutation(boardId)
         const index = visit.labels.findIndex((candidate) => candidate.id === labelId)
         if (index !== -1) visit.labels.splice(index, 1)
