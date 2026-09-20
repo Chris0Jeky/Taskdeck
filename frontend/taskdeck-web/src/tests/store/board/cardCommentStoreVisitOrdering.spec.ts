@@ -97,6 +97,7 @@ describe('cardCommentStore visit and mutation ownership', () => {
       'card-1': [{ ...originalComment, content: 'Pre-write refresh' }],
     }
     state.cardCommentsByCardId.value = refreshedCache
+    const installedCache = state.cardCommentsByCardId.value
     const updated = {
       ...originalComment,
       content: 'Edited',
@@ -105,7 +106,7 @@ describe('cardCommentStore visit and mutation ownership', () => {
     update.resolve(updated)
     await pendingUpdate
 
-    expect(state.cardCommentsByCardId.value).toBe(refreshedCache)
+    expect(state.cardCommentsByCardId.value).toBe(installedCache)
     expect(state.cardCommentsByCardId.value['card-1']).toEqual([updated])
     expect(mockCardCommentsApi.getComments).not.toHaveBeenCalled()
   })
@@ -125,10 +126,11 @@ describe('cardCommentStore visit and mutation ownership', () => {
       'card-1': [{ ...originalComment, content: 'Pre-write refresh' }],
     }
     state.cardCommentsByCardId.value = refreshedCache
+    const installedCache = state.cardCommentsByCardId.value
     create.resolve({ ...secondComment })
     await pendingCreate
 
-    expect(state.cardCommentsByCardId.value).toBe(refreshedCache)
+    expect(state.cardCommentsByCardId.value).toBe(installedCache)
     expect(state.cardCommentsByCardId.value['card-1'].map(comment => comment.id)).toEqual([
       'cmt-1',
       'cmt-2',
@@ -149,10 +151,11 @@ describe('cardCommentStore visit and mutation ownership', () => {
       'card-1': [{ ...originalComment }, { ...secondComment }],
     }
     state.cardCommentsByCardId.value = refreshedCache
+    const installedCache = state.cardCommentsByCardId.value
     deletion.resolve(undefined)
     await pendingDelete
 
-    expect(state.cardCommentsByCardId.value).toBe(refreshedCache)
+    expect(state.cardCommentsByCardId.value).toBe(installedCache)
     expect(state.cardCommentsByCardId.value['card-1'].map(comment => comment.id)).toEqual([
       'cmt-2',
     ])
