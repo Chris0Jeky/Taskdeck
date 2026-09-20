@@ -244,6 +244,7 @@ for (const location of ['artifact', 'workflowRun']) {
 }
 
 for (const receiptOverrides of [
+  { ok: true, wouldFail: true, failures: [] },
   { ok: true, wouldFail: true, failures: [{ code: 'selected-not-success' }] },
   { ok: true, wouldFail: false, failures: [{ code: 'selected-not-success' }] },
   { selected: [] },
@@ -253,5 +254,8 @@ for (const receiptOverrides of [
     const verdict = decide([makeEvidence({ receiptOverrides })]);
     assert.equal(verdict.qualification, 'full');
     assert.equal(verdict.receipt, null);
+    if (receiptOverrides.wouldFail === true) {
+      assert.deepEqual(verdict.diagnostics, [{ artifactId: 101, code: 'receipt-not-green' }]);
+    }
   });
 }
