@@ -38,7 +38,7 @@ public sealed class ProposalRejectionRevisionRaceTests : IClassFixture<TestWebAp
         var revisionService = new ProposalRevisionService(
             gate.UnitOfWork, new AutomationPolicyEngine(editorUnit));
         var pendingRevision = revisionService.CreateRevisionAsync(new CreateProposalRevisionDto(
-            proposal.Id, proposal.RequestedByUserId, Payload("Losing revision"), "Concurrent edit"));
+            proposal.Id, proposal.RequestedByUserId, Payload("Losing revision", proposal.Id), "Concurrent edit"));
 
         try
         {
@@ -93,7 +93,7 @@ public sealed class ProposalRejectionRevisionRaceTests : IClassFixture<TestWebAp
             var revised = await new ProposalRevisionService(
                 editorUnit, new AutomationPolicyEngine(editorUnit)).CreateRevisionAsync(
                     new CreateProposalRevisionDto(proposal.Id, proposal.RequestedByUserId,
-                        Payload("Winning revision"), "Concurrent edit"));
+                        Payload("Winning revision", proposal.Id), "Concurrent edit"));
             revised.IsSuccess.Should().BeTrue();
         }
         finally
@@ -116,11 +116,11 @@ public sealed class ProposalRejectionRevisionRaceTests : IClassFixture<TestWebAp
         var proposal = new AutomationProposal(ProposalSourceType.Chat, Guid.NewGuid(),
             "Rejection revision race", RiskLevel.Low, Guid.NewGuid().ToString("N"));
         proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 0, "create", "card",
-            "{\"title\":\"Original\"}", "rejection-race"));
+            "{\"title\":\"Original\"}", proposal.Id.ToString("N")));
         db.AutomationProposals.Add(proposal);
         if (hasExistingRevision)
             db.ProposalRevisions.Add(new ProposalRevision(proposal.Id, 1, proposal.RequestedByUserId,
-                Payload("Existing revision"), "Previous edit"));
+                Payload("Existing revision", proposal.Id), "Previous edit"));
         await db.SaveChangesAsync();
         return proposal;
     }
@@ -146,9 +146,9 @@ public sealed class ProposalRejectionRevisionRaceTests : IClassFixture<TestWebAp
         result.Value.Operations.Should().ContainSingle().Which.Parameters.Should().Contain(title);
     }
 
-    private static string Payload(string title) =>
+    private static string Payload(string title, Guid proposalId) =>
         "{\"operations\":[{\"sequence\":0,\"actionType\":\"create\",\"targetType\":\"card\"," +
-        "\"parameters\":\"{\\\"title\\\":\\\"" + title + "\\\"}\",\"idempotencyKey\":\"rejection-race\"}]}";
+        "\"parameters\":\"{\\\"title\\\":\\\"" + title + "\\\"}\",\"idempotencyKey\":\"" + proposalId.ToString("N") + "\"}]}";
 
     private sealed class PausedSave
     {
