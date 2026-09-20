@@ -99,8 +99,8 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     }
   }
 
-  async function reconcileReopenedBoard(boardId: string) {
-    if (state.currentBoard.value?.id !== boardId) return
+  async function reconcileReopenedBoard(boardId: string): Promise<boolean> {
+    if (state.currentBoard.value?.id !== boardId) return false
 
     const visit = captureColumnVisit(boardId)
     const mutationVersion = currentMutationVersion(boardId)
@@ -111,13 +111,16 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
         currentMutationVersion(boardId) === mutationVersion
       ) {
         state.currentBoard.value!.columns = columns
+        return true
       }
+      return false
     } catch {
       if (ownsTargetBoard(visit)) {
         helpers.toast.warning(
           'Column change saved, but columns could not be refreshed. Refresh the board before editing again.',
         )
       }
+      return false
     }
   }
 
@@ -209,7 +212,15 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
             card => card.columnId !== columnId,
           )
         } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
-          await reconcileReopenedBoard(boardId)
+          const reconciled = await reconcileReopenedBoard(boardId)
+          if (reconciled) {
+            // The delete is already durable. Once the authoritative column list
+            // is installed for the reopened visit, remove cards whose server-side
+            // cascade can no longer be represented by any surviving column.
+            state.currentBoardCards.value = state.currentBoardCards.value.filter(
+              card => card.columnId !== columnId,
+            )
+          }
         }
 
         if (isCurrentVisit(visit)) helpers.toast.success('Column deleted successfully')
