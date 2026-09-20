@@ -83,20 +83,21 @@ public class ProposalConflictDetector : IProposalConflictDetector
                 unevaluatedOperationCount);
         }
 
-        // Entity caches to avoid redundant DB lookups across sub-methods
-        var cardCache = new Dictionary<Guid, Card?>();
-        var columnCache = new Dictionary<Guid, Column?>();
+        // Proposal access does not grant authority over arbitrary referenced IDs.
+        // This reader and all its permission decisions live for this request only.
+        var targets = new ProposalConflictEntityReader(
+            _unitOfWork, _authorizationService, proposal.BoardId, userId);
         var projectedColumnChanges = await GetProjectedColumnChangesAsync(
-            proposal, cardCache, columnCache, cancellationToken);
+            proposal, targets, cancellationToken);
 
         // Check each condition and collect rows
-        await CheckStaleDataAsync(proposal, rows, flaggedCardIds, cardCache, cancellationToken);
-        await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, columnCache,
+        await CheckStaleDataAsync(proposal, rows, flaggedCardIds, targets, cancellationToken);
+        await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, targets,
             projectedColumnChanges, cancellationToken);
         await CheckDuplicatePendingProposalsAsync(proposal, rows, cancellationToken);
         CheckHighRiskOperations(proposal, rows);
         await CheckOutboundWebhooksAsync(proposal, rows, cancellationToken);
-        await CheckActiveCommentsAsync(proposal, rows, cancellationToken);
+        await CheckActiveCommentsAsync(proposal, rows, targets, cancellationToken);
         CheckMultipleOperationsOnSameCard(proposal, rows);
 
         // If no warnings or info rows, emit an Ok row. An incomplete review must
@@ -109,7 +110,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         {
             // Add positive signals when applicable
             await AddPositiveSignalsAsync(proposal, rows, flaggedCardIds, flaggedColumnIds,
-                cardCache, columnCache, projectedColumnChanges, cancellationToken);
+                targets, projectedColumnChanges, cancellationToken);
         }
 
         // Sort: Warn first, then Info, then Ok
@@ -149,7 +150,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         ProposalConflictContext proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedCardIds,
-        Dictionary<Guid, Card?> cardCache,
+        ProposalConflictEntityReader targets,
         CancellationToken cancellationToken)
     {
         var cardTargetIds = GetDistinctCardTargetIds(proposal, includeCreate: false);
@@ -157,7 +158,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var cardId in cardTargetIds)
         {
-            var card = await GetOrFetchCardAsync(cardId, cardCache, cancellationToken);
+            var card = await targets.GetCardAsync(cardId, cancellationToken);
             if (card is null)
             {
                 flaggedCardIds.Add(cardId);
@@ -187,7 +188,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         ProposalConflictContext proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedColumnIds,
-        Dictionary<Guid, Column?> columnCache,
+        ProposalConflictEntityReader targets,
         IReadOnlyDictionary<Guid, ColumnProjection> projectedColumnChanges,
         CancellationToken cancellationToken)
     {
@@ -195,7 +196,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var (columnId, projection) in projectedColumnChanges)
         {
-            var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
+            var column = await targets.GetColumnAsync(columnId, cancellationToken);
             if (column is null)
             {
                 if (projection.ReceivesCards)
@@ -306,6 +307,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     private async Task CheckActiveCommentsAsync(
         ProposalConflictContext proposal,
         List<ConflictRow> rows,
+        ProposalConflictEntityReader targets,
         CancellationToken cancellationToken)
     {
         var cardTargetIds = GetDistinctCardTargetIds(proposal, includeCreate: false);
@@ -313,6 +315,10 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var cardId in cardTargetIds)
         {
+            // Even a count reveals private activity. Missing and hidden cards both
+            // stop here; their bounded warning is produced by CheckStaleDataAsync.
+            if (await targets.GetCardAsync(cardId, cancellationToken) is null)
+                continue;
             var commentCount = await _unitOfWork.CardComments.CountByCardIdAsync(cardId, cancellationToken);
             if (commentCount > 0)
             {
@@ -357,8 +363,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         List<ConflictRow> rows,
         HashSet<Guid> flaggedCardIds,
         HashSet<Guid> flaggedColumnIds,
-        Dictionary<Guid, Card?> cardCache,
-        Dictionary<Guid, Column?> columnCache,
+        ProposalConflictEntityReader targets,
         IReadOnlyDictionary<Guid, ColumnProjection> projectedColumnChanges,
         CancellationToken cancellationToken)
     {
@@ -368,7 +373,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             if (!projection.ReceivesCards) continue;
             if (flaggedColumnIds.Contains(columnId)) continue;
 
-            var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
+            var column = await targets.GetColumnAsync(columnId, cancellationToken);
             if (column is null) continue;
 
             var projectedCount = column.Cards.Count(card => !card.IsArchived) + projection.Delta;
@@ -387,7 +392,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         {
             if (flaggedCardIds.Contains(cardId)) continue;
 
-            var card = await GetOrFetchCardAsync(cardId, cardCache, cancellationToken);
+            var card = await targets.GetCardAsync(cardId, cancellationToken);
             if (card is not null)
             {
                 rows.Add(new ConflictRow(
@@ -407,10 +412,10 @@ public class ProposalConflictDetector : IProposalConflictDetector
     {
         return proposal.Operations
             .Where(op => op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)
-                         && (includeCreate || !op.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
-                         && !string.IsNullOrEmpty(op.TargetId)
-                         && Guid.TryParse(op.TargetId, out _))
-            .Select(op => Guid.Parse(op.TargetId!))
+                         && (includeCreate || !op.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)))
+            .Select(TryGetCardId)
+            .Where(cardId => cardId.HasValue)
+            .Select(cardId => cardId!.Value)
             .Distinct()
             .ToList();
     }
@@ -421,8 +426,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// </summary>
     private async Task<IReadOnlyDictionary<Guid, ColumnProjection>> GetProjectedColumnChangesAsync(
         ProposalConflictContext proposal,
-        Dictionary<Guid, Card?> cardCache,
-        Dictionary<Guid, Column?> columnCache,
+        ProposalConflictEntityReader targets,
         CancellationToken cancellationToken)
     {
         var changes = new Dictionary<Guid, ColumnProjection>();
@@ -441,7 +445,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             {
                 if (cardStates.TryGetValue(cardId.Value, out var projectedState))
                     state = projectedState;
-                else if (await GetOrFetchCardAsync(cardId.Value, cardCache, cancellationToken) is { } card)
+                else if (await targets.GetCardAsync(cardId.Value, cancellationToken) is { } card)
                     state = (card.ColumnId, card.IsArchived);
             }
 
@@ -465,7 +469,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
             // A rejected move cannot free its source slot for a later operation. Still
             // retain the attempted destination count so Review names that WIP violation.
-            var targetColumn = await GetOrFetchColumnAsync(targetColumnId.Value, columnCache, cancellationToken);
+            var targetColumn = await targets.GetColumnAsync(targetColumnId.Value, cancellationToken);
             var moveExceedsCapacity = action == "move" && targetColumn?.WipLimit is { } limit &&
                 targetColumn.Cards.Count(card => !card.IsArchived) + changes.GetValueOrDefault(targetColumnId.Value).Delta >= limit;
 
@@ -593,38 +597,6 @@ public class ProposalConflictDetector : IProposalConflictDetector
         };
 
         return eventOperation is null ? null : $"{entityType}.{eventOperation}";
-    }
-
-    /// <summary>
-    /// Fetches a card by ID, using the cache to avoid redundant lookups.
-    /// </summary>
-    private async Task<Card?> GetOrFetchCardAsync(
-        Guid cardId,
-        Dictionary<Guid, Card?> cache,
-        CancellationToken cancellationToken)
-    {
-        if (cache.TryGetValue(cardId, out var cached))
-            return cached;
-
-        var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
-        cache[cardId] = card;
-        return card;
-    }
-
-    /// <summary>
-    /// Fetches a column with cards by ID, using the cache to avoid redundant lookups.
-    /// </summary>
-    private async Task<Column?> GetOrFetchColumnAsync(
-        Guid columnId,
-        Dictionary<Guid, Column?> cache,
-        CancellationToken cancellationToken)
-    {
-        if (cache.TryGetValue(columnId, out var cached))
-            return cached;
-
-        var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
-        cache[columnId] = column;
-        return column;
     }
 
     private static ProposalConflictContext ToContext(AutomationProposal proposal) => new(
