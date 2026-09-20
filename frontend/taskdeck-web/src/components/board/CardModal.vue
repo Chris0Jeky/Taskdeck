@@ -203,6 +203,15 @@ const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermission
   })
 const editorWritesBlocked = computed(() => permissionRecovery.value && !boardCanWrite.value)
 
+// One choke point for the three card-mutation entry points (save, delete, delete-confirm).
+// handleClose and closeWithoutPrompt already refuse while an assignment PUT is in flight, but
+// handleSave's success path calls options.onClose() -> emit('close') directly, bypassing both.
+// Folding assignmentSaving in here means a future fourth mutation path cannot reintroduce the
+// window by forgetting the check. Deliberately NOT folded into editorWritesBlocked: that guard
+// also gates the fieldset, comment deletion and a permission-recovery watcher, none of which
+// should react to an in-flight assignment save.
+const cardWritesBlocked = computed(() => editorWritesBlocked.value || assignmentSaving.value)
+
 const dialogRef = ref<HTMLElement | null>(null)
 const permissionRecoveryRefresh = ref<HTMLButtonElement | null>(null)
 const commentDeleteCancel = ref<HTMLButtonElement | null>(null)
@@ -708,13 +717,13 @@ useEscapeToClose(
       <p v-if="assignmentSaving" role="status" class="text-sm">Saving assignments… the editor stays open until the server answers.</p>
       <p v-else-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
       <CardModalActions
-          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty && !editorWritesBlocked"
+          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty && !cardWritesBlocked"
           :is-saving="isSaving"
-          :disabled="editorWritesBlocked"
+          :disabled="cardWritesBlocked"
           :card="card"
-          @save="!editorWritesBlocked && handleSave()"
+          @save="!cardWritesBlocked && handleSave()"
           @close="handleClose"
-        @delete-click="!editorWritesBlocked && handleDeleteClick()"
+        @delete-click="!cardWritesBlocked && handleDeleteClick()"
       />
     </div>
   </div>
@@ -787,9 +796,9 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeleting || !detachPreview || !!deletePreviewError || editorWritesBlocked"
+        :disabled="isDeleting || !detachPreview || !!deletePreviewError || cardWritesBlocked"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        @click="!editorWritesBlocked && handleDeleteConfirm()"
+        @click="!cardWritesBlocked && handleDeleteConfirm()"
       >
         {{ isDeleting ? 'Deleting…' : 'Delete' }}
       </button>
