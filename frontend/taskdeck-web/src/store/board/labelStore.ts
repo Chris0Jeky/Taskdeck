@@ -12,10 +12,23 @@ import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
 export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
+  // Label state is one selected-board collection. A request may outlive its
+  // route, so every post-await commit must prove that its initiating board still
+  // owns the collection. Null preserves the existing pre-load/store-test
+  // convention used by card actions; optional access keeps lightweight unit
+  // fixtures that predate currentBoard compatible.
+  function ownsCurrentLabels(boardId: string) {
+    const currentBoard = state.currentBoard?.value
+    return currentBoard == null || currentBoard.id === boardId
+  }
+
   async function fetchLabels(boardId: string) {
     if (helpers.isDemoMode) return
     try {
-      state.currentBoardLabels.value = await labelsApi.getLabels(boardId)
+      const labels = await labelsApi.getLabels(boardId)
+      if (ownsCurrentLabels(boardId)) {
+        state.currentBoardLabels.value = labels
+      }
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to fetch labels')
       throw e
@@ -29,7 +42,14 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       state.error.value = null
       const newLabel = await labelsApi.createLabel(boardId, label)
       helpers.markBoardDetailMutation(boardId)
-      state.currentBoardLabels.value.push(newLabel)
+      if (
+        ownsCurrentLabels(boardId) &&
+        !state.currentBoardLabels.value.some(existingLabel => existingLabel.id === newLabel.id)
+      ) {
+        // A board-detail refresh can commit the new stable id before the POST
+        // resolves. Preserve that fresher object instead of appending a duplicate.
+        state.currentBoardLabels.value.push(newLabel)
+      }
       helpers.toast.success(`Label "${newLabel.name}" created successfully`)
       return newLabel
     } catch (e: unknown) {
@@ -48,10 +68,12 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       const updatedLabel = await labelsApi.updateLabel(boardId, labelId, label)
       helpers.markBoardDetailMutation(boardId)
 
-      // Update label in store
-      const index = state.currentBoardLabels.value.findIndex((l) => l.id === labelId)
-      if (index !== -1) {
-        state.currentBoardLabels.value[index] = updatedLabel
+      if (ownsCurrentLabels(boardId)) {
+        // Re-resolve after the await so a detail refresh can replace the array safely.
+        const index = state.currentBoardLabels.value.findIndex((l) => l.id === labelId)
+        if (index !== -1) {
+          state.currentBoardLabels.value[index] = updatedLabel
+        }
       }
 
       helpers.toast.success('Label updated successfully')
@@ -72,10 +94,11 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       await labelsApi.deleteLabel(boardId, labelId)
       helpers.markBoardDetailMutation(boardId)
 
-      // Remove label from store
-      state.currentBoardLabels.value = state.currentBoardLabels.value.filter(
-        (l) => l.id !== labelId,
-      )
+      if (ownsCurrentLabels(boardId)) {
+        state.currentBoardLabels.value = state.currentBoardLabels.value.filter(
+          (l) => l.id !== labelId,
+        )
+      }
 
       helpers.toast.success('Label deleted successfully')
     } catch (e: unknown) {
