@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -80,6 +81,40 @@ public class LlmCaptureTriageExtractorInvariantTests
         Provider: provider,
         Model: model);
 
+    private static LlmCompletionResult TaskCompletion(
+        ChatCompletionRequest request,
+        string provider,
+        string model)
+    {
+        var evidenceQuote = request.Messages
+            .Single()
+            .Content
+            .First(character => !char.IsWhiteSpace(character))
+            .ToString();
+        var content = JsonSerializer.Serialize(new
+        {
+            tasks = new[]
+            {
+                new
+                {
+                    title = "Send the launch notes",
+                    type = "action",
+                    assigneeHint = (string?)null,
+                    dueDateHint = (string?)null,
+                    confidence = 0.9m,
+                    evidenceQuote
+                }
+            }
+        });
+
+        return new LlmCompletionResult(
+            content,
+            TokensUsed: 25,
+            IsActionable: false,
+            Provider: provider,
+            Model: model);
+    }
+
     private static string LongTranscript() => string.Join(
         "\n\n",
         Enumerable.Repeat(
@@ -126,7 +161,7 @@ public class LlmCaptureTriageExtractorInvariantTests
     [Theory]
     [InlineData("AzureOpenAI", "model-a")]
     [InlineData("OpenAI", "model-b")]
-    public async Task ExtractAsync_ReturnsInvalidOutput_WhenMapChunksDisagreeOnProviderIdentity(
+    public async Task ExtractAsync_ReturnsInvalidOutput_WhenSuccessfulMapChunksDisagreeOnProviderIdentity(
         string secondProvider,
         string secondModel)
     {
@@ -142,12 +177,12 @@ public class LlmCaptureTriageExtractorInvariantTests
             .Setup(provider => provider.CompleteAsync(
                 It.IsAny<ChatCompletionRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ChatCompletionRequest _, CancellationToken _) =>
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
             {
                 callCount++;
                 return callCount == 1
-                    ? EmptyCompletion("OpenAI", "model-a")
-                    : EmptyCompletion(secondProvider, secondModel);
+                    ? TaskCompletion(request, "OpenAI", "model-a")
+                    : TaskCompletion(request, secondProvider, secondModel);
             });
 
         var result = await BuildExtractor().ExtractAsync(
