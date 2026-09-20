@@ -10,9 +10,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { policyDigest } from './lib/plan.mjs';
 
@@ -257,9 +259,9 @@ export function decideLandedQualification({
   };
 }
 
-function parseArgs(argv) {
-  const args = {
-    repo: process.env.GITHUB_REPOSITORY ?? 'Chris0Jeky/Taskdeck',
+function defaultArgs() {
+  return {
+    repo: process.env.GITHUB_REPOSITORY ?? null,
     headSha: process.env.GITHUB_SHA ?? null,
     headTreeSha: null,
     policy: 'ci/policy.v1.json',
@@ -270,11 +272,14 @@ function parseArgs(argv) {
     summary: null,
     githubOutput: process.env.GITHUB_OUTPUT ?? null,
   };
+}
+
+function parseArgs(argv, args) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => {
       index += 1;
-      if (index >= argv.length) throw new Error(`${arg} requires a value`);
+      if (index >= argv.length || argv[index].startsWith('--')) throw new Error('Missing argument value');
       return argv[index];
     };
     switch (arg) {
@@ -290,12 +295,12 @@ function parseArgs(argv) {
         args.landingPr = value;
         break;
       }
-      case '--out': args.out = next(); break;
+      case '--out': next(); break; // Pre-scanned for the failure verdict as well.
       case '--summary': args.summary = next(); break;
-      case '--github-output': args.githubOutput = next(); break;
+      case '--github-output': next(); break; // Pre-scanned so even an earlier parse error can deny bounded work.
       case '--help':
-        console.log('usage: landed-verifier.mjs [--repo owner/name] --head-sha <sha> [--head-tree-sha <sha>] --policy <file> --input <evidence.json> --landing-kind pull-request|direct-push [--landing-pr N] [--out <verdict.json>] [--summary <file>] [--github-output <file>]');
-        return { ...args, help: true };
+        args.help = true;
+        return args;
       default: throw new Error(`Unknown argument: ${arg}`);
     }
   }
@@ -335,27 +340,32 @@ function writeJson(path, value) {
 function appendOutputs(path, verdict) {
   if (!path) return;
   mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `qualification=${verdict.qualification}\n`);
-  appendFileSync(path, `reason=${verdict.reason}\n`);
-  appendFileSync(path, `landing_kind=${verdict.landing ? verdict.landing.kind : ''}\n`);
-  appendFileSync(path, `landing_pr=${verdict.landing && verdict.landing.pullRequest ? verdict.landing.pullRequest : ''}\n`);
-  appendFileSync(path, `receipt_artifact_id=${verdict.receipt ? verdict.receipt.artifactId : ''}\n`);
-  appendFileSync(path, `receipt_workflow_run_id=${verdict.receipt ? verdict.receipt.workflowRunId : ''}\n`);
+  // One append, with the affirmative flag last: partial writes cannot grant it early.
+  appendFileSync(path, [
+    `qualification=${verdict.qualification}`,
+    `reason=${verdict.reason}`,
+    `landing_kind=${verdict.landing ? verdict.landing.kind : ''}`,
+    `landing_pr=${verdict.landing && verdict.landing.pullRequest ? verdict.landing.pullRequest : ''}`,
+    `receipt_artifact_id=${verdict.receipt ? verdict.receipt.artifactId : ''}`,
+    `receipt_workflow_run_id=${verdict.receipt ? verdict.receipt.workflowRunId : ''}`,
+    `bounded=${verdict.qualification === 'bounded' ? 'true' : 'false'}`,
+    '',
+  ].join('\n'));
 }
 
-function resolveTreeSha(explicit) {
+function resolveTreeSha(explicit, headSha) {
   if (explicit) return explicit;
+  if (typeof headSha !== 'string' || !validSha(headSha)) return null;
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
+    return execFileSync('git', ['rev-parse', `${headSha}^{tree}`], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000,
+    }).trim();
   } catch {
     return null;
   }
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.help) return;
-
+function evaluateInputs(args) {
   let expectedPolicyDigest = null;
   let evidence = [];
   const inputDiagnostics = [];
@@ -382,7 +392,7 @@ function main() {
   const verdict = decideLandedQualification({
     repository: args.repo,
     headSha: args.headSha,
-    headTreeSha: resolveTreeSha(args.headTreeSha),
+    headTreeSha: resolveTreeSha(args.headTreeSha, args.headSha),
     expectedPolicyDigest,
     landing,
     evidence,
@@ -395,10 +405,73 @@ function main() {
     verdict.diagnostics = [...inputDiagnostics, ...verdict.diagnostics];
   }
 
-  writeJson(args.out, verdict);
-  if (args.summary) appendFileSync(args.summary, renderSummary(verdict));
-  process.stdout.write(renderSummary(verdict));
-  appendOutputs(args.githubOutput, verdict);
+  return verdict;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+function pathOptionBeforeParsing(argv, option, fallback) {
+  // This limited scan only locates denial output destinations. It grants no authority and
+  // does not treat malformed arguments as valid CLI input.
+  let path = fallback;
+  for (let index = 0; index < argv.length - 1; index += 1) {
+    if (argv[index] === option && !argv[index + 1].startsWith('--')) {
+      path = argv[index + 1];
+      index += 1;
+    }
+  }
+  return path;
+}
+
+function failureVerdict(args) {
+  return fullVerdict({ repository: args.repo, headSha: args.headSha }, 'verifier-error');
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+  const args = defaultArgs();
+  args.githubOutput = pathOptionBeforeParsing(argv, '--github-output', args.githubOutput);
+  args.out = pathOptionBeforeParsing(argv, '--out', args.out);
+  let initialOutputFailed = false;
+  try {
+    appendOutputs(args.githubOutput, failureVerdict(args));
+  } catch {
+    // Still parse paths so the error handler can persist a full verdict at --out.
+    initialOutputFailed = true;
+  }
+
+  try {
+    parseArgs(argv, args);
+    if (initialOutputFailed) throw new Error('Output channel unavailable');
+    if (args.help) {
+      writeSync(1, 'usage: landed-verifier.mjs [--repo owner/name] --head-sha <sha> [--head-tree-sha <sha>] --policy <file> --input <evidence.json> --landing-kind pull-request|direct-push [--landing-pr N] [--out <verdict.json>] [--summary <file>] [--github-output <file>]\n');
+      return;
+    }
+    const verdict = evaluateInputs(args);
+    writeJson(args.out, verdict);
+    const summary = renderSummary(verdict);
+    if (args.summary) {
+      mkdirSync(dirname(args.summary), { recursive: true });
+      appendFileSync(args.summary, summary);
+    }
+    writeSync(1, summary);
+    // The safe default precedes all reporting; publish true only after it succeeds.
+    appendOutputs(args.githubOutput, verdict);
+  } catch {
+    const verdict = failureVerdict(args);
+    // Either sink can itself be unavailable. Never print paths or raw input here.
+    try { writeJson(args.out, verdict); } catch { /* Unwritable verdict sink. */ }
+    try { appendOutputs(args.githubOutput, verdict); } catch { /* Unwritable output sink. */ }
+    try { writeSync(2, 'Smart CI landed verifier failed; full qualification is required.\n'); } catch { /* Closed stderr. */ }
+    process.exitCode = 1;
+  }
+}
+
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) main();
