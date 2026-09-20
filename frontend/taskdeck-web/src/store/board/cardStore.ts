@@ -1,6 +1,7 @@
 /**
  * Card operations: fetch, create, update, delete, move cards, and provenance.
  */
+import { watch } from 'vue'
 import { cardsApi } from '../../api/cardsApi'
 import { getErrorMessage } from '../../utils/errorMessage'
 import type { CardDetachPreview, CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
@@ -8,11 +9,94 @@ import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 import type { BoardFetchOptions } from './boardCrudStore'
 
+interface CardMutationVisit {
+  boardId: string
+  generation: number
+}
+
+class StaleBoardVisitError extends Error {
+  constructor() {
+    super('The board visit that queued this card change has ended.')
+    this.name = 'StaleBoardVisitError'
+  }
+}
+
 export function createCardActions(
   state: BoardState,
   helpers: BoardHelpers,
   refreshBoard: (boardId: string, options?: BoardFetchOptions) => Promise<boolean>,
 ) {
+  // Move and delete target the same durable card and neither API exposes a
+  // shared client mutation token. Serialize only that per-card lane so server
+  // commit order follows user intent, while unrelated cards remain concurrent.
+  // The visit generation prevents a queued pre-logout intent from starting
+  // under a later session's credentials.
+  const mutationTailByCardId = new Map<string, Promise<void>>()
+  let boardVisitGeneration = 0
+
+  watch(
+    () => state.currentBoard.value?.id ?? null,
+    (nextBoardId, previousBoardId) => {
+      if (nextBoardId !== previousBoardId) boardVisitGeneration++
+    },
+    { flush: 'sync' },
+  )
+
+  function captureCardMutationVisit(boardId: string): CardMutationVisit {
+    return { boardId, generation: boardVisitGeneration }
+  }
+
+  function isCurrentCardMutationVisit(visit: CardMutationVisit) {
+    const currentBoard = state.currentBoard.value
+    return (
+      (currentBoard === null || currentBoard.id === visit.boardId) &&
+      boardVisitGeneration === visit.generation
+    )
+  }
+
+  async function runCardMutation<T>(
+    cardId: string,
+    visit: CardMutationVisit,
+    mutation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = mutationTailByCardId.get(cardId)
+    let operation: Promise<T>
+
+    if (previous) {
+      operation = previous.catch(() => undefined).then(() => {
+        if (!isCurrentCardMutationVisit(visit)) throw new StaleBoardVisitError()
+        return mutation()
+      })
+    } else {
+      // The first intent is already submitted by the caller; do not defer its
+      // transport to a microtask where immediate navigation could cancel it.
+      if (!isCurrentCardMutationVisit(visit)) throw new StaleBoardVisitError()
+      operation = mutation()
+    }
+
+    const tail = operation.then(
+      () => undefined,
+      () => undefined,
+    )
+    mutationTailByCardId.set(cardId, tail)
+
+    try {
+      return await operation
+    } finally {
+      if (mutationTailByCardId.get(cardId) === tail) {
+        mutationTailByCardId.delete(cardId)
+      }
+    }
+  }
+
+  function isOlderCardSnapshot(candidateUpdatedAt: string, currentUpdatedAt: string) {
+    const candidateTime = Date.parse(candidateUpdatedAt)
+    const currentTime = Date.parse(currentUpdatedAt)
+    return Number.isFinite(candidateTime) &&
+      Number.isFinite(currentTime) &&
+      candidateTime < currentTime
+  }
+
   async function refreshDetachedChildren(boardId: string) {
     // The mutation already committed. It only changes hierarchy ownership, not
     // surviving comment threads, so keep the open editor's same-board cache
@@ -130,44 +214,44 @@ export function createCardActions(
 
   async function deleteCard(boardId: string, cardId: string, confirmation?: CardDetachPreview) {
     helpers.guardDemoMutation()
-    let refreshChildren = false
-    try {
-      state.loading.value = true
-      state.error.value = null
-      await cardsApi.deleteCard(boardId, cardId, confirmation)
-      helpers.markBoardDetailMutation(boardId)
+    const visit = captureCardMutationVisit(boardId)
+    return runCardMutation(cardId, visit, async () => {
+      let refreshChildren = false
+      try {
+        state.loading.value = true
+        state.error.value = null
+        await cardsApi.deleteCard(boardId, cardId, confirmation)
+        helpers.markBoardDetailMutation(boardId)
 
-      // A move, realtime refresh, or navigation can replace this state while the
-      // DELETE is in flight. Commit only into the initiating board's current
-      // collection, and derive the count delta from the card that exists NOW.
-      // If an authoritative refresh already removed it, its count is already
-      // settled and must not be decremented again.
-      const ownsCurrentCards =
-        state.currentBoard.value === null || state.currentBoard.value.id === boardId
-      if (ownsCurrentCards) {
-        const committedCard = state.currentBoardCards.value.find((card) => card.id === cardId)
-        state.currentBoardCards.value = state.currentBoardCards.value.filter((card) => card.id !== cardId)
-        if (state.cardCommentsByCardId.value[cardId]) {
-          const { [cardId]: _, ...remainingComments } = state.cardCommentsByCardId.value
-          state.cardCommentsByCardId.value = remainingComments
+        // A move, realtime refresh, or navigation can replace this state while
+        // the DELETE is in flight. Commit only into the exact initiating board
+        // visit and derive the count delta from the card that exists NOW. If an
+        // authoritative refresh already removed it, its count is already settled.
+        if (isCurrentCardMutationVisit(visit)) {
+          const committedCard = state.currentBoardCards.value.find((card) => card.id === cardId)
+          state.currentBoardCards.value = state.currentBoardCards.value.filter((card) => card.id !== cardId)
+          if (state.cardCommentsByCardId.value[cardId]) {
+            const { [cardId]: _, ...remainingComments } = state.cardCommentsByCardId.value
+            state.cardCommentsByCardId.value = remainingComments
+          }
+
+          if (committedCard) {
+            helpers.updateColumnCardCount(committedCard.columnId, -1)
+          }
+
+          refreshChildren = state.currentBoard.value?.id === boardId &&
+            state.currentBoardCards.value.some(card => card.parentCardId === cardId)
+          helpers.toast.success('Card deleted successfully')
         }
-
-        if (committedCard) {
-          helpers.updateColumnCardCount(committedCard.columnId, -1)
-        }
-
-        refreshChildren = state.currentBoard.value?.id === boardId &&
-          state.currentBoardCards.value.some(card => card.parentCardId === cardId)
+      } catch (e: unknown) {
+        helpers.handleApiError(e, 'Failed to delete card')
+        throw e
+      } finally {
+        state.loading.value = false
       }
-      helpers.toast.success('Card deleted successfully')
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to delete card')
-      throw e
-    } finally {
-      state.loading.value = false
-    }
-    // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
-    if (refreshChildren) await refreshDetachedChildren(boardId)
+      // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
+      if (refreshChildren) await refreshDetachedChildren(boardId)
+    })
   }
 
   async function moveCard(
@@ -177,53 +261,56 @@ export function createCardActions(
     targetPosition: number,
   ) {
     helpers.guardDemoMutation()
-    try {
-      state.loading.value = true
-      state.error.value = null
+    const visit = captureCardMutationVisit(boardId)
+    return runCardMutation(cardId, visit, async () => {
+      try {
+        state.loading.value = true
+        state.error.value = null
 
-      const existingCard =
-        state.currentBoardCards.value.find((c) => c.id === cardId) ?? null
-      const previousColumnId = existingCard?.columnId ?? null
-      const updatedCard = await cardsApi.moveCard(boardId, cardId, {
-        targetColumnId,
-        targetPosition,
-      })
-      helpers.markBoardDetailMutation(boardId)
+        const updatedCard = await cardsApi.moveCard(boardId, cardId, {
+          targetColumnId,
+          targetPosition,
+        })
+        helpers.markBoardDetailMutation(boardId)
 
-      // The board can change while the move is in flight. Committing to another
-      // board's array would splice an unrelated card out and push this one in.
-      // Skip only when a board IS selected and it is a different one; a null
-      // currentBoard still owns currentBoardCards (integration tests and the
-      // pre-load window).
-      if (state.currentBoard.value && state.currentBoard.value.id !== boardId) {
+        if (!isCurrentCardMutationVisit(visit)) {
+          return updatedCard
+        }
+
+        // Resolve the committed card after the await. Its current column owns
+        // any count delta; a pre-request snapshot has no settlement authority.
+        const commitIndex = state.currentBoardCards.value.findIndex((card) => card.id === cardId)
+        if (commitIndex === -1) {
+          // A later delete or authoritative refresh removed the card. Never
+          // resurrect it from an older move response. Preserve the historical
+          // null-board preload behavior only when no board session exists yet.
+          if (state.currentBoard.value === null && state.currentBoardCards.value.length === 0) {
+            state.currentBoardCards.value.push(updatedCard)
+            helpers.toast.success('Card moved successfully')
+          }
+          return updatedCard
+        }
+
+        const committedCard = state.currentBoardCards.value[commitIndex]
+        if (isOlderCardSnapshot(updatedCard.updatedAt, committedCard.updatedAt)) {
+          return updatedCard
+        }
+
+        state.currentBoardCards.value[commitIndex] = updatedCard
+        if (committedCard.columnId !== updatedCard.columnId) {
+          helpers.updateColumnCardCount(committedCard.columnId, -1)
+          helpers.updateColumnCardCount(updatedCard.columnId, 1)
+        }
+
+        helpers.toast.success('Card moved successfully')
         return updatedCard
+      } catch (e: unknown) {
+        helpers.handleApiError(e, 'Failed to move card')
+        throw e
+      } finally {
+        state.loading.value = false
       }
-
-      // Re-resolve by id AFTER the await, exactly as updateCard does. An index
-      // captured before the await goes stale whenever anything else mutates the
-      // array first -- a second concurrent move, a realtime-triggered refetch, a
-      // teammate's delete -- and splicing it removes the WRONG card: the moved
-      // card survives as a duplicate while an innocent one disappears.
-      const commitIndex = state.currentBoardCards.value.findIndex((c) => c.id === cardId)
-      if (commitIndex !== -1) {
-        state.currentBoardCards.value.splice(commitIndex, 1)
-      }
-
-      state.currentBoardCards.value.push(updatedCard)
-
-      if (previousColumnId && previousColumnId !== updatedCard.columnId) {
-        helpers.updateColumnCardCount(previousColumnId, -1)
-        helpers.updateColumnCardCount(updatedCard.columnId, 1)
-      }
-
-      helpers.toast.success('Card moved successfully')
-      return updatedCard
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to move card')
-      throw e
-    } finally {
-      state.loading.value = false
-    }
+    })
   }
 
   async function fetchCardProvenance(
