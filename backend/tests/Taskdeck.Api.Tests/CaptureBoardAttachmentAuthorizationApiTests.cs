@@ -25,12 +25,12 @@ public class CaptureBoardAttachmentAuthorizationApiTests : IClassFixture<TestWeb
     [Fact]
     public async Task Viewer_CannotCreateCaptureAttachedToReadableBoard()
     {
-        var suffix = Guid.NewGuid().ToString("N");
-        var owner = await ApiTestHarness.AuthenticateAsync(_client, $"capture-owner-{suffix}");
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var owner = await ApiTestHarness.AuthenticateAsync(_client, "cap-owner");
         var board = await ApiTestHarness.CreateBoardAsync(
             _client,
             $"Viewer capture boundary {suffix}");
-        var viewer = await ApiTestHarness.AuthenticateAsync(_client, $"capture-viewer-{suffix}");
+        var viewer = await ApiTestHarness.AuthenticateAsync(_client, "cap-viewer");
 
         using (var scope = _factory.Services.CreateScope())
         {
@@ -63,12 +63,12 @@ public class CaptureBoardAttachmentAuthorizationApiTests : IClassFixture<TestWeb
     [Fact]
     public async Task Editor_CanCreateCaptureAttachedToWritableBoard()
     {
-        var suffix = Guid.NewGuid().ToString("N");
-        var owner = await ApiTestHarness.AuthenticateAsync(_client, $"capture-owner-{suffix}");
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var owner = await ApiTestHarness.AuthenticateAsync(_client, "cap-owner");
         var board = await ApiTestHarness.CreateBoardAsync(
             _client,
             $"Editor capture boundary {suffix}");
-        var editor = await ApiTestHarness.AuthenticateAsync(_client, $"capture-editor-{suffix}");
+        var editor = await ApiTestHarness.AuthenticateAsync(_client, "cap-editor");
 
         using (var scope = _factory.Services.CreateScope())
         {
