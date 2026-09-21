@@ -22,6 +22,8 @@ export const useIntegrationStore = defineStore('integration', () => {
   const error = ref<string | null>(null)
 
   type ReadLane = 'list' | 'detail'
+  type ReadRetry = () => Promise<void>
+
   interface ReadOwner {
     epoch: number
     token: symbol
@@ -29,18 +31,20 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   let lifecycleEpoch = 0
   const readOwners = new Map<ReadLane, ReadOwner>()
+  const readRetries = new Map<ReadLane, ReadRetry>()
   const activeReadTokens = new Set<symbol>()
 
   function syncLoading() {
     loading.value = activeReadTokens.size > 0
   }
 
-  function beginRead(lane: ReadLane): ReadOwner {
+  function beginRead(lane: ReadLane, retry: ReadRetry): ReadOwner {
     const previous = readOwners.get(lane)
     if (previous?.epoch === lifecycleEpoch) activeReadTokens.delete(previous.token)
 
     const owner = { epoch: lifecycleEpoch, token: Symbol(lane) }
     readOwners.set(lane, owner)
+    readRetries.set(lane, retry)
     activeReadTokens.add(owner.token)
     error.value = null
     syncLoading()
@@ -55,6 +59,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   function finishRead(lane: ReadLane, owner: ReadOwner) {
     if (!ownsRead(lane, owner)) return
     readOwners.delete(lane)
+    readRetries.delete(lane)
     activeReadTokens.delete(owner.token)
     syncLoading()
   }
@@ -62,9 +67,31 @@ export const useIntegrationStore = defineStore('integration', () => {
   function invalidateOperations() {
     lifecycleEpoch += 1
     readOwners.clear()
+    readRetries.clear()
     activeReadTokens.clear()
     loading.value = false
     error.value = null
+  }
+
+  function retryEmptyActiveReads() {
+    const listRetry = readOwners.has('list') && connectors.value.length === 0
+      ? readRetries.get('list')
+      : undefined
+    const detailRetry = readOwners.has('detail') && selectedConnector.value === null
+      ? readRetries.get('detail')
+      : undefined
+
+    invalidateOperations()
+    if (listRetry) {
+      void listRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
+    if (detailRetry) {
+      void detailRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
   }
 
   function ownsLifetime(epoch: number): boolean {
@@ -85,7 +112,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       return
     }
 
-    const owner = beginRead('list')
+    const owner = beginRead('list', fetchConnectors)
     try {
       const result = await integrationsApi.listConnectors()
       if (!ownsRead('list', owner)) return
@@ -107,7 +134,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       return
     }
 
-    const owner = beginRead('detail')
+    const owner = beginRead('detail', () => fetchConnectorDetail(id))
     try {
       const result = await integrationsApi.getConnector(id)
       if (!ownsRead('detail', owner)) return
@@ -251,7 +278,7 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   watch(
     () => session.token,
-    invalidateOperations,
+    retryEmptyActiveReads,
     { flush: 'sync' },
   )
 
