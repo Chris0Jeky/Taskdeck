@@ -96,6 +96,27 @@ describe('integrationStore request ownership', () => {
     expect(store.error).toBeNull()
   })
 
+  it('invalidates an old same-id detail success across reset', async () => {
+    const oldA = deferred<IntegrationConnectorDetail>()
+    const newA = deferred<IntegrationConnectorDetail>()
+    vi.mocked(integrationsApi.getConnector)
+      .mockReturnValueOnce(oldA.promise)
+      .mockReturnValueOnce(newA.promise)
+    const store = useIntegrationStore()
+
+    const oldRequest = store.fetchConnectorDetail('connector-a')
+    store.$reset()
+    const newRequest = store.fetchConnectorDetail('connector-a')
+    newA.resolve(detail('connector-a', 'A new'))
+    await newRequest
+
+    oldA.resolve(detail('connector-a', 'A old'))
+    await oldRequest
+
+    expect(store.selectedConnector?.name).toBe('A new')
+    expect(store.error).toBeNull()
+  })
+
   it('invalidates an old same-id detail across reset without letting its failure clear the new result', async () => {
     const oldA = deferred<IntegrationConnectorDetail>()
     const newA = deferred<IntegrationConnectorDetail>()

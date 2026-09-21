@@ -19,8 +19,50 @@ export const useIntegrationStore = defineStore('integration', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  /** Tracks the connector ID for the in-flight detail fetch so late responses are discarded. */
-  let _pendingDetailId: string | null = null
+  type ReadLane = 'list' | 'detail'
+  interface ReadOwner {
+    epoch: number
+    token: symbol
+  }
+
+  let readEpoch = 0
+  const readOwners = new Map<ReadLane, ReadOwner>()
+  const activeReadTokens = new Set<symbol>()
+
+  function syncLoading() {
+    loading.value = activeReadTokens.size > 0
+  }
+
+  function beginRead(lane: ReadLane): ReadOwner {
+    const previous = readOwners.get(lane)
+    if (previous?.epoch === readEpoch) activeReadTokens.delete(previous.token)
+
+    const owner = { epoch: readEpoch, token: Symbol(lane) }
+    readOwners.set(lane, owner)
+    activeReadTokens.add(owner.token)
+    error.value = null
+    syncLoading()
+    return owner
+  }
+
+  function ownsRead(lane: ReadLane, owner: ReadOwner): boolean {
+    const current = readOwners.get(lane)
+    return owner.epoch === readEpoch && current?.token === owner.token
+  }
+
+  function finishRead(lane: ReadLane, owner: ReadOwner) {
+    if (!ownsRead(lane, owner)) return
+    readOwners.delete(lane)
+    activeReadTokens.delete(owner.token)
+    syncLoading()
+  }
+
+  function invalidateReads() {
+    readEpoch += 1
+    readOwners.clear()
+    activeReadTokens.clear()
+    loading.value = false
+  }
 
   function guardDemoMutation(): never | void {
     if (isDemoMode) {
@@ -35,17 +77,20 @@ export const useIntegrationStore = defineStore('integration', () => {
       error.value = 'Integrations are not available in demo mode.'
       return
     }
+
+    const owner = beginRead('list')
     try {
-      loading.value = true
-      error.value = null
-      connectors.value = await integrationsApi.listConnectors()
+      const result = await integrationsApi.listConnectors()
+      if (!ownsRead('list', owner)) return
+      connectors.value = result
     } catch (e: unknown) {
+      if (!ownsRead('list', owner)) return
       connectors.value = []
       const msg = getErrorDisplay(e, 'Failed to fetch integrations').message
       error.value = msg
       toast.error(msg)
     } finally {
-      loading.value = false
+      finishRead('list', owner)
     }
   }
 
@@ -54,25 +99,20 @@ export const useIntegrationStore = defineStore('integration', () => {
       error.value = 'Integrations are not available in demo mode.'
       return
     }
-    _pendingDetailId = id
+
+    const owner = beginRead('detail')
     try {
-      loading.value = true
-      error.value = null
       const result = await integrationsApi.getConnector(id)
-      // Discard stale response if the user selected a different connector while we were loading
-      if (_pendingDetailId !== id) return
+      if (!ownsRead('detail', owner)) return
       selectedConnector.value = result
     } catch (e: unknown) {
-      // Only update state if this is still the active request
-      if (_pendingDetailId !== id) return
+      if (!ownsRead('detail', owner)) return
       const msg = getErrorDisplay(e, 'Failed to fetch connector details').message
       error.value = msg
       selectedConnector.value = null
       toast.error(msg)
     } finally {
-      if (_pendingDetailId === id) {
-        loading.value = false
-      }
+      finishRead('detail', owner)
     }
   }
 
@@ -166,11 +206,10 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   function $reset() {
+    invalidateReads()
     connectors.value = []
     selectedConnector.value = null
-    loading.value = false
     error.value = null
-    _pendingDetailId = null
   }
 
   return {
