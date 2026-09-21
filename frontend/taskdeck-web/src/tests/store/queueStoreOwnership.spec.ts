@@ -213,7 +213,7 @@ describe('queueStore async ownership', () => {
     expect(store.loading).toBe(false)
   })
 
-  it('clears both surfaces on token rotation and ignores late read and submit successes', async () => {
+  it('preserves loaded queue data on token rotation and ignores late read and submit successes', async () => {
     const oldRead = deferred<QueueRequest[]>()
     const oldSubmit = deferred<QueueRequest>()
     store.requests = [request('existing')]
@@ -237,15 +237,15 @@ describe('queueStore async ownership', () => {
     oldSubmit.resolve(request('old-submit'))
     await Promise.all([readOperation, submitOperation])
 
-    expect(immediate).toEqual({ requestIds: [], stats: null, loading: false, error: null })
-    expect(store.requests).toEqual([])
-    expect(store.stats).toBeNull()
+    expect(immediate).toEqual({ requestIds: ['existing'], stats: stats(4), loading: false, error: null })
+    expect(store.requests.map(item => item.id)).toEqual(['existing'])
+    expect(store.stats).toEqual(stats(4))
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
     expect(toastMocks.success).not.toHaveBeenCalled()
   })
 
-  it('suppresses a stale mutation failure after token rotation while preserving rejection', async () => {
+  it('suppresses a stale mutation failure after token rotation while preserving cached data and rejection', async () => {
     const cancel = deferred<void>()
     store.requests = [request('old-request')]
     vi.mocked(queueApi.cancelRequest).mockReturnValue(cancel.promise)
@@ -255,7 +255,7 @@ describe('queueStore async ownership', () => {
     cancel.reject(new Error('old-session cancellation failed'))
     await expect(operation).rejects.toThrow('old-session cancellation failed')
 
-    expect(store.requests).toEqual([])
+    expect(store.requests.map(item => item.id)).toEqual(['old-request'])
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
     expect(toastMocks.error).not.toHaveBeenCalled()
