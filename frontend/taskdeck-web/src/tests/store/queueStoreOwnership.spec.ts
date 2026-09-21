@@ -262,6 +262,48 @@ describe('queueStore async ownership', () => {
     expect(toastMocks.success).not.toHaveBeenCalled()
   })
 
+  it('retries empty initial request and stats reads after same-user token rotation', async () => {
+    const oldRequests = deferred<QueueRequest[]>()
+    const freshRequests = deferred<QueueRequest[]>()
+    const oldStats = deferred<QueueStats>()
+    const freshStats = deferred<QueueStats>()
+    vi.mocked(queueApi.getRequestsByStatus)
+      .mockReturnValueOnce(oldRequests.promise)
+      .mockReturnValueOnce(freshRequests.promise)
+    vi.mocked(queueApi.getStats)
+      .mockReturnValueOnce(oldStats.promise)
+      .mockReturnValueOnce(freshStats.promise)
+
+    const requestsOperation = store.fetchByStatus('Failed')
+    const statsOperation = store.fetchStats()
+    session.token = token('new')
+
+    expect(queueApi.getRequestsByStatus).toHaveBeenCalledTimes(2)
+    expect(queueApi.getRequestsByStatus).toHaveBeenNthCalledWith(2, 'Failed')
+    expect(queueApi.getStats).toHaveBeenCalledTimes(2)
+    expect(store.requests).toEqual([])
+    expect(store.stats).toBeNull()
+    expect(store.loading).toBe(true)
+
+    oldRequests.resolve([request('old-token', 'Failed')])
+    oldStats.resolve(stats(1))
+    await Promise.all([requestsOperation, statsOperation])
+
+    expect(store.requests).toEqual([])
+    expect(store.stats).toBeNull()
+    expect(store.loading).toBe(true)
+    expect(store.error).toBeNull()
+
+    freshRequests.resolve([request('fresh-token', 'Failed')])
+    freshStats.resolve(stats(7))
+    await vi.waitFor(() => {
+      expect(store.requests.map(item => item.id)).toEqual(['fresh-token'])
+      expect(store.stats?.pendingCount).toBe(7)
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+    })
+  })
+
   it('suppresses a stale mutation failure after token rotation while preserving cached data and rejection', async () => {
     const cancel = deferred<void>()
     store.requests = [request('old-request')]
