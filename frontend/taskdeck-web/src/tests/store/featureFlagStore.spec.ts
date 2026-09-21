@@ -71,6 +71,18 @@ describe('featureFlagStore', () => {
       }
     })
 
+    it('clears a previous load error after a later restore succeeds', () => {
+      localStorage.setItem('taskdeck_feature_flags', 'not-valid-json')
+      store.restore()
+      expect(store.persistenceError).toContain('could not be loaded')
+
+      localStorage.setItem('taskdeck_feature_flags', JSON.stringify({ newAuth: false }))
+      store.restore()
+
+      expect(store.persistenceError).toBeNull()
+      expect(store.isEnabled('newAuth')).toBe(false)
+    })
+
     it('restores only declared boolean flag values', () => {
       localStorage.setItem('taskdeck_feature_flags', JSON.stringify({
         newShell: 0,

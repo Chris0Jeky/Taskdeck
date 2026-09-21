@@ -52,8 +52,12 @@ export const useFeatureFlagStore = defineStore('featureFlags', () => {
 
     try {
       const saved = localStorage.getItem(FLAGS_KEY)
-      if (!saved) return
+      if (!saved) {
+        persistenceError.value = null
+        return
+      }
       flags.value = normalizeFeatureFlags(JSON.parse(saved) as unknown)
+      persistenceError.value = null
     } catch {
       flags.value = { ...defaultFeatureFlags }
       persistenceError.value = 'Feature flags could not be loaded from browser storage; defaults are active.'
