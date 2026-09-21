@@ -74,14 +74,6 @@ export function createBoardRealtimeController(
     fallbackTimer = null
   }
 
-  const beginRecoveryGeneration = () => {
-    recoveryGeneration += 1
-    if (pendingRecoveryRefresh) {
-      pendingRecoveryGeneration = recoveryGeneration
-    }
-    return recoveryGeneration
-  }
-
   const startFallbackPolling = (
     boardId: string,
     canDischargeRecovery = false,
@@ -241,8 +233,8 @@ export function createBoardRealtimeController(
     hubConnection.on(BOARD_PRESENCE_EVENT, handleBoardPresence)
     hubConnection.onreconnecting(() => {
       if (connection === hubConnection && requestedBoardId) {
-        const nextRecoveryGeneration = beginRecoveryGeneration()
-        startFallbackPolling(requestedBoardId, false, nextRecoveryGeneration)
+        recoveryGeneration += 1
+        startFallbackPolling(requestedBoardId, false, recoveryGeneration)
       }
     })
     hubConnection.onreconnected(async () => {
@@ -283,8 +275,8 @@ export function createBoardRealtimeController(
     })
     hubConnection.onclose(() => {
       if (connection === hubConnection && requestedBoardId) {
-        const nextRecoveryGeneration = beginRecoveryGeneration()
-        startFallbackPolling(requestedBoardId, false, nextRecoveryGeneration)
+        recoveryGeneration += 1
+        startFallbackPolling(requestedBoardId, false, recoveryGeneration)
       }
     })
 
@@ -409,7 +401,7 @@ export function createBoardRealtimeController(
   const stop = async () => {
     requestedBoardId = null
     subscriptionGeneration++
-    beginRecoveryGeneration()
+    recoveryGeneration += 1
     recoveryPending = false
     stopFallbackPolling()
     cancelMutationDebounce()
