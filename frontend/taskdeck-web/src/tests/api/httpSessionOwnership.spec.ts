@@ -12,6 +12,11 @@ vi.mock('../../pwa/legacyApiCache', () => ({ purgeLegacyApiCaches: effects.purge
 import http from '../../api/http'
 import * as tokenStorage from '../../utils/tokenStorage'
 
+function normalizedHeaders(value: unknown): AxiosHeaders {
+  if (!(value instanceof AxiosHeaders)) throw new Error('Expected normalized Axios request headers')
+  return value
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => { resolve = done })
@@ -156,8 +161,8 @@ describe('HTTP session ownership', () => {
     await vi.runAllTimersAsync()
     expect((await request).data).toEqual({ ok: true })
     expect(mock.history.get).toHaveLength(2)
-    const first = AxiosHeaders.from(mock.history.get[0]!.headers)
-    const second = AxiosHeaders.from(mock.history.get[1]!.headers)
+    const first = normalizedHeaders(mock.history.get[0]!.headers)
+    const second = normalizedHeaders(mock.history.get[1]!.headers)
     expect(second.get('Authorization')).toBe(`Bearer ${token}`)
     expect(second.get('X-Request-Id')).toBe(first.get('X-Request-Id'))
     expect(effects.expired).not.toHaveBeenCalled()
@@ -168,7 +173,7 @@ describe('HTTP session ownership', () => {
       if (state === 'expired') tokenStorage.setToken(jwt('expired', -60))
       mock.onGet('/session-owned').reply(200, {})
       await http.get('/session-owned', { headers: { Authorization: 'Bearer obsolete' } })
-      expect(AxiosHeaders.from(mock.history.get[0]!.headers).get('Authorization')).toBeUndefined()
+      expect(normalizedHeaders(mock.history.get[0]!.headers).get('Authorization')).toBeUndefined()
       expect(tokenStorage.getToken()).toBeNull()
     },
   )
