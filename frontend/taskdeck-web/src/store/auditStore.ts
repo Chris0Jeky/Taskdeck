@@ -1,17 +1,27 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { auditApi } from '../api/auditApi'
 import { useToastStore } from './toastStore'
+import { useSessionStore } from './sessionStore'
 import { isDemoMode } from '../utils/demoMode'
 import type { AuditEntry } from '../types/audit'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
 export const useAuditStore = defineStore('audit', () => {
   const toast = useToastStore()
+  const session = useSessionStore()
 
   const entries = ref<AuditEntry[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  interface ReadOwner {
+    epoch: number
+    token: symbol
+  }
+
+  let credentialEpoch = 0
+  let currentRead: ReadOwner | null = null
 
   function clampLimit(limit: number): number {
     if (limit < 1) return 1
@@ -19,71 +29,95 @@ export const useAuditStore = defineStore('audit', () => {
     return limit
   }
 
-  async function fetchBoardHistory(boardId: string, limit = 50) {
-    if (isDemoMode) {
-      loading.value = true
-      error.value = null
-      entries.value = []
-      loading.value = false
-      return
-    }
+  function beginRead(): ReadOwner {
+    const owner = { epoch: credentialEpoch, token: Symbol('audit-history') }
+    currentRead = owner
+    error.value = null
+    loading.value = true
+    return owner
+  }
+
+  function ownsRead(owner: ReadOwner): boolean {
+    return owner.epoch === credentialEpoch && currentRead?.token === owner.token
+  }
+
+  function finishRead(owner: ReadOwner): void {
+    if (!ownsRead(owner)) return
+    currentRead = null
+    loading.value = false
+  }
+
+  function resetForCredential(): void {
+    credentialEpoch += 1
+    currentRead = null
+    entries.value = []
+    loading.value = false
+    error.value = null
+  }
+
+  watch(
+    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    resetForCredential,
+    { flush: 'sync' },
+  )
+
+  async function fetchHistory(
+    request: () => Promise<AuditEntry[]>,
+    fallbackMessage: string,
+  ): Promise<void> {
+    const owner = beginRead()
     try {
-      loading.value = true
-      error.value = null
-      entries.value = await auditApi.getBoardHistory(boardId, clampLimit(limit))
+      const result = await request()
+      if (!ownsRead(owner)) return
+      entries.value = result
     } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to fetch board history').message
-      error.value = msg
-      toast.error(msg)
+      if (ownsRead(owner)) {
+        const msg = getErrorDisplay(e, fallbackMessage).message
+        error.value = msg
+        toast.error(msg)
+      }
       throw e
     } finally {
-      loading.value = false
+      finishRead(owner)
     }
+  }
+
+  async function fetchBoardHistory(boardId: string, limit = 50) {
+    if (isDemoMode) {
+      resetForCredential()
+      return
+    }
+
+    await fetchHistory(
+      () => auditApi.getBoardHistory(boardId, clampLimit(limit)),
+      'Failed to fetch board history',
+    )
   }
 
   async function fetchEntityHistory(entityType: string, entityId: string, limit = 50) {
     if (isDemoMode) {
-      loading.value = true
-      error.value = null
-      entries.value = []
-      loading.value = false
+      resetForCredential()
       return
     }
-    try {
-      loading.value = true
-      error.value = null
-      entries.value = await auditApi.getEntityHistory(entityType, entityId, clampLimit(limit))
-    } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to fetch entity history').message
-      error.value = msg
-      toast.error(msg)
-      throw e
-    } finally {
-      loading.value = false
-    }
+
+    await fetchHistory(
+      () => auditApi.getEntityHistory(entityType, entityId, clampLimit(limit)),
+      'Failed to fetch entity history',
+    )
   }
 
   async function fetchUserHistory(limit = 50) {
     if (isDemoMode) {
-      loading.value = true
-      error.value = null
-      entries.value = []
-      loading.value = false
+      resetForCredential()
       return
     }
-    try {
-      loading.value = true
-      error.value = null
-      entries.value = await auditApi.getUserHistory(clampLimit(limit))
-    } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to fetch user history').message
-      error.value = msg
-      toast.error(msg)
-      throw e
-    } finally {
-      loading.value = false
-    }
+
+    await fetchHistory(
+      () => auditApi.getUserHistory(clampLimit(limit)),
+      'Failed to fetch user history',
+    )
   }
+
   return {
     entries,
     loading,
