@@ -90,7 +90,7 @@ the above main found 45 subsequent commits, with no changes to the workflows, Sm
 or policy used here. Publication must use real GitHub ancestry, not the synthetic local ZIP
 commit. The unrelated live backend and frontend changes are not replaced.
 
-Local Linux / Node 22.16.0: **47 focused tests and all 601 Smart CI tests pass**, with zero
+Local Windows / Node 22.16.0: **54 focused tests and all 608 Smart CI tests pass**, with zero
 failures or skips. A separate local PyYAML 6.0.3 structural cross-check found exactly the same
 50 runner-job and 41 reusable-call identities; PyYAML is not a shipped dependency. Mutation
 checks dropping opaque candidates, dropping ancestor calls and ignoring duplicate keys were
