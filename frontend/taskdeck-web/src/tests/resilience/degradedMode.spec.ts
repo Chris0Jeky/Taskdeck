@@ -413,7 +413,10 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
 
     // Catch up once for mutations missed during disconnection, then prove
     // periodic fallback reads stop after the acknowledged rejoin.
-    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-1', { intent: 'background' })
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-1', {
+      intent: 'background',
+      afterActive: true,
+    })
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
 

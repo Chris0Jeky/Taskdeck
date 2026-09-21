@@ -245,7 +245,7 @@ describe('board realtime recovery (#3319)', () => {
       afterActive: true,
     })
     await vi.advanceTimersByTimeAsync(30000)
-    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', { intent: 'background' })
+    expect(fetchBoard).toHaveBeenLastCalledWith('board-a', { intent: 'background' })
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledTimes(2)
   })

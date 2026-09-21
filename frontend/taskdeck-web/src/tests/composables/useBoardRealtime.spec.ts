@@ -437,7 +437,10 @@ describe('createBoardRealtimeController', () => {
 
     // One authoritative catch-up covers events lost while disconnected;
     // a successful rejoin must still retire the periodic fallback timer.
-    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-1', { intent: 'background' })
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-1', {
+      intent: 'background',
+      afterActive: true,
+    })
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
 
