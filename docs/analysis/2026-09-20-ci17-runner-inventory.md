@@ -29,6 +29,9 @@ runner identity. Every other selector remains on the conservative review surface
 and matrix exclusions never remove candidates: the module does not evaluate expressions,
 `if: false`, include/exclude precedence, environment or repository variables, or caller inputs.
 For example, even the API caller that supplies `platform: linux` remains visible.
+To keep a large trigger projection from being repeated for every job in the JSON report, the
+inventory fails closed with `projection-limit` when the projected trigger text exceeds 8 MiB;
+that is a discovery failure, not a qualification result.
 
 Local calls are resolved within the supplied workflow set. Missing callees, external or
 unresolved references, cycles and duplicate/non-canonical files make `graphComplete` false.

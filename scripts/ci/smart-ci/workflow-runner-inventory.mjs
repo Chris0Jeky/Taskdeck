@@ -9,6 +9,7 @@ const MAX_FILES = 256;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const MAX_JOBS = 4096;
+const MAX_PROJECTED_EVENT_BYTES = 8 * 1024 * 1024;
 const PATH = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const indentation = (line) => line.length - line.trimStart().length;
@@ -107,6 +108,7 @@ export function inventoryWorkflowRunners(files) {
   }
 
   let jobCount = 0;
+  let projectedEventBytes = 0;
   for (const [path, text] of [...sources].sort(([a], [b]) => compare(a, b))) {
     const lines = text.split(/\r?\n/).map((line, index) => ({ text: line, line: index + 1 }));
     const top = fields(lines, 0, path, diagnostics);
@@ -115,6 +117,12 @@ export function inventoryWorkflowRunners(files) {
     if (!blockMapping(jobsField)) { diagnostics.push({ file: path, line: jobsField.line, code: 'unsupported-jobs-mapping' }); continue; }
     const jobs = fields(jobsField.children, 2, path, diagnostics);
     if (jobs.size === 0) diagnostics.push({ file: path, code: 'jobs-required' });
+    const events = controlText(top.get('on'));
+    projectedEventBytes += Buffer.byteLength(events ?? '', 'utf8') * jobs.size;
+    if (projectedEventBytes > MAX_PROJECTED_EVENT_BYTES) {
+      diagnostics.push({ file: path, line: top.get('on')?.line, code: 'projection-limit' });
+      return report([], [], diagnostics);
+    }
     for (const [job, node] of jobs) {
       jobCount += 1;
       if (jobCount > MAX_JOBS) return report([], [], [{ code: 'source-limit' }]);
@@ -122,7 +130,7 @@ export function inventoryWorkflowRunners(files) {
       const properties = fields(node.children, 4, path, diagnostics);
       const shared = {
         id: `${path}#${job}`, file: path, job, line: node.line,
-        events: controlText(top.get('on')),
+        events,
         condition: controlText(properties.get('if')),
         needs: controlText(properties.get('needs')),
         strategy: controlText(properties.get('strategy')),

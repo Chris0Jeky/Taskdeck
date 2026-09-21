@@ -157,6 +157,18 @@ test('source limits fail closed before discovery', () => {
   assertIncomplete([file('large', ' '.repeat(2 * 1024 * 1024 + 1))], 'source-limit');
 });
 
+test('large repeated trigger projections fail closed before report expansion', () => {
+  const jobs = Array.from({ length: 512 }, (_, index) =>
+    `  job-${index}:\n    runs-on: windows-latest\n`,
+  ).join('');
+  const result = inventoryWorkflowRunners([
+    file('large-events', `on:\n  description: ${'x'.repeat(20_000)}\njobs:\n${jobs}`),
+  ]);
+  assert.equal(result.graphComplete, false);
+  assert.equal(result.runners.length, 0);
+  assert.ok(result.diagnostics.some((entry) => entry.code === 'projection-limit'));
+});
+
 test('the reviewed runner surface detects a new Windows job and a new caller', () => {
   const leaf = runner('leaf', 'windows-latest');
   const baseline = reviewedRunnerSurface(inventory(leaf));
