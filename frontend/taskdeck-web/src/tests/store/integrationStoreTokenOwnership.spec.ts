@@ -86,21 +86,28 @@ describe('integrationStore token ownership', () => {
     vi.clearAllMocks()
   })
 
-  it('invalidates an old list read when the credential rotates for the same user', async () => {
+  it('preserves loaded connectors while invalidating an old list read after same-user token rotation', async () => {
+    store.connectors = [connector('existing', 'Existing connector')]
     const pending = deferred<IntegrationConnector[]>()
     vi.mocked(integrationsApi.listConnectors).mockReturnValue(pending.promise)
     const request = store.fetchConnectors()
 
     session.token = token('new')
+
+    expect(store.connectors.map(item => item.id)).toEqual(['existing'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+
     pending.resolve([connector('old-token', 'Old token connector')])
     await request
 
-    expect(store.connectors).toEqual([])
+    expect(store.connectors.map(item => item.id)).toEqual(['existing'])
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
   })
 
-  it('suppresses an old mutation failure after credential rotation', async () => {
+  it('preserves loaded connectors while suppressing an old-token mutation failure', async () => {
+    store.connectors = [connector('connector-1', 'Existing connector')]
     const pending = deferred<IntegrationConnector>()
     vi.mocked(integrationsApi.updateConnector).mockReturnValue(pending.promise)
     const request = store.updateConnector('connector-1', { name: 'Changed' })
@@ -109,7 +116,7 @@ describe('integrationStore token ownership', () => {
     pending.reject(new Error('old credential failure'))
     await expect(request).rejects.toThrow('old credential failure')
 
-    expect(store.connectors).toEqual([])
+    expect(store.connectors.map(item => item.id)).toEqual(['connector-1'])
     expect(store.error).toBeNull()
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
