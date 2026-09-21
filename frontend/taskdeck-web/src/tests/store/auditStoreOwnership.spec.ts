@@ -94,6 +94,26 @@ describe('auditStore async ownership', () => {
     expect(store.error).toBeNull()
   })
 
+  it('settles a superseded query after a later token rotation', async () => {
+    const firstRead = deferred<AuditEntry[]>()
+    const secondRead = deferred<AuditEntry[]>()
+    vi.mocked(auditApi.getBoardHistory).mockReturnValue(firstRead.promise)
+    vi.mocked(auditApi.getEntityHistory)
+      .mockReturnValueOnce(secondRead.promise)
+      .mockResolvedValue([entry('new-entity')])
+
+    const firstRequest = store.fetchBoardHistory('board-old')
+    const secondRequest = store.fetchEntityHistory('Card', 'card-new')
+    session.token = 'token-b'
+
+    firstRead.resolve([entry('old-board')])
+    await expect(firstRequest).resolves.toBeUndefined()
+
+    secondRead.resolve([entry('new-entity')])
+    await secondRequest
+    expect(store.entries.map(item => item.id)).toEqual(['new-entity'])
+  })
+
   it('suppresses stale failure UI after a newer query succeeds while preserving rejection', async () => {
     const oldBoard = deferred<AuditEntry[]>()
     const newUser = deferred<AuditEntry[]>()

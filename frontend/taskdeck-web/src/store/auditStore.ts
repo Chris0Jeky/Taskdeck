@@ -20,13 +20,14 @@ export const useAuditStore = defineStore('audit', () => {
   interface ReadOwner {
     epoch: number
     token: symbol
-    successorReady: Promise<Promise<void>>
+    successorReady: Promise<{ successor: Promise<void> }>
     resolveSuccessor: (successor: Promise<void>) => void
   }
 
   let credentialEpoch = 0
   let currentRead: ReadOwner | null = null
   let currentRetry: ReadRetry | null = null
+  const retiredReads = new Set<ReadOwner>()
 
   function clampLimit(limit: number): number {
     if (limit < 1) return 1
@@ -35,9 +36,10 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   function beginRead(retry: ReadRetry): ReadOwner {
+    if (currentRead) retiredReads.add(currentRead)
     let resolveSuccessor!: (successor: Promise<void>) => void
-    const successorReady = new Promise<Promise<void>>((resolve) => {
-      resolveSuccessor = resolve
+    const successorReady = new Promise<{ successor: Promise<void> }>((resolve) => {
+      resolveSuccessor = (successor) => resolve({ successor })
     })
     const owner = {
       epoch: credentialEpoch,
@@ -57,6 +59,7 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   function finishRead(owner: ReadOwner): void {
+    retiredReads.delete(owner)
     if (!ownsRead(owner)) return
     currentRead = null
     currentRetry = null
@@ -64,6 +67,8 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   function invalidateCurrentRead(): void {
+    for (const owner of retiredReads) owner.resolveSuccessor(Promise.resolve())
+    retiredReads.clear()
     credentialEpoch += 1
     currentRead = null
     currentRetry = null
@@ -73,7 +78,7 @@ export const useAuditStore = defineStore('audit', () => {
 
   async function awaitSuccessor(owner: ReadOwner): Promise<boolean> {
     if (owner.epoch === credentialEpoch) return false
-    await owner.successorReady.then((successor) => successor)
+    await owner.successorReady.then(({ successor }) => successor)
     return true
   }
 
@@ -131,7 +136,7 @@ export const useAuditStore = defineStore('audit', () => {
       const requestPromise = request()
       const outcome = await Promise.race([
         requestPromise.then((result) => ({ kind: 'request' as const, result })),
-        owner.successorReady.then((successor) => successor.then(() => ({ kind: 'successor' as const }))),
+        owner.successorReady.then(({ successor }) => successor.then(() => ({ kind: 'successor' as const }))),
       ])
       if (outcome.kind === 'successor') return
 
