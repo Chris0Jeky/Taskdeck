@@ -276,6 +276,69 @@ describe('agentStore async ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  it('retries empty initial route reads after same-user token rotation', async () => {
+    setActivePinia(createPinia())
+    session = useSessionStore()
+    session.userId = 'user-a'
+    session.token = sessionToken('old')
+    store = useAgentStore()
+
+    const oldProfiles = deferred<AgentProfile[]>()
+    const freshProfiles = deferred<AgentProfile[]>()
+    const oldRuns = deferred<AgentRun[]>()
+    const freshRuns = deferred<AgentRun[]>()
+    const oldDetail = deferred<AgentRunDetail>()
+    const freshDetail = deferred<AgentRunDetail>()
+    vi.mocked(agentApi.listProfiles)
+      .mockReturnValueOnce(oldProfiles.promise)
+      .mockReturnValueOnce(freshProfiles.promise)
+    vi.mocked(agentApi.listRuns)
+      .mockReturnValueOnce(oldRuns.promise)
+      .mockReturnValueOnce(freshRuns.promise)
+    vi.mocked(agentApi.getRunDetail)
+      .mockReturnValueOnce(oldDetail.promise)
+      .mockReturnValueOnce(freshDetail.promise)
+
+    const profileRequest = store.fetchProfiles()
+    const runsRequest = store.fetchRuns('agent-a')
+    const detailRequest = store.fetchRunDetail('agent-a', 'run-a')
+
+    session.token = sessionToken('new')
+
+    expect(agentApi.listProfiles).toHaveBeenCalledTimes(2)
+    expect(agentApi.listRuns).toHaveBeenCalledTimes(2)
+    expect(agentApi.getRunDetail).toHaveBeenCalledTimes(2)
+    expect(store.profilesLoading).toBe(true)
+    expect(store.runsLoading).toBe(true)
+    expect(store.runDetailLoading).toBe(true)
+
+    oldProfiles.resolve([profile('old-token')])
+    oldRuns.reject(new Error('old-token failure'))
+    oldDetail.resolve(detail('agent-a', 'old-token'))
+    await profileRequest
+    await expect(runsRequest).rejects.toThrow('old-token failure')
+    await detailRequest
+
+    expect(store.profiles).toEqual([])
+    expect(store.runs).toEqual([])
+    expect(store.runDetail).toBeNull()
+    expect(store.runsError).toBeNull()
+    expect(toastMocks.error).not.toHaveBeenCalled()
+
+    freshProfiles.resolve([profile('fresh-token')])
+    freshRuns.resolve([run('agent-a', 'fresh-token')])
+    freshDetail.resolve(detail('agent-a', 'fresh-token'))
+
+    await vi.waitFor(() => {
+      expect(store.profiles.map(item => item.id)).toEqual(['fresh-token'])
+      expect(store.runs.map(item => item.id)).toEqual(['fresh-token'])
+      expect(store.runDetail?.id).toBe('fresh-token')
+      expect(store.profilesLoading).toBe(false)
+      expect(store.runsLoading).toBe(false)
+      expect(store.runDetailLoading).toBe(false)
+    })
+  })
+
   it('clears every surface and invalidates pending reads on session replacement', async () => {
     store.profiles = [profile('existing')]
     store.runs = [run('agent-a', 'existing')]
