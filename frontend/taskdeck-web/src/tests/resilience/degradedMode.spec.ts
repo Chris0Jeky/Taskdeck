@@ -411,9 +411,11 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
     await realtimeCallbacks.reconnected?.()
     expect(realtimeMockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-1')
 
-    // No more polls after reconnection
+    // Catch up once for mutations missed during disconnection, then prove
+    // periodic fallback reads stop after the acknowledged rejoin.
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-1', { intent: 'background' })
     await vi.advanceTimersByTimeAsync(30000)
-    expect(fetchBoard).not.toHaveBeenCalled()
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
 
     await controller.stop()
   })
