@@ -227,7 +227,7 @@ describe('notificationStore async ownership', () => {
     expect(store.loading).toBe(false)
   })
 
-  it('clears both surfaces and rejects old read settlement after token rotation', async () => {
+  it('preserves both surfaces and rejects old read settlement after token rotation', async () => {
     store.notifications = [notification('existing')]
     store.preferences = preferences(true)
     const inbox = deferred<NotificationItem[]>()
@@ -238,20 +238,24 @@ describe('notificationStore async ownership', () => {
     const inboxRequest = store.fetchNotifications()
     const prefsRequest = store.fetchPreferences()
     session.token = token('new')
-    const clearedImmediately = store.notifications.length === 0 && store.preferences === null
+
+    expect(store.notifications.map(item => item.id)).toEqual(['existing'])
+    expect(store.preferences?.mentionImmediateEnabled).toBe(true)
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
 
     inbox.resolve([notification('old-token')])
     prefs.resolve(preferences(false))
     await Promise.all([inboxRequest, prefsRequest])
 
-    expect(clearedImmediately).toBe(true)
-    expect(store.notifications).toEqual([])
-    expect(store.preferences).toBeNull()
+    expect(store.notifications.map(item => item.id)).toEqual(['existing'])
+    expect(store.preferences?.mentionImmediateEnabled).toBe(true)
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
   })
 
-  it('suppresses a stale read failure after token rotation', async () => {
+  it('suppresses a stale read failure after token rotation while preserving inbox data', async () => {
+    store.notifications = [notification('existing')]
     const pending = deferred<NotificationItem[]>()
     vi.mocked(notificationsApi.getNotifications).mockReturnValue(pending.promise)
     const request = store.fetchNotifications()
@@ -260,13 +264,13 @@ describe('notificationStore async ownership', () => {
     pending.reject(new Error('old credential read failed'))
     await expect(request).rejects.toThrow('old credential read failed')
 
-    expect(store.notifications).toEqual([])
+    expect(store.notifications.map(item => item.id)).toEqual(['existing'])
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
-  it('suppresses a stale markAsRead success after token rotation', async () => {
+  it('suppresses a stale markAsRead success after token rotation while preserving inbox data', async () => {
     store.notifications = [notification('n-1')]
     const pending = deferred<NotificationItem>()
     vi.mocked(notificationsApi.markAsRead).mockReturnValue(pending.promise)
@@ -276,11 +280,14 @@ describe('notificationStore async ownership', () => {
     pending.resolve(notification('n-1', true))
     await request
 
-    expect(store.notifications).toEqual([])
+    expect(store.notifications.map(item => ({ id: item.id, isRead: item.isRead }))).toEqual([
+      { id: 'n-1', isRead: false },
+    ])
     expect(store.error).toBeNull()
   })
 
-  it('suppresses a stale preference mutation failure after token rotation', async () => {
+  it('suppresses a stale preference mutation failure after token rotation while preserving preferences', async () => {
+    store.preferences = preferences(true)
     const pending = deferred<NotificationPreference>()
     vi.mocked(notificationsApi.updatePreferences).mockReturnValue(pending.promise)
     const request = store.updatePreferences(preferenceRequest(false))
@@ -289,9 +296,37 @@ describe('notificationStore async ownership', () => {
     pending.reject(new Error('old credential save failed'))
     await expect(request).rejects.toThrow('old credential save failed')
 
-    expect(store.preferences).toBeNull()
+    expect(store.preferences?.mentionImmediateEnabled).toBe(true)
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
     expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('clears both surfaces on identity replacement and suppresses old work', async () => {
+    store.notifications = [notification('existing')]
+    store.preferences = preferences(true)
+    const inbox = deferred<NotificationItem[]>()
+    const save = deferred<NotificationPreference>()
+    vi.mocked(notificationsApi.getNotifications).mockReturnValue(inbox.promise)
+    vi.mocked(notificationsApi.updatePreferences).mockReturnValue(save.promise)
+
+    const inboxRequest = store.fetchNotifications()
+    const saveRequest = store.updatePreferences(preferenceRequest(false))
+    session.userId = 'user-b'
+
+    expect(store.notifications).toEqual([])
+    expect(store.preferences).toBeNull()
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+
+    inbox.resolve([notification('old-user')])
+    save.resolve(preferences(false))
+    await Promise.all([inboxRequest, saveRequest])
+
+    expect(store.notifications).toEqual([])
+    expect(store.preferences).toBeNull()
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+    expect(toastMocks.success).not.toHaveBeenCalled()
   })
 })
