@@ -237,4 +237,50 @@ describe('metricsStore async ownership', () => {
     expect(store.forecastError).toBeNull()
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
+
+  it('retries empty initial metrics and forecast reads after same-user token rotation', async () => {
+    const oldMetrics = deferred<BoardMetricsResponse>()
+    const freshMetrics = deferred<BoardMetricsResponse>()
+    const oldForecast = deferred<BoardForecastResponse>()
+    const freshForecast = deferred<BoardForecastResponse>()
+    vi.mocked(metricsApi.getBoardMetrics)
+      .mockReturnValueOnce(oldMetrics.promise)
+      .mockReturnValueOnce(freshMetrics.promise)
+    vi.mocked(metricsApi.getBoardForecast)
+      .mockReturnValueOnce(oldForecast.promise)
+      .mockReturnValueOnce(freshForecast.promise)
+
+    const metricsRequest = store.fetchBoardMetrics({ boardId: 'board-a' })
+    const forecastRequest = store.fetchBoardForecast({ boardId: 'board-a' })
+    session.token = 'token-b'
+
+    expect(metricsApi.getBoardMetrics).toHaveBeenCalledTimes(2)
+    expect(metricsApi.getBoardForecast).toHaveBeenCalledTimes(2)
+    expect(store.metrics).toBeNull()
+    expect(store.forecast).toBeNull()
+    expect(store.loading).toBe(true)
+    expect(store.forecastLoading).toBe(true)
+
+    oldMetrics.resolve(metrics('old-token'))
+    oldForecast.reject(new Error('old-token forecast failure'))
+    await metricsRequest
+    await expect(forecastRequest).rejects.toThrow('old-token forecast failure')
+
+    expect(store.metrics).toBeNull()
+    expect(store.forecast).toBeNull()
+    expect(store.loading).toBe(true)
+    expect(store.forecastLoading).toBe(true)
+    expect(store.error).toBeNull()
+    expect(store.forecastError).toBeNull()
+    expect(toastMocks.error).not.toHaveBeenCalled()
+
+    freshMetrics.resolve(metrics('fresh-token'))
+    freshForecast.resolve(forecast('fresh-token'))
+    await vi.waitFor(() => {
+      expect(store.metrics?.boardId).toBe('fresh-token')
+      expect(store.forecast?.boardId).toBe('fresh-token')
+      expect(store.loading).toBe(false)
+      expect(store.forecastLoading).toBe(false)
+    })
+  })
 })
