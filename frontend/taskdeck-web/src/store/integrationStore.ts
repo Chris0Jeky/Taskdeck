@@ -59,11 +59,12 @@ export const useIntegrationStore = defineStore('integration', () => {
     syncLoading()
   }
 
-  function invalidateReads() {
+  function invalidateOperations() {
     lifecycleEpoch += 1
     readOwners.clear()
     activeReadTokens.clear()
     loading.value = false
+    error.value = null
   }
 
   function ownsLifetime(epoch: number): boolean {
@@ -237,15 +238,20 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   function $reset() {
-    invalidateReads()
+    invalidateOperations()
     connectors.value = []
     selectedConnector.value = null
-    error.value = null
   }
 
   watch(
-    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.isAuthenticated, session.isDemo],
     $reset,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    invalidateOperations,
     { flush: 'sync' },
   )
 
