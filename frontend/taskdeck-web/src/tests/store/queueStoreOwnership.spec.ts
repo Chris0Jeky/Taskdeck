@@ -420,6 +420,25 @@ describe('queueStore async ownership', () => {
     expect(toastMocks.success).not.toHaveBeenCalled()
   })
 
+  it('resets rather than retrying a read under a cleared identity', async () => {
+    const pendingRead = deferred<QueueRequest[]>()
+    store.requests = [request('existing')]
+    vi.mocked(queueApi.getUserRequests).mockReturnValue(pendingRead.promise)
+
+    const operation = store.fetchUserRequests()
+    session.token = null
+    session.userId = null
+
+    expect(queueApi.getUserRequests).toHaveBeenCalledTimes(1)
+    expect(store.requests).toEqual([])
+    expect(store.stats).toBeNull()
+    expect(store.loading).toBe(false)
+
+    pendingRead.resolve([request('late')])
+    await operation
+    expect(store.requests).toEqual([])
+  })
+
   it('does not emit a process result toast after credential replacement', async () => {
     const processing = deferred<QueueRequest | null>()
     vi.mocked(queueApi.processNext).mockReturnValue(processing.promise)

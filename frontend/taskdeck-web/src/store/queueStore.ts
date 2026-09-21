@@ -141,6 +141,11 @@ export const useQueueStore = defineStore('queue', () => {
   }
 
   function retryActiveReads(): void {
+    if (!session.isAuthenticated || session.userId === null || session.isDemo) {
+      $reset()
+      return
+    }
+
     const requestRetry = readOwners.has('requests')
       ? { owner: readOwners.get('requests')!, retry: readRetries.get('requests') }
       : undefined
