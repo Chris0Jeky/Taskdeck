@@ -10,6 +10,7 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const MAX_JOBS = 4096;
 const MAX_PROJECTED_EVENT_BYTES = 8 * 1024 * 1024;
+const MAX_PROJECTED_SURFACE_BYTES = 8 * 1024 * 1024;
 const PATH = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const indentation = (line) => line.length - line.trimStart().length;
@@ -56,8 +57,8 @@ function controlText(field) {
   // can erase a meaningful change to a caller input or a dynamic selector.
   const prefix = ' '.repeat(field.depth + 2);
   const children = field.children.map(({ text }) => text.startsWith(prefix) ? text.slice(prefix.length) : text);
-  const keepsTrailingLines = /^[|>][^\s]*\+/.test(field.value.trim()) ||
-    children.some((line) => /:\s*[|>][^\s]*\+(?:[ \t]+#.*)?\s*$/.test(line));
+  const keepsTrailingLines = /[|>][^\s]*\+/.test(field.value) ||
+    children.some((line) => /:\s+.*[|>][^\s]*\+(?:[ \t]+#.*)?\s*$/.test(line));
   if (!keepsTrailingLines) {
     while (children.length && !children.at(-1).trim()) children.pop();
   }
@@ -178,7 +179,9 @@ export function inventoryWorkflowRunners(files) {
 /** Stable review surface: all non-reviewed-Linux selector spellings plus every ancestor call. */
 export function reviewedRunnerSurface(inventory) {
   const withoutLine = ({ line: _line, ...entry }) => entry;
-  const candidates = inventory.runners.filter((entry) => entry.classification !== 'linux-literal').map((entry) => {
+  const candidates = [];
+  let projectedBytes = 0;
+  for (const entry of inventory.runners.filter((item) => item.classification !== 'linux-literal')) {
     const workflows = new Set([entry.file]);
     const callers = new Map();
     const pending = [entry.file];
@@ -189,8 +192,17 @@ export function reviewedRunnerSurface(inventory) {
         if (!workflows.has(call.file)) { workflows.add(call.file); pending.push(call.file); }
       }
     }
-    return { ...withoutLine(entry), callers: [...callers.values()].sort((a, b) => compare(a.id, b.id)) };
-  });
+    const base = withoutLine(entry);
+    const orderedCallers = [...callers.values()].sort((a, b) => compare(a.id, b.id));
+    projectedBytes += 2 * Buffer.byteLength(JSON.stringify(base), 'utf8') + 128;
+    for (const caller of orderedCallers) {
+      projectedBytes += 2 * Buffer.byteLength(JSON.stringify(caller), 'utf8') + 128;
+      if (projectedBytes > MAX_PROJECTED_SURFACE_BYTES) {
+        return { schemaVersion: 1, graphComplete: false, candidates: [] };
+      }
+    }
+    candidates.push({ ...base, callers: orderedCallers });
+  }
   return { schemaVersion: 1, graphComplete: inventory.graphComplete, candidates };
 }
 

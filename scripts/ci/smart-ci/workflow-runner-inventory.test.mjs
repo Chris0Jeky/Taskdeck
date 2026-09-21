@@ -169,6 +169,20 @@ test('large repeated trigger projections fail closed before report expansion', (
   assert.ok(result.diagnostics.some((entry) => entry.code === 'projection-limit'));
 });
 
+test('large caller projections fail closed before reviewed-surface expansion', () => {
+  const jobs = Array.from({ length: 400 }, (_, index) =>
+    `  job-${index}:\n    runs-on: windows-latest\n`,
+  ).join('');
+  const result = inventoryWorkflowRunners([
+    file('leaf', `on: [push, workflow_call]\njobs:\n${jobs}`),
+    caller('root', 'leaf', `    with:\n      description: ${'x'.repeat(20_000)}\n`),
+  ]);
+  assert.equal(result.graphComplete, true);
+  const surface = reviewedRunnerSurface(result);
+  assert.equal(surface.graphComplete, false);
+  assert.deepEqual(surface.candidates, []);
+});
+
 test('the reviewed runner surface detects a new Windows job and a new caller', () => {
   const leaf = runner('leaf', 'windows-latest');
   const baseline = reviewedRunnerSurface(inventory(leaf));
@@ -220,6 +234,21 @@ test('keep-chomp block scalars preserve trailing blank lines', () => {
   const result = inventory(caller('root', 'leaf', extra), runner('leaf', 'windows-latest'));
   const [entry] = reviewedRunnerSurface(result).candidates;
   assert.match(entry.callers[0].inputs, /description: \|\+\n  before\n\n$/);
+});
+
+test('keep-chomp indicators after YAML properties preserve trailing blank lines', () => {
+  for (const value of ['&saved |+', '!!str |+', '&saved !!str |+']) {
+    const extra = [
+      '    with:',
+      `      description: ${value}`,
+      '        before',
+      '',
+      '',
+    ].join('\n');
+    const result = inventory(caller('root', 'leaf', extra), runner('leaf', 'windows-latest'));
+    const [entry] = reviewedRunnerSurface(result).candidates;
+    assert.match(entry.callers[0].inputs, new RegExp(`description: ${value.replace(/[|+]/g, '\\$&')}\\n  before\\n\\n$`));
+  }
 });
 
 test('input alias and folded reusable references stay explicitly unresolved', () => {
