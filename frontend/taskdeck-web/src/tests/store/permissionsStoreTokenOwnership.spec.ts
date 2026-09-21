@@ -79,21 +79,28 @@ describe('permissionsStore token ownership', () => {
   it('preserves loaded access while invalidating an old read after same-user token rotation', async () => {
     store.boardAccess.set('board-1', [access('existing')])
     const pending = deferred<BoardAccess[]>()
-    vi.mocked(boardAccessApi.getAccess).mockReturnValue(pending.promise)
+    const freshRead = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(pending.promise).mockReturnValueOnce(freshRead.promise)
     const request = store.fetchBoardAccess('board-1')
 
     session.token = token('new')
 
     expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
-    expect(store.loading).toBe(false)
+    expect(store.loading).toBe(true)
     expect(store.error).toBeNull()
 
     pending.resolve([access('old-token-read')])
     await request
 
     expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
-    expect(store.loading).toBe(false)
+    expect(store.loading).toBe(true)
     expect(store.error).toBeNull()
+
+    freshRead.resolve([access('fresh-token-read')])
+    await vi.waitFor(() => {
+      expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-token-read'])
+      expect(store.loading).toBe(false)
+    })
   })
 
   it('preserves loaded access while suppressing an old-token mutation failure', async () => {

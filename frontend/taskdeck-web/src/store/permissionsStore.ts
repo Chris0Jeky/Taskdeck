@@ -211,7 +211,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
   })
 
-  async function fetchBoardAccess(boardId: string, revalidateOnTokenRotation = false) {
+  async function fetchBoardAccess(boardId: string, revalidateOnTokenRotation = true) {
     if (isDemoMode) {
       loading.value = true
       error.value = null
