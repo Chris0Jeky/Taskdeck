@@ -1,0 +1,12 @@
+-4. close release prerequisites: post-merge Windows timeout evidence and `#2378`/`#2588`, remaining
+-   `#2335`/CodeQL acceptance after merged `#2838`, storage `#2333`, nightly/exact-tag qualification
+-   `#2334`, corrected current-main runner preparation for `#2328`, and mirror/GHCR continuity
+-   `#2439`;
++4. close pre-cutover release prerequisites: post-merge Windows timeout evidence and
++   `#2378`/`#2588`, remaining `#2335`/CodeQL acceptance after merged `#2838`, storage `#2333`, the
++   nightly/release contract plus no-publish rehearsal for `#2334`, corrected current-main runner
++   preparation for `#2328`, and mirror/GHCR continuity `#2439`; real-tag creation and exact-tag
++   qualification remain step 7;
+ 5. reconcile the milestone through `#2235`, preserving explicit residual rulings;
+ 6. execute the human cutover `#2337`;
+ 7. freeze the final head, create and qualify the real tag, publish the private Release, mirror it
