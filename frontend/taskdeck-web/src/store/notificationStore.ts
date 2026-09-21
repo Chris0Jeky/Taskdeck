@@ -33,9 +33,16 @@ export const useNotificationStore = defineStore('notifications', () => {
     observedMutationGeneration: number
   }
 
+  interface PreferenceMutationTail {
+    promise: Promise<void>
+    ownerToken: symbol
+  }
+
   let sessionEpoch = 0
   let notificationMutationGeneration = 0
   let preferenceMutationGeneration = 0
+  let errorOwner: symbol | null = null
+  let preferenceMutationTail: PreferenceMutationTail | null = null
   const activeLoadingOperations = new Set<symbol>()
   const readOwners = new Map<ReadLane, ReadOwner>()
 
@@ -45,6 +52,12 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   function clearError(): void {
     error.value = null
+    errorOwner = null
+  }
+
+  function recordError(owner: OperationOwner, message: string): void {
+    error.value = message
+    errorOwner = owner.token
   }
 
   function beginOperation(
@@ -133,6 +146,7 @@ export const useNotificationStore = defineStore('notifications', () => {
     preferenceMutationGeneration = 0
     activeLoadingOperations.clear()
     readOwners.clear()
+    preferenceMutationTail = null
     notifications.value = []
     preferences.value = null
     loading.value = false
@@ -168,7 +182,7 @@ export const useNotificationStore = defineStore('notifications', () => {
     } catch (e: unknown) {
       if (ownsRead('notifications', owner)) {
         const msg = getErrorDisplay(e, 'Failed to load notifications').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -192,7 +206,7 @@ export const useNotificationStore = defineStore('notifications', () => {
     } catch (e: unknown) {
       if (ownsSession(owner)) {
         const msg = getErrorDisplay(e, 'Failed to mark notification as read').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -219,7 +233,7 @@ export const useNotificationStore = defineStore('notifications', () => {
     } catch (e: unknown) {
       if (ownsSession(owner)) {
         const msg = getErrorDisplay(e, 'Failed to mark all notifications as read').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -242,7 +256,7 @@ export const useNotificationStore = defineStore('notifications', () => {
     } catch (e: unknown) {
       if (ownsRead('preferences', owner)) {
         const msg = getErrorDisplay(e, 'Failed to load notification preferences').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -253,27 +267,41 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   async function updatePreferences(dto: UpdateNotificationPreferenceRequest) {
     guardDemoMutation()
+    const predecessor = preferenceMutationTail
     const owner = beginOperation('update-preferences', {
       ownsLoading: true,
-      clearExistingError: true,
+      clearExistingError: predecessor === null,
     })
-    try {
-      const updated = await notificationsApi.updatePreferences(dto)
-      if (!ownsSession(owner)) return updated
+    let release!: () => void
+    const tail = new Promise<void>((resolve) => { release = resolve })
+    preferenceMutationTail = { promise: tail, ownerToken: owner.token }
 
-      recordPreferenceMutation()
-      preferences.value = updated
-      toast.success('Notification preferences saved')
-      return updated
-    } catch (e: unknown) {
-      if (ownsSession(owner)) {
-        const msg = getErrorDisplay(e, 'Failed to save notification preferences').message
-        error.value = msg
-        toast.error(msg)
+    try {
+      if (predecessor) await predecessor.promise
+      if (!ownsSession(owner)) return undefined
+
+      if (predecessor && errorOwner === predecessor.ownerToken) clearError()
+
+      try {
+        const updated = await notificationsApi.updatePreferences(dto)
+        if (!ownsSession(owner)) return updated
+
+        recordPreferenceMutation()
+        preferences.value = updated
+        toast.success('Notification preferences saved')
+        return updated
+      } catch (e: unknown) {
+        if (ownsSession(owner)) {
+          const msg = getErrorDisplay(e, 'Failed to save notification preferences').message
+          recordError(owner, msg)
+          toast.error(msg)
+        }
+        throw e
       }
-      throw e
     } finally {
       finishOperation(owner)
+      release()
+      if (preferenceMutationTail?.promise === tail) preferenceMutationTail = null
     }
   }
 
