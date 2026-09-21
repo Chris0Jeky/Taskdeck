@@ -69,7 +69,7 @@ const realtimeMock = {
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
 let capturedRealtimeFetchBoard:
-  | ((boardId: string, options: { intent: 'background'; afterActive?: boolean }) => Promise<boolean | void>)
+  | ((boardId: string, options: { intent: 'background'; afterActive?: boolean }) => Promise<boolean>)
   | undefined
 
 const mockBoardStore = reactive({

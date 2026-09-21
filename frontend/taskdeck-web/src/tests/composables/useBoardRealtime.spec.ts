@@ -91,7 +91,7 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('joins board stream when started', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -101,7 +101,7 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('configures SignalR with websocket transport and negotiation enabled', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     // Use a structurally valid JWT (three base64url segments) so tokenStorage.getToken() accepts it
     const fakeJwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.fakesig'
     localStorage.setItem('taskdeck_token', fakeJwt)
@@ -118,7 +118,7 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('uses an empty access token when no session token is present', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -131,7 +131,7 @@ describe('createBoardRealtimeController', () => {
 
   it('refreshes board when matching board mutation event arrives', async () => {
     vi.useFakeTimers()
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -146,7 +146,7 @@ describe('createBoardRealtimeController', () => {
 
   it('ignores mutation events for other boards', async () => {
     vi.useFakeTimers()
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -161,7 +161,7 @@ describe('createBoardRealtimeController', () => {
 
   it('coalesces rapid burst mutation events into a single fetchBoard call', async () => {
     vi.useFakeTimers()
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -185,11 +185,11 @@ describe('createBoardRealtimeController', () => {
 
   it('drains one coalesced mutation refresh after the active refresh succeeds', async () => {
     vi.useFakeTimers()
-    const firstRefresh = createDeferred<void>()
+    const firstRefresh = createDeferred<boolean>()
     const fetchBoard = vi
       .fn()
       .mockImplementationOnce(() => firstRefresh.promise)
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -202,7 +202,7 @@ describe('createBoardRealtimeController', () => {
     await vi.advanceTimersByTimeAsync(300)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
 
-    firstRefresh.resolve()
+    firstRefresh.resolve(true)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -215,13 +215,13 @@ describe('createBoardRealtimeController', () => {
 
   it('clears a retained mutation refresh on route switch and stop', async () => {
     vi.useFakeTimers()
-    const firstRefresh = createDeferred<void>()
-    const secondRefresh = createDeferred<void>()
+    const firstRefresh = createDeferred<boolean>()
+    const secondRefresh = createDeferred<boolean>()
     const fetchBoard = vi
       .fn()
       .mockImplementationOnce(() => firstRefresh.promise)
       .mockImplementationOnce(() => secondRefresh.promise)
-      .mockResolvedValue(undefined)
+      .mockResolvedValue(true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -231,7 +231,7 @@ describe('createBoardRealtimeController', () => {
     await vi.advanceTimersByTimeAsync(300)
 
     await controller.switchBoard('board-2')
-    firstRefresh.resolve()
+    firstRefresh.resolve(true)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -244,7 +244,7 @@ describe('createBoardRealtimeController', () => {
     expect(fetchBoard).toHaveBeenCalledTimes(2)
 
     await controller.stop()
-    secondRefresh.resolve()
+    secondRefresh.resolve(true)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -253,11 +253,11 @@ describe('createBoardRealtimeController', () => {
 
   it('contains a failed background refresh and allows the next mutation to refresh', async () => {
     vi.useFakeTimers()
-    const firstRefresh = createDeferred<void>()
+    const firstRefresh = createDeferred<boolean>()
     const fetchBoard = vi
       .fn()
       .mockImplementationOnce(() => firstRefresh.promise)
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -278,7 +278,7 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('emits presence snapshots for the currently subscribed board', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const onPresenceChanged = vi.fn()
     const controller = createBoardRealtimeController({ fetchBoard, onPresenceChanged })
 
@@ -292,7 +292,7 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('ignores presence snapshots for other boards', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const onPresenceChanged = vi.fn()
     const controller = createBoardRealtimeController({ fetchBoard, onPresenceChanged })
 
@@ -303,7 +303,7 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('leaves previous board and joins next board when switched', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -319,7 +319,7 @@ describe('createBoardRealtimeController', () => {
       mockConnection.state = 'Connecting'
       return connectionStarted.promise
     })
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     const startA = controller.start('board-a')
@@ -342,7 +342,7 @@ describe('createBoardRealtimeController', () => {
 
   it('defers a reconnecting switch until connected while polling the requested board', async () => {
     vi.useFakeTimers()
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-a')
@@ -375,7 +375,7 @@ describe('createBoardRealtimeController', () => {
     // Regression: a board-A mutation event with a debounce timer pending must
     // not fire fetchBoard after subscribedBoardId has advanced to board-B.
     vi.useFakeTimers()
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -397,7 +397,7 @@ describe('createBoardRealtimeController', () => {
 
   it('falls back to polling when websocket connection cannot start', async () => {
     vi.useFakeTimers()
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     mockConnection.start.mockRejectedValueOnce(new Error('websocket unavailable'))
 
     const controller = createBoardRealtimeController({ fetchBoard })
@@ -410,7 +410,7 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('sends editing-card status when connected', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -421,7 +421,7 @@ describe('createBoardRealtimeController', () => {
 
   it('starts polling on reconnecting and re-joins board when reconnected', async () => {
     vi.useFakeTimers()
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')

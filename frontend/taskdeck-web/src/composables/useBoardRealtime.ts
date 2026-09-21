@@ -35,7 +35,7 @@ export interface BoardRealtimeControllerOptions {
   fetchBoard: (
     boardId: string,
     options: { intent: 'background'; afterActive?: boolean },
-  ) => Promise<boolean | void>
+  ) => Promise<boolean>
   onPresenceChanged?: (snapshot: BoardPresenceSnapshot) => void
 }
 
@@ -135,10 +135,11 @@ export function createBoardRealtimeController(
           return
         }
 
-        if (committed === false) {
-          // A handled background failure resolves false rather than rejecting.
-          // Keep the recovery obligation alive and let bounded fallback polling
-          // retry it instead of treating the failed catch-up as complete.
+        if (committed !== true) {
+          // A handled background failure or stale adapter resolves without an
+          // affirmative commit. Keep the recovery obligation alive and let
+          // bounded fallback polling retry it instead of treating the read as
+          // complete.
           recoveryPending = true
           startFallbackPolling(boardId, true, recoveryGenerationForRefresh)
           return

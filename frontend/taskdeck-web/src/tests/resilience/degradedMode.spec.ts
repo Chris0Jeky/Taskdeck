@@ -394,7 +394,7 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
   it('starts fallback polling during reconnecting then stops on reconnected', async () => {
     // reconnecting → starts polling; reconnected → stops polling and re-joins board
     const { createBoardRealtimeController } = await import('../../composables/useBoardRealtime')
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     vi.useFakeTimers()
@@ -425,7 +425,7 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
 
   it('starts fallback polling when SignalR closes unexpectedly', async () => {
     const { createBoardRealtimeController } = await import('../../composables/useBoardRealtime')
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     vi.useFakeTimers()
@@ -443,7 +443,7 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
 
   it('ignores boardMutation events for a different board without crashing', async () => {
     const { createBoardRealtimeController } = await import('../../composables/useBoardRealtime')
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -464,7 +464,7 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
   it('falls back to polling when SignalR connection cannot be established', async () => {
     vi.useFakeTimers()
     const { createBoardRealtimeController } = await import('../../composables/useBoardRealtime')
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     realtimeMockConnection.start.mockRejectedValueOnce(new Error('SignalR unavailable'))
 
     const controller = createBoardRealtimeController({ fetchBoard })

@@ -34,9 +34,9 @@ vi.mock('@microsoft/signalr', () => ({
   },
 }))
 
-function deferred() {
-  let resolve!: () => void
-  const promise = new Promise<void>((done) => { resolve = done })
+function deferred<T = void>() {
+  let resolve!: (value?: T) => void
+  const promise = new Promise<T>((done) => { resolve = done as (value?: T) => void })
   return { promise, resolve }
 }
 
@@ -69,7 +69,7 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('catches up after a disconnect shorter than the fallback interval', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await disconnect()
@@ -85,7 +85,7 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('retains polling and contains a failed rejoin without blindly retrying JoinBoard', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await disconnect()
@@ -100,7 +100,7 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('does not let optional presence restoration failure suppress catch-up', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await controller.setEditingCard('card-a')
@@ -118,7 +118,7 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it.each(['switch', 'stop'] as const)('does not catch up an abandoned board after %s during rejoin', async (change) => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await disconnect()
@@ -148,9 +148,9 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it.each(['mutation', 'fallback'] as const)('retains one catch-up behind an older in-flight %s refresh', async (source) => {
-    const olderRead = deferred()
-    const fetchBoard = vi.fn<() => Promise<void>>()
-      .mockImplementationOnce(() => olderRead.promise).mockResolvedValue(undefined)
+    const olderRead = deferred<boolean>()
+    const fetchBoard = vi.fn<() => Promise<boolean>>()
+      .mockImplementationOnce(() => olderRead.promise).mockResolvedValue(true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     if (source === 'mutation') {
@@ -164,7 +164,7 @@ describe('board realtime recovery (#3319)', () => {
     expect(fetchBoard).toHaveBeenCalledTimes(1)
     await reconnect()
     expect(fetchBoard).toHaveBeenCalledTimes(1)
-    olderRead.resolve()
+    olderRead.resolve(true)
     await vi.advanceTimersByTimeAsync(0)
     expect(fetchBoard).toHaveBeenCalledTimes(2)
     expect(fetchBoard).toHaveBeenLastCalledWith('board-a', {
@@ -174,7 +174,7 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('keeps polling the latest board when its transferred rejoin fails', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await disconnect()
@@ -197,8 +197,8 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('contains a failed catch-up read and still responds to later mutations', async () => {
-    const fetchBoard = vi.fn<() => Promise<void>>()
-      .mockRejectedValueOnce(new Error('synthetic read failure')).mockResolvedValue(undefined)
+    const fetchBoard = vi.fn<() => Promise<boolean>>()
+      .mockRejectedValueOnce(new Error('synthetic read failure')).mockResolvedValue(true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await disconnect()
@@ -211,7 +211,7 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('does not retire fallback if another disconnect happens before rejoin settles', async () => {
-    const fetchBoard = vi.fn(async () => undefined)
+    const fetchBoard = vi.fn(async () => true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await disconnect()
@@ -231,12 +231,12 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('does not let an older catch-up discharge a newer reconnect recovery', async () => {
-    const firstCatchUp = deferred()
+    const firstCatchUp = deferred<boolean>()
     const secondJoin = deferred()
     let joinCount = 0
-    const fetchBoard = vi.fn<() => Promise<void>>()
+    const fetchBoard = vi.fn<() => Promise<boolean>>()
       .mockImplementationOnce(() => firstCatchUp.promise)
-      .mockResolvedValue(undefined)
+      .mockResolvedValue(true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     await disconnect()
@@ -258,7 +258,7 @@ describe('board realtime recovery (#3319)', () => {
     const newerRecovery = reconnect()
     await vi.waitFor(() => expect(joinCount).toBe(2))
 
-    firstCatchUp.resolve()
+    firstCatchUp.resolve(true)
     await vi.advanceTimersByTimeAsync(0)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
 
@@ -273,12 +273,12 @@ describe('board realtime recovery (#3319)', () => {
   })
 
   it('does not discharge a newer recovery with a queued older catch-up', async () => {
-    const activeRead = deferred()
+    const activeRead = deferred<boolean>()
     const secondJoin = deferred()
     let joinCount = 0
-    const fetchBoard = vi.fn<() => Promise<void>>()
+    const fetchBoard = vi.fn<() => Promise<boolean>>()
       .mockImplementationOnce(() => activeRead.promise)
-      .mockResolvedValue(undefined)
+      .mockResolvedValue(true)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
     hub.events.boardMutation!({ boardId: 'board-a' })
@@ -300,7 +300,7 @@ describe('board realtime recovery (#3319)', () => {
     const newerRecovery = reconnect()
     await vi.waitFor(() => expect(joinCount).toBe(2))
 
-    activeRead.resolve()
+    activeRead.resolve(true)
     await vi.advanceTimersByTimeAsync(0)
     expect(fetchBoard).toHaveBeenCalledTimes(2)
 
