@@ -97,20 +97,30 @@ export const useQueueStore = defineStore('queue', () => {
     invalidateRead('stats')
   }
 
-  function $reset(): void {
+  function invalidateOperations(): void {
     credentialEpoch += 1
-    mutationGeneration = 0
     activeOperations.clear()
     readOwners.clear()
-    requests.value = []
-    stats.value = null
     loading.value = false
     error.value = null
   }
 
+  function $reset(): void {
+    invalidateOperations()
+    mutationGeneration = 0
+    requests.value = []
+    stats.value = null
+  }
+
   watch(
-    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.isAuthenticated, session.isDemo],
     $reset,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    invalidateOperations,
     { flush: 'sync' },
   )
 
