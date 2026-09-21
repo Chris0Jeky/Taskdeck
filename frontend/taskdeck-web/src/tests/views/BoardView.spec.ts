@@ -77,6 +77,7 @@ const mockBoardStore = reactive({
     id: 'board-1',
     name: 'Ops Board',
     description: 'Primary board',
+    canWrite: true,
     columns: [
       {
         id: 'column-1',
@@ -204,6 +205,7 @@ describe('BoardView', () => {
       id: 'board-1',
       name: 'Ops Board',
       description: 'Primary board',
+      canWrite: true,
       columns: [
         {
           id: 'column-1',
