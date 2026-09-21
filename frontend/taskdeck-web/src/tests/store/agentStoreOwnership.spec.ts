@@ -51,6 +51,14 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function sessionToken(id: string): string {
+  const payload = btoa(JSON.stringify({ exp: 4_102_444_800, jti: id }))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `header.${payload}.sig`
+}
+
 function profile(id: string): AgentProfile {
   return {
     id,
@@ -220,6 +228,52 @@ describe('agentStore async ownership', () => {
     newer.resolve([run('agent-a', 'new')])
     await newRequest
     expect(store.runsLoading).toBe(false)
+  })
+
+  it('preserves loaded route data while invalidating old-token reads on refresh', async () => {
+    setActivePinia(createPinia())
+    session = useSessionStore()
+    session.userId = 'user-a'
+    session.token = sessionToken('old')
+    store = useAgentStore()
+
+    store.profiles = [profile('existing')]
+    store.runs = [run('agent-a', 'existing')]
+    store.runDetail = detail('agent-a', 'existing')
+
+    const profiles = deferred<AgentProfile[]>()
+    const runs = deferred<AgentRun[]>()
+    const runDetail = deferred<AgentRunDetail>()
+    vi.mocked(agentApi.listProfiles).mockReturnValue(profiles.promise)
+    vi.mocked(agentApi.listRuns).mockReturnValue(runs.promise)
+    vi.mocked(agentApi.getRunDetail).mockReturnValue(runDetail.promise)
+
+    const profileRequest = store.fetchProfiles()
+    const runsRequest = store.fetchRuns('agent-a')
+    const detailRequest = store.fetchRunDetail('agent-a', 'run-a')
+
+    session.token = sessionToken('new')
+
+    expect(store.profiles.map(item => item.id)).toEqual(['existing'])
+    expect(store.runs.map(item => item.id)).toEqual(['existing'])
+    expect(store.runDetail?.id).toBe('existing')
+    expect(store.profilesLoading).toBe(false)
+    expect(store.runsLoading).toBe(false)
+    expect(store.runDetailLoading).toBe(false)
+
+    profiles.resolve([profile('old-token')])
+    runs.reject(new Error('old-token failure'))
+    runDetail.resolve(detail('agent-a', 'old-token'))
+
+    await profileRequest
+    await expect(runsRequest).rejects.toThrow('old-token failure')
+    await detailRequest
+
+    expect(store.profiles.map(item => item.id)).toEqual(['existing'])
+    expect(store.runs.map(item => item.id)).toEqual(['existing'])
+    expect(store.runDetail?.id).toBe('existing')
+    expect(store.runsError).toBeNull()
+    expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
   it('clears every surface and invalidates pending reads on session replacement', async () => {
