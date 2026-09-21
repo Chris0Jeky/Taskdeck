@@ -131,7 +131,7 @@ describe('auditStore async ownership', () => {
     expect(store.loading).toBe(false)
   })
 
-  it('clears the shared surface synchronously and ignores late success after token rotation', async () => {
+  it('preserves loaded history while invalidating an old-token success on refresh', async () => {
     store.entries = [entry('existing')]
     store.error = 'existing error'
     const pending = deferred<AuditEntry[]>()
@@ -142,19 +142,20 @@ describe('auditStore async ownership', () => {
 
     session.token = 'token-b'
 
-    expect(store.entries).toEqual([])
+    expect(store.entries.map(item => item.id)).toEqual(['existing'])
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
 
     pending.resolve([entry('old-token')])
     await request
 
-    expect(store.entries).toEqual([])
+    expect(store.entries.map(item => item.id)).toEqual(['existing'])
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
   })
 
-  it('suppresses stale failure UI after same-user token rotation while preserving rejection', async () => {
+  it('preserves loaded history while suppressing an old-token failure', async () => {
+    store.entries = [entry('existing')]
     const pending = deferred<AuditEntry[]>()
     vi.mocked(auditApi.getEntityHistory).mockReturnValue(pending.promise)
 
@@ -163,9 +164,29 @@ describe('auditStore async ownership', () => {
     pending.reject(new Error('old-token failure'))
     await expect(request).rejects.toThrow('old-token failure')
 
-    expect(store.entries).toEqual([])
+    expect(store.entries.map(item => item.id)).toEqual(['existing'])
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
     expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('clears history on identity replacement and suppresses late settlement', async () => {
+    store.entries = [entry('existing')]
+    const pending = deferred<AuditEntry[]>()
+    vi.mocked(auditApi.getUserHistory).mockReturnValue(pending.promise)
+
+    const request = store.fetchUserHistory()
+    session.userId = 'user-b'
+
+    expect(store.entries).toEqual([])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+
+    pending.resolve([entry('old-user')])
+    await request
+
+    expect(store.entries).toEqual([])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
   })
 })
