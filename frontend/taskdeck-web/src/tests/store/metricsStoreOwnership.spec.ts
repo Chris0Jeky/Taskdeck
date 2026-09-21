@@ -209,7 +209,7 @@ describe('metricsStore async ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
-  it('clears both lanes and suppresses late settlements on same-user token rotation', async () => {
+  it('preserves loaded dashboard data while invalidating old-token work on refresh', async () => {
     store.metrics = metrics('existing')
     store.forecast = forecast('existing')
     const pendingMetrics = deferred<BoardMetricsResponse>()
@@ -221,8 +221,8 @@ describe('metricsStore async ownership', () => {
     const forecastRequest = store.fetchBoardForecast({ boardId: 'board-old' })
     session.token = 'token-b'
 
-    expect(store.metrics).toBeNull()
-    expect(store.forecast).toBeNull()
+    expect(store.metrics?.boardId).toBe('existing')
+    expect(store.forecast?.boardId).toBe('existing')
     expect(store.loading).toBe(false)
     expect(store.forecastLoading).toBe(false)
 
@@ -231,8 +231,8 @@ describe('metricsStore async ownership', () => {
     await metricsRequest
     await expect(forecastRequest).rejects.toThrow('old-token forecast failure')
 
-    expect(store.metrics).toBeNull()
-    expect(store.forecast).toBeNull()
+    expect(store.metrics?.boardId).toBe('existing')
+    expect(store.forecast?.boardId).toBe('existing')
     expect(store.error).toBeNull()
     expect(store.forecastError).toBeNull()
     expect(toastMocks.error).not.toHaveBeenCalled()
