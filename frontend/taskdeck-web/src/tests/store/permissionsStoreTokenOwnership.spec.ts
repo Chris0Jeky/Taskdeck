@@ -111,4 +111,32 @@ describe('permissionsStore token ownership', () => {
     expect(store.error).toBeNull()
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
+
+  it('retries an unresolved board-access read after same-user token rotation', async () => {
+    const oldRead = deferred<BoardAccess[]>()
+    const freshRead = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.getAccess)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
+
+    const request = store.fetchBoardAccess('board-1')
+    session.token = token('new')
+
+    expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(2)
+    expect(store.boardAccess.has('board-1')).toBe(false)
+    expect(store.loading).toBe(true)
+
+    oldRead.resolve([access('old-token-read')])
+    await request
+
+    expect(store.boardAccess.has('board-1')).toBe(false)
+    expect(store.loading).toBe(true)
+
+    freshRead.resolve([access('fresh-token-read')])
+    await vi.waitFor(() => {
+      expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-token-read'])
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+    })
+  })
 })
