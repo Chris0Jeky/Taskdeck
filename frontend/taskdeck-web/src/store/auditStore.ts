@@ -15,6 +15,8 @@ export const useAuditStore = defineStore('audit', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  type ReadRetry = () => Promise<void>
+
   interface ReadOwner {
     epoch: number
     token: symbol
@@ -22,6 +24,7 @@ export const useAuditStore = defineStore('audit', () => {
 
   let credentialEpoch = 0
   let currentRead: ReadOwner | null = null
+  let currentRetry: ReadRetry | null = null
 
   function clampLimit(limit: number): number {
     if (limit < 1) return 1
@@ -29,9 +32,10 @@ export const useAuditStore = defineStore('audit', () => {
     return limit
   }
 
-  function beginRead(): ReadOwner {
+  function beginRead(retry: ReadRetry): ReadOwner {
     const owner = { epoch: credentialEpoch, token: Symbol('audit-history') }
     currentRead = owner
+    currentRetry = retry
     error.value = null
     loading.value = true
     return owner
@@ -44,14 +48,26 @@ export const useAuditStore = defineStore('audit', () => {
   function finishRead(owner: ReadOwner): void {
     if (!ownsRead(owner)) return
     currentRead = null
+    currentRetry = null
     loading.value = false
   }
 
   function invalidateCurrentRead(): void {
     credentialEpoch += 1
     currentRead = null
+    currentRetry = null
     loading.value = false
     error.value = null
+  }
+
+  function retryEmptyActiveRead(): void {
+    const retry = currentRead && entries.value.length === 0 ? currentRetry : null
+    invalidateCurrentRead()
+    if (retry) {
+      void retry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
   }
 
   function resetForSession(): void {
@@ -67,15 +83,16 @@ export const useAuditStore = defineStore('audit', () => {
 
   watch(
     () => session.token,
-    invalidateCurrentRead,
+    retryEmptyActiveRead,
     { flush: 'sync' },
   )
 
   async function fetchHistory(
     request: () => Promise<AuditEntry[]>,
     fallbackMessage: string,
+    retry: ReadRetry,
   ): Promise<void> {
-    const owner = beginRead()
+    const owner = beginRead(retry)
     try {
       const result = await request()
       if (!ownsRead(owner)) return
@@ -101,6 +118,7 @@ export const useAuditStore = defineStore('audit', () => {
     await fetchHistory(
       () => auditApi.getBoardHistory(boardId, clampLimit(limit)),
       'Failed to fetch board history',
+      () => fetchBoardHistory(boardId, limit),
     )
   }
 
@@ -113,6 +131,7 @@ export const useAuditStore = defineStore('audit', () => {
     await fetchHistory(
       () => auditApi.getEntityHistory(entityType, entityId, clampLimit(limit)),
       'Failed to fetch entity history',
+      () => fetchEntityHistory(entityType, entityId, limit),
     )
   }
 
@@ -125,6 +144,7 @@ export const useAuditStore = defineStore('audit', () => {
     await fetchHistory(
       () => auditApi.getUserHistory(clampLimit(limit)),
       'Failed to fetch user history',
+      () => fetchUserHistory(limit),
     )
   }
 
