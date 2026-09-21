@@ -36,6 +36,7 @@ export const useQueueStore = defineStore('queue', () => {
   const activeOperations = new Set<symbol>()
   const readOwners = new Map<ReadLane, ReadOwner>()
   const readRetries = new Map<ReadLane, ReadRetry>()
+  const successorReads = new Map<symbol, Promise<void>>()
 
   function syncLoading(): void {
     loading.value = activeOperations.size > 0
@@ -126,22 +127,32 @@ export const useQueueStore = defineStore('queue', () => {
     error.value = null
   }
 
-  function retryEmptyActiveReads(): void {
-    const requestRetry = readOwners.has('requests') && requests.value.length === 0
-      ? readRetries.get('requests')
+  async function awaitSuccessor(owner: ReadOwner): Promise<boolean> {
+    const successor = successorReads.get(owner.token)
+    if (!successor) return false
+
+    try {
+      await successor
+    } finally {
+      successorReads.delete(owner.token)
+    }
+    return true
+  }
+
+  function retryActiveReads(): void {
+    const requestRetry = readOwners.has('requests')
+      ? { owner: readOwners.get('requests')!, retry: readRetries.get('requests') }
       : undefined
-    const statsRetry = readOwners.has('stats') && stats.value === null
-      ? readRetries.get('stats')
+    const statsRetry = readOwners.has('stats')
+      ? { owner: readOwners.get('stats')!, retry: readRetries.get('stats') }
       : undefined
 
     invalidateOperations()
-    if (requestRetry) {
-      void requestRetry().catch(() => {
-        // The retried store action owns current error/toast state.
-      })
-    }
-    if (statsRetry) {
-      void statsRetry().catch(() => {
+    for (const entry of [requestRetry, statsRetry]) {
+      if (!entry?.retry) continue
+      const successor = entry.retry()
+      successorReads.set(entry.owner.token, successor)
+      void successor.catch(() => {
         // The retried store action owns current error/toast state.
       })
     }
@@ -149,6 +160,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   function $reset(): void {
     invalidateOperations()
+    successorReads.clear()
     mutationGeneration = 0
     requests.value = []
     stats.value = null
@@ -162,7 +174,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   watch(
     () => session.token,
-    retryEmptyActiveReads,
+    retryActiveReads,
     { flush: 'sync' },
   )
 
@@ -185,12 +197,18 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       session.requireUserId('queue operations')
       const result = await queueApi.getUserRequests()
-      if (ownsRead('requests', owner)) requests.value = result
+      if (ownsRead('requests', owner)) {
+        requests.value = result
+      } else {
+        await awaitSuccessor(owner)
+      }
     } catch (e: unknown) {
       if (ownsRead('requests', owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch queue requests').message
         publishError(owner, msg)
         toast.error(msg)
+      } else if (await awaitSuccessor(owner)) {
+        return
       }
       throw e
     } finally {
@@ -209,12 +227,18 @@ export const useQueueStore = defineStore('queue', () => {
     const owner = beginRead('requests', () => fetchByStatus(status))
     try {
       const result = await queueApi.getRequestsByStatus(status)
-      if (ownsRead('requests', owner)) requests.value = result
+      if (ownsRead('requests', owner)) {
+        requests.value = result
+      } else {
+        await awaitSuccessor(owner)
+      }
     } catch (e: unknown) {
       if (ownsRead('requests', owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch requests by status').message
         publishError(owner, msg)
         toast.error(msg)
+      } else if (await awaitSuccessor(owner)) {
+        return
       }
       throw e
     } finally {
@@ -306,12 +330,18 @@ export const useQueueStore = defineStore('queue', () => {
     const owner = beginRead('stats', fetchStats)
     try {
       const result = await queueApi.getStats()
-      if (ownsRead('stats', owner)) stats.value = result
+      if (ownsRead('stats', owner)) {
+        stats.value = result
+      } else {
+        await awaitSuccessor(owner)
+      }
     } catch (e: unknown) {
       if (ownsRead('stats', owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch queue stats').message
         publishError(owner, msg)
         toast.error(msg)
+      } else if (await awaitSuccessor(owner)) {
+        return
       }
       throw e
     } finally {

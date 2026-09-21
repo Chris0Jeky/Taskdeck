@@ -232,11 +232,14 @@ describe('queueStore async ownership', () => {
 
   it('preserves loaded queue data on token rotation and ignores late read and submit successes', async () => {
     const oldRead = deferred<QueueRequest[]>()
+    const freshRead = deferred<QueueRequest[]>()
     const oldSubmit = deferred<QueueRequest>()
     store.requests = [request('existing')]
     store.stats = stats(4)
     store.error = 'existing error'
-    vi.mocked(queueApi.getRequestsByStatus).mockReturnValue(oldRead.promise)
+    vi.mocked(queueApi.getRequestsByStatus)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
     vi.mocked(queueApi.createRequest).mockReturnValue(oldSubmit.promise)
 
     const readOperation = store.fetchByStatus('Pending')
@@ -252,9 +255,10 @@ describe('queueStore async ownership', () => {
 
     oldRead.resolve([request('old-read')])
     oldSubmit.resolve(request('old-submit'))
+    freshRead.resolve([request('existing')])
     await Promise.all([readOperation, submitOperation])
 
-    expect(immediate).toEqual({ requestIds: ['existing'], stats: stats(4), loading: false, error: null })
+    expect(immediate).toEqual({ requestIds: ['existing'], stats: stats(4), loading: true, error: null })
     expect(store.requests.map(item => item.id)).toEqual(['existing'])
     expect(store.stats).toEqual(stats(4))
     expect(store.loading).toBe(false)
@@ -287,21 +291,37 @@ describe('queueStore async ownership', () => {
 
     oldRequests.resolve([request('old-token', 'Failed')])
     oldStats.resolve(stats(1))
-    await Promise.all([requestsOperation, statsOperation])
-
-    expect(store.requests).toEqual([])
-    expect(store.stats).toBeNull()
-    expect(store.loading).toBe(true)
-    expect(store.error).toBeNull()
-
     freshRequests.resolve([request('fresh-token', 'Failed')])
     freshStats.resolve(stats(7))
-    await vi.waitFor(() => {
-      expect(store.requests.map(item => item.id)).toEqual(['fresh-token'])
-      expect(store.stats?.pendingCount).toBe(7)
-      expect(store.loading).toBe(false)
-      expect(store.error).toBeNull()
-    })
+    await Promise.all([requestsOperation, statsOperation])
+
+    expect(store.requests.map(item => item.id)).toEqual(['fresh-token'])
+    expect(store.stats?.pendingCount).toBe(7)
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+  })
+
+  it('retries an active status read with cached rows and joins the replacement', async () => {
+    const oldRead = deferred<QueueRequest[]>()
+    const freshRead = deferred<QueueRequest[]>()
+    store.requests = [request('previous', 'Completed')]
+    vi.mocked(queueApi.getRequestsByStatus)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
+
+    const operation = store.fetchByStatus('Pending')
+    session.token = token('new')
+
+    expect(queueApi.getRequestsByStatus).toHaveBeenCalledTimes(2)
+    expect(queueApi.getRequestsByStatus).toHaveBeenNthCalledWith(2, 'Pending')
+
+    oldRead.reject(new Error('old-token failure'))
+    freshRead.resolve([request('fresh', 'Pending')])
+
+    await expect(operation).resolves.toBeUndefined()
+    expect(store.requests.map(item => item.id)).toEqual(['fresh'])
+    expect(store.error).toBeNull()
+    expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
   it('suppresses a stale mutation failure after token rotation while preserving cached data and rejection', async () => {
