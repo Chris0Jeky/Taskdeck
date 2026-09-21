@@ -166,6 +166,25 @@ describe('metricsStore async ownership', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('keeps metrics loading cleared when the newer request settles first', async () => {
+    const older = deferred<BoardMetricsResponse>()
+    const newer = deferred<BoardMetricsResponse>()
+    vi.mocked(metricsApi.getBoardMetrics)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+
+    const oldRequest = store.fetchBoardMetrics({ boardId: 'board-old' })
+    const newRequest = store.fetchBoardMetrics({ boardId: 'board-new' })
+    newer.resolve(metrics('board-new'))
+    await newRequest
+    expect(store.loading).toBe(false)
+
+    older.resolve(metrics('board-old'))
+    await oldRequest
+    expect(store.metrics?.boardId).toBe('board-new')
+    expect(store.loading).toBe(false)
+  })
+
   it('keeps metrics and forecast lanes independently concurrent', async () => {
     const pendingMetrics = deferred<BoardMetricsResponse>()
     const pendingForecast = deferred<BoardForecastResponse>()
