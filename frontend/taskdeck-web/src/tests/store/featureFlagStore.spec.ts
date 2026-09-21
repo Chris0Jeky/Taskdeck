@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { defaultFeatureFlags } from '../../types/feature-flags'
@@ -10,6 +10,10 @@ describe('featureFlagStore', () => {
     setActivePinia(createPinia())
     localStorage.clear()
     store = useFeatureFlagStore()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   describe('default flags', () => {
@@ -65,6 +69,67 @@ describe('featureFlagStore', () => {
       for (const key of Object.keys(defaultFeatureFlags) as (keyof typeof defaultFeatureFlags)[]) {
         expect(store.isEnabled(key)).toBe(defaultFeatureFlags[key])
       }
+    })
+
+    it('restores only declared boolean flag values', () => {
+      localStorage.setItem('taskdeck_feature_flags', JSON.stringify({
+        newShell: 0,
+        newAuth: 'false',
+        newAccess: false,
+        devTools: 'true',
+        ollama: true,
+        unknownFlag: true,
+      }))
+
+      store.restore()
+
+      expect(store.isEnabled('newShell')).toBe(defaultFeatureFlags.newShell)
+      expect(store.isEnabled('newAuth')).toBe(defaultFeatureFlags.newAuth)
+      expect(store.isEnabled('devTools')).toBe(defaultFeatureFlags.devTools)
+      expect(store.isEnabled('newAccess')).toBe(false)
+      expect(store.isEnabled('ollama')).toBe(true)
+      expect(Object.keys(store.flags).sort()).toEqual(Object.keys(defaultFeatureFlags).sort())
+      expect((store.flags as Record<string, unknown>).unknownFlag).toBeUndefined()
+    })
+
+    it.each(['null', '[]', '"text"', '42'])(
+      'uses defaults for a non-object persisted payload %s',
+      (payload) => {
+        localStorage.setItem('taskdeck_feature_flags', payload)
+
+        store.restore()
+
+        expect(store.flags).toEqual(defaultFeatureFlags)
+      },
+    )
+
+    it('uses defaults when storage cannot be read', () => {
+      store.setFlag('newAuth', false)
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new DOMException('Storage blocked', 'SecurityError')
+      })
+
+      expect(() => store.restore()).not.toThrow()
+      expect(store.flags).toEqual(defaultFeatureFlags)
+    })
+
+    it('keeps an in-memory flag update when persistence fails', () => {
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('Storage full', 'QuotaExceededError')
+      })
+
+      expect(() => store.setFlag('newAuth', false)).not.toThrow()
+      expect(store.isEnabled('newAuth')).toBe(false)
+    })
+
+    it('keeps reset defaults when persistence fails', () => {
+      store.setFlag('newAuth', false)
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('Storage full', 'QuotaExceededError')
+      })
+
+      expect(() => store.resetAll()).not.toThrow()
+      expect(store.flags).toEqual(defaultFeatureFlags)
     })
 
     it('should use defaults when no flags are saved in localStorage', () => {
