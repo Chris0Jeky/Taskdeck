@@ -27,13 +27,29 @@ export const useIntegrationStore = defineStore('integration', () => {
     token: symbol
   }
 
+  interface MutationTail {
+    promise: Promise<void>
+    ownerToken: symbol
+  }
+
   let lifecycleEpoch = 0
+  let errorOwner: symbol | null = null
   const readOwners = new Map<ReadLane, ReadOwner>()
   const activeReadTokens = new Set<symbol>()
-  const mutationTails = new Map<string, Promise<void>>()
+  const mutationTails = new Map<string, MutationTail>()
 
   function syncLoading() {
     loading.value = activeReadTokens.size > 0
+  }
+
+  function clearError() {
+    error.value = null
+    errorOwner = null
+  }
+
+  function recordError(ownerToken: symbol, message: string) {
+    error.value = message
+    errorOwner = ownerToken
   }
 
   function beginRead(lane: ReadLane): ReadOwner {
@@ -43,7 +59,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     const owner = { epoch: lifecycleEpoch, token: Symbol(lane) }
     readOwners.set(lane, owner)
     activeReadTokens.add(owner.token)
-    error.value = null
+    clearError()
     syncLoading()
     return owner
   }
@@ -74,24 +90,30 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function enqueueConnectorMutation<T>(
     connectorId: string,
-    task: (epoch: number) => Promise<T>,
+    task: (epoch: number, ownerToken: symbol) => Promise<T>,
   ): Promise<T | undefined> {
     const epoch = lifecycleEpoch
+    const ownerToken = Symbol(`mutation:${connectorId}`)
     const predecessor = mutationTails.get(connectorId)
     let release!: () => void
     const tail = new Promise<void>((resolve) => { release = resolve })
-    mutationTails.set(connectorId, tail)
+    mutationTails.set(connectorId, { promise: tail, ownerToken })
 
     try {
-      if (predecessor) await predecessor
+      if (predecessor) await predecessor.promise
       if (!ownsLifetime(epoch)) return undefined
 
-      // A predecessor may have failed after this intent was queued.
-      error.value = null
-      return await task(epoch)
+      // Retire only an error produced by this connector's predecessor. Another
+      // connector can fail while this intent waits and must keep its receipt.
+      if (predecessor) {
+        if (errorOwner === predecessor.ownerToken) clearError()
+      } else {
+        clearError()
+      }
+      return await task(epoch, ownerToken)
     } finally {
       release()
-      if (mutationTails.get(connectorId) === tail) mutationTails.delete(connectorId)
+      if (mutationTails.get(connectorId)?.promise === tail) mutationTails.delete(connectorId)
     }
   }
 
@@ -105,6 +127,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   async function fetchConnectors() {
     if (isDemoMode) {
       loading.value = false
+      clearError()
       error.value = 'Integrations are not available in demo mode.'
       return
     }
@@ -118,7 +141,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       if (!ownsRead('list', owner)) return
       connectors.value = []
       const msg = getErrorDisplay(e, 'Failed to fetch integrations').message
-      error.value = msg
+      recordError(owner.token, msg)
       toast.error(msg)
     } finally {
       finishRead('list', owner)
@@ -127,6 +150,7 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function fetchConnectorDetail(id: string) {
     if (isDemoMode) {
+      clearError()
       error.value = 'Integrations are not available in demo mode.'
       return
     }
@@ -139,7 +163,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     } catch (e: unknown) {
       if (!ownsRead('detail', owner)) return
       const msg = getErrorDisplay(e, 'Failed to fetch connector details').message
-      error.value = msg
+      recordError(owner.token, msg)
       selectedConnector.value = null
       toast.error(msg)
     } finally {
@@ -150,8 +174,9 @@ export const useIntegrationStore = defineStore('integration', () => {
   async function registerConnector(request: CreateIntegrationConnectorRequest) {
     guardDemoMutation()
     const epoch = lifecycleEpoch
+    const ownerToken = Symbol('register')
     try {
-      error.value = null
+      clearError()
       const connector = await integrationsApi.registerConnector(request)
       if (!ownsLifetime(epoch)) return connector
 
@@ -161,7 +186,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     } catch (e: unknown) {
       if (ownsLifetime(epoch)) {
         const msg = getErrorDisplay(e, 'Failed to register connector').message
-        error.value = msg
+        recordError(ownerToken, msg)
         toast.error(msg)
       }
       throw e
@@ -170,7 +195,7 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function updateConnector(id: string, request: UpdateIntegrationConnectorRequest) {
     guardDemoMutation()
-    return await enqueueConnectorMutation(id, async (epoch) => {
+    return await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
       try {
         const updated = await integrationsApi.updateConnector(id, request)
         if (!ownsLifetime(epoch)) return updated
@@ -184,7 +209,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       } catch (e: unknown) {
         if (ownsLifetime(epoch)) {
           const msg = getErrorDisplay(e, 'Failed to update connector').message
-          error.value = msg
+          recordError(ownerToken, msg)
           toast.error(msg)
         }
         throw e
@@ -194,7 +219,7 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function deleteConnector(id: string) {
     guardDemoMutation()
-    await enqueueConnectorMutation(id, async (epoch) => {
+    await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
       try {
         await integrationsApi.deleteConnector(id)
         if (!ownsLifetime(epoch)) return
@@ -207,7 +232,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       } catch (e: unknown) {
         if (ownsLifetime(epoch)) {
           const msg = getErrorDisplay(e, 'Failed to remove connector').message
-          error.value = msg
+          recordError(ownerToken, msg)
           toast.error(msg)
         }
         throw e
@@ -217,7 +242,7 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function enableConnector(id: string) {
     guardDemoMutation()
-    await enqueueConnectorMutation(id, async (epoch) => {
+    await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
       try {
         const updated = await integrationsApi.enableConnector(id)
         if (!ownsLifetime(epoch)) return
@@ -230,7 +255,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       } catch (e: unknown) {
         if (ownsLifetime(epoch)) {
           const msg = getErrorDisplay(e, 'Failed to enable connector').message
-          error.value = msg
+          recordError(ownerToken, msg)
           toast.error(msg)
         }
         throw e
@@ -240,7 +265,7 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function disableConnector(id: string) {
     guardDemoMutation()
-    await enqueueConnectorMutation(id, async (epoch) => {
+    await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
       try {
         const updated = await integrationsApi.disableConnector(id)
         if (!ownsLifetime(epoch)) return
@@ -253,7 +278,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       } catch (e: unknown) {
         if (ownsLifetime(epoch)) {
           const msg = getErrorDisplay(e, 'Failed to disable connector').message
-          error.value = msg
+          recordError(ownerToken, msg)
           toast.error(msg)
         }
         throw e
@@ -265,11 +290,11 @@ export const useIntegrationStore = defineStore('integration', () => {
     invalidateReads()
     connectors.value = []
     selectedConnector.value = null
-    error.value = null
+    clearError()
   }
 
   watch(
-    () => [session.userId, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
     $reset,
     { flush: 'sync' },
   )
