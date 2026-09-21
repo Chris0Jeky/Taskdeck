@@ -19,6 +19,7 @@ function normalizeFeatureFlags(raw: unknown): FeatureFlags {
 
 export const useFeatureFlagStore = defineStore('featureFlags', () => {
   const flags = ref<FeatureFlags>({ ...defaultFeatureFlags })
+  let hasUnsavedChanges = false
 
   function isEnabled(flag: keyof FeatureFlags): boolean {
     return flags.value[flag]
@@ -37,12 +38,16 @@ export const useFeatureFlagStore = defineStore('featureFlags', () => {
   function persist() {
     try {
       localStorage.setItem(FLAGS_KEY, JSON.stringify(normalizeFeatureFlags(flags.value)))
+      hasUnsavedChanges = false
     } catch {
+      hasUnsavedChanges = true
       // Storage can be unavailable or full. Keep the valid in-memory choice.
     }
   }
 
   function restore() {
+    if (hasUnsavedChanges) return
+
     try {
       const saved = localStorage.getItem(FLAGS_KEY)
       if (!saved) return
