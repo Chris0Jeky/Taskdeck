@@ -98,6 +98,10 @@ function findExactMatch(value: string, options: InputAssistOption[] = props.opti
 }
 
 function selectOption(option: InputAssistOption) {
+  if (props.disabled) {
+    return
+  }
+
   setModelValue(option.value)
   emit('select', option)
   closePanel()
