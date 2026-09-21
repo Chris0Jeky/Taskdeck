@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { integrationsApi } from '../../api/integrationsApi'
 import { useIntegrationStore } from '../../store/integrationStore'
 import { useSessionStore } from '../../store/sessionStore'
-import type { IntegrationConnector } from '../../types/integration'
+import type { IntegrationConnector, IntegrationConnectorDetail } from '../../types/integration'
 
 const toastMocks = vi.hoisted(() => ({
   error: vi.fn(),
@@ -73,6 +73,10 @@ function connector(id: string, name: string): IntegrationConnector {
   }
 }
 
+function detail(id: string, name: string): IntegrationConnectorDetail {
+  return { ...connector(id, name), recentEvents: [] }
+}
+
 describe('integrationStore token ownership', () => {
   let session: ReturnType<typeof useSessionStore>
   let store: ReturnType<typeof useIntegrationStore>
@@ -119,5 +123,46 @@ describe('integrationStore token ownership', () => {
     expect(store.connectors.map(item => item.id)).toEqual(['connector-1'])
     expect(store.error).toBeNull()
     expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('retries empty initial list and detail reads after same-user token rotation', async () => {
+    const oldList = deferred<IntegrationConnector[]>()
+    const freshList = deferred<IntegrationConnector[]>()
+    const oldDetail = deferred<IntegrationConnectorDetail>()
+    const freshDetail = deferred<IntegrationConnectorDetail>()
+    vi.mocked(integrationsApi.listConnectors)
+      .mockReturnValueOnce(oldList.promise)
+      .mockReturnValueOnce(freshList.promise)
+    vi.mocked(integrationsApi.getConnector)
+      .mockReturnValueOnce(oldDetail.promise)
+      .mockReturnValueOnce(freshDetail.promise)
+
+    const listRequest = store.fetchConnectors()
+    const detailRequest = store.fetchConnectorDetail('connector-a')
+    session.token = token('new')
+
+    expect(integrationsApi.listConnectors).toHaveBeenCalledTimes(2)
+    expect(integrationsApi.getConnector).toHaveBeenCalledTimes(2)
+    expect(store.connectors).toEqual([])
+    expect(store.selectedConnector).toBeNull()
+    expect(store.loading).toBe(true)
+
+    oldList.resolve([connector('old-token', 'Old token connector')])
+    oldDetail.resolve(detail('old-token', 'Old token connector'))
+    await Promise.all([listRequest, detailRequest])
+
+    expect(store.connectors).toEqual([])
+    expect(store.selectedConnector).toBeNull()
+    expect(store.loading).toBe(true)
+    expect(store.error).toBeNull()
+
+    freshList.resolve([connector('fresh-token', 'Fresh connector')])
+    freshDetail.resolve(detail('fresh-token', 'Fresh connector'))
+    await vi.waitFor(() => {
+      expect(store.connectors.map(item => item.id)).toEqual(['fresh-token'])
+      expect(store.selectedConnector?.id).toBe('fresh-token')
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+    })
   })
 })
