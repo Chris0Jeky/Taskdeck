@@ -194,14 +194,12 @@ export function reviewedRunnerSurface(inventory) {
     }
     const base = withoutLine(entry);
     const orderedCallers = [...callers.values()].sort((a, b) => compare(a.id, b.id));
-    projectedBytes += 2 * Buffer.byteLength(JSON.stringify(base), 'utf8') + 128;
-    for (const caller of orderedCallers) {
-      projectedBytes += 2 * Buffer.byteLength(JSON.stringify(caller), 'utf8') + 128;
-      if (projectedBytes > MAX_PROJECTED_SURFACE_BYTES) {
-        return { schemaVersion: 1, graphComplete: false, candidates: [] };
-      }
+    const candidate = { ...base, callers: orderedCallers };
+    projectedBytes += 2 * Buffer.byteLength(JSON.stringify(candidate), 'utf8') + 256;
+    if (projectedBytes > MAX_PROJECTED_SURFACE_BYTES) {
+      return { schemaVersion: 1, graphComplete: false, candidates: [] };
     }
-    candidates.push({ ...base, callers: orderedCallers });
+    candidates.push(candidate);
   }
   return { schemaVersion: 1, graphComplete: inventory.graphComplete, candidates };
 }

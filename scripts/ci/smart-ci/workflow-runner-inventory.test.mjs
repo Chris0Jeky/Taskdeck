@@ -183,6 +183,29 @@ test('large caller projections fail closed before reviewed-surface expansion', (
   assert.deepEqual(surface.candidates, []);
 });
 
+test('large caller-free projections fail closed before reviewed-surface expansion', () => {
+  const inventory = {
+    graphComplete: true,
+    runners: Array.from({ length: 1100 }, (_, index) => ({
+      id: `.github/workflows/large-${index}.yml#build`,
+      file: `.github/workflows/large-${index}.yml`,
+      job: 'build',
+      line: 1,
+      events: 'x'.repeat(4096),
+      condition: null,
+      needs: null,
+      strategy: null,
+      selector: 'windows-latest',
+      classification: 'windows-literal',
+    })),
+    calls: [],
+  };
+
+  const surface = reviewedRunnerSurface(inventory);
+  assert.equal(surface.graphComplete, false);
+  assert.deepEqual(surface.candidates, []);
+});
+
 test('the reviewed runner surface detects a new Windows job and a new caller', () => {
   const leaf = runner('leaf', 'windows-latest');
   const baseline = reviewedRunnerSurface(inventory(leaf));
