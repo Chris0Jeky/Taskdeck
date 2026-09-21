@@ -11,6 +11,26 @@ import { parseJwtPayload } from './jwt'
 const TOKEN_KEY = 'taskdeck_token'
 const SESSION_KEY = 'taskdeck_session'
 
+// In-memory ownership only: never persisted or sent to the server. Explicit
+// token writes/removals advance even when the token string is unchanged, so
+// logout followed by same-token login cannot revive an old request owner.
+let credentialGeneration = 0
+let observedToken: string | null = null
+
+function advanceCredentialGeneration(token: string | null): void {
+  observedToken = token
+  credentialGeneration++
+}
+
+/**
+ * Generation of the last observed credential. Read getToken() immediately
+ * before taking/checking a request snapshot; that observes external storage
+ * changes too. No additional copy of the token belongs on request metadata.
+ */
+export function getObservedCredentialGeneration(): number {
+  return credentialGeneration
+}
+
 /** Maximum allowed length for a stored token string. */
 const MAX_TOKEN_LENGTH = 4096
 
@@ -83,8 +103,10 @@ export function getToken(): string | null {
   if (token && !isValidJwtStructure(token)) {
     // Corrupted or malicious value — remove it
     localStorage.removeItem(TOKEN_KEY)
+    if (observedToken !== null) advanceCredentialGeneration(null)
     return null
   }
+  if (token !== observedToken) advanceCredentialGeneration(token)
   return token
 }
 
@@ -93,11 +115,13 @@ export function setToken(token: string): boolean {
     return false
   }
   localStorage.setItem(TOKEN_KEY, token)
+  advanceCredentialGeneration(token)
   return true
 }
 
 export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY)
+  advanceCredentialGeneration(null)
 }
 
 // --- Session metadata operations ---
