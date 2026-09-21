@@ -165,7 +165,11 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
         visit.labels.splice(0, visit.labels.length, ...labels)
       }
     } catch (e: unknown) {
-      if (ownsExactLabelCache(visit)) {
+      if (
+        ownsExactLabelCache(visit) &&
+        readVersionByBoardId.get(boardId) === readVersion &&
+        currentMutationVersion(boardId) === mutationVersion
+      ) {
         helpers.handleApiError(e, 'Failed to fetch labels')
       }
       throw e
