@@ -127,21 +127,31 @@ export const useNotificationStore = defineStore('notifications', () => {
     invalidateRead('preferences')
   }
 
-  function resetForSession(): void {
+  function invalidateOperations(): void {
     sessionEpoch += 1
     notificationMutationGeneration = 0
     preferenceMutationGeneration = 0
     activeLoadingOperations.clear()
     readOwners.clear()
-    notifications.value = []
-    preferences.value = null
     loading.value = false
     clearError()
   }
 
+  function resetForSession(): void {
+    invalidateOperations()
+    notifications.value = []
+    preferences.value = null
+  }
+
   watch(
-    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.isAuthenticated, session.isDemo],
     resetForSession,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    invalidateOperations,
     { flush: 'sync' },
   )
 
