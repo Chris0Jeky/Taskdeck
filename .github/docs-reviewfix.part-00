@@ -1,0 +1,25 @@
+diff --git a/docs/STATUS.md b/docs/STATUS.md
+index e9c828d..713e713 100644
+--- a/docs/STATUS.md
++++ b/docs/STATUS.md
+@@ -1,9 +1,19 @@
+ # Taskdeck Status (Source of Truth)
+ 
+-Last Updated: 2026-09-20
++Last Updated: 2026-09-21
+ 
+ GitHub Pages (`https://chris0jeky.github.io/Taskdeck/`) now runs as a static demo: empty `VITE_API_BASE_URL` plus `VITE_DEMO_MODE=true`, runtime Pages+loopback detection, and an axios demo adapter so review, chat, and card parent/assignee reads never call `localhost:5000`. Home and Review share the same one pending demo proposal. Local Vite with `.env` still uses the real local API. This is not a hosted backend; that remains later work. Detection: `frontend/taskdeck-web/src/utils/apiBaseUrl.ts`. Operator notes: `docs/product/DEMO_PLAYBOOK.md`.
+ 
++## CI least-privilege delivery checkpoint (#2335)
++
++PR `#2838` merged on 2026-09-19 as `32e2374ef`. It delivered
++`persist-credentials: false` on all 48 checkout steps and scoped Pages write/OIDC permissions to the
++deployment boundary. Full-SHA action pinning and `sha_pinning_required: true` were already complete.
++This supersedes the 2026-09-10 historical block below that described `#2838` as parked and its
++checkout-credential work as open. Remaining `#2335` work is operational rather than a replay of the
++merged patch: retain/reconcile hosted-only control-path evidence, record the standing maintainer
++review rule for new control-plane PRs, and choose the v0.3 CodeQL posture.
++
+ ## Local checklist bootstrap no longer holds an LLM quota slot (#1431 L3)
+ 
+ A deterministic checklist-bootstrap chat turn never reaches a provider, but `ChatService` used to
