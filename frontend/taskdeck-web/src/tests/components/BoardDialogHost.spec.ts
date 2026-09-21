@@ -119,5 +119,11 @@ describe('BoardDialogHost', () => {
 
     await wrapper.setProps({ board: null })
     expect(wrapper.find('[data-testid="capture-close"]').exists()).toBe(false)
+
+    await wrapper.setProps({
+      board: { ...board, canWrite: false },
+      showCaptureModal: true,
+    })
+    expect(wrapper.find('[data-testid="capture-close"]').exists()).toBe(false)
   })
 })

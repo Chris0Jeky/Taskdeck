@@ -3,8 +3,8 @@ import { mount } from '@vue/test-utils'
 import BoardActionRail from '../../components/board/BoardActionRail.vue'
 
 describe('BoardActionRail', () => {
-  function mountRail() {
-    return mount(BoardActionRail)
+  function mountRail(props: { canCapture?: boolean } = {}) {
+    return mount(BoardActionRail, { props })
   }
 
   it('renders all action buttons', () => {
@@ -27,6 +27,13 @@ describe('BoardActionRail', () => {
     const btn = wrapper.findAll('button').find(b => b.text().trim() === 'Capture here')
     await btn?.trigger('click')
     expect(wrapper.emitted('capture')).toHaveLength(1)
+  })
+
+  it('hides board capture for a read-only board', () => {
+    const wrapper = mountRail({ canCapture: false })
+
+    expect(wrapper.findAll('button').some((button) => button.text().trim() === 'Capture here')).toBe(false)
+    expect(wrapper.emitted('capture')).toBeUndefined()
   })
 
   it('emits chat when Ask assistant is clicked', async () => {

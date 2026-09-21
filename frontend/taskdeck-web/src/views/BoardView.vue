@@ -623,6 +623,7 @@ useKeyboardShortcuts([
 
         <BoardActionRail
           v-if="routedBoard"
+          :can-capture="routedBoard.canWrite !== false"
           @capture="openBoardCaptureModal"
           @chat="openBoardChat"
           @review="openBoardReview"
@@ -638,7 +639,11 @@ useKeyboardShortcuts([
           description="Boards are where approved work appears. Capture new input, review the proposed changes, then come back here to manage the result."
         >
           <template #actions>
-            <button class="td-btn td-btn--secondary td-btn--sm" @click="openBoardCaptureModal">Capture here</button>
+            <button
+              v-if="routedBoard.canWrite !== false"
+              class="td-btn td-btn--secondary td-btn--sm"
+              @click="openBoardCaptureModal"
+            >Capture here</button>
             <button class="td-btn td-btn--secondary td-btn--sm" @click="openBoardReview">Review proposals</button>
           </template>
         </WorkspaceHelpCallout>

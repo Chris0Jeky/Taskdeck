@@ -1,4 +1,11 @@
 <script setup lang="ts">
+withDefaults(defineProps<{
+  /** Board-scoped captures require the server-confirmed write capability. */
+  canCapture?: boolean
+}>(), {
+  canCapture: true,
+})
+
 defineEmits<{
   capture: []
   chat: []
@@ -14,7 +21,7 @@ defineEmits<{
     data-board-action-rail
   >
     <span class="td-action-rail__label">Board Actions</span>
-    <button class="td-action-rail__btn" @click="$emit('capture')">
+    <button v-if="canCapture" class="td-action-rail__btn" @click="$emit('capture')">
       Capture here
     </button>
     <button class="td-action-rail__btn" @click="$emit('chat')">
