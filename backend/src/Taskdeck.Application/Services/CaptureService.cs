@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -183,6 +184,17 @@ public class CaptureService : ICaptureService
         if (userId == Guid.Empty)
             return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
 
+        var boardTransactionStarted = false;
+
+        async Task RollbackBoardTransactionAsync()
+        {
+            if (!boardTransactionStarted)
+                return;
+
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            boardTransactionStarted = false;
+        }
+
         try
         {
             var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
@@ -191,22 +203,39 @@ public class CaptureService : ICaptureService
 
             if (dto.BoardId.HasValue)
             {
+                // The authorization read and queue insert must share one serializable snapshot.
+                // Otherwise a board owner can demote this caller after CanWriteBoardAsync returns
+                // but before SaveChangesAsync, admitting a capture under stale write authority.
+                await _unitOfWork.BeginTransactionAsync(
+                    IsolationLevel.Serializable,
+                    cancellationToken);
+                boardTransactionStarted = true;
+
                 // A board-scoped capture can enter that board's proposal queue. Keep the
                 // attachment boundary aligned with triage: readable Viewer access is not
                 // authority to inject work into a board only writers can modify (#3291).
                 var permissionResult = await _authorizationService.CanWriteBoardAsync(userId, dto.BoardId.Value);
                 if (!permissionResult.IsSuccess)
+                {
+                    await RollbackBoardTransactionAsync();
                     return Result.Failure<CaptureItemDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+                }
 
                 if (!permissionResult.Value)
+                {
+                    await RollbackBoardTransactionAsync();
                     return Result.Failure<CaptureItemDto>(
                         ErrorCodes.Forbidden,
                         "You do not have permission to attach captures to this board");
+                }
             }
 
             var sourceResult = ResolveSource(dto.Source);
             if (!sourceResult.IsSuccess)
+            {
+                await RollbackBoardTransactionAsync();
                 return Result.Failure<CaptureItemDto>(sourceResult.ErrorCode, sourceResult.ErrorMessage);
+            }
 
             var payload = new CapturePayloadV1(
                 CaptureRequestContract.CurrentSchemaVersion,
@@ -248,6 +277,12 @@ public class CaptureService : ICaptureService
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+            if (boardTransactionStarted)
+            {
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                boardTransactionStarted = false;
+            }
+
             return Result.Success(MapToDetailDto(
                 request,
                 attributedPayload,
@@ -256,7 +291,13 @@ public class CaptureService : ICaptureService
         }
         catch (DomainException ex)
         {
+            await RollbackBoardTransactionAsync();
             return Result.Failure<CaptureItemDto>(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            await RollbackBoardTransactionAsync();
+            throw;
         }
     }
 
