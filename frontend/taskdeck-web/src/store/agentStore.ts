@@ -24,6 +24,8 @@ export const useAgentStore = defineStore('agent', () => {
   const runDetailError = ref<string | null>(null)
 
   type ReadLane = 'profiles' | 'runs' | 'detail'
+  type ReadRetry = () => Promise<void>
+
   interface ReadOwner {
     epoch: number
     token: symbol
@@ -31,6 +33,7 @@ export const useAgentStore = defineStore('agent', () => {
 
   let sessionEpoch = 0
   const readOwners = new Map<ReadLane, ReadOwner>()
+  const readRetries = new Map<ReadLane, ReadRetry>()
 
   function setLaneLoading(lane: ReadLane, value: boolean): void {
     if (lane === 'profiles') profilesLoading.value = value
@@ -44,9 +47,10 @@ export const useAgentStore = defineStore('agent', () => {
     else runDetailError.value = null
   }
 
-  function beginRead(lane: ReadLane): ReadOwner {
+  function beginRead(lane: ReadLane, retry: ReadRetry): ReadOwner {
     const owner = { epoch: sessionEpoch, token: Symbol(lane) }
     readOwners.set(lane, owner)
+    readRetries.set(lane, retry)
     clearLaneError(lane)
     setLaneLoading(lane, true)
     return owner
@@ -60,11 +64,13 @@ export const useAgentStore = defineStore('agent', () => {
   function finishRead(lane: ReadLane, owner: ReadOwner): void {
     if (!ownsRead(lane, owner)) return
     readOwners.delete(lane)
+    readRetries.delete(lane)
     setLaneLoading(lane, false)
   }
 
   function invalidateLane(lane: ReadLane): void {
     readOwners.delete(lane)
+    readRetries.delete(lane)
     clearLaneError(lane)
     setLaneLoading(lane, false)
   }
@@ -72,12 +78,37 @@ export const useAgentStore = defineStore('agent', () => {
   function invalidateReads(): void {
     sessionEpoch += 1
     readOwners.clear()
+    readRetries.clear()
     profilesLoading.value = false
     runsLoading.value = false
     runDetailLoading.value = false
     profilesError.value = null
     runsError.value = null
     runDetailError.value = null
+  }
+
+  function retryEmptyActiveReads(): void {
+    const retries: ReadRetry[] = []
+    const profilesRetry = readOwners.has('profiles') && profiles.value.length === 0
+      ? readRetries.get('profiles')
+      : undefined
+    const runsRetry = readOwners.has('runs') && runs.value.length === 0
+      ? readRetries.get('runs')
+      : undefined
+    const detailRetry = readOwners.has('detail') && runDetail.value === null
+      ? readRetries.get('detail')
+      : undefined
+
+    if (profilesRetry) retries.push(profilesRetry)
+    if (runsRetry) retries.push(runsRetry)
+    if (detailRetry) retries.push(detailRetry)
+
+    invalidateReads()
+    for (const retry of retries) {
+      void retry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
   }
 
   function resetForSession(): void {
@@ -95,7 +126,7 @@ export const useAgentStore = defineStore('agent', () => {
 
   watch(
     () => session.token,
-    invalidateReads,
+    retryEmptyActiveReads,
     { flush: 'sync' },
   )
 
@@ -106,7 +137,7 @@ export const useAgentStore = defineStore('agent', () => {
       return
     }
 
-    const owner = beginRead('profiles')
+    const owner = beginRead('profiles', fetchProfiles)
     try {
       const result = await agentApi.listProfiles()
       if (!ownsRead('profiles', owner)) return
@@ -130,7 +161,7 @@ export const useAgentStore = defineStore('agent', () => {
       return
     }
 
-    const owner = beginRead('runs')
+    const owner = beginRead('runs', () => fetchRuns(agentId, limit))
     try {
       const result = await agentApi.listRuns(agentId, limit)
       if (!ownsRead('runs', owner)) return
@@ -154,7 +185,7 @@ export const useAgentStore = defineStore('agent', () => {
       return
     }
 
-    const owner = beginRead('detail')
+    const owner = beginRead('detail', () => fetchRunDetail(agentId, runId))
     try {
       const result = await agentApi.getRunDetail(agentId, runId)
       if (!ownsRead('detail', owner)) return
