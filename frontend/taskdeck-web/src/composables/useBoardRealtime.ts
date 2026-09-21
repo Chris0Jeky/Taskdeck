@@ -170,17 +170,38 @@ export function createBoardRealtimeController(
       }
     })
     hubConnection.onreconnected(async () => {
-      stopFallbackPolling()
       const boardId = requestedBoardId
       const generation = subscriptionGeneration
-      if (boardId) {
+      const isCurrentRequest = () =>
+        connection === hubConnection &&
+        requestedBoardId === boardId &&
+        subscriptionGeneration === generation
+      if (!boardId) return
+
+      // Transport recovery alone does not prove a board subscription. Keep
+      // polling until JoinBoard acknowledges this request's generation.
+      try {
         await queueBoardSubscription(boardId, generation)
-        if (
-          editingCardId !== null &&
-          requestedBoardId === boardId &&
-          subscriptionGeneration === generation
-        ) {
+      } catch (error) {
+        if (isCurrentRequest()) {
+          logWarn('SignalR board rejoin failed, retaining polling fallback.', error)
+          startFallbackPolling(boardId)
+        }
+        return
+      }
+      if (!isCurrentRequest() || hubConnection.state !== HubConnectionState.Connected) return
+
+      // Events lost while disconnected are not replayed by a new subscription.
+      // Reuse the mutation coordinator so an older pending read retains one
+      // follow-up instead of swallowing the catch-up or starting parallel reads.
+      startMutationRefresh(boardId)
+      if (editingCardId !== null) {
+        try {
           await hubConnection.invoke('SetEditingCard', boardId, editingCardId)
+        } catch (error) {
+          if (isCurrentRequest()) {
+            logWarn('SignalR editing presence could not be restored.', error)
+          }
         }
       }
     })
@@ -239,8 +260,11 @@ export function createBoardRealtimeController(
     }
 
     await hubConnection.invoke('JoinBoard', boardId)
+    if (connection !== hubConnection) return
     subscribedBoardId = boardId
-    stopFallbackPolling()
+    if (isCurrentRequest() && hubConnection.state === HubConnectionState.Connected) {
+      stopFallbackPolling()
+    }
   }
 
   const queueBoardSubscription = (boardId: string, generation: number) => {

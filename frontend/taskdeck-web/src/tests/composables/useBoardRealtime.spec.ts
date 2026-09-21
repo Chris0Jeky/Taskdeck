@@ -435,8 +435,11 @@ describe('createBoardRealtimeController', () => {
     expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-1')
     expect(mockConnection.invoke).toHaveBeenCalledWith('SetEditingCard', 'board-1', 'card-1')
 
+    // One authoritative catch-up covers events lost while disconnected;
+    // a successful rejoin must still retire the periodic fallback timer.
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-1', { intent: 'background' })
     await vi.advanceTimersByTimeAsync(30000)
-    expect(fetchBoard).not.toHaveBeenCalled()
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
 
     await controller.stop()
   })
