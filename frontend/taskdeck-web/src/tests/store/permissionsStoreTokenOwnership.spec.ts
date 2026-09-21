@@ -76,21 +76,28 @@ describe('permissionsStore token ownership', () => {
     vi.clearAllMocks()
   })
 
-  it('invalidates an old read when the credential rotates for the same user', async () => {
+  it('preserves loaded access while invalidating an old read after same-user token rotation', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
     const pending = deferred<BoardAccess[]>()
     vi.mocked(boardAccessApi.getAccess).mockReturnValue(pending.promise)
     const request = store.fetchBoardAccess('board-1')
 
     session.token = token('new')
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+
     pending.resolve([access('old-token-read')])
     await request
 
-    expect(store.boardAccess.size).toBe(0)
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
   })
 
-  it('suppresses a stale mutation failure after credential rotation', async () => {
+  it('preserves loaded access while suppressing an old-token mutation failure', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
     const pending = deferred<BoardAccess>()
     vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pending.promise)
     const request = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
@@ -99,7 +106,7 @@ describe('permissionsStore token ownership', () => {
     pending.reject(new Error('old credential failure'))
     await expect(request).rejects.toThrow('old credential failure')
 
-    expect(store.boardAccess.size).toBe(0)
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
     expect(toastMocks.error).not.toHaveBeenCalled()
