@@ -19,6 +19,7 @@ function normalizeFeatureFlags(raw: unknown): FeatureFlags {
 
 export const useFeatureFlagStore = defineStore('featureFlags', () => {
   const flags = ref<FeatureFlags>({ ...defaultFeatureFlags })
+  const persistenceError = ref<string | null>(null)
   let hasUnsavedChanges = false
 
   function isEnabled(flag: keyof FeatureFlags): boolean {
@@ -39,9 +40,10 @@ export const useFeatureFlagStore = defineStore('featureFlags', () => {
     try {
       localStorage.setItem(FLAGS_KEY, JSON.stringify(normalizeFeatureFlags(flags.value)))
       hasUnsavedChanges = false
+      persistenceError.value = null
     } catch {
       hasUnsavedChanges = true
-      // Storage can be unavailable or full. Keep the valid in-memory choice.
+      persistenceError.value = 'Feature flag changes are active for this session but could not be saved in browser storage.'
     }
   }
 
@@ -54,6 +56,7 @@ export const useFeatureFlagStore = defineStore('featureFlags', () => {
       flags.value = normalizeFeatureFlags(JSON.parse(saved) as unknown)
     } catch {
       flags.value = { ...defaultFeatureFlags }
+      persistenceError.value = 'Feature flags could not be loaded from browser storage; defaults are active.'
     }
   }
 
@@ -63,6 +66,7 @@ export const useFeatureFlagStore = defineStore('featureFlags', () => {
 
   return {
     flags,
+    persistenceError,
     isEnabled,
     setFlag,
     resetAll,

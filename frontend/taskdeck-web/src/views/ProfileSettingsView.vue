@@ -329,6 +329,9 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
     <section class="paper-profile__panel">
       <h2 class="tk-h3 paper-profile__panel-title">Feature Flags</h2>
       <p class="paper-profile__panel-desc">Toggle feature flags to enable or disable new features.</p>
+      <p v-if="featureFlags.persistenceError" class="paper-profile__alert paper-profile__alert--error" role="alert">
+        {{ featureFlags.persistenceError }}
+      </p>
       <div class="paper-profile__flags-grid">
         <div v-for="(label, key) in flagLabels" :key="key" class="paper-profile__flag-row">
           <label :for="`flag-${key}`" class="paper-profile__flag-label">{{ label }}</label>

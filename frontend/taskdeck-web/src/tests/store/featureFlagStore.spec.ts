@@ -125,9 +125,26 @@ describe('featureFlagStore', () => {
       try {
         expect(() => store.setFlag('newAuth', false)).not.toThrow()
         expect(store.isEnabled('newAuth')).toBe(false)
+        expect(store.persistenceError).toBe('Feature flag changes are active for this session but could not be saved in browser storage.')
       } finally {
         setItem.mockRestore()
       }
+    })
+
+    it('clears the persistence error after a later write succeeds', () => {
+      const setItem = vi.spyOn(localStorage, 'setItem').mockImplementationOnce(() => {
+        throw new DOMException('Storage full', 'QuotaExceededError')
+      })
+
+      try {
+        store.setFlag('newAuth', false)
+        expect(store.persistenceError).toBeTruthy()
+      } finally {
+        setItem.mockRestore()
+      }
+
+      store.setFlag('newAuth', true)
+      expect(store.persistenceError).toBeNull()
     })
 
     it('does not let stale storage overwrite an unsaved flag update', () => {
