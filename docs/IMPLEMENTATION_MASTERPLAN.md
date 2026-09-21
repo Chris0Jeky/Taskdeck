@@ -1,5 +1,45 @@
 # Taskdeck Implementation Masterplan
 
+## Current programme integration (2026-09-21)
+
+Taskdeck is in v0.3 release convergence. The product ladder remains unchanged; the current work is
+making the existing Accountable Agents + Downloadable Beta claim trustworthy under concurrency,
+credential/session replacement, private-repository CI, exact-tag release qualification and public
+source/package continuity.
+
+Current engineering direction:
+
+- bind asynchronous completion to explicit route, session, credential, request-generation and object
+  owners;
+- separate durable commits from post-commit best-effort tails;
+- read one authoritative snapshot or versioned evidence set per decision;
+- distinguish unavailable data from authoritative empty state;
+- bind CI receipts and release evidence to repository, workflow, event, head/tree, policy and
+  unexpired artifact identities;
+- finish release-control dependencies before broadening v0.4 scope.
+
+Current release-control order:
+
+1. finish admitted exact-identity correctness stacks without widening into adjacent refactoring;
+2. landed receipt foundations are merged in `#3156` and `#3167`; qualify active parent `#3295`
+   before stacked child `#3296`, then add authoritative collector/workflow integration;
+3. qualify non-activating CI-17 inventory `#3297`, then implement trusted rehearsal control `#3170`;
+4. close release prerequisites: post-merge Windows timeout evidence and `#2378`/`#2588`, remaining
+   `#2335`/CodeQL acceptance after merged `#2838`, storage `#2333`, nightly/exact-tag qualification
+   `#2334`, corrected current-main runner preparation for `#2328`, and mirror/GHCR continuity
+   `#2439`;
+5. reconcile the milestone through `#2235`, preserving explicit residual rulings;
+6. execute the human cutover `#2337`;
+7. freeze the final head, create and qualify the real tag, publish the private Release, mirror it
+   publicly, verify anonymously, and announce.
+
+The current rationale, admission policy and full dependency map are in
+[`docs/analysis/2026-09-21-repository-direction-and-v0.3-programme.md`](analysis/2026-09-21-repository-direction-and-v0.3-programme.md).
+The live release gate is [`docs/releases/V0_3_0_READINESS.md`](releases/V0_3_0_READINESS.md). Entries
+below remain delivery history or narrower implementation notes; they do not override this current
+programme order or live GitHub.
+
+
 Last Updated: 2026-09-19
 
 ## GitHub Pages static demo (2026-09-17)

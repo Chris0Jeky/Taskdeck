@@ -1,6 +1,6 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-09-11
+Last updated: 2026-09-21
 
 This file is the active-gate pointer for every implementation agent on Taskdeck: Codex reaches it through `AGENTS.md` and `.codex/README.md`, Claude Code through the `CLAUDE.md` orient list (it is not auto-loaded for Claude). It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
@@ -11,6 +11,8 @@ This file is the active-gate pointer for every implementation agent on Taskdeck:
 - Tier and push/merge authority: `.agent-harness/tier.json` (re-read live; do not infer authority from this summary)
 - Current shipped state: `docs/STATUS.md`
 - Active release/wave sequencing: `docs/REVIVAL_PLAN.md`
+- Current repository programme brief: `docs/analysis/2026-09-21-repository-direction-and-v0.3-programme.md`
+- Live v0.3 gate: `docs/releases/V0_3_0_READINESS.md`
 - Broader delivery/planning record: `docs/IMPLEMENTATION_MASTERPLAN.md`
 - Stable invariants: `docs/GOLDEN_PRINCIPLES.md`
 - Dependency-aware issue execution: `docs/ISSUE_EXECUTION_GUIDE.md`
@@ -57,14 +59,34 @@ issue and remote ref before resuming; this pointer does not claim current CI or 
 
 - Retired, do not resume: `origin/issue-1940/provenance-shortcut@c9135fef3b64da5d6c578bd4d9c76fe4fdb7eb65`. The ref still exists and is not an ancestor of `main`, but the slice it held shipped as PR `#2323` (merge `221aa88c8`), recorded in `docs/STATUS.md`. Recreating a worktree from it would redo landed work. `#1940` stays open for the two MEDIUM residuals named on the issue, not for this branch.
 
-## Lane coordination (2026-09-04)
+## Current programme routing (2026-09-21)
 
-- Two implementation lanes run concurrently: `alpha-product-trust` (human work loop: Capture/Inbox, proposals, Review, Board/Paper/Legacy, a11y, product semantics) and `beta-platform-integrity` (runtime, security, delivery, CI, harness). An issue belongs to the lane that owns its primary acceptance outcome, not to whichever layer its files sit in. A programme coordinator session owns issue topology, milestones, Project state, this file, `autodoc/AGENT_INDEX.md` and `docs/releases/V0_3_0_READINESS.md`; it does not implement in a path a lane has leased, and it merges only its own coordination PRs under the ordinary tier gate (`.agent-harness/tier.json` is the authority, not this line).
-- Claim before writing: post `[Claude lane claim v2]` on the issue (lane, base SHA, owned paths, shared-path leases, parallel-safe work, status) and `[Claude lane release v2]` with the exact head and result when done. `[Codex lane claim v2]` / `[Codex lane release v2]` are the same protocol with the same fields; search for both forms before claiming, because an existing open PR plus a current claim in either form outranks a new claim. A stale claim is one with no release and no branch activity; the coordinator reconciles it, not the other lane.
-- One writer per canonical doc: the lane that merges a slice writes its own bounded `docs/STATUS.md` block and `OUTSTANDING_TASKS.md` tick; cross-lane reconciliation blocks and the readiness view are the coordinator's. Never edit a canonical doc that an open PR already edits without agreeing the order first.
-- Control-plane PRs (`.github/workflows/**`, `ci/**`, `scripts/ci/**`, runner or branch-protection paths, and the `ci/policy.v1.json` control paths) merge only after the maintainer's own review plus one fresh-context review (ADR-0066 amendment 2026-09-03). Green is not authority. **SC-10 is closed** (all twelve PRs in that queue merged 2026-09-06), but the 2026-09-06 walkthrough ruling q-1 = A delegated **those twelve named PRs only**; it did not lift the amendment for a new control-plane PR. Practice has diverged three times, on 2026-09-08 (`#2772`, `#2787`) and again on 2026-09-10 (the CI-continuation train), and the divergence is an open human decision: `OUTSTANDING_TASKS.md` J.1, J.2 and J.3. Read J.3 before opening or merging a control-plane PR. A control-plane PR that is parked is recorded on J.2, which is where SC-10's role went when it closed.
-- Codex review credits: SC-9 closed 2026-09-06 and the connector was reviewing normally when last observed (2026-09-10). **Read the connector's own comment on your PR rather than this line** - like milestone counts and CI colour, credit state is live GitHub, and this file's preamble says live GitHub outranks it. Standing rules either way: global law 2g, so a clean Codex outcome is the whole review gate for documentation-only or very-low-risk work and other work still gets one fresh-context independent review; and if a usage-limit notice does appear, it is informational, not a finding, and the gate falls back to one fresh-context review per PR. Do not spend a reviewer subagent on the assumption that the connector is unavailable without looking.
-- Stacked PRs: a PR whose base is another PR's branch merges into that branch, not `main`. Merge the parent first, always; only after the parent has actually merged, re-target the child with `gh pr edit N --base main`, then confirm the new base via the API before merging it. Never re-target a child whose parent is still open, because that pulls the parent's unmerged commits into the child. Never `--delete-branch` a stacked base PR.
+- Taskdeck is in v0.3 release convergence. Read the current programme brief and live readiness view
+  before selecting work. The old alpha/beta lane names are historical coordination aids, not current
+  ownership authority.
+- Live GitHub owns milestone counts, PR state, CI, review and branch ancestry. An open PR inventory is
+  not an admission list. Select work through the active plan, accepted ADRs, issue dependencies and
+  current ownership evidence.
+- Claim before writing: search both `[Claude lane claim v2]` and `[Codex lane claim v2]`, open PRs,
+  branches and recent issue comments. An existing current claim or open PR outranks a new claim.
+- One writer per canonical doc. The implementation owner writes the bounded shipped-truth update for
+  its merged slice; programme-wide reconciliation and the release readiness view remain
+  coordinator-owned. Do not edit a canonical document already touched by an open PR without an
+  explicit integration order.
+- Stacked PRs are dependency graphs. Verify the actual base and parent head through GitHub. Merge the
+  parent first, refresh/retarget the child only after the parent lands, and rerun exact-head evidence.
+  Never infer that a mergeable stacked child is independently ready for `main`.
+- Any base refresh, merge from `main`, stack collapse, review repair or generated-file change creates
+  a new exact head. Earlier green CI and review are historical until the current head is qualified.
+- Current release-control state: merged foundations `#3156`/`#3167`; open parent `#3295` before
+  stacked child `#3296`; CI-17 inventory `#3297` before implementation `#3170`; post-merge Windows
+  timeout reconciliation after `#3162`; remaining `#2335` acceptance after merged `#2838`; corrected
+  runner work after FIX-FIRST recovery PR `#3261`.
+- Control-plane work still follows ADR-0066 and `OUTSTANDING_TASKS.md` section J. Green is evidence,
+  not merge authority. The September directives are recorded per named wave; they do not silently
+  settle the standing rule for every future control-plane PR.
+- Read the review connector's live result. A usage-limit notice is informational, not a finding. Use
+  the repository's documented fresh-context fallback when the connector cannot review.
 
 ## Start of session
 
