@@ -206,6 +206,15 @@ test('large caller-free projections fail closed before reviewed-surface expansio
   assert.deepEqual(surface.candidates, []);
 });
 
+test('caps parser diagnostics before appending per-line errors', () => {
+  const malformed = Array.from({ length: 10_000 }, (_, index) => `? invalid-${index}`).join('\n');
+  const result = inventory(file('diagnostic-flood', malformed));
+
+  assert.equal(result.graphComplete, false);
+  assert.ok(result.diagnostics.some((entry) => entry.code === 'diagnostic-limit'));
+  assert.ok(result.diagnostics.length <= 4097);
+});
+
 test('the reviewed runner surface detects a new Windows job and a new caller', () => {
   const leaf = runner('leaf', 'windows-latest');
   const baseline = reviewedRunnerSurface(inventory(leaf));

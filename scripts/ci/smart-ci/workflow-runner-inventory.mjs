@@ -9,6 +9,7 @@ const MAX_FILES = 256;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const MAX_JOBS = 4096;
+const MAX_DIAGNOSTICS = 4096;
 const MAX_PROJECTED_EVENT_BYTES = 8 * 1024 * 1024;
 const MAX_PROJECTED_SURFACE_BYTES = 8 * 1024 * 1024;
 const PATH = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
@@ -20,7 +21,7 @@ const blockMapping = (field) => field && /^(?:#.*)?$/.test(field.value.trim());
 // Read only the block mapping boundaries needed for workflow -> jobs -> job.
 // Reject unfamiliar structural syntax rather than silently losing an entire job.
 // Deeper values (steps, matrices, expressions) are deliberately NOT interpreted.
-function fields(lines, depth, path, diagnostics) {
+function fields(lines, depth, path, addDiagnostic) {
   const result = new Map();
   let current = null;
   for (const source of lines) {
@@ -30,7 +31,7 @@ function fields(lines, depth, path, diagnostics) {
     }
     const indent = indentation(source.text);
     if (/^\s*\t/.test(source.text) || indent < depth || (indent > depth && !current)) {
-      diagnostics.push({ file: path, line: source.line, code: 'unsupported-indentation' });
+      addDiagnostic({ file: path, line: source.line, code: 'unsupported-indentation' });
       continue;
     }
     if (indent > depth) {
@@ -39,12 +40,12 @@ function fields(lines, depth, path, diagnostics) {
     }
     const match = source.text.slice(depth).match(/^([A-Za-z_][A-Za-z0-9_-]*):(?:\s+(.*))?$/);
     if (!match) {
-      diagnostics.push({ file: path, line: source.line, code: 'unsupported-mapping' });
+      addDiagnostic({ file: path, line: source.line, code: 'unsupported-mapping' });
       current = null;
       continue;
     }
     current = { key: match[1], value: match[2] ?? '', line: source.line, depth, children: [] };
-    if (result.has(current.key)) diagnostics.push({ file: path, line: source.line, code: 'duplicate-key' });
+    if (result.has(current.key)) addDiagnostic({ file: path, line: source.line, code: 'duplicate-key' });
     // Keep the first occurrence; duplicate diagnostics already make discovery incomplete.
     else result.set(current.key, current);
   }
@@ -93,6 +94,15 @@ function report(runners, calls, diagnostics) {
 /** Inspect a complete supplied workflow set; never evaluate conditions or runner expressions. */
 export function inventoryWorkflowRunners(files) {
   const diagnostics = [];
+  let diagnosticLimitReached = false;
+  const addDiagnostic = (entry) => {
+    if (diagnostics.length < MAX_DIAGNOSTICS) {
+      diagnostics.push(entry);
+    } else if (!diagnosticLimitReached) {
+      diagnosticLimitReached = true;
+      diagnostics.push({ code: 'diagnostic-limit' });
+    }
+  };
   const runners = [];
   const calls = [];
   const sources = new Map();
@@ -102,13 +112,13 @@ export function inventoryWorkflowRunners(files) {
   let bytes = 0;
   for (const source of files) {
     if (!source || typeof source.path !== 'string' || !PATH.test(source.path) || typeof source.text !== 'string') {
-      diagnostics.push({ code: 'invalid-source' });
+      addDiagnostic({ code: 'invalid-source' });
       continue;
     }
     const size = Buffer.byteLength(source.text, 'utf8');
     bytes += size;
     if (size > MAX_FILE_BYTES || bytes > MAX_TOTAL_BYTES) return report([], [], [{ code: 'source-limit' }]);
-    if (sources.has(source.path)) diagnostics.push({ file: source.path, code: 'duplicate-file' });
+    if (sources.has(source.path)) addDiagnostic({ file: source.path, code: 'duplicate-file' });
     else sources.set(source.path, source.text);
   }
 
@@ -116,23 +126,23 @@ export function inventoryWorkflowRunners(files) {
   let projectedEventBytes = 0;
   for (const [path, text] of [...sources].sort(([a], [b]) => compare(a, b))) {
     const lines = text.split(/\r?\n/).map((line, index) => ({ text: line, line: index + 1 }));
-    const top = fields(lines, 0, path, diagnostics);
+    const top = fields(lines, 0, path, addDiagnostic);
     const jobsField = top.get('jobs');
-    if (!jobsField) { diagnostics.push({ file: path, code: 'jobs-required' }); continue; }
-    if (!blockMapping(jobsField)) { diagnostics.push({ file: path, line: jobsField.line, code: 'unsupported-jobs-mapping' }); continue; }
-    const jobs = fields(jobsField.children, 2, path, diagnostics);
-    if (jobs.size === 0) diagnostics.push({ file: path, code: 'jobs-required' });
+    if (!jobsField) { addDiagnostic({ file: path, code: 'jobs-required' }); continue; }
+    if (!blockMapping(jobsField)) { addDiagnostic({ file: path, line: jobsField.line, code: 'unsupported-jobs-mapping' }); continue; }
+    const jobs = fields(jobsField.children, 2, path, addDiagnostic);
+    if (jobs.size === 0) addDiagnostic({ file: path, code: 'jobs-required' });
     const events = controlText(top.get('on'));
     projectedEventBytes += Buffer.byteLength(events ?? '', 'utf8') * jobs.size;
     if (projectedEventBytes > MAX_PROJECTED_EVENT_BYTES) {
-      diagnostics.push({ file: path, line: top.get('on')?.line, code: 'projection-limit' });
+      addDiagnostic({ file: path, line: top.get('on')?.line, code: 'projection-limit' });
       return report([], [], diagnostics);
     }
     for (const [job, node] of jobs) {
       jobCount += 1;
       if (jobCount > MAX_JOBS) return report([], [], [{ code: 'source-limit' }]);
-      if (!blockMapping(node)) { diagnostics.push({ file: path, line: node.line, code: 'unsupported-job-mapping' }); continue; }
-      const properties = fields(node.children, 4, path, diagnostics);
+      if (!blockMapping(node)) { addDiagnostic({ file: path, line: node.line, code: 'unsupported-job-mapping' }); continue; }
+      const properties = fields(node.children, 4, path, addDiagnostic);
       const shared = {
         id: `${path}#${job}`, file: path, job, line: node.line,
         events,
@@ -142,8 +152,8 @@ export function inventoryWorkflowRunners(files) {
       };
       const selector = properties.get('runs-on');
       const uses = properties.get('uses');
-      if (selector && uses) diagnostics.push({ file: path, line: node.line, code: 'ambiguous-job' });
-      if (!selector && !uses) diagnostics.push({ file: path, line: node.line, code: 'runner-or-call-required' });
+      if (selector && uses) addDiagnostic({ file: path, line: node.line, code: 'ambiguous-job' });
+      if (!selector && !uses) addDiagnostic({ file: path, line: node.line, code: 'runner-or-call-required' });
       if (selector) {
         const value = controlText(selector);
         const scalar = selector.children.some((source) => significant(source.text)) ? value : selector.value.trim();
@@ -154,8 +164,8 @@ export function inventoryWorkflowRunners(files) {
         const target = literal(reference);
         const callee = target?.startsWith('./') && PATH.test(target.slice(2)) ? target.slice(2) : null;
         calls.push({ ...shared, reference, callee, inputs: controlText(properties.get('with')) });
-        if (!callee) diagnostics.push({ file: path, line: uses.line, code: 'unresolved-workflow' });
-        else if (!sources.has(callee)) diagnostics.push({ file: path, line: uses.line, code: 'missing-workflow' });
+        if (!callee) addDiagnostic({ file: path, line: uses.line, code: 'unresolved-workflow' });
+        else if (!sources.has(callee)) addDiagnostic({ file: path, line: uses.line, code: 'missing-workflow' });
       }
     }
   }
@@ -165,7 +175,7 @@ export function inventoryWorkflowRunners(files) {
   const visiting = new Set();
   const visited = new Set();
   function visit(path) {
-    if (visiting.has(path)) { diagnostics.push({ file: path, code: 'workflow-cycle' }); return; }
+    if (visiting.has(path)) { addDiagnostic({ file: path, code: 'workflow-cycle' }); return; }
     if (visited.has(path)) return;
     visiting.add(path);
     for (const callee of outgoing.get(path)) visit(callee);
