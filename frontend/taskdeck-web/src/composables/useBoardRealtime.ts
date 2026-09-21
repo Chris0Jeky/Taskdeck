@@ -32,7 +32,10 @@ function getAccessToken(): string {
 }
 
 export interface BoardRealtimeControllerOptions {
-  fetchBoard: (boardId: string, options: { intent: 'background' }) => Promise<void>
+  fetchBoard: (
+    boardId: string,
+    options: { intent: 'background'; afterActive?: boolean },
+  ) => Promise<boolean | void>
   onPresenceChanged?: (snapshot: BoardPresenceSnapshot) => void
 }
 
@@ -56,6 +59,8 @@ export function createBoardRealtimeController(
   let recoveryPending = false
   let refreshInFlight = false
   let pendingRefreshBoardId: string | null = null
+  let pendingRefreshAfterActive = false
+  let pendingRecoveryRefresh = false
   let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   const stopFallbackPolling = () => {
@@ -88,7 +93,11 @@ export function createBoardRealtimeController(
     }
   }
 
-  const startBoardRefresh = (boardId: string) => {
+  const startBoardRefresh = (
+    boardId: string,
+    afterActive = false,
+    dischargesRecovery = false,
+  ) => {
     // Fallback must also read a requested board whose hub join is pending.
     // Event handlers separately verify the confirmed subscription.
     if (requestedBoardId !== boardId) {
@@ -97,22 +106,48 @@ export function createBoardRealtimeController(
 
     if (refreshInFlight) {
       pendingRefreshBoardId = boardId
+      pendingRefreshAfterActive ||= afterActive
+      pendingRecoveryRefresh ||= dischargesRecovery
       return
     }
 
     refreshInFlight = true
     void options
-      .fetchBoard(boardId, { intent: 'background' })
+      .fetchBoard(boardId, { intent: 'background', ...(afterActive ? { afterActive: true } : {}) })
+      .then((committed) => {
+        if (!dischargesRecovery || requestedBoardId !== boardId) {
+          return
+        }
+
+        if (committed === false) {
+          // A handled background failure resolves false rather than rejecting.
+          // Keep the recovery obligation alive and let bounded fallback polling
+          // retry it instead of treating the failed catch-up as complete.
+          recoveryPending = true
+          startFallbackPolling(boardId)
+          return
+        }
+
+        recoveryPending = false
+      })
       .catch(() => {
         // Background refresh failures must not escape the realtime loop.
+        if (dischargesRecovery && requestedBoardId === boardId) {
+          recoveryPending = true
+          startFallbackPolling(boardId)
+        }
       })
       .finally(() => {
         refreshInFlight = false
         const pendingBoardId = pendingRefreshBoardId
+        const pendingAfterActive = pendingRefreshAfterActive
+        const pendingRecovery = pendingRecoveryRefresh
         pendingRefreshBoardId = null
+        pendingRefreshAfterActive = false
+        pendingRecoveryRefresh = false
 
         if (pendingBoardId) {
-          startBoardRefresh(pendingBoardId)
+          startBoardRefresh(pendingBoardId, pendingAfterActive, pendingRecovery)
         }
       })
   }
@@ -268,8 +303,10 @@ export function createBoardRealtimeController(
     if (isCurrentRequest() && hubConnection.state === HubConnectionState.Connected) {
       stopFallbackPolling()
       if (recoveryPending) {
-        recoveryPending = false
-        startBoardRefresh(boardId)
+        // Force the store to queue this read behind any active external
+        // background fetch. The recovery obligation is discharged only when
+        // this post-join read reports success.
+        startBoardRefresh(boardId, true, true)
       }
     }
   }
@@ -290,6 +327,8 @@ export function createBoardRealtimeController(
     // navigation changes intent, rather than waiting for the connection move.
     cancelMutationDebounce()
     pendingRefreshBoardId = null
+    pendingRefreshAfterActive = false
+    pendingRecoveryRefresh = false
     // A switch while the old rejoin is pending inherits both recovery and
     // polling. Only this latest request's successful join may retire them.
     if (recoveryPending) startFallbackPolling(boardId)
@@ -323,6 +362,8 @@ export function createBoardRealtimeController(
     stopFallbackPolling()
     cancelMutationDebounce()
     pendingRefreshBoardId = null
+    pendingRefreshAfterActive = false
+    pendingRecoveryRefresh = false
     editingCardId = null
 
     if (!connection) {

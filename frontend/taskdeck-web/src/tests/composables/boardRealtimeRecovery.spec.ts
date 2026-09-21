@@ -76,7 +76,10 @@ describe('board realtime recovery (#3319)', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(fetchBoard).not.toHaveBeenCalled()
     await reconnect()
-    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', { intent: 'background' })
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', {
+      intent: 'background',
+      afterActive: true,
+    })
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
   })
@@ -106,7 +109,10 @@ describe('board realtime recovery (#3319)', () => {
       if (method === 'SetEditingCard') throw new Error('synthetic presence failure')
     })
     await expect(reconnect()).resolves.toBeUndefined()
-    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', { intent: 'background' })
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', {
+      intent: 'background',
+      afterActive: true,
+    })
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
   })
@@ -132,7 +138,10 @@ describe('board realtime recovery (#3319)', () => {
     await changed
     expect(fetchBoard).not.toHaveBeenCalledWith('board-a', { intent: 'background' })
     if (change === 'switch') {
-      expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-b', { intent: 'background' })
+      expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-b', {
+        intent: 'background',
+        afterActive: true,
+      })
     } else {
       expect(fetchBoard).not.toHaveBeenCalled()
     }
@@ -158,7 +167,10 @@ describe('board realtime recovery (#3319)', () => {
     olderRead.resolve()
     await vi.advanceTimersByTimeAsync(0)
     expect(fetchBoard).toHaveBeenCalledTimes(2)
-    expect(fetchBoard).toHaveBeenLastCalledWith('board-a', { intent: 'background' })
+    expect(fetchBoard).toHaveBeenLastCalledWith('board-a', {
+      intent: 'background',
+      afterActive: true,
+    })
   })
 
   it('keeps polling the latest board when its transferred rejoin fails', async () => {
@@ -214,6 +226,24 @@ describe('board realtime recovery (#3319)', () => {
     joined.resolve()
     await recovery
     expect(fetchBoard).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', { intent: 'background' })
+  })
+
+  it('retains fallback after a handled recovery failure', async () => {
+    const fetchBoard = vi.fn<() => Promise<boolean>>()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true)
+    controller = createBoardRealtimeController({ fetchBoard })
+    await controller.start('board-a')
+    await disconnect()
+    await reconnect()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', {
+      intent: 'background',
+      afterActive: true,
+    })
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', { intent: 'background' })
   })
