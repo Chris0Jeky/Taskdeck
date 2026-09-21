@@ -26,7 +26,8 @@ export interface PersistedSession {
 
 /**
  * Validates that a string has the basic structure of a JWT (three base64url-encoded segments).
- * This is a structural check only — it does not verify signatures or claims.
+ * Checks UTF-8 object payloads and the shape/range of an optional expiry too.
+ * Does not authenticate the token or verify its signature, issuer, or audience.
  */
 export function isValidJwtStructure(token: string): boolean {
   if (!token || typeof token !== 'string') return false
