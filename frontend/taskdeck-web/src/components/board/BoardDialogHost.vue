@@ -55,9 +55,10 @@ defineEmits<{
     through the `useShellKeyboardHelp` seam (#2007).
   -->
   <CaptureModal
-    v-if="showCaptureModal && board && board.canWrite !== false"
+    v-if="showCaptureModal && board"
     :board-id="boardId"
     :board-name="board.name"
+    :can-submit="board.canWrite !== false"
     @close="$emit('update:showCaptureModal', false)"
     @created="$emit('update:showCaptureModal', false)"
   />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useCaptureStore } from '../../store/captureStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { usePerformanceMark } from '../../composables/usePerformanceMark'
@@ -7,10 +7,14 @@ import { formatShortcut } from '../../utils/keyboardShortcuts'
 // Shared with the Paper composer so the two capture surfaces cannot drift (GH-2141).
 import { MAX_TRANSCRIPT_FILE_BYTES, MAX_TRANSCRIPT_LENGTH } from '../../constants/capture'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   boardId?: string | null
   boardName?: string | null
-}>()
+  /** Keep the draft mounted when a live board refresh removes write authority. */
+  canSubmit?: boolean
+}>(), {
+  canSubmit: true,
+})
 
 const emit = defineEmits<{
   close: []
@@ -30,6 +34,8 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const uploadedFileName = ref<string | null>(null)
 const modalOpenPerf = usePerformanceMark('modal-open')
 let unregisterEscapeHandler: (() => void) | null = null
+
+const canSubmit = computed(() => props.canSubmit !== false)
 
 modalOpenPerf.start()
 
@@ -118,6 +124,11 @@ function clearFile() {
 
 async function submit() {
   if (saving.value) {
+    return
+  }
+
+  if (!canSubmit.value) {
+    inlineError.value = 'Write access changed while this capture was open. Keep the draft here or close it and try again later.'
     return
   }
 
@@ -269,12 +280,15 @@ onUnmounted(() => {
       <div v-if="inlineError" class="td-alert td-alert--error" role="alert">
         {{ inlineError }}
       </div>
+      <div v-else-if="!canSubmit" class="td-alert td-alert--error" role="alert">
+        Write access changed while this capture was open. Your draft is preserved until access is restored.
+      </div>
 
       <footer class="td-capture-modal__actions">
         <button class="td-btn td-btn--secondary" :disabled="saving" @click="requestClose">
           Cancel
         </button>
-        <button class="td-btn td-btn--primary" :disabled="saving" @click="submit">
+        <button class="td-btn td-btn--primary" :disabled="saving || !canSubmit" @click="submit">
           {{ saving ? 'Saving...' : 'Save Capture' }}
         </button>
       </footer>

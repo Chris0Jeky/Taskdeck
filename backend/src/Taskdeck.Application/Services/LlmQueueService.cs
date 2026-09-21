@@ -1,3 +1,4 @@
+using System.Data;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -43,25 +44,22 @@ public class LlmQueueService : ILlmQueueService
 
     public async Task<Result<LlmRequestDto>> AddToQueueAsync(Guid userId, CreateLlmRequestDto dto)
     {
+        var boardTransactionStarted = false;
+
+        async Task RollbackBoardTransactionAsync()
+        {
+            if (!boardTransactionStarted)
+                return;
+
+            await _unitOfWork.RollbackTransactionAsync();
+            boardTransactionStarted = false;
+        }
+
         try
         {
             var user = await _unitOfWork.Users.GetByIdAsync(userId);
             if (user == null)
                 return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, $"User with ID {userId} not found");
-
-            if (dto.BoardId.HasValue)
-            {
-                var permissionResult = await _authorizationService.CanReadBoardAsync(userId, dto.BoardId.Value);
-                if (!permissionResult.IsSuccess)
-                {
-                    return Result.Failure<LlmRequestDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
-                }
-
-                if (!permissionResult.Value)
-                {
-                    return Result.Failure<LlmRequestDto>(ErrorCodes.Forbidden, "You do not have access to this board");
-                }
-            }
 
             var requestTypeValidation = CaptureRequestContract.ValidateRequestType(dto.RequestType);
             if (!requestTypeValidation.IsSuccess)
@@ -88,6 +86,37 @@ public class LlmQueueService : ILlmQueueService
                 payload = CaptureRequestContract.SerializePayload(capturePayload);
             }
 
+            if (dto.BoardId.HasValue)
+            {
+                // Capture-shaped queue requests are an alternate capture intake path, not merely
+                // readable board metadata. Keep their write gate and transaction boundary aligned
+                // with CaptureService so a Viewer cannot attach new work through this endpoint.
+                if (capturePayload is not null)
+                {
+                    await _unitOfWork.BeginTransactionAsync(
+                        IsolationLevel.Serializable);
+                    boardTransactionStarted = true;
+                }
+
+                var permissionResult = capturePayload is not null
+                    ? await _authorizationService.CanWriteBoardAsync(userId, dto.BoardId.Value)
+                    : await _authorizationService.CanReadBoardAsync(userId, dto.BoardId.Value);
+                if (!permissionResult.IsSuccess)
+                {
+                    await RollbackBoardTransactionAsync();
+                    return Result.Failure<LlmRequestDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+                }
+
+                if (!permissionResult.Value)
+                {
+                    await RollbackBoardTransactionAsync();
+                    var message = capturePayload is not null
+                        ? "You do not have permission to attach captures to this board"
+                        : "You do not have access to this board";
+                    return Result.Failure<LlmRequestDto>(ErrorCodes.Forbidden, message);
+                }
+            }
+
             var request = new LlmRequest(userId, requestType, payload, dto.BoardId);
             await _unitOfWork.LlmQueue.AddAsync(request);
 
@@ -102,11 +131,23 @@ public class LlmQueueService : ILlmQueueService
 
             await _unitOfWork.SaveChangesAsync();
 
+            if (boardTransactionStarted)
+            {
+                await _unitOfWork.CommitTransactionAsync();
+                boardTransactionStarted = false;
+            }
+
             return Result.Success(MapToDto(request));
         }
         catch (DomainException ex)
         {
+            await RollbackBoardTransactionAsync();
             return Result.Failure<LlmRequestDto>(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            await RollbackBoardTransactionAsync();
+            throw;
         }
     }
 

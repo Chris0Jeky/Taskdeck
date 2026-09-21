@@ -74,7 +74,7 @@ public class LlmQueueServiceTests
 
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync(user);
-        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+        _authorizationServiceMock.Setup(s => s.CanWriteBoardAsync(userId, boardId))
             .ReturnsAsync(Result.Success(true));
         _llmQueueRepoMock.Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
             .Callback<LlmRequest, CancellationToken>((request, _) => persistedRequest = request)
@@ -110,7 +110,7 @@ public class LlmQueueServiceTests
 
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync(user);
-        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+        _authorizationServiceMock.Setup(s => s.CanWriteBoardAsync(userId, boardId))
             .ReturnsAsync(Result.Success(true));
         _llmQueueRepoMock.Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
             .Callback<LlmRequest, CancellationToken>((request, _) => persistedRequest = request)
@@ -223,6 +223,32 @@ public class LlmQueueServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         result.ErrorMessage.Should().Contain("access");
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddToQueueAsync_ShouldRejectViewerCaptureAttachment()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto(
+            CaptureRequestContract.RequestTypeV1,
+            "Capture this quick note",
+            boardId);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+        _authorizationServiceMock.Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("attach captures");
+        _llmQueueRepoMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
     }
 
     [Fact]

@@ -104,16 +104,16 @@ describe('BoardDialogHost', () => {
           StarterPackCatalogModal: true,
           LabelManagerModal: true,
           CaptureModal: {
-            props: ['boardId', 'boardName'],
+            props: ['boardId', 'boardName', 'canSubmit'],
             template: `
-              <button data-testid="capture-close" type="button" @click="$emit('close')">{{ boardName }}|{{ boardId }}</button>
+              <button data-testid="capture-close" type="button" @click="$emit('close')">{{ boardName }}|{{ boardId }}|{{ canSubmit }}</button>
             `,
           },
         },
       },
     })
 
-    expect(wrapper.get('[data-testid="capture-close"]').text()).toBe('Ops Board|board-1')
+    expect(wrapper.get('[data-testid="capture-close"]').text()).toBe('Ops Board|board-1|true')
     await wrapper.get('[data-testid="capture-close"]').trigger('click')
     expect(wrapper.emitted('update:showCaptureModal')).toEqual([[false]])
 
@@ -124,6 +124,6 @@ describe('BoardDialogHost', () => {
       board: { ...board, canWrite: false },
       showCaptureModal: true,
     })
-    expect(wrapper.find('[data-testid="capture-close"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="capture-close"]').text()).toBe('Ops Board|board-1|false')
   })
 })
