@@ -22,6 +22,7 @@ export const useNotificationStore = defineStore('notifications', () => {
   const error = ref<string | null>(null)
 
   type ReadLane = 'notifications' | 'preferences'
+  type ReadRetry = () => Promise<unknown>
 
   interface OperationOwner {
     epoch: number
@@ -38,6 +39,7 @@ export const useNotificationStore = defineStore('notifications', () => {
   let preferenceMutationGeneration = 0
   const activeLoadingOperations = new Set<symbol>()
   const readOwners = new Map<ReadLane, ReadOwner>()
+  const readRetries = new Map<ReadLane, ReadRetry>()
 
   function syncLoading(): void {
     loading.value = activeLoadingOperations.size > 0
@@ -78,7 +80,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       : preferenceMutationGeneration
   }
 
-  function beginRead(lane: ReadLane): ReadOwner {
+  function beginRead(lane: ReadLane, retry: ReadRetry): ReadOwner {
     const previous = readOwners.get(lane)
     if (previous?.epoch === sessionEpoch && previous.ownsLoading) {
       activeLoadingOperations.delete(previous.token)
@@ -93,6 +95,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       observedMutationGeneration: mutationGeneration(lane),
     }
     readOwners.set(lane, owner)
+    readRetries.set(lane, retry)
     return owner
   }
 
@@ -104,7 +107,10 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   function finishRead(lane: ReadLane, owner: ReadOwner): void {
-    if (readOwners.get(lane)?.token === owner.token) readOwners.delete(lane)
+    if (readOwners.get(lane)?.token === owner.token) {
+      readOwners.delete(lane)
+      readRetries.delete(lane)
+    }
     finishOperation(owner)
   }
 
@@ -114,6 +120,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       activeLoadingOperations.delete(owner.token)
     }
     readOwners.delete(lane)
+    readRetries.delete(lane)
     syncLoading()
   }
 
@@ -133,8 +140,30 @@ export const useNotificationStore = defineStore('notifications', () => {
     preferenceMutationGeneration = 0
     activeLoadingOperations.clear()
     readOwners.clear()
+    readRetries.clear()
     loading.value = false
     clearError()
+  }
+
+  function retryEmptyActiveReads(): void {
+    const notificationRetry = readOwners.has('notifications') && notifications.value.length === 0
+      ? readRetries.get('notifications')
+      : undefined
+    const preferenceRetry = readOwners.has('preferences') && preferences.value === null
+      ? readRetries.get('preferences')
+      : undefined
+
+    invalidateOperations()
+    if (notificationRetry) {
+      void notificationRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
+    if (preferenceRetry) {
+      void preferenceRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
   }
 
   function resetForSession(): void {
@@ -151,7 +180,7 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   watch(
     () => session.token,
-    invalidateOperations,
+    retryEmptyActiveReads,
     { flush: 'sync' },
   )
 
@@ -170,7 +199,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       return
     }
 
-    const owner = beginRead('notifications')
+    const owner = beginRead('notifications', () => fetchNotifications(query))
     try {
       const result = await notificationsApi.getNotifications(query)
       if (!ownsRead('notifications', owner)) return
@@ -244,7 +273,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       return preferences.value
     }
 
-    const owner = beginRead('preferences')
+    const owner = beginRead('preferences', fetchPreferences)
     try {
       const result = await notificationsApi.getPreferences()
       if (ownsRead('preferences', owner)) preferences.value = result
