@@ -131,43 +131,52 @@ describe('auditStore async ownership', () => {
     expect(store.loading).toBe(false)
   })
 
-  it('preserves loaded history while invalidating an old-token success on refresh', async () => {
+  it('reconciles loaded history after a same-user token refresh', async () => {
     store.entries = [entry('existing')]
     store.error = 'existing error'
-    const pending = deferred<AuditEntry[]>()
-    vi.mocked(auditApi.getBoardHistory).mockReturnValue(pending.promise)
+    const oldRead = deferred<AuditEntry[]>()
+    const freshRead = deferred<AuditEntry[]>()
+    vi.mocked(auditApi.getBoardHistory)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
 
     const request = store.fetchBoardHistory('board-old')
     expect(store.loading).toBe(true)
 
     session.token = 'token-b'
 
+    expect(auditApi.getBoardHistory).toHaveBeenCalledTimes(2)
     expect(store.entries.map(item => item.id)).toEqual(['existing'])
     expect(store.error).toBeNull()
-    expect(store.loading).toBe(false)
+    expect(store.loading).toBe(true)
 
-    pending.resolve([entry('old-token')])
+    oldRead.resolve([entry('old-token')])
+    freshRead.resolve([entry('fresh-token')])
     await request
 
-    expect(store.entries.map(item => item.id)).toEqual(['existing'])
+    expect(store.entries.map(item => item.id)).toEqual(['fresh-token'])
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
   })
 
-  it('preserves loaded history while suppressing an old-token failure', async () => {
+  it('surfaces a replacement history failure after a same-user token refresh', async () => {
     store.entries = [entry('existing')]
-    const pending = deferred<AuditEntry[]>()
-    vi.mocked(auditApi.getEntityHistory).mockReturnValue(pending.promise)
+    const oldRead = deferred<AuditEntry[]>()
+    const freshRead = deferred<AuditEntry[]>()
+    vi.mocked(auditApi.getEntityHistory)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
 
     const request = store.fetchEntityHistory('Card', 'card-old')
     session.token = 'token-b'
-    pending.reject(new Error('old-token failure'))
-    await expect(request).rejects.toThrow('old-token failure')
+    oldRead.reject(new Error('old-token failure'))
+    freshRead.reject(new Error('replacement failure'))
+    await expect(request).rejects.toThrow('replacement failure')
 
     expect(store.entries.map(item => item.id)).toEqual(['existing'])
-    expect(store.error).toBeNull()
+    expect(store.error).toBe('replacement failure')
     expect(store.loading).toBe(false)
-    expect(toastMocks.error).not.toHaveBeenCalled()
+    expect(toastMocks.error).toHaveBeenCalledTimes(1)
   })
 
   it('retries an empty initial history read after same-user token rotation', async () => {
@@ -185,17 +194,12 @@ describe('auditStore async ownership', () => {
     expect(store.loading).toBe(true)
 
     oldRead.resolve([entry('old-token')])
+    freshRead.resolve([entry('fresh-token')])
     await request
 
-    expect(store.entries).toEqual([])
-    expect(store.loading).toBe(true)
-
-    freshRead.resolve([entry('fresh-token')])
-    await vi.waitFor(() => {
-      expect(store.entries.map(item => item.id)).toEqual(['fresh-token'])
-      expect(store.loading).toBe(false)
-      expect(store.error).toBeNull()
-    })
+    expect(store.entries.map(item => item.id)).toEqual(['fresh-token'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
   })
 
   it('clears history on identity replacement and suppresses late settlement', async () => {

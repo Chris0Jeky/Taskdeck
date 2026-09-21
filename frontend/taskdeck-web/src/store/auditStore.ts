@@ -25,6 +25,7 @@ export const useAuditStore = defineStore('audit', () => {
   let credentialEpoch = 0
   let currentRead: ReadOwner | null = null
   let currentRetry: ReadRetry | null = null
+  const successorReads = new Map<symbol, Promise<void>>()
 
   function clampLimit(limit: number): number {
     if (limit < 1) return 1
@@ -60,18 +61,35 @@ export const useAuditStore = defineStore('audit', () => {
     error.value = null
   }
 
-  function retryEmptyActiveRead(): void {
-    const retry = currentRead && entries.value.length === 0 ? currentRetry : null
-    invalidateCurrentRead()
-    if (retry) {
-      void retry().catch(() => {
-        // The retried store action owns current error/toast state.
-      })
+  async function awaitSuccessor(owner: ReadOwner): Promise<boolean> {
+    const successor = successorReads.get(owner.token)
+    if (!successor) return false
+
+    try {
+      await successor
+    } finally {
+      successorReads.delete(owner.token)
     }
+    return true
+  }
+
+  function retryActiveRead(): void {
+    const retry = currentRead && currentRetry
+      ? { owner: currentRead, retry: currentRetry }
+      : null
+    invalidateCurrentRead()
+    if (!retry) return
+
+    const successor = retry.retry()
+    successorReads.set(retry.owner.token, successor)
+    void successor.catch(() => {
+      // The retried store action owns current error/toast state.
+    })
   }
 
   function resetForSession(): void {
     invalidateCurrentRead()
+    successorReads.clear()
     entries.value = []
   }
 
@@ -83,7 +101,7 @@ export const useAuditStore = defineStore('audit', () => {
 
   watch(
     () => session.token,
-    retryEmptyActiveRead,
+    retryActiveRead,
     { flush: 'sync' },
   )
 
@@ -95,13 +113,18 @@ export const useAuditStore = defineStore('audit', () => {
     const owner = beginRead(retry)
     try {
       const result = await request()
-      if (!ownsRead(owner)) return
+      if (!ownsRead(owner)) {
+        await awaitSuccessor(owner)
+        return
+      }
       entries.value = result
     } catch (e: unknown) {
       if (ownsRead(owner)) {
         const msg = getErrorDisplay(e, fallbackMessage).message
         error.value = msg
         toast.error(msg)
+      } else if (await awaitSuccessor(owner)) {
+        return
       }
       throw e
     } finally {
