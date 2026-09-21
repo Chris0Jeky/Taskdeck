@@ -18,6 +18,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   type ReadLane = 'requests' | 'stats'
   type OperationScope = ReadLane | 'mutation'
+  type ReadRetry = () => Promise<void>
 
   interface OperationOwner {
     epoch: number
@@ -34,6 +35,7 @@ export const useQueueStore = defineStore('queue', () => {
   let errorOwner: OperationOwner | null = null
   const activeOperations = new Set<symbol>()
   const readOwners = new Map<ReadLane, ReadOwner>()
+  const readRetries = new Map<ReadLane, ReadRetry>()
 
   function syncLoading(): void {
     loading.value = activeOperations.size > 0
@@ -68,7 +70,7 @@ export const useQueueStore = defineStore('queue', () => {
     syncLoading()
   }
 
-  function beginRead(lane: ReadLane): ReadOwner {
+  function beginRead(lane: ReadLane, retry: ReadRetry): ReadOwner {
     const previous = readOwners.get(lane)
     if (previous?.epoch === credentialEpoch) {
       activeOperations.delete(previous.token)
@@ -80,6 +82,7 @@ export const useQueueStore = defineStore('queue', () => {
       observedMutationGeneration: mutationGeneration,
     }
     readOwners.set(lane, owner)
+    readRetries.set(lane, retry)
     return owner
   }
 
@@ -92,6 +95,7 @@ export const useQueueStore = defineStore('queue', () => {
   function finishRead(lane: ReadLane, owner: ReadOwner): void {
     if (readOwners.get(lane)?.token === owner.token) {
       readOwners.delete(lane)
+      readRetries.delete(lane)
     }
     finishOperation(owner)
   }
@@ -102,6 +106,7 @@ export const useQueueStore = defineStore('queue', () => {
       activeOperations.delete(owner.token)
     }
     readOwners.delete(lane)
+    readRetries.delete(lane)
     syncLoading()
   }
 
@@ -115,9 +120,31 @@ export const useQueueStore = defineStore('queue', () => {
     credentialEpoch += 1
     activeOperations.clear()
     readOwners.clear()
+    readRetries.clear()
     errorOwner = null
     loading.value = false
     error.value = null
+  }
+
+  function retryEmptyActiveReads(): void {
+    const requestRetry = readOwners.has('requests') && requests.value.length === 0
+      ? readRetries.get('requests')
+      : undefined
+    const statsRetry = readOwners.has('stats') && stats.value === null
+      ? readRetries.get('stats')
+      : undefined
+
+    invalidateOperations()
+    if (requestRetry) {
+      void requestRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
+    if (statsRetry) {
+      void statsRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
   }
 
   function $reset(): void {
@@ -135,7 +162,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   watch(
     () => session.token,
-    invalidateOperations,
+    retryEmptyActiveReads,
     { flush: 'sync' },
   )
 
@@ -154,7 +181,7 @@ export const useQueueStore = defineStore('queue', () => {
       return
     }
 
-    const owner = beginRead('requests')
+    const owner = beginRead('requests', fetchUserRequests)
     try {
       session.requireUserId('queue operations')
       const result = await queueApi.getUserRequests()
@@ -179,7 +206,7 @@ export const useQueueStore = defineStore('queue', () => {
       return
     }
 
-    const owner = beginRead('requests')
+    const owner = beginRead('requests', () => fetchByStatus(status))
     try {
       const result = await queueApi.getRequestsByStatus(status)
       if (ownsRead('requests', owner)) requests.value = result
@@ -276,7 +303,7 @@ export const useQueueStore = defineStore('queue', () => {
       return
     }
 
-    const owner = beginRead('stats')
+    const owner = beginRead('stats', fetchStats)
     try {
       const result = await queueApi.getStats()
       if (ownsRead('stats', owner)) stats.value = result
