@@ -38,6 +38,7 @@ export const useQueueStore = defineStore('queue', () => {
   const readOwners = new Map<ReadLane, ReadOwner>()
   const readRetries = new Map<ReadLane, ReadRetry>()
   const successorReads = new Map<symbol, Promise<void>>()
+  let activeRequestRetry: ReadRetry | null = null
 
   function syncLoading(): void {
     loading.value = activeOperations.size > 0
@@ -128,6 +129,14 @@ export const useQueueStore = defineStore('queue', () => {
     error.value = null
   }
 
+  function canReportMutationFailure(owner: OperationOwner): boolean {
+    return ownsCredential(owner)
+      || (owner.userId !== null
+        && owner.userId === session.userId
+        && session.isAuthenticated
+        && !session.isDemo)
+  }
+
   async function awaitSuccessor(owner: ReadOwner): Promise<boolean> {
     const successor = successorReads.get(owner.token)
     if (!successor) return false
@@ -179,7 +188,15 @@ export const useQueueStore = defineStore('queue', () => {
     }
 
     try {
-      await Promise.all([fetchUserRequests(), fetchStats()])
+      const refreshes: Promise<void>[] = []
+      if (!readOwners.has('requests')) {
+        const refreshRequests = activeRequestRetry ?? fetchUserRequests
+        refreshes.push(refreshRequests())
+      }
+      if (!readOwners.has('stats')) {
+        refreshes.push(fetchStats())
+      }
+      await Promise.all(refreshes)
     } catch {
       // Each read owns its error/toast state. The mutation already succeeded,
       // so a reconciliation failure must not turn it into a false write error.
@@ -189,6 +206,7 @@ export const useQueueStore = defineStore('queue', () => {
   function $reset(): void {
     invalidateOperations()
     successorReads.clear()
+    activeRequestRetry = null
     mutationGeneration = 0
     requests.value = []
     stats.value = null
@@ -221,7 +239,9 @@ export const useQueueStore = defineStore('queue', () => {
       return
     }
 
-    const owner = beginRead('requests', fetchUserRequests)
+    const retry = fetchUserRequests
+    activeRequestRetry = retry
+    const owner = beginRead('requests', retry)
     try {
       session.requireUserId('queue operations')
       const result = await queueApi.getUserRequests()
@@ -252,7 +272,9 @@ export const useQueueStore = defineStore('queue', () => {
       return
     }
 
-    const owner = beginRead('requests', () => fetchByStatus(status))
+    const retry = () => fetchByStatus(status)
+    activeRequestRetry = retry
+    const owner = beginRead('requests', retry)
     try {
       const result = await queueApi.getRequestsByStatus(status)
       if (ownsRead('requests', owner)) {
@@ -290,7 +312,7 @@ export const useQueueStore = defineStore('queue', () => {
       toast.success('Request submitted')
       return request
     } catch (e: unknown) {
-      if (ownsCredential(owner)) {
+      if (canReportMutationFailure(owner)) {
         const msg = getErrorDisplay(e, 'Failed to submit request').message
         publishError(owner, msg)
         toast.error(msg)
@@ -316,7 +338,7 @@ export const useQueueStore = defineStore('queue', () => {
       requests.value = requests.value.filter(r => r.id !== requestId)
       toast.success('Request cancelled')
     } catch (e: unknown) {
-      if (ownsCredential(owner)) {
+      if (canReportMutationFailure(owner)) {
         const msg = getErrorDisplay(e, 'Failed to cancel request').message
         publishError(owner, msg)
         toast.error(msg)
@@ -345,7 +367,7 @@ export const useQueueStore = defineStore('queue', () => {
       }
       return result
     } catch (e: unknown) {
-      if (ownsCredential(owner)) {
+      if (canReportMutationFailure(owner)) {
         const msg = getErrorDisplay(e, 'Failed to process request').message
         publishError(owner, msg)
         toast.error(msg)

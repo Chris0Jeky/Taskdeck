@@ -345,7 +345,7 @@ describe('queueStore async ownership', () => {
     expect(toastMocks.error).toHaveBeenCalledTimes(1)
   })
 
-  it('suppresses a stale mutation failure after token rotation while preserving cached data and rejection', async () => {
+  it('reports a same-user mutation failure after token rotation', async () => {
     const cancel = deferred<void>()
     store.requests = [request('old-request')]
     vi.mocked(queueApi.cancelRequest).mockReturnValue(cancel.promise)
@@ -356,6 +356,22 @@ describe('queueStore async ownership', () => {
     await expect(operation).rejects.toThrow('old-session cancellation failed')
 
     expect(store.requests.map(item => item.id)).toEqual(['old-request'])
+    expect(store.error).toBe('old-session cancellation failed')
+    expect(store.loading).toBe(false)
+    expect(toastMocks.error).toHaveBeenCalledWith('old-session cancellation failed')
+  })
+
+  it('suppresses a mutation failure after identity replacement', async () => {
+    const cancel = deferred<void>()
+    store.requests = [request('old-request')]
+    vi.mocked(queueApi.cancelRequest).mockReturnValue(cancel.promise)
+
+    const operation = store.cancelRequest('old-request')
+    session.userId = 'other-user'
+    cancel.reject(new Error('old-session cancellation failed'))
+    await expect(operation).rejects.toThrow('old-session cancellation failed')
+
+    expect(store.requests).toEqual([])
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
     expect(toastMocks.error).not.toHaveBeenCalled()
@@ -418,6 +434,31 @@ describe('queueStore async ownership', () => {
     expect(store.requests).toEqual([])
     expect(store.stats?.pendingCount).toBe(0)
     expect(toastMocks.success).not.toHaveBeenCalled()
+  })
+
+  it('reconciles a stale mutation using the active status query', async () => {
+    const pendingSubmit = deferred<QueueRequest>()
+    const existing = request('existing', 'Failed')
+    const created = request('created', 'Failed')
+    const freshStats = stats(2)
+    store.requests = [existing]
+    store.stats = stats(1)
+    vi.mocked(queueApi.getRequestsByStatus)
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValueOnce([existing, created])
+    vi.mocked(queueApi.getStats).mockResolvedValue(freshStats)
+    vi.mocked(queueApi.createRequest).mockReturnValue(pendingSubmit.promise)
+
+    await store.fetchByStatus('Failed')
+    const operation = store.submitRequest({ requestType: 'Instruction', payload: 'Queue it' })
+    session.token = token('new')
+    pendingSubmit.resolve(created)
+
+    await expect(operation).resolves.toEqual(created)
+    expect(queueApi.getRequestsByStatus).toHaveBeenNthCalledWith(2, 'Failed')
+    expect(queueApi.getUserRequests).not.toHaveBeenCalled()
+    expect(store.requests.map(item => item.id)).toEqual(['existing', 'created'])
+    expect(store.stats).toEqual(freshStats)
   })
 
   it('resets rather than retrying a read under a cleared identity', async () => {
