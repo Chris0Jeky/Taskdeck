@@ -94,19 +94,29 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
   }
 
-  function resetForSession() {
+  function invalidateOperations() {
     sessionEpoch += 1
     activeOperations.clear()
     activeReadByBoard.clear()
     mutationGenerationByBoard.clear()
-    boardAccess.value = new Map()
     loading.value = false
     error.value = null
   }
 
+  function resetForSession() {
+    invalidateOperations()
+    boardAccess.value = new Map()
+  }
+
   watch(
-    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.isAuthenticated, session.isDemo],
     resetForSession,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    invalidateOperations,
     { flush: 'sync' },
   )
 
