@@ -92,7 +92,7 @@ describe('featureFlagStore', () => {
       expect((store.flags as Record<string, unknown>).unknownFlag).toBeUndefined()
     })
 
-    it.each(['null', '[]', '"text"', '42'])(
+    it.each(['null', '[false]', '"text"', '42'])(
       'uses defaults for a non-object persisted payload %s',
       (payload) => {
         localStorage.setItem('taskdeck_feature_flags', payload)
@@ -105,7 +105,7 @@ describe('featureFlagStore', () => {
 
     it('uses defaults when storage cannot be read', () => {
       store.setFlag('newAuth', false)
-      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
         throw new DOMException('Storage blocked', 'SecurityError')
       })
 
@@ -114,7 +114,7 @@ describe('featureFlagStore', () => {
     })
 
     it('keeps an in-memory flag update when persistence fails', () => {
-      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
         throw new DOMException('Storage full', 'QuotaExceededError')
       })
 
@@ -124,7 +124,7 @@ describe('featureFlagStore', () => {
 
     it('keeps reset defaults when persistence fails', () => {
       store.setFlag('newAuth', false)
-      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
         throw new DOMException('Storage full', 'QuotaExceededError')
       })
 
