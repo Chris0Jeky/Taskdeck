@@ -19,6 +19,8 @@ export const useMetricsStore = defineStore('metrics', () => {
   const forecastLoading = ref(false)
   const forecastError = ref<string | null>(null)
 
+  type ReadRetry = () => Promise<void>
+
   interface RequestOwner {
     epoch: number
     token: symbol
@@ -27,10 +29,13 @@ export const useMetricsStore = defineStore('metrics', () => {
   let credentialEpoch = 0
   let metricsOwner: RequestOwner | null = null
   let forecastOwner: RequestOwner | null = null
+  let metricsRetry: ReadRetry | null = null
+  let forecastRetry: ReadRetry | null = null
 
-  function beginMetricsRequest(): RequestOwner {
+  function beginMetricsRequest(retry: ReadRetry): RequestOwner {
     const owner = { epoch: credentialEpoch, token: Symbol('board-metrics') }
     metricsOwner = owner
+    metricsRetry = retry
     loading.value = true
     error.value = null
     return owner
@@ -43,12 +48,14 @@ export const useMetricsStore = defineStore('metrics', () => {
   function finishMetricsRequest(owner: RequestOwner): void {
     if (!ownsMetricsRequest(owner)) return
     metricsOwner = null
+    metricsRetry = null
     loading.value = false
   }
 
-  function beginForecastRequest(): RequestOwner {
+  function beginForecastRequest(retry: ReadRetry): RequestOwner {
     const owner = { epoch: credentialEpoch, token: Symbol('board-forecast') }
     forecastOwner = owner
+    forecastRetry = retry
     forecastLoading.value = true
     forecastError.value = null
     return owner
@@ -61,6 +68,7 @@ export const useMetricsStore = defineStore('metrics', () => {
   function finishForecastRequest(owner: RequestOwner): void {
     if (!ownsForecastRequest(owner)) return
     forecastOwner = null
+    forecastRetry = null
     forecastLoading.value = false
   }
 
@@ -68,10 +76,29 @@ export const useMetricsStore = defineStore('metrics', () => {
     credentialEpoch += 1
     metricsOwner = null
     forecastOwner = null
+    metricsRetry = null
+    forecastRetry = null
     loading.value = false
     error.value = null
     forecastLoading.value = false
     forecastError.value = null
+  }
+
+  function retryEmptyActiveRequests(): void {
+    const pendingMetricsRetry = metricsOwner && metrics.value === null ? metricsRetry : null
+    const pendingForecastRetry = forecastOwner && forecast.value === null ? forecastRetry : null
+
+    invalidateRequests()
+    if (pendingMetricsRetry) {
+      void pendingMetricsRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
+    if (pendingForecastRetry) {
+      void pendingForecastRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
   }
 
   function $reset(): void {
@@ -88,20 +115,21 @@ export const useMetricsStore = defineStore('metrics', () => {
 
   watch(
     () => session.token,
-    invalidateRequests,
+    retryEmptyActiveRequests,
     { flush: 'sync' },
   )
 
   async function fetchBoardMetrics(query: MetricsQuery) {
     if (isDemoMode) {
       metricsOwner = null
+      metricsRetry = null
       loading.value = false
       error.value = 'Metrics are not available in demo mode.'
       metrics.value = null
       return
     }
 
-    const owner = beginMetricsRequest()
+    const owner = beginMetricsRequest(() => fetchBoardMetrics(query))
     try {
       const result = await metricsApi.getBoardMetrics(query)
       if (!ownsMetricsRequest(owner)) return
@@ -121,13 +149,14 @@ export const useMetricsStore = defineStore('metrics', () => {
   async function fetchBoardForecast(query: ForecastQuery) {
     if (isDemoMode) {
       forecastOwner = null
+      forecastRetry = null
       forecastLoading.value = false
       forecastError.value = 'Forecast is not available in demo mode.'
       forecast.value = null
       return
     }
 
-    const owner = beginForecastRequest()
+    const owner = beginForecastRequest(() => fetchBoardForecast(query))
     try {
       const result = await metricsApi.getBoardForecast(query)
       if (!ownsForecastRequest(owner)) return
