@@ -140,6 +140,23 @@ describe('queueStore async ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  it('does not let a stats refresh erase the current request-list failure', async () => {
+    const queueStats = deferred<QueueStats>()
+    vi.mocked(queueApi.getRequestsByStatus).mockRejectedValue(new Error('request list failed'))
+    vi.mocked(queueApi.getStats).mockReturnValue(queueStats.promise)
+
+    await expect(store.fetchByStatus('Failed')).rejects.toThrow('request list failed')
+    expect(store.error).toBe('request list failed')
+
+    const statsRequest = store.fetchStats()
+    const errorAfterStatsStarted = store.error
+    queueStats.resolve(stats(2))
+    await statsRequest
+
+    expect(errorAfterStatsStarted).toBe('request list failed')
+    expect(store.error).toBe('request list failed')
+  })
+
   it('does not let an older request read erase a confirmed submission', async () => {
     const oldRead = deferred<QueueRequest[]>()
     const create = deferred<QueueRequest>()
