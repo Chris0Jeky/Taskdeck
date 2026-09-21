@@ -324,6 +324,25 @@ describe('queueStore async ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  it('surfaces a replacement read failure and clears loading after token rotation', async () => {
+    const oldRead = deferred<QueueRequest[]>()
+    const freshRead = deferred<QueueRequest[]>()
+    store.requests = [request('previous', 'Completed')]
+    vi.mocked(queueApi.getRequestsByStatus)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
+
+    const operation = store.fetchByStatus('Pending')
+    session.token = token('new')
+    oldRead.resolve([request('old-token', 'Pending')])
+    freshRead.reject(new Error('replacement failed'))
+
+    await expect(operation).rejects.toThrow('replacement failed')
+    expect(store.loading).toBe(false)
+    expect(store.error).toBe('replacement failed')
+    expect(toastMocks.error).toHaveBeenCalledTimes(1)
+  })
+
   it('suppresses a stale mutation failure after token rotation while preserving cached data and rejection', async () => {
     const cancel = deferred<void>()
     store.requests = [request('old-request')]
