@@ -305,6 +305,7 @@ describe('PaperBoardView', () => {
     const wrapper = mountView()
 
     expect(wrapper.findAll('button').some((button) => button.text().includes('Capture here'))).toBe(false)
+    expect(wrapper.findAll('[data-testid="paper-column-capture"]').length).toBe(0)
   })
 
   it('does not fetch board data itself because the wrapping BoardView owns loading', () => {

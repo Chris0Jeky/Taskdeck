@@ -1037,6 +1037,7 @@ async function addStarterColumns() {
             :composer-open="composerColumnId === column.id"
             :composer-busy="composerBusy"
             :composer-error="composerError"
+            :can-capture="routedBoard?.canWrite !== false"
             @capture="openCapture"
             @select="emit('column-select', column.id)"
             @toggle-collapse="toggleColumnCollapse"
