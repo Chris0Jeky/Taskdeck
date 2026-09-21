@@ -47,17 +47,27 @@ export const useAuditStore = defineStore('audit', () => {
     loading.value = false
   }
 
-  function resetForCredential(): void {
+  function invalidateCurrentRead(): void {
     credentialEpoch += 1
     currentRead = null
-    entries.value = []
     loading.value = false
     error.value = null
   }
 
+  function resetForSession(): void {
+    invalidateCurrentRead()
+    entries.value = []
+  }
+
   watch(
-    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
-    resetForCredential,
+    () => [session.userId, session.isAuthenticated, session.isDemo],
+    resetForSession,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    invalidateCurrentRead,
     { flush: 'sync' },
   )
 
@@ -84,7 +94,7 @@ export const useAuditStore = defineStore('audit', () => {
 
   async function fetchBoardHistory(boardId: string, limit = 50) {
     if (isDemoMode) {
-      resetForCredential()
+      resetForSession()
       return
     }
 
@@ -96,7 +106,7 @@ export const useAuditStore = defineStore('audit', () => {
 
   async function fetchEntityHistory(entityType: string, entityId: string, limit = 50) {
     if (isDemoMode) {
-      resetForCredential()
+      resetForSession()
       return
     }
 
@@ -108,7 +118,7 @@ export const useAuditStore = defineStore('audit', () => {
 
   async function fetchUserHistory(limit = 50) {
     if (isDemoMode) {
-      resetForCredential()
+      resetForSession()
       return
     }
 
