@@ -1,6 +1,6 @@
 # JWT payload admission boundary
 
-Status: unpublished draft candidate, 2026-09-21. Base: `307c3b8b50bec1cb0bfaea3e570a942bcb1d4451`.
+Status: draft PR #3325, 2026-09-21. Base: `307c3b8b50bec1cb0bfaea3e570a942bcb1d4451`.
 
 ## Reproduced defect
 
