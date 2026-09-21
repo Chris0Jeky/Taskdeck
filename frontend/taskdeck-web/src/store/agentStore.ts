@@ -69,12 +69,9 @@ export const useAgentStore = defineStore('agent', () => {
     setLaneLoading(lane, false)
   }
 
-  function resetForSession(): void {
+  function invalidateReads(): void {
     sessionEpoch += 1
     readOwners.clear()
-    profiles.value = []
-    runs.value = []
-    runDetail.value = null
     profilesLoading.value = false
     runsLoading.value = false
     runDetailLoading.value = false
@@ -83,9 +80,22 @@ export const useAgentStore = defineStore('agent', () => {
     runDetailError.value = null
   }
 
+  function resetForSession(): void {
+    invalidateReads()
+    profiles.value = []
+    runs.value = []
+    runDetail.value = null
+  }
+
   watch(
-    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.isAuthenticated, session.isDemo],
     resetForSession,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    invalidateReads,
     { flush: 'sync' },
   )
 
