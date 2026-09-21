@@ -130,6 +130,25 @@ describe('featureFlagStore', () => {
       }
     })
 
+    it('does not let stale storage overwrite an unsaved flag update', () => {
+      localStorage.setItem('taskdeck_feature_flags', JSON.stringify({ newAuth: true }))
+      store.restore()
+      const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw new DOMException('Storage full', 'QuotaExceededError')
+      })
+
+      try {
+        store.setFlag('newAuth', false)
+        expect(store.isEnabled('newAuth')).toBe(false)
+
+        store.restore()
+
+        expect(store.isEnabled('newAuth')).toBe(false)
+      } finally {
+        setItem.mockRestore()
+      }
+    })
+
     it('keeps reset defaults when persistence fails', () => {
       store.setFlag('newAuth', false)
       const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
@@ -139,6 +158,25 @@ describe('featureFlagStore', () => {
       try {
         expect(() => store.resetAll()).not.toThrow()
         expect(store.flags).toEqual(defaultFeatureFlags)
+      } finally {
+        setItem.mockRestore()
+      }
+    })
+
+    it('does not let stale storage overwrite an unsaved reset', () => {
+      localStorage.setItem('taskdeck_feature_flags', JSON.stringify({ devTools: true }))
+      store.restore()
+      const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw new DOMException('Storage full', 'QuotaExceededError')
+      })
+
+      try {
+        store.resetAll()
+        expect(store.isEnabled('devTools')).toBe(defaultFeatureFlags.devTools)
+
+        store.restore()
+
+        expect(store.isEnabled('devTools')).toBe(defaultFeatureFlags.devTools)
       } finally {
         setItem.mockRestore()
       }
