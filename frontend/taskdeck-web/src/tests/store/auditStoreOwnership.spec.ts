@@ -170,6 +170,34 @@ describe('auditStore async ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  it('retries an empty initial history read after same-user token rotation', async () => {
+    const oldRead = deferred<AuditEntry[]>()
+    const freshRead = deferred<AuditEntry[]>()
+    vi.mocked(auditApi.getBoardHistory)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
+
+    const request = store.fetchBoardHistory('board-a')
+    session.token = 'token-b'
+
+    expect(auditApi.getBoardHistory).toHaveBeenCalledTimes(2)
+    expect(store.entries).toEqual([])
+    expect(store.loading).toBe(true)
+
+    oldRead.resolve([entry('old-token')])
+    await request
+
+    expect(store.entries).toEqual([])
+    expect(store.loading).toBe(true)
+
+    freshRead.resolve([entry('fresh-token')])
+    await vi.waitFor(() => {
+      expect(store.entries.map(item => item.id)).toEqual(['fresh-token'])
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+    })
+  })
+
   it('clears history on identity replacement and suppresses late settlement', async () => {
     store.entries = [entry('existing')]
     const pending = deferred<AuditEntry[]>()
