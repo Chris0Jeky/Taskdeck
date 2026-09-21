@@ -1,13 +1,15 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { metricsApi } from '../api/metricsApi'
 import { useToastStore } from './toastStore'
+import { useSessionStore } from './sessionStore'
 import { isDemoMode } from '../utils/demoMode'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import type { BoardMetricsResponse, BoardForecastResponse, MetricsQuery, ForecastQuery } from '../types/metrics'
 
 export const useMetricsStore = defineStore('metrics', () => {
   const toast = useToastStore()
+  const session = useSessionStore()
 
   const metrics = ref<BoardMetricsResponse | null>(null)
   const loading = ref(false)
@@ -17,59 +19,119 @@ export const useMetricsStore = defineStore('metrics', () => {
   const forecastLoading = ref(false)
   const forecastError = ref<string | null>(null)
 
-  async function fetchBoardMetrics(query: MetricsQuery) {
-    if (isDemoMode) {
-      loading.value = true
-      error.value = null
-      metrics.value = null
-      loading.value = false
-      error.value = 'Metrics are not available in demo mode.'
-      return
-    }
-    try {
-      loading.value = true
-      error.value = null
-      metrics.value = await metricsApi.getBoardMetrics(query)
-    } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to fetch board metrics').message
-      error.value = msg
-      toast.error(msg)
-      throw e
-    } finally {
-      loading.value = false
-    }
+  interface RequestOwner {
+    epoch: number
+    token: symbol
   }
 
-  async function fetchBoardForecast(query: ForecastQuery) {
-    if (isDemoMode) {
-      forecastLoading.value = true
-      forecastError.value = null
-      forecast.value = null
-      forecastLoading.value = false
-      forecastError.value = 'Forecast is not available in demo mode.'
-      return
-    }
-    try {
-      forecastLoading.value = true
-      forecastError.value = null
-      forecast.value = await metricsApi.getBoardForecast(query)
-    } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to fetch board forecast').message
-      forecastError.value = msg
-      toast.error(msg)
-      throw e
-    } finally {
-      forecastLoading.value = false
-    }
+  let credentialEpoch = 0
+  let metricsOwner: RequestOwner | null = null
+  let forecastOwner: RequestOwner | null = null
+
+  function beginMetricsRequest(): RequestOwner {
+    const owner = { epoch: credentialEpoch, token: Symbol('board-metrics') }
+    metricsOwner = owner
+    loading.value = true
+    error.value = null
+    return owner
   }
 
-  function $reset() {
+  function ownsMetricsRequest(owner: RequestOwner): boolean {
+    return owner.epoch === credentialEpoch && metricsOwner?.token === owner.token
+  }
+
+  function finishMetricsRequest(owner: RequestOwner): void {
+    if (!ownsMetricsRequest(owner)) return
+    metricsOwner = null
+    loading.value = false
+  }
+
+  function beginForecastRequest(): RequestOwner {
+    const owner = { epoch: credentialEpoch, token: Symbol('board-forecast') }
+    forecastOwner = owner
+    forecastLoading.value = true
+    forecastError.value = null
+    return owner
+  }
+
+  function ownsForecastRequest(owner: RequestOwner): boolean {
+    return owner.epoch === credentialEpoch && forecastOwner?.token === owner.token
+  }
+
+  function finishForecastRequest(owner: RequestOwner): void {
+    if (!ownsForecastRequest(owner)) return
+    forecastOwner = null
+    forecastLoading.value = false
+  }
+
+  function $reset(): void {
+    credentialEpoch += 1
+    metricsOwner = null
+    forecastOwner = null
     metrics.value = null
     loading.value = false
     error.value = null
     forecast.value = null
     forecastLoading.value = false
     forecastError.value = null
+  }
+
+  watch(
+    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    $reset,
+    { flush: 'sync' },
+  )
+
+  async function fetchBoardMetrics(query: MetricsQuery) {
+    if (isDemoMode) {
+      metricsOwner = null
+      loading.value = false
+      error.value = 'Metrics are not available in demo mode.'
+      metrics.value = null
+      return
+    }
+
+    const owner = beginMetricsRequest()
+    try {
+      const result = await metricsApi.getBoardMetrics(query)
+      if (!ownsMetricsRequest(owner)) return
+      metrics.value = result
+    } catch (e: unknown) {
+      if (ownsMetricsRequest(owner)) {
+        const msg = getErrorDisplay(e, 'Failed to fetch board metrics').message
+        error.value = msg
+        toast.error(msg)
+      }
+      throw e
+    } finally {
+      finishMetricsRequest(owner)
+    }
+  }
+
+  async function fetchBoardForecast(query: ForecastQuery) {
+    if (isDemoMode) {
+      forecastOwner = null
+      forecastLoading.value = false
+      forecastError.value = 'Forecast is not available in demo mode.'
+      forecast.value = null
+      return
+    }
+
+    const owner = beginForecastRequest()
+    try {
+      const result = await metricsApi.getBoardForecast(query)
+      if (!ownsForecastRequest(owner)) return
+      forecast.value = result
+    } catch (e: unknown) {
+      if (ownsForecastRequest(owner)) {
+        const msg = getErrorDisplay(e, 'Failed to fetch board forecast').message
+        forecastError.value = msg
+        toast.error(msg)
+      }
+      throw e
+    } finally {
+      finishForecastRequest(owner)
+    }
   }
 
   return {
