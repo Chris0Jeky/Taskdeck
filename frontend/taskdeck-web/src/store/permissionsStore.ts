@@ -21,6 +21,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   interface OperationOwner {
     epoch: number
     token: symbol
+    userId: string | null
   }
 
   interface ReadOwner extends OperationOwner {
@@ -38,7 +39,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   }
 
   function beginOperation(label: string): OperationOwner {
-    const owner = { epoch: sessionEpoch, token: Symbol(label) }
+    const owner = { epoch: sessionEpoch, token: Symbol(label), userId: session.userId }
     activeOperations.add(owner.token)
     error.value = null
     syncLoading()
@@ -121,6 +122,30 @@ export const usePermissionsStore = defineStore('permissions', () => {
       void retry().catch(() => {
         // The retried store action owns current error/toast state.
       })
+    }
+  }
+
+  async function reconcileStaleMutation(boardId: string, owner: OperationOwner) {
+    // A same-user token rotation retires the mutation owner, but the server may
+    // already have committed it. Re-read under the replacement credential so a
+    // successful mutation cannot disappear from the access cache. Identity
+    // changes and logout must not read a board on behalf of the old session.
+    if (ownsSession(owner)
+      || owner.userId === null
+      || owner.userId !== session.userId
+      || !session.isAuthenticated
+      || session.isDemo) {
+      return
+    }
+
+    if (activeReadByBoard.has(boardId)) return
+
+    try {
+      await fetchBoardAccess(boardId)
+    } catch {
+      // The read owns its error/toast state. The mutation itself already
+      // settled successfully, so do not turn a reconciliation failure into a
+      // second, misleading mutation failure.
     }
   }
 
@@ -211,7 +236,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       session.requireUserId('board access management')
       const access = await boardAccessApi.grantAccess(boardId, dto)
-      if (!ownsSession(owner)) return access
+      if (!ownsSession(owner)) {
+        await reconcileStaleMutation(boardId, owner)
+        return access
+      }
 
       recordMutation(boardId)
       const existing = boardAccess.value.get(boardId) ?? []
@@ -238,7 +266,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       session.requireUserId('board access management')
       const updated = await boardAccessApi.updateAccess(boardId, accessId, dto)
-      if (!ownsSession(owner)) return updated
+      if (!ownsSession(owner)) {
+        await reconcileStaleMutation(boardId, owner)
+        return updated
+      }
 
       recordMutation(boardId)
       const existing = boardAccess.value.get(boardId) ?? []
@@ -268,7 +299,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       session.requireUserId('board access management')
       await boardAccessApi.revokeAccess(boardId, accessId)
-      if (!ownsSession(owner)) return
+      if (!ownsSession(owner)) {
+        await reconcileStaleMutation(boardId, owner)
+        return
+      }
 
       recordMutation(boardId)
       const existing = boardAccess.value.get(boardId) ?? []

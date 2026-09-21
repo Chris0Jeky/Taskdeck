@@ -112,6 +112,23 @@ describe('permissionsStore token ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  it('reconciles a successful old-token grant after same-user token rotation', async () => {
+    const existing = access('existing')
+    const granted = access('fresh-grant')
+    store.boardAccess.set('board-1', [existing])
+    const pendingGrant = deferred<BoardAccess>()
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+    vi.mocked(boardAccessApi.getAccess).mockResolvedValue([existing, granted])
+
+    const request = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.token = token('new')
+    pendingGrant.resolve(granted)
+
+    await expect(request).resolves.toEqual(granted)
+    expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1')
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing', 'fresh-grant'])
+  })
+
   it('retries an unresolved board-access read after same-user token rotation', async () => {
     const oldRead = deferred<BoardAccess[]>()
     const freshRead = deferred<BoardAccess[]>()
