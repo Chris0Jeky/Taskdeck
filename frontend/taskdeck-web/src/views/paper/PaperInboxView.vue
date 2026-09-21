@@ -87,6 +87,7 @@ const {
   isArchivedHistory,
   isScopeReplacement,
   activeBoardName,
+  activeBoardCanWrite,
   loadInbox,
   clearScope,
 } = useInboxOrchestrator({
@@ -609,6 +610,7 @@ defineExpose({ variant, toggleVariant, setVariant })
         :error-id="nibError ? CAPTURE_ERROR_ID : null"
         :active-board-id="activeBoardId"
         :active-board-name="activeBoardName"
+        :can-submit="activeBoardCanWrite"
         @submit="onNibSubmit"
       />
       <PaperCaptureComposer
@@ -618,6 +620,7 @@ defineExpose({ variant, toggleVariant, setVariant })
         :submitting="captureSubmitting"
         :invalid="!!composerError"
         :error-id="composerError ? CAPTURE_ERROR_ID : null"
+        :can-submit="activeBoardCanWrite"
         @submit="onComposerSubmit"
       />
       <p

@@ -105,6 +105,16 @@ export function useInboxOrchestrator(options: {
     const boardId = activeBoardId.value
     return boardId && scopedBoard.value?.id === boardId ? scopedBoard.value.name : boardId ?? ''
   })
+  /**
+   * The scoped Inbox has the same board write boundary as the board page. Keep
+   * older payloads writable, but stop the capture surfaces when the server
+   * explicitly identifies the active board as view-only.
+   */
+  const activeBoardCanWrite = computed(() => {
+    const boardId = activeBoardId.value
+    if (!boardId || scopedBoard.value?.id !== boardId) return true
+    return scopedBoard.value.canWrite !== false
+  })
   const activeColumnName = computed(() => {
     const columnId = activeColumnId.value
     if (!columnId) return ''
@@ -739,6 +749,7 @@ export function useInboxOrchestrator(options: {
     isArchivedHistory,
     isScopeReplacement,
     activeBoardName,
+    activeBoardCanWrite,
     activeColumnName,
     showCaptureModal,
     selectedIds,

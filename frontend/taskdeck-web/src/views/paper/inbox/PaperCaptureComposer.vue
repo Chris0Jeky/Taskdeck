@@ -35,6 +35,8 @@ const props = defineProps<{
   invalid?: boolean
   /** DOM id of the failure receipt to associate via `aria-describedby`. */
   errorId?: string | null
+  /** Server-confirmed write capability for the active Inbox board. */
+  canSubmit?: boolean
 }>()
 
 /** The capture sources this composer can file. */
@@ -128,6 +130,7 @@ const canSubmit = computed(
     body.value.trim().length > 0 &&
     !props.submitting &&
     !fileReading.value &&
+    props.canSubmit !== false &&
     selectedBoardIsWritable.value &&
     !transcriptTooLong.value,
 )

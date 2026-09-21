@@ -507,6 +507,20 @@ describe('useInboxOrchestrator', () => {
       expect(orch.activeColumnName.value).toBe('Column B')
     })
 
+    it('exposes the scoped board write capability to Inbox surfaces', async () => {
+      mockRoute.query = { boardId: 'board-viewer' }
+      mockBoardsApi.getBoard.mockResolvedValueOnce({
+        ...makeBoard('board-viewer', 'Viewer board', 'column-1', 'Column 1'),
+        canWrite: false,
+      })
+      const orch = createOrchestrator()
+      mountedCallback!()
+
+      await flushAsyncWork()
+
+      expect(orch.activeBoardCanWrite.value).toBe(false)
+    })
+
     it('keeps B names after an obsolete A metadata failure resolves last', async () => {
       const boardA = deferred<BoardDetail>()
       const boardB = deferred<BoardDetail>()

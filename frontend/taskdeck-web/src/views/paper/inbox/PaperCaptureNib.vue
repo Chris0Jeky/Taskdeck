@@ -39,6 +39,8 @@ const props = defineProps<{
   activeBoardId?: string | null
   /** Human-readable active board name, when the scoped route has one. */
   activeBoardName?: string | null
+  /** Server-confirmed write capability for the active Inbox board. */
+  canSubmit?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,7 +50,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const text = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
-const canSubmit = computed(() => text.value.trim().length > 0 && !props.submitting)
+const canSubmit = computed(
+  () => text.value.trim().length > 0 && !props.submitting && props.canSubmit !== false,
+)
 const variantShortcut = computed(() => formatShortcut('mod+;'))
 const destination = computed(() => {
   if (!props.activeBoardId) {
