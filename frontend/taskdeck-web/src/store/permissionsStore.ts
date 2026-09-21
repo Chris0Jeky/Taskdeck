@@ -16,6 +16,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  type ReadRetry = () => Promise<void>
+
   interface OperationOwner {
     epoch: number
     token: symbol
@@ -28,6 +30,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   let sessionEpoch = 0
   const activeOperations = new Set<symbol>()
   const activeReadByBoard = new Map<string, ReadOwner>()
+  const readRetryByBoard = new Map<string, ReadRetry>()
   const mutationGenerationByBoard = new Map<string, number>()
 
   function syncLoading() {
@@ -56,7 +59,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     return mutationGenerationByBoard.get(boardId) ?? 0
   }
 
-  function beginRead(boardId: string): ReadOwner {
+  function beginRead(boardId: string, retry: ReadRetry): ReadOwner {
     const previous = activeReadByBoard.get(boardId)
     if (previous?.epoch === sessionEpoch) activeOperations.delete(previous.token)
 
@@ -66,6 +69,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       observedMutationGeneration: mutationGeneration(boardId),
     }
     activeReadByBoard.set(boardId, owner)
+    readRetryByBoard.set(boardId, retry)
     return owner
   }
 
@@ -79,6 +83,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   function finishRead(boardId: string, owner: ReadOwner) {
     if (activeReadByBoard.get(boardId)?.token === owner.token) {
       activeReadByBoard.delete(boardId)
+      readRetryByBoard.delete(boardId)
     }
     finishOperation(owner)
   }
@@ -89,6 +94,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     const staleRead = activeReadByBoard.get(boardId)
     if (staleRead?.epoch === sessionEpoch) {
       activeReadByBoard.delete(boardId)
+      readRetryByBoard.delete(boardId)
       activeOperations.delete(staleRead.token)
       syncLoading()
     }
@@ -98,9 +104,24 @@ export const usePermissionsStore = defineStore('permissions', () => {
     sessionEpoch += 1
     activeOperations.clear()
     activeReadByBoard.clear()
+    readRetryByBoard.clear()
     mutationGenerationByBoard.clear()
     loading.value = false
     error.value = null
+  }
+
+  function retryMissingActiveReads() {
+    const retries = Array.from(activeReadByBoard.keys())
+      .filter(boardId => !boardAccess.value.has(boardId))
+      .map(boardId => readRetryByBoard.get(boardId))
+      .filter((retry): retry is ReadRetry => retry !== undefined)
+
+    invalidateOperations()
+    for (const retry of retries) {
+      void retry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
   }
 
   function resetForSession() {
@@ -116,7 +137,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   watch(
     () => session.token,
-    invalidateOperations,
+    retryMissingActiveReads,
     { flush: 'sync' },
   )
 
@@ -167,7 +188,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       return
     }
 
-    const owner = beginRead(boardId)
+    const owner = beginRead(boardId, () => fetchBoardAccess(boardId))
     try {
       const access = await boardAccessApi.getAccess(boardId)
       if (!ownsRead(boardId, owner)) return
