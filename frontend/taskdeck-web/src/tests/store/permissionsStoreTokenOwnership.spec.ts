@@ -164,6 +164,41 @@ describe('permissionsStore token ownership', () => {
     expect(store.error).toBeNull()
   })
 
+  it('retries an in-flight reconciliation read after another token rotation', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
+    const pendingGrant = deferred<BoardAccess>()
+    const firstReconciliation = deferred<BoardAccess[]>()
+    const secondReconciliation = deferred<BoardAccess[]>()
+    const granted = access('fresh-grant')
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+    vi.mocked(boardAccessApi.getAccess)
+      .mockReturnValueOnce(firstReconciliation.promise)
+      .mockReturnValueOnce(secondReconciliation.promise)
+
+    const mutationRequest = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.token = token('new')
+    pendingGrant.resolve(granted)
+
+    await vi.waitFor(() => {
+      expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(1)
+    })
+
+    session.token = token('newer')
+    expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(2)
+
+    secondReconciliation.resolve([granted])
+    await vi.waitFor(() => {
+      expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-grant'])
+    })
+
+    firstReconciliation.resolve([access('stale-reconciliation')])
+    await expect(mutationRequest).resolves.toEqual(granted)
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-grant'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+  })
+
   it('retries an unresolved board-access read after same-user token rotation', async () => {
     const oldRead = deferred<BoardAccess[]>()
     const freshRead = deferred<BoardAccess[]>()

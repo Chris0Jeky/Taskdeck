@@ -26,6 +26,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   interface ReadOwner extends OperationOwner {
     observedMutationGeneration: number
+    revalidateOnTokenRotation: boolean
   }
 
   let sessionEpoch = 0
@@ -60,7 +61,11 @@ export const usePermissionsStore = defineStore('permissions', () => {
     return mutationGenerationByBoard.get(boardId) ?? 0
   }
 
-  function beginRead(boardId: string, retry: ReadRetry): ReadOwner {
+  function beginRead(
+    boardId: string,
+    retry: ReadRetry,
+    revalidateOnTokenRotation = false,
+  ): ReadOwner {
     const previous = activeReadByBoard.get(boardId)
     if (previous?.epoch === sessionEpoch) activeOperations.delete(previous.token)
 
@@ -68,6 +73,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     const owner = {
       ...operation,
       observedMutationGeneration: mutationGeneration(boardId),
+      revalidateOnTokenRotation,
     }
     activeReadByBoard.set(boardId, owner)
     readRetryByBoard.set(boardId, retry)
@@ -113,7 +119,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   function retryMissingActiveReads() {
     const retries = Array.from(activeReadByBoard.keys())
-      .filter(boardId => !boardAccess.value.has(boardId))
+      .filter(boardId => {
+        const owner = activeReadByBoard.get(boardId)
+        return owner?.revalidateOnTokenRotation === true || !boardAccess.value.has(boardId)
+      })
       .map(boardId => readRetryByBoard.get(boardId))
       .filter((retry): retry is ReadRetry => retry !== undefined)
 
@@ -139,7 +148,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
 
     try {
-      await fetchBoardAccess(boardId)
+      await fetchBoardAccess(boardId, true)
     } catch {
       // The read owns its error/toast state. The mutation itself already
       // settled successfully, so do not turn a reconciliation failure into a
@@ -202,7 +211,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
   })
 
-  async function fetchBoardAccess(boardId: string) {
+  async function fetchBoardAccess(boardId: string, revalidateOnTokenRotation = false) {
     if (isDemoMode) {
       loading.value = true
       error.value = null
@@ -211,7 +220,11 @@ export const usePermissionsStore = defineStore('permissions', () => {
       return
     }
 
-    const owner = beginRead(boardId, () => fetchBoardAccess(boardId))
+    const owner = beginRead(
+      boardId,
+      () => fetchBoardAccess(boardId, revalidateOnTokenRotation),
+      revalidateOnTokenRotation,
+    )
     try {
       const access = await boardAccessApi.getAccess(boardId)
       if (!ownsRead(boardId, owner)) return
