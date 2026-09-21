@@ -20,12 +20,13 @@ export const useAuditStore = defineStore('audit', () => {
   interface ReadOwner {
     epoch: number
     token: symbol
+    successorReady: Promise<Promise<void>>
+    resolveSuccessor: (successor: Promise<void>) => void
   }
 
   let credentialEpoch = 0
   let currentRead: ReadOwner | null = null
   let currentRetry: ReadRetry | null = null
-  const successorReads = new Map<symbol, Promise<void>>()
 
   function clampLimit(limit: number): number {
     if (limit < 1) return 1
@@ -34,7 +35,16 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   function beginRead(retry: ReadRetry): ReadOwner {
-    const owner = { epoch: credentialEpoch, token: Symbol('audit-history') }
+    let resolveSuccessor!: (successor: Promise<void>) => void
+    const successorReady = new Promise<Promise<void>>((resolve) => {
+      resolveSuccessor = resolve
+    })
+    const owner = {
+      epoch: credentialEpoch,
+      token: Symbol('audit-history'),
+      successorReady,
+      resolveSuccessor,
+    }
     currentRead = owner
     currentRetry = retry
     error.value = null
@@ -62,14 +72,8 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   async function awaitSuccessor(owner: ReadOwner): Promise<boolean> {
-    const successor = successorReads.get(owner.token)
-    if (!successor) return false
-
-    try {
-      await successor
-    } finally {
-      successorReads.delete(owner.token)
-    }
+    if (owner.epoch === credentialEpoch) return false
+    await owner.successorReady.then((successor) => successor)
     return true
   }
 
@@ -80,16 +84,28 @@ export const useAuditStore = defineStore('audit', () => {
     invalidateCurrentRead()
     if (!retry) return
 
-    const successor = retry.retry()
-    successorReads.set(retry.owner.token, successor)
+    let resolveSuccessor!: () => void
+    let rejectSuccessor!: (reason: unknown) => void
+    const successor = new Promise<void>((resolve, reject) => {
+      resolveSuccessor = resolve
+      rejectSuccessor = reject
+    })
+    retry.owner.resolveSuccessor(successor)
+
+    try {
+      void retry.retry().then(resolveSuccessor, rejectSuccessor)
+    } catch (error) {
+      rejectSuccessor(error)
+    }
     void successor.catch(() => {
       // The retried store action owns current error/toast state.
     })
   }
 
   function resetForSession(): void {
+    const retiredRead = currentRead
     invalidateCurrentRead()
-    successorReads.clear()
+    retiredRead?.resolveSuccessor(Promise.resolve())
     entries.value = []
   }
 
@@ -112,7 +128,14 @@ export const useAuditStore = defineStore('audit', () => {
   ): Promise<void> {
     const owner = beginRead(retry)
     try {
-      const result = await request()
+      const requestPromise = request()
+      const outcome = await Promise.race([
+        requestPromise.then((result) => ({ kind: 'request' as const, result })),
+        owner.successorReady.then((successor) => successor.then(() => ({ kind: 'successor' as const }))),
+      ])
+      if (outcome.kind === 'successor') return
+
+      const result = outcome.result
       if (!ownsRead(owner)) {
         await awaitSuccessor(owner)
         return

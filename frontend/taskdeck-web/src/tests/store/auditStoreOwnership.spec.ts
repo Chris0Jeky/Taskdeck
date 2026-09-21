@@ -159,6 +159,30 @@ describe('auditStore async ownership', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('lets a completed token-refresh successor settle a stalled retired read', async () => {
+    store.entries = [entry('existing')]
+    const oldRead = deferred<AuditEntry[]>()
+    const freshRead = deferred<AuditEntry[]>()
+    vi.mocked(auditApi.getBoardHistory)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
+
+    const request = store.fetchBoardHistory('board-stalled')
+    session.token = 'token-b'
+
+    expect(auditApi.getBoardHistory).toHaveBeenCalledTimes(2)
+
+    freshRead.resolve([entry('fresh-token')])
+    await request
+
+    expect(store.entries.map(item => item.id)).toEqual(['fresh-token'])
+    expect(store.loading).toBe(false)
+
+    oldRead.resolve([entry('old-token')])
+    await Promise.resolve()
+    expect(store.entries.map(item => item.id)).toEqual(['fresh-token'])
+  })
+
   it('surfaces a replacement history failure after a same-user token refresh', async () => {
     store.entries = [entry('existing')]
     const oldRead = deferred<AuditEntry[]>()
