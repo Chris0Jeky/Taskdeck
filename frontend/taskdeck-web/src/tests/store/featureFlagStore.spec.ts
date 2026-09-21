@@ -105,31 +105,43 @@ describe('featureFlagStore', () => {
 
     it('uses defaults when storage cannot be read', () => {
       store.setFlag('newAuth', false)
-      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+      const getItem = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
         throw new DOMException('Storage blocked', 'SecurityError')
       })
 
-      expect(() => store.restore()).not.toThrow()
-      expect(store.flags).toEqual(defaultFeatureFlags)
+      try {
+        expect(() => store.restore()).not.toThrow()
+        expect(store.flags).toEqual(defaultFeatureFlags)
+      } finally {
+        getItem.mockRestore()
+      }
     })
 
     it('keeps an in-memory flag update when persistence fails', () => {
-      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
         throw new DOMException('Storage full', 'QuotaExceededError')
       })
 
-      expect(() => store.setFlag('newAuth', false)).not.toThrow()
-      expect(store.isEnabled('newAuth')).toBe(false)
+      try {
+        expect(() => store.setFlag('newAuth', false)).not.toThrow()
+        expect(store.isEnabled('newAuth')).toBe(false)
+      } finally {
+        setItem.mockRestore()
+      }
     })
 
     it('keeps reset defaults when persistence fails', () => {
       store.setFlag('newAuth', false)
-      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
         throw new DOMException('Storage full', 'QuotaExceededError')
       })
 
-      expect(() => store.resetAll()).not.toThrow()
-      expect(store.flags).toEqual(defaultFeatureFlags)
+      try {
+        expect(() => store.resetAll()).not.toThrow()
+        expect(store.flags).toEqual(defaultFeatureFlags)
+      } finally {
+        setItem.mockRestore()
+      }
     })
 
     it('should use defaults when no flags are saved in localStorage', () => {
