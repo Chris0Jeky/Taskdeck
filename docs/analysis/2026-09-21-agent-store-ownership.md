@@ -14,11 +14,13 @@ This admitted several related schedules:
 - an older `finally` could clear a newer request's loading owner;
 - pending old-session reads could repopulate a replacement session.
 
+Independent review then found a different boundary: a successful same-user token refresh invalidated old requests by clearing all loaded agent data. The active agent routes fetch only on mount or route identity changes, so the unchanged route became a false empty/blank surface after session extension.
+
 ## Contract
 
 Profiles, run lists and run details have independent owner lanes. Each owner carries the current session epoch and a unique request token. A newer request retires only the previous owner in its lane. Route-clear helpers invalidate their own lane before clearing visible state.
 
-The store watches user identity, token, authenticated state and demo state synchronously. Any replacement advances the epoch, retires all owners, and clears every agent surface, error and loading indicator. Stale work still resolves or rejects to its original caller, but cannot patch replacement state, emit a toast or clear a newer loading owner.
+User identity, authenticated state and demo-session replacement synchronously advance the epoch, retire all owners, and clear every agent surface, error and loading indicator. A token-only rotation advances the same request epoch and clears transient loading/error ownership, but preserves already loaded profiles, runs and detail for the unchanged user and route. Old-token work still resolves or rejects to its original caller, but cannot patch retained data or emit stale UI.
 
 Independent lanes remain concurrent. Demo mode retains its no-network behavior. No API, DTO, route, schema, dependency or backend behavior changes.
 
@@ -39,8 +41,10 @@ Ubuntu JUnit recorded **7,159 tests, 8 failures, 0 errors**. Eight ownership sch
 
 The independent-lane concurrency control passed. The same canonical suite failed on Windows, so this is not presented as a platform-only result.
 
+Review-regression head `7b6e137d9625ee6b2ba6ad747a4fdecc5fabe172` added the same-user refresh schedule after Codex review. Ubuntu again passed lint, typecheck, build and PWA validation; the JUnit artifact ran all ten ownership cases and failed only `preserves loaded route data while invalidating old-token reads on refresh`, with the loaded run list cleared to `[]`.
+
 ## Verification and remaining gates
 
-The corrected source and committed test transpile under TypeScript 5.8.3 with zero syntax diagnostics. Exact-head hosted lint, typecheck, build and the complete test matrix remain required after the production correction. Independent review should focus on synchronous token/session replacement, route-clear ownership and preserving useful concurrency across the three lanes.
+The corrected source and committed tests transpile under TypeScript 5.8.3 with zero syntax diagnostics. Exact-head hosted lint, typecheck, build and the complete test matrix remain required after the review correction. Repeat independent review should focus on the distinction between identity reset and credential rotation, route-clear ownership, and useful concurrency across the three lanes.
 
 This is client-state integrity, not a claim of server-side authorization bypass or transport cancellation. No merge, release or deployment qualification is claimed by this note.
