@@ -1,0 +1,25 @@
+ 5. reconcile every open milestone issue on the resulting evidence, while doing obvious close-on-
+    evidence updates continuously rather than waiting for a final batch;
+ 6. execute the human private-repository cutover in the canonical checklist order;
+diff --git a/docs/releases/V0_3_0_READINESS.md b/docs/releases/V0_3_0_READINESS.md
+index 572616b..0069a01 100644
+--- a/docs/releases/V0_3_0_READINESS.md
++++ b/docs/releases/V0_3_0_READINESS.md
+@@ -55,7 +55,8 @@ list. The controlling sequence is:
+ 1. finish admitted exact-identity correctness stacks;
+ 2. finish Smart CI proof and authoritative landed-evidence integration;
+ 3. implement and prove CI-17;
+-4. close Windows, least-privilege, storage, nightly, runner, and mirror/GHCR prerequisites;
++4. close Windows, least-privilege, storage, pre-cutover nightly/release-contract, runner, and
++   mirror/GHCR prerequisites;
+ 5. reconcile every milestone issue on the resulting evidence, while applying obvious close-on-
+    evidence updates continuously;
+ 6. execute the human cutover;
+diff --git a/docs/IMPLEMENTATION_MASTERPLAN.md b/docs/IMPLEMENTATION_MASTERPLAN.md
+index a7cd53a..c6b860b 100644
+--- a/docs/IMPLEMENTATION_MASTERPLAN.md
++++ b/docs/IMPLEMENTATION_MASTERPLAN.md
+@@ -24,10 +24,11 @@ Current release-control order:
+ 2. landed receipt foundations are merged in `#3156` and `#3167`; qualify active parent `#3295`
+    before stacked child `#3296`, then add authoritative collector/workflow integration;
+ 3. qualify non-activating CI-17 inventory `#3297`, then implement trusted rehearsal control `#3170`;
