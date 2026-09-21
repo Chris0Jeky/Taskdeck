@@ -302,6 +302,47 @@ describe('notificationStore async ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  it('retries empty initial inbox and preference reads after same-user token rotation', async () => {
+    const oldInbox = deferred<NotificationItem[]>()
+    const freshInbox = deferred<NotificationItem[]>()
+    const oldPreferences = deferred<NotificationPreference>()
+    const freshPreferences = deferred<NotificationPreference>()
+    vi.mocked(notificationsApi.getNotifications)
+      .mockReturnValueOnce(oldInbox.promise)
+      .mockReturnValueOnce(freshInbox.promise)
+    vi.mocked(notificationsApi.getPreferences)
+      .mockReturnValueOnce(oldPreferences.promise)
+      .mockReturnValueOnce(freshPreferences.promise)
+
+    const inboxRequest = store.fetchNotifications({ boardId: 'board-a' })
+    const preferencesRequest = store.fetchPreferences()
+    session.token = token('new')
+
+    expect(notificationsApi.getNotifications).toHaveBeenCalledTimes(2)
+    expect(notificationsApi.getPreferences).toHaveBeenCalledTimes(2)
+    expect(store.notifications).toEqual([])
+    expect(store.preferences).toBeNull()
+    expect(store.loading).toBe(true)
+
+    oldInbox.resolve([notification('old-token')])
+    oldPreferences.resolve(preferences(false))
+    await Promise.all([inboxRequest, preferencesRequest])
+
+    expect(store.notifications).toEqual([])
+    expect(store.preferences).toBeNull()
+    expect(store.loading).toBe(true)
+    expect(store.error).toBeNull()
+
+    freshInbox.resolve([notification('fresh-token')])
+    freshPreferences.resolve(preferences(true))
+    await vi.waitFor(() => {
+      expect(store.notifications.map(item => item.id)).toEqual(['fresh-token'])
+      expect(store.preferences?.mentionImmediateEnabled).toBe(true)
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+    })
+  })
+
   it('clears both surfaces on identity replacement and suppresses old work', async () => {
     store.notifications = [notification('existing')]
     store.preferences = preferences(true)
