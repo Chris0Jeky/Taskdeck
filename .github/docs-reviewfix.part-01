@@ -1,0 +1,22 @@
+diff --git a/docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md b/docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md
+index f1a1538..56582bc 100644
+--- a/docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md
++++ b/docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md
+@@ -115,10 +115,12 @@ actions. Never infer a human action from repository state or an issue comment.
+ - [x] Every external `uses:` is pinned to a full commit SHA and the pin inventory guard is green.
+ - [x] `sha_pinning_required: true` is enabled and read back from GitHub.
+ - [ ] Default workflow tokens are read-only; every elevated job is justified and scoped.
+-- [ ] `persist-credentials: false` is present wherever a checkout does not need push credentials.
++- [x] `persist-credentials: false` is present wherever a checkout does not need push credentials;
++  merged PR `#2838` delivered the 48-step inventory and Pages permission scoping.
+ - [ ] No `pull_request_target` path checks out or executes untrusted head code.
+-- [ ] CI-control changes have a hosted-only trust fixture.
+-- [ ] PR `#2838` is current-head qualified and passes the ADR-0066/J.3 maintainer gate.
++- [ ] CI-control changes have a hosted-only trust fixture and the current evidence is reconciled.
++- [x] PR `#2838` is merged; do not replay or re-park its delivered checkout/Pages patch.
++- [ ] The maintainer records the standing review/merge rule for new ADR-0066 control-plane PRs.
+ - [ ] CodeQL is re-enabled in an approved lane or the current scanner posture and residual are recorded.
+ 
+ ## H. Pre-cutover nightly and release contract (CI-10 `#2334`)
+diff --git a/OUTSTANDING_TASKS.md b/OUTSTANDING_TASKS.md
+index dac1418..de3047d 100644
