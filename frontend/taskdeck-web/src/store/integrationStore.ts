@@ -244,7 +244,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   watch(
-    () => [session.userId, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
     $reset,
     { flush: 'sync' },
   )
