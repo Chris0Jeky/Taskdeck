@@ -101,6 +101,22 @@ describe('permissionsStore async ownership', () => {
     expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['owner', 'viewer'])
   })
 
+  it('does not duplicate a grant already observed by a newer authoritative read', async () => {
+    const owner = access({ id: 'owner', userId: 'owner-1', role: 'Owner' })
+    const granted = access({ id: 'viewer', userId: 'viewer-1', role: 'Viewer' })
+    store.boardAccess.set('board-1', [owner])
+    const grant = deferred<BoardAccess>()
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(grant.promise)
+    vi.mocked(boardAccessApi.getAccess).mockResolvedValue([owner, granted])
+
+    const grantRequest = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    await store.fetchBoardAccess('board-1')
+    grant.resolve(granted)
+    await grantRequest
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['owner', 'viewer'])
+  })
+
   it('does not let a read started before a role update restore the old role', async () => {
     const oldEntry = access({ id: 'viewer', userId: 'viewer-1', role: 'Viewer' })
     const updatedEntry = access({ id: 'viewer', userId: 'viewer-1', role: 'Admin' })

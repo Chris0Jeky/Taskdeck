@@ -25,20 +25,36 @@ export const usePermissionsStore = defineStore('permissions', () => {
     observedMutationGeneration: number
   }
 
+  interface MutationTail {
+    promise: Promise<void>
+    ownerToken: symbol
+  }
+
   let sessionEpoch = 0
+  let errorOwner: symbol | null = null
   const activeOperations = new Set<symbol>()
   const activeReadByBoard = new Map<string, ReadOwner>()
   const mutationGenerationByBoard = new Map<string, number>()
-  const mutationTails = new Map<string, Promise<void>>()
+  const mutationTails = new Map<string, MutationTail>()
 
   function syncLoading() {
     loading.value = activeOperations.size > 0
   }
 
+  function clearError() {
+    error.value = null
+    errorOwner = null
+  }
+
+  function recordError(owner: OperationOwner, message: string) {
+    error.value = message
+    errorOwner = owner.token
+  }
+
   function beginOperation(label: string): OperationOwner {
     const owner = { epoch: sessionEpoch, token: Symbol(label) }
     activeOperations.add(owner.token)
-    error.value = null
+    clearError()
     syncLoading()
     return owner
   }
@@ -106,20 +122,20 @@ export const usePermissionsStore = defineStore('permissions', () => {
     const owner = beginOperation(label)
     let release!: () => void
     const tail = new Promise<void>((resolve) => { release = resolve })
-    mutationTails.set(key, tail)
+    mutationTails.set(key, { promise: tail, ownerToken: owner.token })
 
     try {
-      if (predecessor) await predecessor
+      if (predecessor) await predecessor.promise
       if (!ownsSession(owner)) return undefined
 
-      // A predecessor may have failed after this intent was queued. Clear its
-      // shared error when this operation becomes the active transport owner.
-      error.value = null
+      // Retire only an error produced by this lane's predecessor. Another
+      // access row can fail while this intent waits and must keep its receipt.
+      if (predecessor && errorOwner === predecessor.ownerToken) clearError()
       return await task(owner)
     } finally {
       finishOperation(owner)
       release()
-      if (mutationTails.get(key) === tail) mutationTails.delete(key)
+      if (mutationTails.get(key)?.promise === tail) mutationTails.delete(key)
     }
   }
 
@@ -131,11 +147,11 @@ export const usePermissionsStore = defineStore('permissions', () => {
     mutationTails.clear()
     boardAccess.value = new Map()
     loading.value = false
-    error.value = null
+    clearError()
   }
 
   watch(
-    () => [session.userId, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
     resetForSession,
     { flush: 'sync' },
   )
@@ -181,7 +197,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   async function fetchBoardAccess(boardId: string) {
     if (isDemoMode) {
       loading.value = true
-      error.value = null
+      clearError()
       boardAccess.value.set(boardId, [])
       loading.value = false
       return
@@ -195,7 +211,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     } catch (e: unknown) {
       if (ownsRead(boardId, owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch board access').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -214,13 +230,15 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
       recordMutation(boardId)
       const existing = boardAccess.value.get(boardId) ?? []
-      boardAccess.value.set(boardId, [...existing, access])
+      if (!existing.some(entry => entry.id === access.id)) {
+        boardAccess.value.set(boardId, [...existing, access])
+      }
       toast.success('Access granted')
       return access
     } catch (e: unknown) {
       if (ownsSession(owner)) {
         const msg = getErrorDisplay(e, 'Failed to grant access').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -254,7 +272,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
         } catch (e: unknown) {
           if (ownsSession(owner)) {
             const msg = getErrorDisplay(e, 'Failed to update access').message
-            error.value = msg
+            recordError(owner, msg)
             toast.error(msg)
           }
           throw e
@@ -282,7 +300,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
         } catch (e: unknown) {
           if (ownsSession(owner)) {
             const msg = getErrorDisplay(e, 'Failed to revoke access').message
-            error.value = msg
+            recordError(owner, msg)
             toast.error(msg)
           }
           throw e
