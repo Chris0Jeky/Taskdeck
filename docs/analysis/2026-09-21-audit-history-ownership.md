@@ -1,45 +1,36 @@
 # Activity history request ownership
 
-Status: corrective draft for #3344 / PR #3345, based on `main`
-`307c3b8b50bec1cb0bfaea3e570a942bcb1d4451`.
+Status: corrective draft for #3344 / PR #3345. Base: `307c3b8b50bec1cb0bfaea3e570a942bcb1d4451`.
 
 ## Reproduced defect
 
-Board, entity, and user history requests all replace one `auditStore.entries`
-surface. The previous implementation allowed every response, failure, toast, and
-`finally` to commit. Ordinary Activity route changes could therefore restore an
-older query, report an obsolete failure, or clear loading while the current query
-was still pending. The store was also absent from AppShell's logout resets, so a
-request started with retired credentials could repopulate audit data later.
+Board, entity, and user history requests replace one `auditStore.entries` surface. The original store allowed every response, failure, toast, and `finally` to commit, so ordinary Activity route changes could restore an older query, report an obsolete failure, or clear loading while the current query was pending.
+
+The initial lifecycle correction then treated every token rotation as a full data reset. A successful same-user session extension therefore cleared the current Activity result even though the route and selected query were unchanged.
 
 ## Contract
 
-- The shared result surface has one current request owner across all query kinds.
+- One current request owner exists across board, entity, and user query kinds.
 - A newer query retires the previous owner's permission to commit UI state.
-- Identity, token, authentication, or demo-session replacement synchronously
-  advances the credential epoch and clears the audit surface.
-- A stale request still resolves or rejects to its original caller, but cannot
-  write entries, errors, toasts, loading, or final state.
-- A current failure retains the previous result list and preserves the existing
-  public error/toast/rejection behavior.
-- Limit clamping, endpoints, route behavior, demo behavior, and the public store
-  API remain unchanged.
+- User identity, authentication, or demo-session replacement advances the epoch, retires work, and clears history.
+- Token-only rotation advances the same request epoch and clears transient loading/error ownership, but preserves the already loaded history for the unchanged user and route.
+- Stale work still resolves or rejects to its original caller, but cannot write entries, error, toast, loading, or final state.
+- A current failure retains the previous result list and preserves the public error/toast/rejection behavior.
+- Limit clamping, endpoints, route behavior, demo behavior, and the public store API remain unchanged.
 
-The three duplicated request bodies now use one private request helper so their
-ownership and failure rules cannot drift independently. This is client-state
-integrity, not transport cancellation or a server authorization claim.
+The three request bodies use one private helper so ownership and failure rules cannot drift. This is client-state integrity, not transport cancellation or a server authorization claim.
 
-## Evidence and remaining gates
+## Test-first evidence
 
-The committed real Pinia/Vitest suite covers five deferred schedules. A bounded
-supplemental runner transpiles and executes the actual production store with only
-framework/API/session boundaries stubbed:
+The initial test-only head `3980e1e3e234a251cd89cad270b8d0ab86c3e5f2` produced five intended ownership failures against unchanged `main`.
 
-- unchanged `main`: 0/5 passed;
-- corrected source: 5/5 passed.
+Review-regression head `93c20b679888394200354d80040e7f3c7dd5c353` ran the canonical Node 24 frontend suite on Ubuntu and Windows. Lint, typecheck, production build, and PWA validation passed on both platforms. Ubuntu JUnit recorded **7,156 tests, exactly 2 failures, 0 errors**; both failures were the new token-refresh preservation cases:
 
-The supplemental runner is not committed and does not replace canonical frontend
-qualification. Before review-ready status, inspect the test-only hosted RED
-artifact, then require exact-head lint, typecheck, production build, full Vitest
-on Ubuntu and Windows, the complete Required CI/Extended/Self-Test workflows, and
-fresh-context review. No merge, release, or deployment qualification is claimed.
+1. preserve loaded history while suppressing an old-token success;
+2. preserve loaded history while suppressing an old-token failure.
+
+No unrelated frontend test failed.
+
+## Remaining gates
+
+The production correction splits token-only invalidation from full identity reset. Exact-head lint, typecheck, build, complete Vitest on Ubuntu and Windows, full Required CI, Extended, Self-Test, and fresh-context review are still required. No merge, release, or deployment qualification is claimed.
