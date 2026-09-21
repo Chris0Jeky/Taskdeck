@@ -134,7 +134,7 @@ const realtime = createBoardRealtimeController({
     options: { intent: 'background'; afterActive?: boolean },
   ) => {
     if (viewUnmounted || id !== boardId.value) {
-      return
+      return false
     }
 
     const boardLoadErrorAtStart = boardLoadError.value

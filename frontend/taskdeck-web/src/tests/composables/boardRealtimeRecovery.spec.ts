@@ -230,6 +230,48 @@ describe('board realtime recovery (#3319)', () => {
     expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', { intent: 'background' })
   })
 
+  it('does not let an older catch-up discharge a newer reconnect recovery', async () => {
+    const firstCatchUp = deferred()
+    const secondJoin = deferred()
+    let joinCount = 0
+    const fetchBoard = vi.fn<() => Promise<void>>()
+      .mockImplementationOnce(() => firstCatchUp.promise)
+      .mockResolvedValue(undefined)
+    controller = createBoardRealtimeController({ fetchBoard })
+    await controller.start('board-a')
+    await disconnect()
+
+    hub.invoke.mockImplementation(async (method) => {
+      if (method === 'JoinBoard') {
+        joinCount += 1
+        if (joinCount === 2) await secondJoin.promise
+      }
+    })
+
+    await reconnect()
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-a', {
+      intent: 'background',
+      afterActive: true,
+    })
+
+    await disconnect()
+    const newerRecovery = reconnect()
+    await vi.waitFor(() => expect(joinCount).toBe(2))
+
+    firstCatchUp.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+
+    secondJoin.resolve()
+    await newerRecovery
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchBoard).toHaveBeenCalledTimes(2)
+    expect(fetchBoard).toHaveBeenLastCalledWith('board-a', {
+      intent: 'background',
+      afterActive: true,
+    })
+  })
+
   it('retains fallback after a handled recovery failure', async () => {
     const fetchBoard = vi.fn<() => Promise<boolean>>()
       .mockResolvedValueOnce(false)
