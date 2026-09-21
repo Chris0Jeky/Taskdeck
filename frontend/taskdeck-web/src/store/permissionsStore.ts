@@ -105,7 +105,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   }
 
   watch(
-    () => [session.userId, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
     resetForSession,
     { flush: 'sync' },
   )
