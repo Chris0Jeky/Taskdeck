@@ -98,24 +98,6 @@ function request(enabled: boolean): UpdateNotificationPreferenceRequest {
   }
 }
 
-function notification(id: string): NotificationItem {
-  return {
-    id,
-    userId: 'user-a',
-    boardId: null,
-    type: 'Mention',
-    cadence: 'Immediate',
-    title: id,
-    message: id,
-    sourceEntityType: null,
-    sourceEntityId: null,
-    isRead: false,
-    readAt: null,
-    createdAt: '2026-09-21T00:00:00Z',
-    updatedAt: '2026-09-21T00:00:00Z',
-  }
-}
-
 async function flushQueue() {
   await Promise.resolve()
   await Promise.resolve()
