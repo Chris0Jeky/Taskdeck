@@ -29,6 +29,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const activeOperations = new Set<symbol>()
   const activeReadByBoard = new Map<string, ReadOwner>()
   const mutationGenerationByBoard = new Map<string, number>()
+  const mutationTails = new Map<string, Promise<void>>()
 
   function syncLoading() {
     loading.value = activeOperations.size > 0
@@ -94,11 +95,40 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
   }
 
+  async function enqueueAccessMutation<T>(
+    boardId: string,
+    accessId: string,
+    label: string,
+    task: (owner: OperationOwner) => Promise<T>,
+  ): Promise<T | undefined> {
+    const key = `${boardId}:${accessId}`
+    const predecessor = mutationTails.get(key)
+    const owner = beginOperation(label)
+    let release!: () => void
+    const tail = new Promise<void>((resolve) => { release = resolve })
+    mutationTails.set(key, tail)
+
+    try {
+      if (predecessor) await predecessor
+      if (!ownsSession(owner)) return undefined
+
+      // A predecessor may have failed after this intent was queued. Clear its
+      // shared error when this operation becomes the active transport owner.
+      error.value = null
+      return await task(owner)
+    } finally {
+      finishOperation(owner)
+      release()
+      if (mutationTails.get(key) === tail) mutationTails.delete(key)
+    }
+  }
+
   function resetForSession() {
     sessionEpoch += 1
     activeOperations.clear()
     activeReadByBoard.clear()
     mutationGenerationByBoard.clear()
+    mutationTails.clear()
     boardAccess.value = new Map()
     loading.value = false
     error.value = null
@@ -201,56 +231,64 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   async function updateAccess(boardId: string, accessId: string, dto: UpdateAccessDto) {
     guardDemoMutation()
-    const owner = beginOperation(`update:${boardId}:${accessId}`)
-    try {
-      session.requireUserId('board access management')
-      const updated = await boardAccessApi.updateAccess(boardId, accessId, dto)
-      if (!ownsSession(owner)) return updated
+    return await enqueueAccessMutation(
+      boardId,
+      accessId,
+      `update:${boardId}:${accessId}`,
+      async (owner) => {
+        try {
+          session.requireUserId('board access management')
+          const updated = await boardAccessApi.updateAccess(boardId, accessId, dto)
+          if (!ownsSession(owner)) return updated
 
-      recordMutation(boardId)
-      const existing = boardAccess.value.get(boardId) ?? []
-      if (existing.some(access => access.id === accessId)) {
-        boardAccess.value.set(
-          boardId,
-          existing.map(access => access.id === accessId ? updated : access),
-        )
-      }
-      toast.success('Access updated')
-      return updated
-    } catch (e: unknown) {
-      if (ownsSession(owner)) {
-        const msg = getErrorDisplay(e, 'Failed to update access').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    } finally {
-      finishOperation(owner)
-    }
+          recordMutation(boardId)
+          const existing = boardAccess.value.get(boardId) ?? []
+          if (existing.some(access => access.id === accessId)) {
+            boardAccess.value.set(
+              boardId,
+              existing.map(access => access.id === accessId ? updated : access),
+            )
+          }
+          toast.success('Access updated')
+          return updated
+        } catch (e: unknown) {
+          if (ownsSession(owner)) {
+            const msg = getErrorDisplay(e, 'Failed to update access').message
+            error.value = msg
+            toast.error(msg)
+          }
+          throw e
+        }
+      },
+    )
   }
 
   async function revokeAccess(boardId: string, accessId: string) {
     guardDemoMutation()
-    const owner = beginOperation(`revoke:${boardId}:${accessId}`)
-    try {
-      session.requireUserId('board access management')
-      await boardAccessApi.revokeAccess(boardId, accessId)
-      if (!ownsSession(owner)) return
+    await enqueueAccessMutation(
+      boardId,
+      accessId,
+      `revoke:${boardId}:${accessId}`,
+      async (owner) => {
+        try {
+          session.requireUserId('board access management')
+          await boardAccessApi.revokeAccess(boardId, accessId)
+          if (!ownsSession(owner)) return
 
-      recordMutation(boardId)
-      const existing = boardAccess.value.get(boardId) ?? []
-      boardAccess.value.set(boardId, existing.filter(access => access.id !== accessId))
-      toast.success('Access revoked')
-    } catch (e: unknown) {
-      if (ownsSession(owner)) {
-        const msg = getErrorDisplay(e, 'Failed to revoke access').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    } finally {
-      finishOperation(owner)
-    }
+          recordMutation(boardId)
+          const existing = boardAccess.value.get(boardId) ?? []
+          boardAccess.value.set(boardId, existing.filter(access => access.id !== accessId))
+          toast.success('Access revoked')
+        } catch (e: unknown) {
+          if (ownsSession(owner)) {
+            const msg = getErrorDisplay(e, 'Failed to revoke access').message
+            error.value = msg
+            toast.error(msg)
+          }
+          throw e
+        }
+      },
+    )
   }
 
   return {
