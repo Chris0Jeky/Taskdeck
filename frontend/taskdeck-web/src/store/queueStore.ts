@@ -17,10 +17,12 @@ export const useQueueStore = defineStore('queue', () => {
   const error = ref<string | null>(null)
 
   type ReadLane = 'requests' | 'stats'
+  type OperationScope = ReadLane | 'mutation'
 
   interface OperationOwner {
     epoch: number
     token: symbol
+    scope: OperationScope
   }
 
   interface ReadOwner extends OperationOwner {
@@ -29,6 +31,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   let credentialEpoch = 0
   let mutationGeneration = 0
+  let errorOwner: OperationOwner | null = null
   const activeOperations = new Set<symbol>()
   const readOwners = new Map<ReadLane, ReadOwner>()
 
@@ -36,10 +39,21 @@ export const useQueueStore = defineStore('queue', () => {
     loading.value = activeOperations.size > 0
   }
 
-  function beginOperation(label: string): OperationOwner {
-    const owner = { epoch: credentialEpoch, token: Symbol(label) }
-    activeOperations.add(owner.token)
+  function clearErrorForScope(scope: OperationScope): void {
+    if (errorOwner && errorOwner.epoch === credentialEpoch && errorOwner.scope !== scope) return
+    errorOwner = null
     error.value = null
+  }
+
+  function publishError(owner: OperationOwner, message: string): void {
+    errorOwner = owner
+    error.value = message
+  }
+
+  function beginOperation(label: string, scope: OperationScope): OperationOwner {
+    const owner = { epoch: credentialEpoch, token: Symbol(label), scope }
+    activeOperations.add(owner.token)
+    clearErrorForScope(scope)
     syncLoading()
     return owner
   }
@@ -60,7 +74,7 @@ export const useQueueStore = defineStore('queue', () => {
       activeOperations.delete(previous.token)
     }
 
-    const operation = beginOperation(`read:${lane}`)
+    const operation = beginOperation(`read:${lane}`, lane)
     const owner = {
       ...operation,
       observedMutationGeneration: mutationGeneration,
@@ -101,6 +115,7 @@ export const useQueueStore = defineStore('queue', () => {
     credentialEpoch += 1
     activeOperations.clear()
     readOwners.clear()
+    errorOwner = null
     loading.value = false
     error.value = null
   }
@@ -134,7 +149,7 @@ export const useQueueStore = defineStore('queue', () => {
   async function fetchUserRequests() {
     if (isDemoMode) {
       invalidateRead('requests')
-      error.value = null
+      clearErrorForScope('requests')
       requests.value = []
       return
     }
@@ -147,7 +162,7 @@ export const useQueueStore = defineStore('queue', () => {
     } catch (e: unknown) {
       if (ownsRead('requests', owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch queue requests').message
-        error.value = msg
+        publishError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -159,7 +174,7 @@ export const useQueueStore = defineStore('queue', () => {
   async function fetchByStatus(status: string) {
     if (isDemoMode) {
       invalidateRead('requests')
-      error.value = null
+      clearErrorForScope('requests')
       requests.value = []
       return
     }
@@ -171,7 +186,7 @@ export const useQueueStore = defineStore('queue', () => {
     } catch (e: unknown) {
       if (ownsRead('requests', owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch requests by status').message
-        error.value = msg
+        publishError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -182,7 +197,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   async function submitRequest(dto: CreateQueueRequestDto) {
     guardDemoMutation()
-    const owner = beginOperation('submit-request')
+    const owner = beginOperation('submit-request', 'mutation')
     try {
       session.requireUserId('queue operations')
       const request = await queueApi.createRequest(dto)
@@ -195,7 +210,7 @@ export const useQueueStore = defineStore('queue', () => {
     } catch (e: unknown) {
       if (ownsCredential(owner)) {
         const msg = getErrorDisplay(e, 'Failed to submit request').message
-        error.value = msg
+        publishError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -206,7 +221,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   async function cancelRequest(requestId: string) {
     guardDemoMutation()
-    const owner = beginOperation(`cancel-request:${requestId}`)
+    const owner = beginOperation(`cancel-request:${requestId}`, 'mutation')
     try {
       session.requireUserId('queue operations')
       await queueApi.cancelRequest(requestId)
@@ -218,7 +233,7 @@ export const useQueueStore = defineStore('queue', () => {
     } catch (e: unknown) {
       if (ownsCredential(owner)) {
         const msg = getErrorDisplay(e, 'Failed to cancel request').message
-        error.value = msg
+        publishError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -229,7 +244,7 @@ export const useQueueStore = defineStore('queue', () => {
 
   async function processNext() {
     guardDemoMutation()
-    const owner = beginOperation('process-next')
+    const owner = beginOperation('process-next', 'mutation')
     try {
       const result = await queueApi.processNext()
       if (!ownsCredential(owner)) return result
@@ -244,7 +259,7 @@ export const useQueueStore = defineStore('queue', () => {
     } catch (e: unknown) {
       if (ownsCredential(owner)) {
         const msg = getErrorDisplay(e, 'Failed to process request').message
-        error.value = msg
+        publishError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -256,7 +271,7 @@ export const useQueueStore = defineStore('queue', () => {
   async function fetchStats() {
     if (isDemoMode) {
       invalidateRead('stats')
-      error.value = null
+      clearErrorForScope('stats')
       stats.value = { pendingCount: 0, processingCount: 0, completedCount: 0, failedCount: 0 }
       return
     }
@@ -268,7 +283,7 @@ export const useQueueStore = defineStore('queue', () => {
     } catch (e: unknown) {
       if (ownsRead('stats', owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch queue stats').message
-        error.value = msg
+        publishError(owner, msg)
         toast.error(msg)
       }
       throw e
