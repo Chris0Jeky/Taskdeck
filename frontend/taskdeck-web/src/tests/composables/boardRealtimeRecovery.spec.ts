@@ -130,25 +130,58 @@ describe('board realtime recovery (#3319)', () => {
     joined.resolve()
     await recovery
     await changed
-    expect(fetchBoard).not.toHaveBeenCalled()
+    expect(fetchBoard).not.toHaveBeenCalledWith('board-a', { intent: 'background' })
+    if (change === 'switch') {
+      expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-b', { intent: 'background' })
+    } else {
+      expect(fetchBoard).not.toHaveBeenCalled()
+    }
   })
 
-  it('retains one catch-up behind an older in-flight mutation refresh', async () => {
+  it.each(['mutation', 'fallback'] as const)('retains one catch-up behind an older in-flight %s refresh', async (source) => {
     const olderRead = deferred()
     const fetchBoard = vi.fn<() => Promise<void>>()
       .mockImplementationOnce(() => olderRead.promise).mockResolvedValue(undefined)
     controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-a')
-    hub.events.boardMutation!({ boardId: 'board-a' })
-    await vi.advanceTimersByTimeAsync(300)
+    if (source === 'mutation') {
+      hub.events.boardMutation!({ boardId: 'board-a' })
+      await vi.advanceTimersByTimeAsync(300)
+      await disconnect()
+    } else {
+      await disconnect()
+      await vi.advanceTimersByTimeAsync(30000)
+    }
     expect(fetchBoard).toHaveBeenCalledTimes(1)
-    await disconnect()
     await reconnect()
     expect(fetchBoard).toHaveBeenCalledTimes(1)
     olderRead.resolve()
     await vi.advanceTimersByTimeAsync(0)
     expect(fetchBoard).toHaveBeenCalledTimes(2)
     expect(fetchBoard).toHaveBeenLastCalledWith('board-a', { intent: 'background' })
+  })
+
+  it('keeps polling the latest board when its transferred rejoin fails', async () => {
+    const fetchBoard = vi.fn(async () => undefined)
+    controller = createBoardRealtimeController({ fetchBoard })
+    await controller.start('board-a')
+    await disconnect()
+    const joined = deferred()
+    const started = deferred()
+    hub.invoke.mockImplementation(async (method, boardId) => {
+      if (method !== 'JoinBoard') return
+      if (boardId === 'board-a') { started.resolve(); await joined.promise }
+      else throw new Error('synthetic latest-board join failure')
+    })
+    const recovery = reconnect()
+    await started.promise
+    const changed = controller.switchBoard('board-b').catch((error: unknown) => error)
+    joined.resolve()
+    await recovery
+    expect(await changed).toBeInstanceOf(Error)
+    expect(fetchBoard).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetchBoard).toHaveBeenCalledExactlyOnceWith('board-b', { intent: 'background' })
   })
 
   it('contains a failed catch-up read and still responds to later mutations', async () => {

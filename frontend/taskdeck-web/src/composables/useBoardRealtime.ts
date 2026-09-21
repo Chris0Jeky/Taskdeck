@@ -53,8 +53,9 @@ export function createBoardRealtimeController(
   let subscriptionTransition: Promise<void> = Promise.resolve()
   let editingCardId: string | null = null
   let fallbackTimer: ReturnType<typeof setInterval> | null = null
+  let recoveryPending = false
   let refreshInFlight = false
-  let pendingMutationRefreshBoardId: string | null = null
+  let pendingRefreshBoardId: string | null = null
   let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   const stopFallbackPolling = () => {
@@ -67,15 +68,16 @@ export function createBoardRealtimeController(
   }
 
   const startFallbackPolling = (boardId: string) => {
+    recoveryPending = true
     stopFallbackPolling()
     fallbackTimer = setInterval(() => {
       if (requestedBoardId !== boardId) {
         return
       }
 
-      void options.fetchBoard(boardId, { intent: 'background' }).catch(() => {
-        // Keep fallback resilient; fetch failures are already surfaced by store-level handling.
-      })
+      // Polling shares the same active/read-after-active slot as mutation
+      // and recovery reads. Store-level deduplication must not swallow catch-up.
+      startBoardRefresh(boardId)
     }, FALLBACK_POLL_INTERVAL_MS)
   }
 
@@ -86,13 +88,15 @@ export function createBoardRealtimeController(
     }
   }
 
-  const startMutationRefresh = (boardId: string) => {
-    if (subscribedBoardId !== boardId || requestedBoardId !== boardId) {
+  const startBoardRefresh = (boardId: string) => {
+    // Fallback must also read a requested board whose hub join is pending.
+    // Event handlers separately verify the confirmed subscription.
+    if (requestedBoardId !== boardId) {
       return
     }
 
     if (refreshInFlight) {
-      pendingMutationRefreshBoardId = boardId
+      pendingRefreshBoardId = boardId
       return
     }
 
@@ -104,11 +108,11 @@ export function createBoardRealtimeController(
       })
       .finally(() => {
         refreshInFlight = false
-        const pendingBoardId = pendingMutationRefreshBoardId
-        pendingMutationRefreshBoardId = null
+        const pendingBoardId = pendingRefreshBoardId
+        pendingRefreshBoardId = null
 
         if (pendingBoardId) {
-          startMutationRefresh(pendingBoardId)
+          startBoardRefresh(pendingBoardId)
         }
       })
   }
@@ -132,7 +136,7 @@ export function createBoardRealtimeController(
         return
       }
 
-      startMutationRefresh(subscribedBoardId)
+      startBoardRefresh(subscribedBoardId)
     }, MUTATION_DEBOUNCE_MS)
   }
 
@@ -165,7 +169,7 @@ export function createBoardRealtimeController(
     hubConnection.on(BOARD_MUTATION_EVENT, handleBoardMutation)
     hubConnection.on(BOARD_PRESENCE_EVENT, handleBoardPresence)
     hubConnection.onreconnecting(() => {
-      if (requestedBoardId) {
+      if (connection === hubConnection && requestedBoardId) {
         startFallbackPolling(requestedBoardId)
       }
     })
@@ -176,7 +180,8 @@ export function createBoardRealtimeController(
         connection === hubConnection &&
         requestedBoardId === boardId &&
         subscriptionGeneration === generation
-      if (!boardId) return
+      if (!boardId || connection !== hubConnection) return
+      recoveryPending = true
 
       // Transport recovery alone does not prove a board subscription. Keep
       // polling until JoinBoard acknowledges this request's generation.
@@ -191,10 +196,8 @@ export function createBoardRealtimeController(
       }
       if (!isCurrentRequest() || hubConnection.state !== HubConnectionState.Connected) return
 
-      // Events lost while disconnected are not replayed by a new subscription.
-      // Reuse the mutation coordinator so an older pending read retains one
-      // follow-up instead of swallowing the catch-up or starting parallel reads.
-      startMutationRefresh(boardId)
+      // joinBoard owns catch-up so navigation during this await transfers
+      // the recovery obligation to the latest queued board.
       if (editingCardId !== null) {
         try {
           await hubConnection.invoke('SetEditingCard', boardId, editingCardId)
@@ -206,7 +209,7 @@ export function createBoardRealtimeController(
       }
     })
     hubConnection.onclose(() => {
-      if (requestedBoardId) {
+      if (connection === hubConnection && requestedBoardId) {
         startFallbackPolling(requestedBoardId)
       }
     })
@@ -264,6 +267,10 @@ export function createBoardRealtimeController(
     subscribedBoardId = boardId
     if (isCurrentRequest() && hubConnection.state === HubConnectionState.Connected) {
       stopFallbackPolling()
+      if (recoveryPending) {
+        recoveryPending = false
+        startBoardRefresh(boardId)
+      }
     }
   }
 
@@ -282,7 +289,10 @@ export function createBoardRealtimeController(
     // Cancel any debounced mutation fetch from the previous board as soon as
     // navigation changes intent, rather than waiting for the connection move.
     cancelMutationDebounce()
-    pendingMutationRefreshBoardId = null
+    pendingRefreshBoardId = null
+    // A switch while the old rejoin is pending inherits both recovery and
+    // polling. Only this latest request's successful join may retire them.
+    if (recoveryPending) startFallbackPolling(boardId)
     return queueBoardSubscription(boardId, generation)
   }
 
@@ -309,9 +319,10 @@ export function createBoardRealtimeController(
   const stop = async () => {
     requestedBoardId = null
     subscriptionGeneration++
+    recoveryPending = false
     stopFallbackPolling()
     cancelMutationDebounce()
-    pendingMutationRefreshBoardId = null
+    pendingRefreshBoardId = null
     editingCardId = null
 
     if (!connection) {
