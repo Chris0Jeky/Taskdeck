@@ -138,8 +138,6 @@ export const usePermissionsStore = defineStore('permissions', () => {
       return
     }
 
-    if (activeReadByBoard.has(boardId)) return
-
     try {
       await fetchBoardAccess(boardId)
     } catch {

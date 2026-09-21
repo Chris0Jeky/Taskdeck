@@ -129,6 +129,41 @@ describe('permissionsStore token ownership', () => {
     expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing', 'fresh-grant'])
   })
 
+  it('supersedes an active replacement read after a stale mutation settles', async () => {
+    const oldRead = deferred<BoardAccess[]>()
+    const replacementRead = deferred<BoardAccess[]>()
+    const reconciledRead = deferred<BoardAccess[]>()
+    const pendingGrant = deferred<BoardAccess>()
+    const granted = access('fresh-grant')
+    vi.mocked(boardAccessApi.getAccess)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(replacementRead.promise)
+      .mockReturnValueOnce(reconciledRead.promise)
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+
+    const readRequest = store.fetchBoardAccess('board-1')
+    const mutationRequest = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.token = token('new')
+
+    expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(2)
+
+    pendingGrant.resolve(granted)
+    await vi.waitFor(() => {
+      expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(3)
+    })
+
+    reconciledRead.resolve([granted])
+    await expect(mutationRequest).resolves.toEqual(granted)
+
+    replacementRead.resolve([access('stale-replacement-read')])
+    oldRead.resolve([access('stale-old-read')])
+    await readRequest
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-grant'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+  })
+
   it('retries an unresolved board-access read after same-user token rotation', async () => {
     const oldRead = deferred<BoardAccess[]>()
     const freshRead = deferred<BoardAccess[]>()
