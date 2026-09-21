@@ -184,7 +184,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
       recordMutation(boardId)
       const existing = boardAccess.value.get(boardId) ?? []
-      boardAccess.value.set(boardId, [...existing, access])
+      if (!existing.some(entry => entry.id === access.id)) {
+        boardAccess.value.set(boardId, [...existing, access])
+      }
       toast.success('Access granted')
       return access
     } catch (e: unknown) {
