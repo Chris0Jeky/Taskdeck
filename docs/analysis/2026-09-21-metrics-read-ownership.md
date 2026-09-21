@@ -1,60 +1,47 @@
 # Metrics and forecast request ownership
 
-Status: corrective draft for #3346 / PR #3347, based on `main`
-`307c3b8b50bec1cb0bfaea3e570a942bcb1d4451`.
+Status: corrective draft for #3346 / PR #3347. Base: `307c3b8b50bec1cb0bfaea3e570a942bcb1d4451`.
 
-## Reproduced defect
+## Reproduced defects
 
-Board metrics and forecast requests own separate visible surfaces, but each method
-previously committed every response, failure, toast and `finally`. A board/date
-selection change could therefore restore an older result or clear the current
-lane's loading state. `$reset()` cleared refs without invalidating requests
-already in flight, and the store had no same-user token/session replacement
-boundary.
+Board metrics and forecast own separate visible surfaces, but the original store committed every response, failure, toast and `finally`. Board/date changes could restore older results or clear current loading, `$reset()` did not invalidate in-flight work, and the store had no session boundary.
 
-A later ownership review found that treating a token-only refresh as a complete
-reset creates a separate false-empty state. `MetricsView` fetches when the board
-or range changes, so session extension on an unchanged route cleared the current
-dashboard without triggering another read.
+Review then exposed two token-refresh defects:
+
+1. full reset on same-user refresh cleared already loaded dashboard data;
+2. preservation alone stranded an empty first load because the old request was retired and the unchanged route did not refetch.
 
 ## Contract
 
 - Metrics and forecast retain independent latest-request owners.
 - A newer request retires only the previous owner in the same lane.
-- `$reset()` and user-identity, authentication or demo-session replacement
-  synchronously advance one credential epoch and clear both data surfaces.
-- A token-only rotation advances that same request epoch and clears transient
-  loading/errors, but preserves already loaded metrics and forecast for the
-  unchanged user, board and route.
-- Stale requests still resolve or reject to their original callers, but cannot
-  write results, errors, toasts, loading or final state.
-- A current failure preserves the previous result and the existing public
-  error/toast/rejection behavior.
-- Metrics completion cannot clear forecast loading, and forecast completion
-  cannot clear metrics loading.
-- Demo messages, endpoints, query types and the public store API remain unchanged.
+- User identity, authentication or demo-session replacement advances the epoch and clears both data surfaces.
+- Token-only rotation preserves settled data, retires old-token UI settlement, and restarts only an active lane whose visible surface is still null.
+- Retried metrics/forecast reads retain the exact query captured by the active request.
+- Stale requests still resolve or reject to their original callers, but cannot write results, errors, toasts, loading or final state.
+- A current failure preserves the previous result and the public error/toast/rejection behavior.
+- Metrics and forecast loading remain independent.
+- No mutation is replayed and no endpoint, query type or public store API changes.
 
-This is client-state integrity. It does not cancel transport or change server
-metrics authorization.
+This is client-state integrity, not transport cancellation or a server metrics-authorization change.
 
-## Evidence and remaining gates
+## Test-first evidence
 
-The initial committed real Pinia/Vitest suite covers seven deferred schedules. A
-bounded supplemental runner transpiles and executes the actual store with only
-framework/API/session boundaries stubbed:
+The initial real Pinia suite covered seven deferred schedules. A bounded actual-module runner changed from **1/7 passing on `main`** to **7/7 passing** after the first correction.
 
-- unchanged `main`: 1/7 passed, with only the independent-lane control green;
-- initial corrected source: 7/7 passed.
+Review-regression head `f9f6bc9479ec7d211077b545be95a64cf63e65ae` isolated loaded-dashboard preservation. The corrected head `8f31b2b72e6941b5e77ab730aea34da8da75e9af` passed Smart CI, Extended and the complete Required CI matrix.
 
-Review-regression head `f9f6bc9479ec7d211077b545be95a64cf63e65ae`
-changed the token-rotation contract from clearing to preserving loaded dashboard
-data. Ubuntu passed lint, typecheck, build and PWA validation; its JUnit artifact
-ran all seven ownership cases and failed only
-`preserves loaded dashboard data while invalidating old-token work on refresh`,
-with the current metrics value cleared instead of retaining board `existing`.
+Issue #3352 then added test-only head `b7425560e7f3c90833dde8bc74d82543d39ff389`, covering a token rotation while both metrics and forecast are still null. A dependency-free runner transpiled and executed the actual production module:
 
-The supplemental runner is not committed and does not replace project
-qualification. The current production correction requires exact-head lint,
-typecheck, production build, full Vitest on Ubuntu and Windows, complete Required
-CI/Extended/Self-Test workflows, and a fresh-context review. No merge, release or
-deployment qualification is claimed.
+- before the retry correction: each API was called once and both loading flags became false;
+- after the correction: each API was called twice, old-token settlement was suppressed, and fresh-token results populated both lanes.
+
+Hosted exact-head qualification remains authoritative; the supplemental runner does not replace it.
+
+## Remaining gates
+
+Current production correction: `8566adbabd9abe5ddca9a5b09b79a928616db10f` before this documentation commit.
+
+Exact final-head lint, typecheck, production build, complete Vitest on Ubuntu and Windows, Required CI, Extended, Self-Test and fresh-context review remain required. Review should focus on query capture, no retry loops, and no mutation replay.
+
+No merge, release or deployment qualification is claimed.
