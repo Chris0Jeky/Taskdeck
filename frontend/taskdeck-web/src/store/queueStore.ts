@@ -24,6 +24,7 @@ export const useQueueStore = defineStore('queue', () => {
     epoch: number
     token: symbol
     scope: OperationScope
+    userId: string | null
   }
 
   interface ReadOwner extends OperationOwner {
@@ -54,7 +55,7 @@ export const useQueueStore = defineStore('queue', () => {
   }
 
   function beginOperation(label: string, scope: OperationScope): OperationOwner {
-    const owner = { epoch: credentialEpoch, token: Symbol(label), scope }
+    const owner = { epoch: credentialEpoch, token: Symbol(label), scope, userId: session.userId }
     activeOperations.add(owner.token)
     clearErrorForScope(scope)
     syncLoading()
@@ -158,6 +159,28 @@ export const useQueueStore = defineStore('queue', () => {
     }
   }
 
+  async function reconcileStaleMutation(owner: OperationOwner): Promise<void> {
+    // A same-user token rotation can let the server commit a mutation after this
+    // store retires its operation owner. Refresh both affected read lanes under
+    // the replacement credential so a successful write is not hidden by stale
+    // request rows or counts. Identity changes and logout must not read for the
+    // retired session.
+    if (ownsCredential(owner)
+      || owner.userId === null
+      || owner.userId !== session.userId
+      || !session.isAuthenticated
+      || session.isDemo) {
+      return
+    }
+
+    try {
+      await Promise.all([fetchUserRequests(), fetchStats()])
+    } catch {
+      // Each read owns its error/toast state. The mutation already succeeded,
+      // so a reconciliation failure must not turn it into a false write error.
+    }
+  }
+
   function $reset(): void {
     invalidateOperations()
     successorReads.clear()
@@ -252,7 +275,10 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       session.requireUserId('queue operations')
       const request = await queueApi.createRequest(dto)
-      if (!ownsCredential(owner)) return request
+      if (!ownsCredential(owner)) {
+        await reconcileStaleMutation(owner)
+        return request
+      }
 
       recordMutation()
       requests.value.push(request)
@@ -276,7 +302,10 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       session.requireUserId('queue operations')
       await queueApi.cancelRequest(requestId)
-      if (!ownsCredential(owner)) return
+      if (!ownsCredential(owner)) {
+        await reconcileStaleMutation(owner)
+        return
+      }
 
       recordMutation()
       requests.value = requests.value.filter(r => r.id !== requestId)
@@ -298,7 +327,10 @@ export const useQueueStore = defineStore('queue', () => {
     const owner = beginOperation('process-next', 'mutation')
     try {
       const result = await queueApi.processNext()
-      if (!ownsCredential(owner)) return result
+      if (!ownsCredential(owner)) {
+        if (result) await reconcileStaleMutation(owner)
+        return result
+      }
 
       if (result) {
         recordMutation()

@@ -240,6 +240,8 @@ describe('queueStore async ownership', () => {
     vi.mocked(queueApi.getRequestsByStatus)
       .mockReturnValueOnce(oldRead.promise)
       .mockReturnValueOnce(freshRead.promise)
+    vi.mocked(queueApi.getUserRequests).mockResolvedValue([request('existing')])
+    vi.mocked(queueApi.getStats).mockResolvedValue(stats(4))
     vi.mocked(queueApi.createRequest).mockReturnValue(oldSubmit.promise)
 
     const readOperation = store.fetchByStatus('Pending')
@@ -357,6 +359,65 @@ describe('queueStore async ownership', () => {
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
     expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('reconciles a successful stale submission after same-user token rotation', async () => {
+    const pendingSubmit = deferred<QueueRequest>()
+    const freshRequests = deferred<QueueRequest[]>()
+    const freshStats = deferred<QueueStats>()
+    const existing = request('existing')
+    const created = request('created')
+    store.requests = [existing]
+    store.stats = stats(1)
+    vi.mocked(queueApi.createRequest).mockReturnValue(pendingSubmit.promise)
+    vi.mocked(queueApi.getUserRequests).mockReturnValue(freshRequests.promise)
+    vi.mocked(queueApi.getStats).mockReturnValue(freshStats.promise)
+
+    const operation = store.submitRequest({ requestType: 'Instruction', payload: 'Queue it' })
+    session.token = token('new')
+    pendingSubmit.resolve(created)
+
+    await vi.waitFor(() => {
+      expect(queueApi.getUserRequests).toHaveBeenCalledTimes(1)
+      expect(queueApi.getStats).toHaveBeenCalledTimes(1)
+    })
+
+    freshRequests.resolve([existing, created])
+    freshStats.resolve(stats(2))
+    await expect(operation).resolves.toEqual(created)
+
+    expect(store.requests.map(item => item.id)).toEqual(['existing', 'created'])
+    expect(store.stats?.pendingCount).toBe(2)
+    expect(toastMocks.success).not.toHaveBeenCalled()
+  })
+
+  it('reconciles a successful stale cancellation after same-user token rotation', async () => {
+    const pendingCancel = deferred<void>()
+    const freshRequests = deferred<QueueRequest[]>()
+    const freshStats = deferred<QueueStats>()
+    const existing = request('existing')
+    store.requests = [existing]
+    store.stats = stats(1)
+    vi.mocked(queueApi.cancelRequest).mockReturnValue(pendingCancel.promise)
+    vi.mocked(queueApi.getUserRequests).mockReturnValue(freshRequests.promise)
+    vi.mocked(queueApi.getStats).mockReturnValue(freshStats.promise)
+
+    const operation = store.cancelRequest('existing')
+    session.token = token('new')
+    pendingCancel.resolve()
+
+    await vi.waitFor(() => {
+      expect(queueApi.getUserRequests).toHaveBeenCalledTimes(1)
+      expect(queueApi.getStats).toHaveBeenCalledTimes(1)
+    })
+
+    freshRequests.resolve([])
+    freshStats.resolve(stats(0))
+    await expect(operation).resolves.toBeUndefined()
+
+    expect(store.requests).toEqual([])
+    expect(store.stats?.pendingCount).toBe(0)
+    expect(toastMocks.success).not.toHaveBeenCalled()
   })
 
   it('does not emit a process result toast after credential replacement', async () => {
