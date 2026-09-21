@@ -72,9 +72,10 @@ export function createBoardRealtimeController(
     fallbackTimer = null
   }
 
-  const startFallbackPolling = (boardId: string) => {
+  const startFallbackPolling = (boardId: string, canDischargeRecovery = false) => {
     recoveryPending = true
     stopFallbackPolling()
+    const timerCanDischargeRecovery = canDischargeRecovery
     fallbackTimer = setInterval(() => {
       if (requestedBoardId !== boardId) {
         return
@@ -82,7 +83,7 @@ export function createBoardRealtimeController(
 
       // Polling shares the same active/read-after-active slot as mutation
       // and recovery reads. Store-level deduplication must not swallow catch-up.
-      startBoardRefresh(boardId)
+      startBoardRefresh(boardId, false, timerCanDischargeRecovery)
     }, FALLBACK_POLL_INTERVAL_MS)
   }
 
@@ -124,17 +125,18 @@ export function createBoardRealtimeController(
           // Keep the recovery obligation alive and let bounded fallback polling
           // retry it instead of treating the failed catch-up as complete.
           recoveryPending = true
-          startFallbackPolling(boardId)
+          startFallbackPolling(boardId, true)
           return
         }
 
         recoveryPending = false
+        stopFallbackPolling()
       })
       .catch(() => {
         // Background refresh failures must not escape the realtime loop.
         if (dischargesRecovery && requestedBoardId === boardId) {
           recoveryPending = true
-          startFallbackPolling(boardId)
+          startFallbackPolling(boardId, true)
         }
       })
       .finally(() => {
