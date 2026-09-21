@@ -16,7 +16,7 @@ Review then exposed two token-refresh defects:
 - Metrics and forecast retain independent latest-request owners.
 - A newer request retires only the previous owner in the same lane.
 - User identity, authentication or demo-session replacement advances the epoch and clears both data surfaces.
-- Token-only rotation preserves settled data, retires old-token UI settlement, and restarts only an active lane whose visible surface is still null.
+- Token-only rotation preserves settled data and errors, retires old-token UI settlement, and restarts only an active lane whose visible surface is still null.
 - Retried metrics/forecast reads retain the exact query captured by the active request.
 - Stale requests still resolve or reject to their original callers, but cannot write results, errors, toasts, loading or final state.
 - A current failure preserves the previous result and the public error/toast/rejection behavior.
@@ -40,7 +40,7 @@ Hosted exact-head qualification remains authoritative; the supplemental runner d
 
 ## Remaining gates
 
-Current production correction: `8566adbabd9abe5ddca9a5b09b79a928616db10f` before this documentation commit.
+Current production correction: `8566adbabd9abe5ddca9a5b09b79a928616db10f` before the current review fix; settled token-rotation errors are now preserved and retry failures are covered.
 
 Exact final-head lint, typecheck, production build, complete Vitest on Ubuntu and Windows, Required CI, Extended, Self-Test and fresh-context review remain required. Review should focus on query capture, no retry loops, and no mutation replay.
 

@@ -72,23 +72,25 @@ export const useMetricsStore = defineStore('metrics', () => {
     forecastLoading.value = false
   }
 
-  function invalidateRequests(): void {
+  function invalidateRequests(options: { preserveErrors?: boolean } = {}): void {
     credentialEpoch += 1
     metricsOwner = null
     forecastOwner = null
     metricsRetry = null
     forecastRetry = null
     loading.value = false
-    error.value = null
     forecastLoading.value = false
-    forecastError.value = null
+    if (!options.preserveErrors) {
+      error.value = null
+      forecastError.value = null
+    }
   }
 
   function retryEmptyActiveRequests(): void {
     const pendingMetricsRetry = metricsOwner && metrics.value === null ? metricsRetry : null
     const pendingForecastRetry = forecastOwner && forecast.value === null ? forecastRetry : null
 
-    invalidateRequests()
+    invalidateRequests({ preserveErrors: true })
     if (pendingMetricsRetry) {
       void pendingMetricsRetry().catch(() => {
         // The retried store action owns current error/toast state.

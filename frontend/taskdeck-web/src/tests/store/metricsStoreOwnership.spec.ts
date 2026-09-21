@@ -238,6 +238,41 @@ describe('metricsStore async ownership', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  it('preserves settled errors when same-user token rotation retires old work', async () => {
+    vi.mocked(metricsApi.getBoardMetrics).mockRejectedValueOnce(new Error('metrics failure'))
+    vi.mocked(metricsApi.getBoardForecast).mockRejectedValueOnce(new Error('forecast failure'))
+
+    await expect(store.fetchBoardMetrics({ boardId: 'board-a' })).rejects.toThrow('metrics failure')
+    await expect(store.fetchBoardForecast({ boardId: 'board-a' })).rejects.toThrow('forecast failure')
+    expect(store.error).toBe('metrics failure')
+    expect(store.forecastError).toBe('forecast failure')
+
+    session.token = 'token-b'
+
+    expect(store.error).toBe('metrics failure')
+    expect(store.forecastError).toBe('forecast failure')
+    expect(toastMocks.error).toHaveBeenCalledTimes(2)
+  })
+
+  it('surfaces a failure from a token-rotation retry', async () => {
+    const oldMetrics = deferred<BoardMetricsResponse>()
+    const freshMetrics = deferred<BoardMetricsResponse>()
+    vi.mocked(metricsApi.getBoardMetrics)
+      .mockReturnValueOnce(oldMetrics.promise)
+      .mockReturnValueOnce(freshMetrics.promise)
+
+    const oldRequest = store.fetchBoardMetrics({ boardId: 'board-a' })
+    session.token = 'token-b'
+    oldMetrics.reject(new Error('old-token failure'))
+    await expect(oldRequest).rejects.toThrow('old-token failure')
+
+    freshMetrics.reject(new Error('fresh-token failure'))
+    await vi.waitFor(() => {
+      expect(store.error).toBe('fresh-token failure')
+    })
+    expect(toastMocks.error).toHaveBeenCalledWith('fresh-token failure')
+  })
+
   it('retries empty initial metrics and forecast reads after same-user token rotation', async () => {
     const oldMetrics = deferred<BoardMetricsResponse>()
     const freshMetrics = deferred<BoardMetricsResponse>()
