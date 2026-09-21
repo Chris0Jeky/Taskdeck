@@ -56,13 +56,17 @@ function controlText(field) {
   // can erase a meaningful change to a caller input or a dynamic selector.
   const prefix = ' '.repeat(field.depth + 2);
   const children = field.children.map(({ text }) => text.startsWith(prefix) ? text.slice(prefix.length) : text);
-  while (children.length && !children.at(-1).trim()) children.pop();
+  const keepsTrailingLines = /^[|>][^\s]*\+/.test(field.value.trim()) ||
+    children.some((line) => /:\s*[|>][^\s]*\+(?:[ \t]+#.*)?\s*$/.test(line));
+  if (!keepsTrailingLines) {
+    while (children.length && !children.at(-1).trim()) children.pop();
+  }
   return [field.value.trim(), ...children].filter((line, index) => index !== 0 || line).join('\n');
 }
 
 function literal(text) {
   if (typeof text !== 'string') return null;
-  const match = text.match(/^(?:([A-Za-z0-9_./@-]+)|'([A-Za-z0-9_./@-]+)'|"([A-Za-z0-9_./@-]+)")[ \t]*(?:#.*)?$/);
+  const match = text.match(/^(?:([A-Za-z0-9_./@-]+)|'([A-Za-z0-9_./@-]+)'|"([A-Za-z0-9_./@-]+)")(?:[ \t]+#.*)?$/);
   return match ? (match[1] ?? match[2] ?? match[3]) : null;
 }
 

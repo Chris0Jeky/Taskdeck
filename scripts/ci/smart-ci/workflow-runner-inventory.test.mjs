@@ -209,6 +209,19 @@ test('block control values preserve internal blank and hash-prefixed scalar line
   assert.match(entry.callers[0].inputs, /before\n\n  # literal value, not a YAML comment\n  after/);
 });
 
+test('keep-chomp block scalars preserve trailing blank lines', () => {
+  const extra = [
+    '    with:',
+    '      description: |+',
+    '        before',
+    '',
+    '',
+  ].join('\n');
+  const result = inventory(caller('root', 'leaf', extra), runner('leaf', 'windows-latest'));
+  const [entry] = reviewedRunnerSurface(result).candidates;
+  assert.match(entry.callers[0].inputs, /description: \|\+\n  before\n\n$/);
+});
+
 test('input alias and folded reusable references stay explicitly unresolved', () => {
   for (const value of ['*reference', '>\n      ./.github/workflows/leaf.yml']) {
     assertIncomplete([workflow('root', job('call', `    uses: ${value}\n`)), runner('leaf', 'windows-latest')], 'unresolved-workflow');
@@ -256,4 +269,11 @@ test('a comment after a plain Linux selector does not create an opaque runner', 
   const result = inventory(runner('fixture', 'ubuntu-latest', '    # Docker is installed on this runner\n'));
   assert.equal(result.graphComplete, true);
   assert.equal(result.runners[0].classification, 'linux-literal');
+});
+
+test('an attached hash stays part of the runner scalar', () => {
+  const result = inventory(runner('fixture', 'ubuntu-latest#custom'));
+  assert.equal(result.graphComplete, true);
+  assert.equal(result.runners[0].selector, 'ubuntu-latest#custom');
+  assert.equal(result.runners[0].classification, 'opaque');
 });
