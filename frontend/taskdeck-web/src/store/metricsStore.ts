@@ -64,21 +64,31 @@ export const useMetricsStore = defineStore('metrics', () => {
     forecastLoading.value = false
   }
 
-  function $reset(): void {
+  function invalidateRequests(): void {
     credentialEpoch += 1
     metricsOwner = null
     forecastOwner = null
-    metrics.value = null
     loading.value = false
     error.value = null
-    forecast.value = null
     forecastLoading.value = false
     forecastError.value = null
   }
 
+  function $reset(): void {
+    invalidateRequests()
+    metrics.value = null
+    forecast.value = null
+  }
+
   watch(
-    () => [session.userId, session.token, session.isAuthenticated, session.isDemo],
+    () => [session.userId, session.isAuthenticated, session.isDemo],
     $reset,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    invalidateRequests,
     { flush: 'sync' },
   )
 
