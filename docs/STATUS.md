@@ -14,8 +14,24 @@ Mutation transport is never replayed. This avoids manual permission refresh and 
 presentation while retaining server authorization and the existing review-first board flow.
 
 Real-Pinia store tests cover session, token, read and mutation races; the source evidence note
-is [board-access ownership](analysis/2026-09-21-permission-read-ownership.md). Same-entry mutation
-ordering remains in #3335; human decisions in OUTSTANDING_TASKS.md remain open.
+is [board-access ownership](analysis/2026-09-21-permission-read-ownership.md). Human decisions in
+OUTSTANDING_TASKS.md remain open.
+
+## Board-access mutations preserve same-row intent order (#3333)
+
+Updates and revokes for one board-access entry now run in submission order. A queued operation
+waits through a predecessor failure, holds its loading ownership while waiting, and checks the
+initiating session again before transport. A new session's same-entry intent also waits for an
+older in-flight write to settle. Other entries remain concurrent. A queued update after
+a successful revoke cannot restore the removed row from an older response; a failed update reports
+its own error. Starting a queued operation does not erase an unrelated entry's error receipt.
+
+This protects access changes during rapid board maintenance while keeping server authorization
+and review-first board actions intact. Ordering is local to one client; the API has no revision
+precondition for cross-device conflicts. Deferred Pinia tests cover the mutation schedules and
+token rotation; [the evidence note](analysis/2026-09-21-permission-mutation-order.md) records
+the contract and qualification limits.
+
 ## Column writes follow their board visit (#3314)
 
 Create, update, delete and reorder share one mutation lane per board, preserving intent order

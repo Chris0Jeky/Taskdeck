@@ -76,6 +76,86 @@ describe('permissionsStore token ownership', () => {
     vi.clearAllMocks()
   })
 
+  it('reconciles a started update after token rotation without sending its queued revoke', async () => {
+    const row = access('access-1')
+    const updated = { ...row, role: 'Editor' as const }
+    store.boardAccess.set('board-1', [row])
+    const write = deferred<BoardAccess>()
+    const read = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.updateAccess).mockReturnValueOnce(write.promise)
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(read.promise)
+
+    const first = store.updateAccess('board-1', row.id, { role: 'Editor' })
+    const queued = store.revokeAccess('board-1', row.id)
+    expect(boardAccessApi.revokeAccess).not.toHaveBeenCalled()
+    session.token = token('replacement')
+    write.resolve(updated)
+
+    await vi.waitFor(() => expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1'))
+    expect(store.loading).toBe(true)
+    read.resolve([updated])
+    await expect(first).resolves.toEqual(updated)
+    await expect(queued).resolves.toBeUndefined()
+    expect(boardAccessApi.revokeAccess).not.toHaveBeenCalled()
+    expect(store.boardAccess.get('board-1')).toEqual([updated])
+    expect(store.loading).toBe(false)
+  })
+
+  it('reconciles a started revoke after token rotation without sending its queued update', async () => {
+    const row = access('access-1')
+    store.boardAccess.set('board-1', [row])
+    const write = deferred<void>()
+    const read = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.revokeAccess).mockReturnValueOnce(write.promise)
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(read.promise)
+
+    const first = store.revokeAccess('board-1', row.id)
+    const queued = store.updateAccess('board-1', row.id, { role: 'Editor' })
+    expect(boardAccessApi.updateAccess).not.toHaveBeenCalled()
+    session.token = token('replacement')
+    write.resolve()
+
+    await vi.waitFor(() => expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1'))
+    expect(store.loading).toBe(true)
+    read.resolve([])
+    await expect(first).resolves.toBeUndefined()
+    await expect(queued).resolves.toBeUndefined()
+    expect(boardAccessApi.updateAccess).not.toHaveBeenCalled()
+    expect(store.boardAccess.get('board-1')).toEqual([])
+    expect(store.loading).toBe(false)
+  })
+
+  it('waits for an old-token update before starting a new same-entry update', async () => {
+    const row = access('access-1')
+    const oldResult = { ...row, role: 'Editor' as const }
+    const newResult = { ...row, role: 'Admin' as const }
+    store.boardAccess.set('board-1', [row])
+    const oldWrite = deferred<BoardAccess>()
+    const oldReconciliation = deferred<BoardAccess[]>()
+    const newWrite = deferred<BoardAccess>()
+    vi.mocked(boardAccessApi.updateAccess)
+      .mockReturnValueOnce(oldWrite.promise)
+      .mockReturnValueOnce(newWrite.promise)
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(oldReconciliation.promise)
+
+    const first = store.updateAccess('board-1', row.id, { role: 'Editor' })
+    session.token = token('replacement')
+    const second = store.updateAccess('board-1', row.id, { role: 'Admin' })
+    expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(1)
+
+    oldWrite.resolve(oldResult)
+    await vi.waitFor(() => expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1'))
+    expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(1)
+    oldReconciliation.resolve([oldResult])
+    await first
+    await vi.waitFor(() => expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(2))
+
+    newWrite.resolve(newResult)
+    await second
+    expect(store.boardAccess.get('board-1')).toEqual([newResult])
+    expect(store.loading).toBe(false)
+  })
+
   it('preserves loaded access while invalidating an old read after same-user token rotation', async () => {
     store.boardAccess.set('board-1', [access('existing')])
     const pending = deferred<BoardAccess[]>()
