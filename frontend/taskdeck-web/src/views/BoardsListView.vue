@@ -127,11 +127,13 @@ async function retryLoad() {
 
 async function createBoard() {
   if (!newBoardName.value.trim()) return
+  const isCurrentSession = boardStore.captureSession()
 
   try {
     const board = await boardStore.createBoard({
       name: newBoardName.value,
     })
+    if (!isCurrentSession()) return
 
     newBoardName.value = ''
     showCreateForm.value = false
@@ -139,6 +141,7 @@ async function createBoard() {
     // Navigate to the new board
     router.push(`/boards/${board.id}`)
   } catch (error) {
+    if (!isCurrentSession()) return
     // Developer-facing log line, not user copy — deliberately not a catalog key.
     logError('Failed to create board:', error)
   }

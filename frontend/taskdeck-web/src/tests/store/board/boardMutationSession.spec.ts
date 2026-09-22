@@ -99,6 +99,16 @@ function snapshot(s: Store) {
 describe('board mutation session ownership', () => {
   beforeEach(() => { vi.resetAllMocks(); setActivePinia(createPinia()) })
 
+  it('retires caller ownership synchronously through the same logout boundary', () => {
+    const s = useBoardStore()
+    const ownsOriginalSession = s.captureSession()
+    expect(ownsOriginalSession()).toBe(true)
+    expect(s.currentBoard).toBeNull()
+    s.resetForLogout()
+    expect(ownsOriginalSession()).toBe(false)
+    expect(s.captureSession()()).toBe(true)
+  })
+
   for (const op of operations) {
     for (const replacement of ['logged out', 'next account'] as const) {
       it(`${op.name}: late success cannot change ${replacement} state`, async () => {

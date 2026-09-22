@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import {
   createBoardState,
   createBoardHelpers,
+  captureBoardSession,
   createBoardCrudActions,
   createColumnActions,
   createCardActions,
@@ -62,6 +63,8 @@ export const useBoardStore = defineStore('board', () => {
     fetchBoard,
     cancelBackgroundBoardFetch: boardCrud.cancelBackgroundBoardFetch,
     resetForLogout: boardCrud.resetForLogout,
+    // Callers also own post-response navigation and follow-up API requests.
+    captureSession: () => captureBoardSession(state),
     createBoard: boardCrud.createBoard,
     updateBoard: boardCrud.updateBoard,
     deleteBoard: boardCrud.deleteBoard,

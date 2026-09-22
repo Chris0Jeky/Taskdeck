@@ -12,6 +12,10 @@ Queued label writes stop before transport across logout, including when no board
 loaded, and stale writes cannot initiate recovery reads under the next session. Direct card,
 label, comment and provenance reads honor the same client boundary. Same-session programmatic
 writes before detail loads continue to work. Deferred real-store regressions cover these cases.
+Board creation callers also capture that session: board-list navigation and workspace setup
+stop on retirement, including between starter-pack catalog/apply awaits. Stale continuations
+cannot route the next account, start its template requests, clear its summaries or publish setup
+notifications. Store results and errors still settle for the original caller.
 
 This prevents old-account data from reappearing and reduces cleanup after account switching.
 It preserves review-first proposal behavior and does not undo server writes. Same-session
