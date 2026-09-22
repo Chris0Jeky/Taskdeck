@@ -61,9 +61,11 @@ Model deferral as a **timing control, not a new status**. Add a nullable `Deferr
    notification would be noise; outcomes are terminal-decision telemetry only, and defer is not a
    decision.
 
-Conflict detection (`GetPendingByOperationTargetAsync`) intentionally still sees deferred proposals:
-a snoozed pending change still claims its target card, so it must keep participating in conflict
-detection even while hidden from the queue.
+Conflict detection's revision-aware pending candidate path intentionally still sees deferred
+proposals: a snoozed pending change still claims its target card, so it must keep participating in
+conflict detection even while hidden from the queue. The candidate set comes from
+`IProposalEvidenceCandidateStore.ReadPendingPageAsync`; operation matching happens only after the
+effective revision is resolved. The legacy raw-operation repository predicate is not evidence.
 
 ## Alternatives
 
@@ -96,6 +98,7 @@ detection even while hidden from the queue.
 
 - `backend/src/Taskdeck.Domain/Entities/AutomationProposal.cs` (`Defer`, `DeferredUntil`, clear-on-transition)
 - `backend/src/Taskdeck.Infrastructure/Repositories/AutomationProposalRepository.cs` (status-gated queue filter)
+- `backend/src/Taskdeck.Infrastructure/Repositories/ProposalEvidenceCandidateStore.cs` (revision-aware evidence candidates)
 - `POST /api/automation/proposals/{id}/defer` (`AutomationProposalsController`)
 - Frontend: `useReviewProposals.isProposalDeferred`, `useReviewActions.handleDeferProposal`, `PaperReviewView.onDefer`
 - Issue #1002 (Paper Review surface, "D Defer 1h"); #1124 (expiry semantics)

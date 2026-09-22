@@ -129,9 +129,12 @@ const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
 let viewUnmounted = false
 let realtimeStarted = false
 const realtime = createBoardRealtimeController({
-  fetchBoard: async (id: string, options: { intent: 'background' }) => {
+  fetchBoard: async (
+    id: string,
+    options: { intent: 'background'; afterActive?: boolean },
+  ) => {
     if (viewUnmounted || id !== boardId.value) {
-      return
+      return false
     }
 
     const boardLoadErrorAtStart = boardLoadError.value
@@ -149,6 +152,7 @@ const realtime = createBoardRealtimeController({
         boardStore.error = null
       }
     }
+    return committed
   },
   onPresenceChanged: (snapshot) => {
     if (snapshot.boardId !== boardId.value) {

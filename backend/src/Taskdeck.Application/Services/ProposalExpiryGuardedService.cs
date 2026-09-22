@@ -1,24 +1,31 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// Production-facing proposal service that composes the host's two late safety boundaries.
+/// Production-facing proposal service that composes the host's late safety boundaries.
 ///
 /// Proposal creation flows through <see cref="RelationProposalAdmissionService"/> so every producer
-/// validates typed relations before persistence. Automatic expiry retains its own second-stage board
-/// guard so an archive race cannot mutate read-only decision history. All other lifecycle behaviour,
-/// notifications and operator reporting remain owned by the concrete service.
+/// validates typed relations before persistence. Automatic expiry reads one authoritative candidate
+/// snapshot, guards exactly that snapshot's boards, and consumes the same entities for mutation,
+/// reporting and notifications so a threshold crossing cannot enter the save without a board guard.
+/// All other lifecycle behaviour remains owned by the concrete service.
 /// </summary>
 public sealed class ProposalExpiryGuardedService(
     AutomationProposalService inner,
     IUnitOfWork unitOfWork,
-    IAutomationPolicyEngine policyEngine) : IAutomationProposalService
+    IAutomationPolicyEngine policyEngine,
+    INotificationService? notificationService = null,
+    ILogger<ProposalExpiryGuardedService>? logger = null) : IAutomationProposalService
 {
     private readonly RelationProposalAdmissionService _admission = new(inner, policyEngine);
+    private readonly INotificationService _notificationService = notificationService ?? NoOpNotificationService.Instance;
+    private int _lastSkippedArchivedBoardCount;
 
     public Task<Result<ProposalDto>> CreateProposalAsync(
         CreateProposalDto dto,
@@ -82,29 +89,94 @@ public sealed class ProposalExpiryGuardedService(
     {
         try
         {
-            // The repository-level archived-board filter is the first line of defence. Re-read the
-            // candidate partition immediately before mutation and arm each extant active board's
-            // concurrency marker. The inner service then reuses this same scoped unit of work:
-            // - archive before this guard => InvalidOperation and no mutation;
-            // - archive between this guard and the inner query => filtered out by that query;
-            // - archive after the guard/query => board-marker concurrency conflict rolls back the
-            //   proposal transition and its notification in the same save.
+            // This is the ONE authoritative candidate read for the production service. The same
+            // entity instances are guarded and then mutated; candidates that cross the threshold
+            // after this read wait for the next sweep rather than joining an unguarded second read.
             var sweep = await unitOfWork.AutomationProposals.GetExpiredAsync(cancellationToken);
-            if (sweep.Expirable.Count > 0)
+            var expiredProposals = sweep.Expirable;
+            if (expiredProposals.Count > 0)
             {
                 var guard = await policyEngine.GuardProposalDecisionWritesAsync(
-                    sweep.Expirable.Select(proposal => proposal.BoardId),
+                    expiredProposals.Select(proposal => proposal.BoardId),
                     cancellationToken);
                 if (!guard.IsSuccess)
                     return Result.Failure<int>(guard.ErrorCode, guard.ErrorMessage);
             }
 
-            return await inner.ExpireProposalsAsync(cancellationToken);
+            ReportArchivedBoardPartition(sweep.SkippedArchivedBoardCount);
+
+            foreach (var proposal in expiredProposals)
+                proposal.Expire();
+
+            if (expiredProposals.Count > 0)
+            {
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+
+                foreach (var proposal in expiredProposals)
+                {
+                    var notifyResult = await PublishProposalOutcomeNotificationAsync(
+                        proposal,
+                        cancellationToken);
+                    if (!notifyResult.IsSuccess)
+                        return Result.Failure<int>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
+                }
+            }
+
+            return Result.Success(expiredProposals.Count);
         }
         catch (DomainException exception)
         {
             return Result.Failure<int>(exception.ErrorCode, exception.Message);
         }
+    }
+
+    private void ReportArchivedBoardPartition(int skippedCount)
+    {
+        if (skippedCount != _lastSkippedArchivedBoardCount)
+        {
+            if (skippedCount > 0)
+            {
+                // Count only: no proposal id, summary or board name crosses the operator log.
+                logger?.LogInformation(
+                    "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
+                        + "restore the board to let them expire.",
+                    skippedCount);
+            }
+            else
+            {
+                logger?.LogInformation(
+                    "No stale proposals are being withheld for archived boards any more.");
+            }
+        }
+        else if (skippedCount > 0)
+        {
+            logger?.LogDebug(
+                "Still skipping {SkippedCount} stale proposals because their board is archived.",
+                skippedCount);
+        }
+
+        _lastSkippedArchivedBoardCount = skippedCount;
+    }
+
+    private async Task<Result> PublishProposalOutcomeNotificationAsync(
+        AutomationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        var publishResult = await _notificationService.PublishAsync(
+            new CreateNotificationRequestDto(
+                proposal.RequestedByUserId,
+                NotificationType.ProposalOutcome,
+                "Automation proposal updated",
+                $"Your proposal '{proposal.Summary}' is now expired.",
+                proposal.BoardId,
+                SourceEntityType: "proposal",
+                SourceEntityId: proposal.Id,
+                DeduplicationKey: $"proposal:{proposal.Id}:{proposal.Status}"),
+            cancellationToken);
+
+        return publishResult.IsSuccess
+            ? Result.Success()
+            : Result.Failure(publishResult.ErrorCode, publishResult.ErrorMessage);
     }
 
     public Task<Result<string>> GetProposalDiffAsync(

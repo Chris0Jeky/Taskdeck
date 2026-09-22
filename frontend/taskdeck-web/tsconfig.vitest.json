@@ -42,11 +42,11 @@
   // TypeScript files under `src/tests/` (284 specs plus `setup.ts` and one mock), measured
   // 2026-08-07.
   //
-  // CURRENT: **39 files remain** (BoardCanvas.spec.ts admitted 2026-09-06 under #1607, its two fixture fields fixed). The 24 files that carried exactly one error each were fixed and
-  // un-quarantined in #1607 (24 of the 415 errors cleared; 389 remain across the 39). That leaves
-  // **263 of the 326 spec files Vitest runs** type-checked (re-measured 2026-08-22: 302 src-tree
-  // specs minus the 40 quarantined, plus zero of the 24 frontend-root specs); the 64 that are not
-  // are these 40 plus the 24 in the frontend-root `tests/` directory.
+  // CURRENT: **38 files remain** (useStarterPackResult.spec.ts admitted 2026-09-18 under #1607 by removing two unnecessary unsafe casts; BoardCanvas.spec.ts was admitted 2026-09-06). The 24 files that carried exactly one error each were fixed and
+  // un-quarantined in #1607 (24 of the 415 errors cleared; 387 remain across the 38). That leaves
+  // **264 of the 326 spec files Vitest runs** type-checked (re-measured 2026-08-22: 302 src-tree
+  // specs minus the 38 quarantined, plus zero of the 24 frontend-root specs); the 62 that are not
+  // are these 38 plus the 24 in the frontend-root `tests/` directory.
   //
   // New spec files under `src/tests/` are checked by default — they are not in this list. The list
   // may only shrink: delete an entry once its file is fixed; never add one to make a red build
@@ -87,7 +87,6 @@
     "src/tests/composables/useReviewProposals.spec.ts",
     "src/tests/composables/useStarterPackCatalog.spec.ts",
     "src/tests/composables/useStarterPackImport.spec.ts",
-    "src/tests/composables/useStarterPackResult.spec.ts",
     "src/tests/composables/useVoiceCapture.spec.ts",
     "src/tests/config/PaperBranding.spec.ts",
     "src/tests/property/storeResilience.spec.ts",
