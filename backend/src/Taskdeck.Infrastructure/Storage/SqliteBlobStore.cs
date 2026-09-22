@@ -173,8 +173,9 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
         CancellationToken cancellationToken)
     {
         var connection = db.Database.GetDbConnection();
-        if (connection.State != ConnectionState.Open)
-            await connection.OpenAsync(cancellationToken);
+        var ownsConnection = connection.State != ConnectionState.Open;
+        if (ownsConnection)
+            await db.Database.OpenConnectionAsync(cancellationToken);
 
         var command = connection.CreateCommand();
         command.CommandText = commandText;
@@ -195,16 +196,18 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             if (!await reader.ReadAsync(cancellationToken))
             {
                 await reader.DisposeAsync();
-                command.Dispose();
+                await command.DisposeAsync();
+                if (ownsConnection) await db.Database.CloseConnectionAsync();
                 return null;
             }
 
-            return new ChunkStream(command, reader, reader.GetInt64(0));
+            return new ChunkStream(db, command, reader, ownsConnection, reader.GetInt64(0));
         }
         catch
         {
             if (reader is not null) await reader.DisposeAsync();
-            command.Dispose();
+            await command.DisposeAsync();
+            if (ownsConnection) await db.Database.CloseConnectionAsync();
             throw;
         }
     }
@@ -236,7 +239,7 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
         return db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId).ExecuteDeleteAsync(cancellationToken);
     }
 
-    private sealed class ChunkStream(DbCommand command, DbDataReader reader, long length) : Stream
+    private sealed class ChunkStream(TaskdeckDbContext context, DbCommand command, DbDataReader reader, bool ownsConnection, long length) : Stream
     {
         private byte[] buffer = [];
         private int offset;
@@ -272,8 +275,12 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             {
                 disposed = true;
                 buffer = [];
-                reader.Dispose();
-                command.Dispose();
+                try { reader.Dispose(); }
+                finally
+                {
+                    try { command.Dispose(); }
+                    finally { if (ownsConnection) context.Database.CloseConnection(); }
+                }
             }
             base.Dispose(disposing);
         }
@@ -284,8 +291,12 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             {
                 disposed = true;
                 buffer = [];
-                await reader.DisposeAsync();
-                await command.DisposeAsync();
+                try { await reader.DisposeAsync(); }
+                finally
+                {
+                    try { await command.DisposeAsync(); }
+                    finally { if (ownsConnection) await context.Database.CloseConnectionAsync(); }
+                }
             }
             await base.DisposeAsync();
             GC.SuppressFinalize(this);

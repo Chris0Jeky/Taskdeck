@@ -248,22 +248,38 @@ public sealed class SqliteBlobStoreTests
                 await tx.CommitAsync();
             }
 
-            await using var readerDb = new TaskdeckDbContext(options);
-            await using var output = (await new SqliteBlobStore(readerDb, new()).OpenReferenceReadAsync(referenceId, owner.Id))!;
-            var firstChunk = new byte[StoredBlobChunk.MaximumSize];
-            (await output.ReadAsync(firstChunk)).Should().Be(firstChunk.Length);
-            firstChunk.Should().Equal(bytes[..firstChunk.Length]);
-
-            await using (var releaserDb = new TaskdeckDbContext(options))
+            await using (var missingDb = new TaskdeckDbContext(options))
             {
-                await using var tx = await releaserDb.Database.BeginTransactionAsync();
-                (await new SqliteBlobStore(releaserDb, new()).ReleaseAsync(referenceId, owner.Id)).Should().BeTrue();
-                await tx.CommitAsync();
+                var missingConnection = missingDb.Database.GetDbConnection();
+                missingConnection.State.Should().Be(System.Data.ConnectionState.Closed);
+                (await new SqliteBlobStore(missingDb, new()).OpenReferenceReadAsync(Guid.NewGuid(), owner.Id)).Should().BeNull();
+                missingConnection.State.Should().Be(System.Data.ConnectionState.Closed);
             }
 
-            using var received = new MemoryStream();
-            await output.CopyToAsync(received);
-            received.ToArray().Should().Equal(bytes[firstChunk.Length..]);
+            await using (var readerDb = new TaskdeckDbContext(options))
+            {
+                var readerConnection = readerDb.Database.GetDbConnection();
+                readerConnection.State.Should().Be(System.Data.ConnectionState.Closed);
+                await using (var output = (await new SqliteBlobStore(readerDb, new()).OpenReferenceReadAsync(referenceId, owner.Id))!)
+                {
+                    readerConnection.State.Should().Be(System.Data.ConnectionState.Open);
+                    var firstChunk = new byte[StoredBlobChunk.MaximumSize];
+                    (await output.ReadAsync(firstChunk)).Should().Be(firstChunk.Length);
+                    firstChunk.Should().Equal(bytes[..firstChunk.Length]);
+
+                    await using (var releaserDb = new TaskdeckDbContext(options))
+                    {
+                        await using var tx = await releaserDb.Database.BeginTransactionAsync();
+                        (await new SqliteBlobStore(releaserDb, new()).ReleaseAsync(referenceId, owner.Id)).Should().BeTrue();
+                        await tx.CommitAsync();
+                    }
+
+                    using var received = new MemoryStream();
+                    await output.CopyToAsync(received);
+                    received.ToArray().Should().Equal(bytes[firstChunk.Length..]);
+                }
+                readerConnection.State.Should().Be(System.Data.ConnectionState.Closed);
+            }
         }
         finally
         {
