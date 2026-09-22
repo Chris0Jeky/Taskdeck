@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/authApi'
 import { useSessionStore } from '../store/sessionStore'
+import { SessionOperationSupersededError } from '../utils/sessionOperation'
 import type { RegistrationAvailability } from '../types/auth'
 import { normalizeRegistrationAvailability } from '../utils/registrationAvailability'
 
@@ -76,7 +77,8 @@ async function handleSubmit() {
       ...(inviteRequired.value ? { inviteCode: inviteCode.value.trim() } : {}),
     })
     router.push('/workspace/home')
-  } catch {
+  } catch (error) {
+    if (error instanceof SessionOperationSupersededError) return
     formError.value = session.error || 'Registration failed. Please try again.'
   } finally {
     submitting.value = false

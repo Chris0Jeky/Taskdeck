@@ -1,6 +1,19 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-20
+Last Updated: 2026-09-22
+
+## Session establishment follows the latest identity intent (#3324)
+
+Login, registration, OAuth/OIDC exchange, refresh and restore now own their asynchronous
+settlement. A newer identity operation, demo entry, logout or explicit session clear retires
+older operations before credential transport and after cache-purge or response awaits.
+Retired work cannot restore credentials, replace profile defaults, reset display-name caches,
+or overwrite current loading, error and toast state, including after a same-token login.
+Auth views and the session-expiry warning recognize supersession without suggesting a retry
+of an already completed registration or consumed exchange code. This is local intent
+ownership; it does not undo server requests, revoke tokens, or synchronize browser tabs.
+Deferred store and caller regressions are in `sessionStoreOwnership.spec.ts`, `LoginView.spec.ts`
+and `useSessionTimeout.spec.ts`; existing cache-boundary recovery messages remain covered.
 
 GitHub Pages (`https://chris0jeky.github.io/Taskdeck/`) now runs as a static demo: empty `VITE_API_BASE_URL` plus `VITE_DEMO_MODE=true`, runtime Pages+loopback detection, and an axios demo adapter so review, chat, and card parent/assignee reads never call `localhost:5000`. Home and Review share the same one pending demo proposal. Local Vite with `.env` still uses the real local API. This is not a hosted backend; that remains later work. Detection: `frontend/taskdeck-web/src/utils/apiBaseUrl.ts`. Operator notes: `docs/product/DEMO_PLAYBOOK.md`.
 

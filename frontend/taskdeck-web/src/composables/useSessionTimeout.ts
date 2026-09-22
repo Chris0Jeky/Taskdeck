@@ -2,6 +2,7 @@ import { ref, watch, onUnmounted, getCurrentInstance, readonly, type Ref } from 
 import { useSessionStore } from '../store/sessionStore'
 import { parseJwtPayload } from '../utils/jwt'
 import type { AuthResponse } from '../types/auth'
+import { SessionOperationSupersededError } from '../utils/sessionOperation'
 
 /**
  * How long before token expiry to show the warning (milliseconds).
@@ -167,7 +168,8 @@ export function useSessionTimeout(deps?: {
 
       warnedForToken = null
       dismiss()
-    } catch {
+    } catch (error) {
+      if (error instanceof SessionOperationSupersededError) return
       // Refresh failed — show a fallback message.
       // We keep the warning visible so the user knows to save work.
       const { useToastStore } = await import('../store/toastStore')
