@@ -161,6 +161,10 @@ $worker = {
         # Enumerate one directory at a time so a reparse point is rejected before it can be
         # traversed. Get-ChildItem -Recurse is intentionally avoided here because containment
         # depends on inspecting each child before adding its path to the walk.
+        $rootItem = Get-Item -LiteralPath $Root -Force -ErrorAction Stop
+        if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Stop-Worker 'path_reparse'
+        }
         $pending = [Collections.Generic.Stack[string]]::new()
         $pending.Push($Root)
         while ($pending.Count -gt 0) {
