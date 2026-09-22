@@ -192,6 +192,72 @@ public class DataExportServiceTests
     }
 
     [Fact]
+    public async Task ExportUserDataAsync_RejectsArtefactWhenSerializedRepresentationCrossesBudget()
+    {
+        SetupUserFound();
+        _artefactRepoMock
+            .Setup(r => r.GetTotalByteSizeByUserAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(7L * 1024 * 1024);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        result.ErrorMessage.Should().Contain("serialized artefact content");
+        _artefactRepoMock.Verify(
+            r => r.GetByUserAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_AcceptsArtefactAtSerializedRepresentationBoundary()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        _artefactRepoMock
+            .Setup(r => r.GetTotalByteSizeByUserAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(6L * 1024 * 1024);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_CombinesSourceStorageAndArtefactRepresentationEstimates()
+    {
+        SetupUserFound();
+        var sourceStorage = new Mock<ISourcePortabilityStore>();
+        sourceStorage
+            .Setup(store => store.EstimateBufferedBytesAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(20L * 1024 * 1024);
+        _artefactRepoMock
+            .Setup(r => r.GetTotalByteSizeByUserAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2L * 1024 * 1024);
+        var service = new DataExportService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object,
+            EmptyWorkspaceInsightRepository.Create(),
+            sourceStorage: sourceStorage.Object);
+
+        var result = await service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        result.ErrorMessage.Should().Contain("serialized artefact content");
+        sourceStorage.Verify(
+            store => store.EstimateBufferedBytesAsync(_userId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ExportUserDataAsync_ShouldRejectLargeExtractionHistoryBeforeLoadingArtefacts()
     {
         SetupUserFound();
@@ -1307,6 +1373,61 @@ public class DataExportServiceStreamingTests
         // Must be parseable as valid JSON
         var action = () => System.Text.Json.JsonDocument.Parse(json);
         action.Should().NotThrow("streaming export must produce valid JSON");
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_SucceedsForArtefactRejectedByBufferedRepresentationBudget()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var artefact = new SourceArtefact(
+            _userId,
+            ArtefactKind.TextFile,
+            "text/plain",
+            "large-notes.txt",
+            7L * 1024 * 1024,
+            new string('a', SourceArtefact.Sha256HexLength),
+            CaptureSource.Import);
+        var content = "streamed content"u8.ToArray();
+        _artefactRepoMock
+            .Setup(repository => repository.GetByUserAsync(
+                _userId,
+                500,
+                0,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([artefact]);
+        _artefactRepoMock
+            .Setup(repository => repository.GetByUserAsync(
+                _userId,
+                500,
+                1,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SourceArtefact>());
+        _artefactRepoMock
+            .Setup(repository => repository.CopyContentForUserAsync(
+                artefact.Id,
+                _userId,
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (Guid _, Guid _, Stream destination, CancellationToken token) =>
+            {
+                await destination.WriteAsync(content, token);
+                return true;
+            });
+
+        using var stream = new MemoryStream();
+        var result = await _service.StreamUserDataExportAsync(_userId, stream);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        using var document = System.Text.Json.JsonDocument.Parse(stream.ToArray());
+        var exported = document.RootElement.GetProperty("data").GetProperty("artefacts").EnumerateArray().Single();
+        Convert.FromBase64String(exported.GetProperty("contentBase64").GetString()!)
+            .Should().Equal(content);
+        _artefactRepoMock.Verify(
+            repository => repository.GetTotalByteSizeByUserAsync(
+                _userId,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

@@ -31,6 +31,11 @@ public class DataExportService : IDataExportService
         }
     }
     private const long MaxBufferedArtefactBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
+    private const long MaxBufferedRepresentationBytes = 25L * 1024 * 1024;
+    // The buffered DTO retains raw byte[] values, Base64 strings, and the JSON serializer's
+    // output at the same time. Reserve a fixed envelope allowance for those objects and the
+    // non-artefact sections before accepting a near-boundary export.
+    private const long BufferedRepresentationOverheadBytes = 1L * 1024 * 1024;
     private const int MaxBufferedArtefactRows = 10_000;
     private const long MaxBufferedTranscriptSerializedCharacters = 1_024_000;
     private const int MaxBufferedTranscriptRows = 10_000;
@@ -166,7 +171,10 @@ public class DataExportService : IDataExportService
 
         try
         {
-            if (_sourceStorage is not null && await _sourceStorage.EstimateBufferedBytesAsync(userId, cancellationToken) > 25L * 1024 * 1024)
+            var sourceStorageEstimate = _sourceStorage is not null
+                ? await _sourceStorage.EstimateBufferedBytesAsync(userId, cancellationToken)
+                : 0L;
+            if (sourceStorageEstimate > MaxBufferedRepresentationBytes)
                 return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "This export contains too much original source content to buffer; use the streaming export endpoint");
             var artefactBytes = await _artefacts.GetTotalByteSizeByUserAsync(userId, cancellationToken);
             var extractionBytes = await _extractions.GetEstimatedSerializedBytesByUserAsync(
@@ -181,6 +189,13 @@ public class DataExportService : IDataExportService
                 return Result.Failure<UserDataExportDto>(
                     ErrorCodes.PayloadTooLarge,
                     "This export contains too much artefact or extraction content to buffer; use the streaming export endpoint");
+            }
+            if (EstimateBufferedArtefactRepresentationBytes(artefactBytes, extractionBytes) >
+                MaxBufferedRepresentationBytes - sourceStorageEstimate)
+            {
+                return Result.Failure<UserDataExportDto>(
+                    ErrorCodes.PayloadTooLarge,
+                    "This export contains too much serialized artefact content to buffer; use the streaming export endpoint");
             }
             if (transcriptSerializedCharacters > MaxBufferedTranscriptSerializedCharacters)
             {
@@ -465,6 +480,30 @@ public class DataExportService : IDataExportService
             return Result.Failure<UserDataExportDto>(
                 ErrorCodes.UnexpectedError,
                 "Failed to export user data due to an internal error");
+        }
+    }
+
+    private static long EstimateBufferedArtefactRepresentationBytes(
+        long artefactBytes,
+        long extractionBytes)
+    {
+        if (artefactBytes < 0 || extractionBytes < 0)
+            return long.MaxValue;
+
+        try
+        {
+            // Four bytes per source byte covers the raw buffer, Base64 expansion, and the
+            // UTF-16/UTF-8 JSON representations retained during MVC serialization. Extraction
+            // estimates are already serialized JSON bytes, so two bytes per byte covers their
+            // retained string/object representation and the final JSON buffer.
+            return checked(
+                checked(artefactBytes * 4) +
+                checked(extractionBytes * 2) +
+                BufferedRepresentationOverheadBytes);
+        }
+        catch (OverflowException)
+        {
+            return long.MaxValue;
         }
     }
 
