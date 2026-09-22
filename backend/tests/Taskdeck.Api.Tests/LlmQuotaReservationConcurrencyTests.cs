@@ -48,21 +48,23 @@ public class SingleSlotQuotaWebApplicationFactory : TestWebApplicationFactory
 /// </summary>
 public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuotaWebApplicationFactory>
 {
-    private readonly SingleSlotQuotaWebApplicationFactory _factory;
+    private readonly IServiceProvider _services;
 
     public LlmQuotaReservationConcurrencyTests(SingleSlotQuotaWebApplicationFactory factory)
     {
-        _factory = factory;
+        // #1435: concurrent FIRST access to factory.Services can construct multiple hosts/files.
+        // Pin one host before the burst; scopes/connections still contend independently.
+        _services = factory.Services;
     }
 
-    [Fact(Skip = "Reservation atomicity TOCTOU deferred to #1435 — see park evidence")]
+    [Fact]
     public async Task ReserveAsync_TwoConcurrentAtBoundary_ExactlyOnePasses()
     {
         var userId = Guid.NewGuid();
 
         // Two independent DI scopes → two DbContexts → two SQLite connections contending on one file.
-        using var scopeA = _factory.Services.CreateScope();
-        using var scopeB = _factory.Services.CreateScope();
+        using var scopeA = _services.CreateScope();
+        using var scopeB = _services.CreateScope();
         var quotaA = scopeA.ServiceProvider.GetRequiredService<ILlmQuotaService>();
         var quotaB = scopeB.ServiceProvider.GetRequiredService<ILlmQuotaService>();
 
@@ -73,12 +75,12 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
 
         var taskA = Task.Run(async () =>
         {
-            barrier.SignalAndWait();
+            barrier.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
             return await quotaA.ReserveAsync(userId, LlmSurface.Chat);
         });
         var taskB = Task.Run(async () =>
         {
-            barrier.SignalAndWait();
+            barrier.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
             return await quotaB.ReserveAsync(userId, LlmSurface.Chat);
         });
 
@@ -89,7 +91,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
         results.Single(r => !r.Allowed).DeniedReason.Should().Contain("hourly request limit");
     }
 
-    [Fact(Skip = "Reservation atomicity TOCTOU deferred to #1435 — see park evidence")]
+    [Fact]
     public async Task ReserveAsync_RepeatedConcurrentBursts_NeverOvershoot()
     {
         // Supplementary stress: repeated 4-way bursts, each on a fresh user at the single-slot boundary.
@@ -102,9 +104,9 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
 
             var tasks = Enumerable.Range(0, racers).Select(_ => Task.Run(async () =>
             {
-                using var scope = _factory.Services.CreateScope();
+                using var scope = _services.CreateScope();
                 var quota = scope.ServiceProvider.GetRequiredService<ILlmQuotaService>();
-                barrier.SignalAndWait();
+                barrier.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
                 return await quota.ReserveAsync(userId, LlmSurface.Chat);
             })).ToArray();
 
@@ -117,7 +119,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
     public async Task ReleaseReservation_FreesSlot_NoQuotaLeak()
     {
         var userId = Guid.NewGuid();
-        using var scope = _factory.Services.CreateScope();
+        using var scope = _services.CreateScope();
         var quota = scope.ServiceProvider.GetRequiredService<ILlmQuotaService>();
 
         var first = await quota.ReserveAsync(userId, LlmSurface.Chat);
@@ -139,7 +141,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
     public async Task CommitReservation_TurnsReservationIntoCountedUsage()
     {
         var userId = Guid.NewGuid();
-        using var scope = _factory.Services.CreateScope();
+        using var scope = _services.CreateScope();
         var quota = scope.ServiceProvider.GetRequiredService<ILlmQuotaService>();
         var repo = scope.ServiceProvider.GetRequiredService<ILlmUsageRecordRepository>();
 
@@ -169,7 +171,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
         // drop them — the repository inserts a replacement committed row so the usage still counts
         // against quota and telemetry, and a late/duplicate commit stays idempotent.
         var userId = Guid.NewGuid();
-        using var scope = _factory.Services.CreateScope();
+        using var scope = _services.CreateScope();
         var quota = scope.ServiceProvider.GetRequiredService<ILlmQuotaService>();
         var repo = scope.ServiceProvider.GetRequiredService<ILlmUsageRecordRepository>();
 
@@ -181,7 +183,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
         var reservationId = reservation.ReservationId!.Value;
 
         // Simulate the TTL sweep deleting the reservation row while the slow LLM call was still running.
-        using (var sweepScope = _factory.Services.CreateScope())
+        using (var sweepScope = _services.CreateScope())
         {
             var db = sweepScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             var row = await db.LlmUsageRecords.SingleAsync(r => r.Id == reservationId);
@@ -210,7 +212,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
         var userId = Guid.NewGuid();
 
         // Seed a stale reservation (a crashed process's orphan) that already expired and fills the slot.
-        using (var seedScope = _factory.Services.CreateScope())
+        using (var seedScope = _services.CreateScope())
         {
             var db = seedScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             var stale = LlmUsageRecord.CreateReservation(
@@ -219,7 +221,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
             await db.SaveChangesAsync();
         }
 
-        using var scope = _factory.Services.CreateScope();
+        using var scope = _services.CreateScope();
         var quota = scope.ServiceProvider.GetRequiredService<ILlmQuotaService>();
 
         // The expired reservation must not count → the slot is available again.
@@ -227,7 +229,7 @@ public class LlmQuotaReservationConcurrencyTests : IClassFixture<SingleSlotQuota
         reservation.Allowed.Should().BeTrue("an expired reservation must not consume quota");
 
         // And it must have been swept: only the one live reservation remains.
-        using var checkScope = _factory.Services.CreateScope();
+        using var checkScope = _services.CreateScope();
         var checkDb = checkScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var liveReserved = await checkDb.LlmUsageRecords
             .Where(r => r.UserId == userId && r.Status == LlmUsageRecordStatus.Reserved)
@@ -269,20 +271,21 @@ public class SingleTokenSlotQuotaWebApplicationFactory : TestWebApplicationFacto
 /// </summary>
 public class LlmQuotaTokenBoundaryConcurrencyTests : IClassFixture<SingleTokenSlotQuotaWebApplicationFactory>
 {
-    private readonly SingleTokenSlotQuotaWebApplicationFactory _factory;
+    private readonly IServiceProvider _services;
 
     public LlmQuotaTokenBoundaryConcurrencyTests(SingleTokenSlotQuotaWebApplicationFactory factory)
     {
-        _factory = factory;
+        // Initialize one test host before contenders are allowed to create independent scopes.
+        _services = factory.Services;
     }
 
-    [Fact(Skip = "Reservation atomicity TOCTOU deferred to #1435 — see park evidence")]
+    [Fact]
     public async Task ReserveAsync_TwoConcurrentAtTokenBoundary_ExactlyOnePasses()
     {
         var userId = Guid.NewGuid();
 
-        using var scopeA = _factory.Services.CreateScope();
-        using var scopeB = _factory.Services.CreateScope();
+        using var scopeA = _services.CreateScope();
+        using var scopeB = _services.CreateScope();
         var quotaA = scopeA.ServiceProvider.GetRequiredService<ILlmQuotaService>();
         var quotaB = scopeB.ServiceProvider.GetRequiredService<ILlmQuotaService>();
 
@@ -292,12 +295,12 @@ public class LlmQuotaTokenBoundaryConcurrencyTests : IClassFixture<SingleTokenSl
 
         var taskA = Task.Run(async () =>
         {
-            barrier.SignalAndWait();
+            barrier.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
             return await quotaA.ReserveAsync(userId, LlmSurface.Chat);
         });
         var taskB = Task.Run(async () =>
         {
-            barrier.SignalAndWait();
+            barrier.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
             return await quotaB.ReserveAsync(userId, LlmSurface.Chat);
         });
 
@@ -308,7 +311,7 @@ public class LlmQuotaTokenBoundaryConcurrencyTests : IClassFixture<SingleTokenSl
         results.Single(r => !r.Allowed).DeniedReason.Should().Contain("daily token budget");
     }
 
-    [Fact(Skip = "Reservation atomicity TOCTOU deferred to #1435 — see park evidence")]
+    [Fact]
     public async Task ReserveAsync_RepeatedConcurrentBursts_NeverOvershootTokenBudget()
     {
         // Supplementary stress on the token boundary: repeated 4-way bursts on fresh users must each
@@ -321,9 +324,9 @@ public class LlmQuotaTokenBoundaryConcurrencyTests : IClassFixture<SingleTokenSl
 
             var tasks = Enumerable.Range(0, racers).Select(_ => Task.Run(async () =>
             {
-                using var scope = _factory.Services.CreateScope();
+                using var scope = _services.CreateScope();
                 var quota = scope.ServiceProvider.GetRequiredService<ILlmQuotaService>();
-                barrier.SignalAndWait();
+                barrier.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
                 return await quota.ReserveAsync(userId, LlmSurface.Chat);
             })).ToArray();
 
