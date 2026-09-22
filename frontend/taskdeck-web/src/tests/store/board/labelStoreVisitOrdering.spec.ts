@@ -13,6 +13,7 @@ const { mockLabelsApi } = vi.hoisted(() => ({
 vi.mock('../../../api/labelsApi', () => ({ labelsApi: mockLabelsApi }))
 
 import { createLabelActions } from '../../../store/board/labelStore'
+import { createBoardState } from '../../../store/board/boardState'
 
 interface TestLabel {
   id: string
@@ -34,6 +35,7 @@ const originalLabel: TestLabel = {
 
 function createState() {
   return {
+    ...createBoardState(),
     currentBoard: ref<{ id: string } | null>({ id: 'board-1' }),
     currentBoardLabels: ref<TestLabel[]>([{ ...originalLabel }]),
     loading: ref(false),

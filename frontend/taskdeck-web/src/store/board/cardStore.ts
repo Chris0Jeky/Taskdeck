@@ -5,7 +5,7 @@ import { cardsApi } from '../../api/cardsApi'
 import { getErrorMessage } from '../../utils/errorMessage'
 import type { CardDetachPreview, CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
 import type { BoardState } from './boardState'
-import type { BoardHelpers } from './boardStoreHelpers'
+import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 import type { BoardFetchOptions } from './boardCrudStore'
 
 export function createCardActions(
@@ -27,9 +27,11 @@ export function createCardActions(
   }
   async function setCardArchived(boardId: string, cardId: string, archive: boolean, expectedUpdatedAt: string, expectedChildrenFingerprint?: string) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     const updated = expectedChildrenFingerprint === undefined
       ? await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt)
       : await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt, expectedChildrenFingerprint)
+    if (!isCurrentSession()) return updated
     helpers.markBoardDetailMutation(boardId)
     if (state.currentBoard.value?.id === boardId) {
       const existed = state.currentBoardCards.value.some(card => card.id === cardId)
@@ -46,8 +48,11 @@ export function createCardActions(
     filters?: { search?: string; labelId?: string; columnId?: string },
   ) {
     if (helpers.isDemoMode) return
+    const isCurrentSession = captureBoardSession(state)
     try {
-      state.currentBoardCards.value = await cardsApi.getCards(boardId, filters)
+      const cards = await cardsApi.getCards(boardId, filters)
+      if (!isCurrentSession()) return
+      state.currentBoardCards.value = cards
 
       // Keep column card counts in sync with the latest cards collection
       if (state.currentBoard.value) {
@@ -61,17 +66,19 @@ export function createCardActions(
         })
       }
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to fetch cards')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to fetch cards')
       throw e
     }
   }
 
   async function createCard(boardId: string, card: CreateCardDto) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
       const newCard = await cardsApi.createCard(boardId, card)
+      if (!isCurrentSession()) return newCard
       helpers.markBoardDetailMutation(boardId)
       // A board-detail refresh can commit the created card while this POST is
       // still resolving. Keep that newer snapshot intact instead of appending a
@@ -88,15 +95,16 @@ export function createCardActions(
       helpers.toast.success(`Card "${newCard.title.trim()}" created successfully`)
       return newCard
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to create card')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to create card')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
   async function updateCard(boardId: string, cardId: string, card: UpdateCardDto) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
@@ -106,6 +114,7 @@ export function createCardActions(
         expectedUpdatedAt: card.expectedUpdatedAt ?? existingCard?.updatedAt ?? null,
       }
       const updatedCard = await cardsApi.updateCard(boardId, cardId, request)
+      if (!isCurrentSession()) return updatedCard
       helpers.markBoardDetailMutation(boardId)
 
       // Update the card in the store
@@ -117,6 +126,7 @@ export function createCardActions(
       helpers.toast.success('Card updated successfully')
       return updatedCard
     } catch (e: unknown) {
+      if (!isCurrentSession()) throw e
       if (helpers.isHttpConflict(e)) {
         helpers.toast.error(getErrorMessage(e, 'Failed to update card'))
       } else {
@@ -124,17 +134,19 @@ export function createCardActions(
       }
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
   async function deleteCard(boardId: string, cardId: string, confirmation?: CardDetachPreview) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     let refreshChildren = false
     try {
       state.loading.value = true
       state.error.value = null
       await cardsApi.deleteCard(boardId, cardId, confirmation)
+      if (!isCurrentSession()) return
       helpers.markBoardDetailMutation(boardId)
 
       // A move, realtime refresh, or navigation can replace this state while the
@@ -161,13 +173,13 @@ export function createCardActions(
       }
       helpers.toast.success('Card deleted successfully')
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to delete card')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to delete card')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
     // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
-    if (refreshChildren) await refreshDetachedChildren(boardId)
+    if (isCurrentSession() && refreshChildren) await refreshDetachedChildren(boardId)
   }
 
   async function moveCard(
@@ -177,6 +189,7 @@ export function createCardActions(
     targetPosition: number,
   ) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
@@ -188,6 +201,7 @@ export function createCardActions(
         targetColumnId,
         targetPosition,
       })
+      if (!isCurrentSession()) return updatedCard
       helpers.markBoardDetailMutation(boardId)
 
       // The board can change while the move is in flight. Committing to another
@@ -219,10 +233,10 @@ export function createCardActions(
       helpers.toast.success('Card moved successfully')
       return updatedCard
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to move card')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to move card')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
@@ -231,12 +245,13 @@ export function createCardActions(
     cardId: string,
   ): Promise<CardCaptureProvenance | null> {
     if (helpers.isDemoMode) return null
+    const isCurrentSession = captureBoardSession(state)
     try {
       // cardsApi.getCardProvenance already returns null for 404 (manual cards have no
       // capture provenance — absence is expected, not exceptional).
       return await cardsApi.getCardProvenance(boardId, cardId)
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to fetch card provenance')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to fetch card provenance')
       throw e
     }
   }

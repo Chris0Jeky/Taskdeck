@@ -10,7 +10,7 @@ import { buildDemoBoardList } from '../../utils/demoData'
 import { applyBoardCardCounts } from '../../utils/boardCardCounts'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import { initialCardFilters, type BoardState } from './boardState'
-import type { BoardHelpers } from './boardStoreHelpers'
+import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 
 // Minimum gap between board-list fetches.  Multiple views (BoardsListView,
 // ActivityView, ReviewView, etc.) can call fetchBoards on mount in quick
@@ -594,27 +594,31 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
   async function createBoard(board: CreateBoardDto) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
       const newBoard = await boardsApi.createBoard(board)
+      if (!isCurrentSession()) return newBoard
       state.boards.value.push(newBoard)
       helpers.toast.success(`Board "${newBoard.name}" created successfully`)
       return newBoard
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to create board')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to create board')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
   async function updateBoard(boardId: string, board: UpdateBoardDto) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
       const updatedBoard = await boardsApi.updateBoard(boardId, board)
+      if (!isCurrentSession()) return updatedBoard
       // Board settings are part of the board-detail fan-out, so a detail read
       // that captured the pre-save state must not replace this update (#2435).
       helpers.markBoardDetailMutation(boardId)
@@ -633,19 +637,21 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       helpers.toast.success('Board updated successfully')
       return updatedBoard
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to update board')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to update board')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
   async function deleteBoard(boardId: string) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
       await boardsApi.deleteBoard(boardId)
+      if (!isCurrentSession()) return
 
       // Clear detailed state for the current board before removing it from the
       // main boards list. This prevents any watchers on the `boards` array
@@ -673,10 +679,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
       helpers.toast.success('Board archived successfully')
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to archive board')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to archive board')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
@@ -691,8 +697,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
    * without ending the session, and clearing on them would drop the board the
    * user is looking at.
    *
-   * Two generations are bumped rather than one because the list and the detail
-   * read are separate lifecycles.  A bumped generation is what makes an
+   * The shared session generation retires mutations and direct cache reads,
+   * including requests begun before any board detail loaded. List and detail
+   * reads additionally retain their separate request generations. A bump makes an
    * already-issued request safe: the response still arrives, finds its
    * generation stale, and returns without writing board state, the loading
    * flag, a throttle stamp, or an error surface.  The loading flag is in that
@@ -702,9 +709,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
    * in flight during the reset would land afterwards and repopulate the store
    * with the previous account's boards.
    *
-   * The generation bump makes a late response harmless; the abort keeps it from
-   * being sent at all, so no request outlives the session that started it.  Both
-   * lifecycles are aborted: every open list read and the active detail read.
+   * The generation bump suppresses late client effects. Both read lifecycles
+   * also receive cancellation: every open list read and the active detail read.
+   * Submitted writes can still complete on the server; reset does not undo them.
    */
   function resetForLogout() {
     state.boardMutationSessionGeneration.value++

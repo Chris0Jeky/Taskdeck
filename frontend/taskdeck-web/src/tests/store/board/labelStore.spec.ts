@@ -15,9 +15,11 @@ vi.mock('../../../api/labelsApi', () => ({
 }))
 
 import { createLabelActions } from '../../../store/board/labelStore'
+import { createBoardState } from '../../../store/board/boardState'
 
 function createMockState() {
   return {
+    ...createBoardState(),
     currentBoardLabels: ref([
       { id: 'lbl-1', name: 'Bug', colorHex: '#f00' },
       { id: 'lbl-2', name: 'Feature', colorHex: '#0f0' },

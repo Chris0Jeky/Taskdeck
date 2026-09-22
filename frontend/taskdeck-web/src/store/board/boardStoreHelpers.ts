@@ -13,6 +13,12 @@ import type { BoardState } from './boardState'
 // thing to a reader, so both map to the same copy.
 const TIMEOUT_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT'])
 
+/** A null board can mean pre-load or logout; only the reset generation distinguishes them. */
+export function captureBoardSession(state: BoardState): () => boolean {
+  const generation = state.boardMutationSessionGeneration.value
+  return () => state.boardMutationSessionGeneration.value === generation
+}
+
 /**
  * Whether this failure is a client-side timeout — a routine outcome on every
  * board read since #2685 bounded them (`timeout: BOARD_REQUEST_TIMEOUT_MS`,

@@ -13,9 +13,11 @@ const { mockLabelsApi } = vi.hoisted(() => ({
 vi.mock('../../../api/labelsApi', () => ({ labelsApi: mockLabelsApi }))
 
 import { createLabelActions } from '../../../store/board/labelStore'
+import { createBoardState } from '../../../store/board/boardState'
 
 function createState() {
   return {
+    ...createBoardState(),
     currentBoard: ref<{ id: string } | null>({ id: 'board-1' }),
     currentBoardLabels: ref([
       { id: 'lbl-1', name: 'Bug', colorHex: '#f00' },

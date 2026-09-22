@@ -10,12 +10,13 @@ import { watch } from 'vue'
 import { labelsApi } from '../../api/labelsApi'
 import type { CreateLabelDto, Label, UpdateLabelDto } from '../../types/board'
 import type { BoardState } from './boardState'
-import type { BoardHelpers } from './boardStoreHelpers'
+import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 
 interface LabelCacheVisit {
   boardId: string
   labels: Label[]
   generation: number
+  isCurrentSession: () => boolean
 }
 
 class StaleBoardVisitError extends Error {
@@ -29,8 +30,8 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
   // Label state is one selected-board collection. Board-detail commits replace
   // the array, so its identity distinguishes overlapping reads within one visit.
   // A separate generation observes board-id transitions synchronously: unlike
-  // array identity it survives a same-board detail refresh, but A→B→A and
-  // logout→login can never reuse the old authority.
+  // array identity it survives a same-board detail refresh but retires A→B→A.
+  // The shared session generation also retires logout before any detail loaded.
   const readVersionByBoardId = new Map<string, number>()
   const mutationVersionByBoardId = new Map<string, number>()
   const mutationTailByLabelKey = new Map<string, Promise<void>>()
@@ -49,6 +50,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       boardId,
       labels: state.currentBoardLabels.value,
       generation: boardVisitGeneration,
+      isCurrentSession: captureBoardSession(state),
     }
   }
 
@@ -56,7 +58,8 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
     const currentBoard = state.currentBoard?.value
     return (
       (currentBoard == null || currentBoard.id === visit.boardId) &&
-      boardVisitGeneration === visit.generation
+      boardVisitGeneration === visit.generation &&
+      visit.isCurrentSession()
     )
   }
 
@@ -119,8 +122,8 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
     }
   }
 
-  async function reconcileCurrentLabelsAfterStaleVisit(boardId: string) {
-    if (state.currentBoard?.value?.id !== boardId) return
+  async function reconcileCurrentLabelsAfterStaleVisit(boardId: string, originalVisit: LabelCacheVisit) {
+    if (!originalVisit.isCurrentSession() || state.currentBoard?.value?.id !== boardId) return
 
     const visit = captureLabelVisit(boardId)
     const readVersion = nextReadVersion(boardId)
@@ -183,6 +186,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       const newLabel = await labelsApi.createLabel(boardId, label)
+      if (!visit.isCurrentSession()) return newLabel
       helpers.markBoardDetailMutation(boardId)
       markLabelMutation(boardId)
 
@@ -195,7 +199,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
         }
         helpers.toast.success(`Label "${newLabel.name}" created successfully`)
       } else if (state.currentBoard?.value?.id === boardId) {
-        await reconcileCurrentLabelsAfterStaleVisit(boardId)
+        await reconcileCurrentLabelsAfterStaleVisit(boardId, visit)
       }
       return newLabel
     } catch (e: unknown) {
@@ -220,6 +224,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
         visit,
         () => labelsApi.updateLabel(boardId, labelId, label),
       )
+      if (!visit.isCurrentSession()) return updatedLabel
       helpers.markBoardDetailMutation(boardId)
       markLabelMutation(boardId)
 
@@ -229,7 +234,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
         if (index !== -1) currentLabels[index] = updatedLabel
         helpers.toast.success('Label updated successfully')
       } else if (state.currentBoard?.value?.id === boardId) {
-        await reconcileCurrentLabelsAfterStaleVisit(boardId)
+        await reconcileCurrentLabelsAfterStaleVisit(boardId, visit)
       }
 
       return updatedLabel
@@ -255,6 +260,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
         visit,
         () => labelsApi.deleteLabel(boardId, labelId),
       )
+      if (!visit.isCurrentSession()) return
       helpers.markBoardDetailMutation(boardId)
       markLabelMutation(boardId)
 
@@ -264,7 +270,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
         if (index !== -1) currentLabels.splice(index, 1)
         helpers.toast.success('Label deleted successfully')
       } else if (state.currentBoard?.value?.id === boardId) {
-        await reconcileCurrentLabelsAfterStaleVisit(boardId)
+        await reconcileCurrentLabelsAfterStaleVisit(boardId, visit)
       }
     } catch (e: unknown) {
       if (!(e instanceof StaleBoardVisitError) && isCurrentBoardVisit(visit)) {
