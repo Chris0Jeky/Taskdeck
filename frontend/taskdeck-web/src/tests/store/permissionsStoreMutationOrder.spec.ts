@@ -137,6 +137,24 @@ describe('permissionsStore mutation ordering', () => {
     expect(store.boardAccess.get('board-1')).toEqual([])
   })
 
+  it('starts an update only after revoke and does not resurrect a removed row', async () => {
+    const revoke = deferred<void>()
+    vi.mocked(boardAccessApi.revokeAccess).mockReturnValue(revoke.promise)
+    vi.mocked(boardAccessApi.updateAccess).mockRejectedValue(new Error('access not found'))
+
+    const revokeRequest = store.revokeAccess('board-1', 'access-1')
+    const updateRequest = store.updateAccess('board-1', 'access-1', { role: 'Admin' })
+    expect(boardAccessApi.updateAccess).not.toHaveBeenCalled()
+
+    revoke.resolve()
+    await revokeRequest
+    await expect(updateRequest).rejects.toThrow('access not found')
+
+    expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(1)
+    expect(store.boardAccess.get('board-1')).toEqual([])
+    expect(store.error).toBe('access not found')
+  })
+
   it('does not start queued old-session transport after logout', async () => {
     const first = deferred<BoardAccess>()
     vi.mocked(boardAccessApi.updateAccess).mockReturnValue(first.promise)
