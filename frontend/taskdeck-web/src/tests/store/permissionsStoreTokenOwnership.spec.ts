@@ -136,6 +136,24 @@ describe('permissionsStore token ownership', () => {
     expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing', 'fresh-grant'])
   })
 
+  it('does not reconcile a stale mutation after logout and same-user re-login', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
+    const pendingGrant = deferred<BoardAccess>()
+    const granted = access('stale-grant')
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+
+    const request = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.clearSession()
+    session.token = token('new-login')
+    session.userId = 'owner-1'
+    pendingGrant.resolve(granted)
+
+    await expect(request).resolves.toEqual(granted)
+    expect(boardAccessApi.getAccess).not.toHaveBeenCalled()
+    expect(store.boardAccess.has('board-1')).toBe(false)
+    expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
   it('supersedes an active replacement read after a stale mutation settles', async () => {
     const oldRead = deferred<BoardAccess[]>()
     const replacementRead = deferred<BoardAccess[]>()

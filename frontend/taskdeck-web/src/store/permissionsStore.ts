@@ -29,7 +29,13 @@ export const usePermissionsStore = defineStore('permissions', () => {
     revalidateOnTokenRotation: boolean
   }
 
+  type InvalidationKind = 'session-change' | 'token-rotation'
+
   let sessionEpoch = 0
+  let lastInvalidation: { epoch: number; kind: InvalidationKind } = {
+    epoch: 0,
+    kind: 'session-change',
+  }
   const activeOperations = new Set<symbol>()
   const activeReadByBoard = new Map<string, ReadOwner>()
   const readRetryByBoard = new Map<string, ReadRetry>()
@@ -107,8 +113,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
   }
 
-  function invalidateOperations() {
+  function invalidateOperations(kind: InvalidationKind = 'session-change') {
     sessionEpoch += 1
+    lastInvalidation = { epoch: sessionEpoch, kind }
     activeOperations.clear()
     activeReadByBoard.clear()
     readRetryByBoard.clear()
@@ -117,7 +124,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     error.value = null
   }
 
-  function retryMissingActiveReads() {
+  function retryMissingActiveReads(isTokenRotation: boolean) {
     const retries = Array.from(activeReadByBoard.keys())
       .filter(boardId => {
         const owner = activeReadByBoard.get(boardId)
@@ -126,7 +133,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       .map(boardId => readRetryByBoard.get(boardId))
       .filter((retry): retry is ReadRetry => retry !== undefined)
 
-    invalidateOperations()
+    invalidateOperations(isTokenRotation ? 'token-rotation' : 'session-change')
     for (const retry of retries) {
       void retry().catch(() => {
         // The retried store action owns current error/toast state.
@@ -140,6 +147,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
     // successful mutation cannot disappear from the access cache. Identity
     // changes and logout must not read a board on behalf of the old session.
     if (ownsSession(owner)
+      || lastInvalidation.epoch !== sessionEpoch
+      || lastInvalidation.kind !== 'token-rotation'
       || owner.userId === null
       || owner.userId !== session.userId
       || !session.isAuthenticated
@@ -169,7 +178,18 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   watch(
     () => session.token,
-    retryMissingActiveReads,
+    (token, previousToken) => {
+      // A valid token replacement with the same authenticated identity is the
+      // only session transition where a committed stale mutation is safe to
+      // reconcile. Logout followed by a quick same-user login must not let an
+      // old lifecycle read or mutate the replacement session.
+      const isTokenRotation = token !== null
+        && previousToken !== null
+        && session.userId !== null
+        && session.isAuthenticated
+        && !session.isDemo
+      retryMissingActiveReads(isTokenRotation)
+    },
     { flush: 'sync' },
   )
 
