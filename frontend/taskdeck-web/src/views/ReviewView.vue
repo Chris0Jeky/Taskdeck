@@ -11,6 +11,25 @@ const route = useRoute()
 const { t } = useI18n()
 const reviewSurfaceRef = ref<ComponentPublicInstance | null>(null)
 
+function focusTransiently(surface: HTMLElement) {
+  surface.setAttribute('tabindex', '-1')
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    surface.removeEventListener('blur', release)
+    surface.removeEventListener('pointerdown', release, true)
+    surface.removeEventListener('click', release)
+    surface.removeAttribute('tabindex')
+  }
+
+  surface.addEventListener('blur', release, { once: true })
+  surface.addEventListener('pointerdown', release, { once: true, capture: true })
+  surface.addEventListener('click', release, { once: true })
+  surface.focus()
+  if (document.activeElement !== surface) release()
+}
+
 /**
  * Both Review skins own the primary unavailable-pin handoff (#2599): Paper
  * prefers its first queue row and Legacy its queue section, then each falls
@@ -24,13 +43,14 @@ const reviewSurfaceRef = ref<ComponentPublicInstance | null>(null)
  * Review landmark. The landmark uses a dedicated localized surface name rather
  * than the return action's label, and that name follows live locale changes.
  *
- * `tabindex` is applied for this handoff only and removed when the landmark
- * loses focus. A PERMANENT `tabindex="-1"` would make every click on inert
- * review content focus this root (the HTML focusing steps walk up to the
- * nearest focusable ancestor), and both skins' own handoffs read "activeElement
- * is not the document" as "the reviewer moved focus deliberately" -
- * PaperReviewView's unavailable-return handoff and ReviewMain's decision-receipt
- * handoff would then stop firing for the rest of the visit.
+ * `tabindex` is applied for this handoff only. It is removed on blur, the first
+ * pointer or synthesized click interaction, or immediately when focus does not
+ * take. A PERMANENT `tabindex="-1"` would make every click on inert review
+ * content focus this root (the HTML focusing steps walk up to the nearest
+ * focusable ancestor), and both skins' own handoffs read "activeElement is not
+ * the document" as "the reviewer moved focus deliberately" - PaperReviewView's
+ * unavailable-return handoff and ReviewMain's decision-receipt handoff would
+ * then stop firing for the rest of the visit.
  */
 watch(
   () => route.hash,
@@ -45,9 +65,7 @@ watch(
 
     const surface = reviewSurfaceRef.value?.$el as HTMLElement | undefined
     if (!surface?.isConnected) return
-    surface.setAttribute('tabindex', '-1')
-    surface.addEventListener('blur', () => surface.removeAttribute('tabindex'), { once: true })
-    surface.focus()
+    focusTransiently(surface)
   },
   { flush: 'post' },
 )

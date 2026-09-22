@@ -1059,6 +1059,55 @@ describe('boardCrudStore', () => {
       expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
     })
 
+    it('queues a recovery background read behind an active background read', async () => {
+      const activeBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const activeCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const activeLabels = createDeferred<Array<{ id: string; name: string }>>()
+      const successorBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const successorCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const successorLabels = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(activeBoard.promise)
+        .mockReturnValueOnce(successorBoard.promise)
+      mockCardsApi.getCards
+        .mockReturnValueOnce(activeCards.promise)
+        .mockReturnValueOnce(successorCards.promise)
+      mockLabelsApi.getLabels
+        .mockReturnValueOnce(activeLabels.promise)
+        .mockReturnValueOnce(successorLabels.promise)
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const active = fetchBoard('board-1', { intent: 'background' })
+      const recovery = fetchBoard('board-1', { intent: 'background', afterActive: true })
+
+      // The recovery read must wait behind the pre-existing background read,
+      // rather than joining its possibly stale snapshot.
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+      activeBoard.resolve({ id: 'board-1', name: 'Active board', columns: [] })
+      activeCards.resolve([])
+      activeLabels.resolve([])
+      await expect(active).resolves.toBe(true)
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+
+      successorBoard.resolve({ id: 'board-1', name: 'Recovered board', columns: [] })
+      successorCards.resolve([])
+      successorLabels.resolve([])
+      await expect(recovery).resolves.toBe(true)
+      expect(state.currentBoard.value).toMatchObject({ name: 'Recovered board' })
+    })
+
+    it('starts a recovery background read immediately when no read is active', async () => {
+      mockBoardsApi.getBoard.mockResolvedValueOnce({ id: 'board-1', name: 'Fresh', columns: [] })
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const recovery = fetchBoard('board-1', { intent: 'background', afterActive: true })
+
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+      await expect(recovery).resolves.toBe(true)
+    })
+
     it('queues one successor read when a local mutation invalidates a background refresh', async () => {
       const staleBoard = createDeferred<{
         id: string

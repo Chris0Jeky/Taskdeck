@@ -14,7 +14,7 @@ defineProps<{
   selectedCardId: string | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   columnDragStart: [column: Column, event: DragEvent]
   columnDragEnd: []
   columnDragOver: [column: Column, event: DragEvent]
@@ -24,6 +24,23 @@ defineEmits<{
   cardDragEnd: []
   cardEditorSavingChange: [saving: boolean]
 }>()
+
+// One CardModal lives inside each ColumnLane. The route boundary needs the
+// aggregate, not whichever lane happened to emit last: a clean modal closing
+// in column B must not clear column A's unanswered assignment PUT.
+const savingColumnIds = new Set<string>()
+let aggregateCardEditorSaving = false
+
+function handleCardEditorSavingChange(columnId: string, saving: boolean) {
+  if (saving) savingColumnIds.add(columnId)
+  else savingColumnIds.delete(columnId)
+
+  const nextAggregate = savingColumnIds.size > 0
+  if (nextAggregate === aggregateCardEditorSaving) return
+
+  aggregateCardEditorSaving = nextAggregate
+  emit('cardEditorSavingChange', nextAggregate)
+}
 </script>
 
 <template>
@@ -58,7 +75,7 @@ defineEmits<{
           :selected-card-id="selectedCardId"
           @card-drag-start="$emit('cardDragStart', $event)"
           @card-drag-end="$emit('cardDragEnd')"
-          @card-editor-saving-change="$emit('cardEditorSavingChange', $event)"
+          @card-editor-saving-change="handleCardEditorSavingChange(column.id, $event)"
         />
       </div>
 

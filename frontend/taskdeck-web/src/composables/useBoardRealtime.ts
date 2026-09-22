@@ -32,7 +32,10 @@ function getAccessToken(): string {
 }
 
 export interface BoardRealtimeControllerOptions {
-  fetchBoard: (boardId: string, options: { intent: 'background' }) => Promise<void>
+  fetchBoard: (
+    boardId: string,
+    options: { intent: 'background'; afterActive?: boolean },
+  ) => Promise<boolean>
   onPresenceChanged?: (snapshot: BoardPresenceSnapshot) => void
 }
 
@@ -53,8 +56,13 @@ export function createBoardRealtimeController(
   let subscriptionTransition: Promise<void> = Promise.resolve()
   let editingCardId: string | null = null
   let fallbackTimer: ReturnType<typeof setInterval> | null = null
+  let recoveryPending = false
+  let recoveryGeneration = 0
   let refreshInFlight = false
-  let pendingMutationRefreshBoardId: string | null = null
+  let pendingRefreshBoardId: string | null = null
+  let pendingRefreshAfterActive = false
+  let pendingRecoveryRefresh = false
+  let pendingRecoveryGeneration: number | null = null
   let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   const stopFallbackPolling = () => {
@@ -66,16 +74,23 @@ export function createBoardRealtimeController(
     fallbackTimer = null
   }
 
-  const startFallbackPolling = (boardId: string) => {
+  const startFallbackPolling = (
+    boardId: string,
+    canDischargeRecovery = false,
+    recoveryGenerationForRefresh = recoveryGeneration,
+  ) => {
+    recoveryPending = true
     stopFallbackPolling()
+    const timerCanDischargeRecovery = canDischargeRecovery
+    const timerRecoveryGeneration = recoveryGenerationForRefresh
     fallbackTimer = setInterval(() => {
       if (requestedBoardId !== boardId) {
         return
       }
 
-      void options.fetchBoard(boardId, { intent: 'background' }).catch(() => {
-        // Keep fallback resilient; fetch failures are already surfaced by store-level handling.
-      })
+      // Polling shares the same active/read-after-active slot as mutation
+      // and recovery reads. Store-level deduplication must not swallow catch-up.
+      startBoardRefresh(boardId, false, timerCanDischargeRecovery, timerRecoveryGeneration)
     }, FALLBACK_POLL_INTERVAL_MS)
   }
 
@@ -86,29 +101,82 @@ export function createBoardRealtimeController(
     }
   }
 
-  const startMutationRefresh = (boardId: string) => {
-    if (subscribedBoardId !== boardId || requestedBoardId !== boardId) {
+  const startBoardRefresh = (
+    boardId: string,
+    afterActive = false,
+    dischargesRecovery = false,
+    recoveryGenerationForRefresh = recoveryGeneration,
+  ) => {
+    // Fallback must also read a requested board whose hub join is pending.
+    // Event handlers separately verify the confirmed subscription.
+    if (requestedBoardId !== boardId) {
       return
     }
 
     if (refreshInFlight) {
-      pendingMutationRefreshBoardId = boardId
+      pendingRefreshBoardId = boardId
+      pendingRefreshAfterActive ||= afterActive
+      if (dischargesRecovery) {
+        pendingRecoveryRefresh = true
+        pendingRecoveryGeneration = recoveryGenerationForRefresh
+      }
       return
     }
 
     refreshInFlight = true
     void options
-      .fetchBoard(boardId, { intent: 'background' })
+      .fetchBoard(boardId, { intent: 'background', ...(afterActive ? { afterActive: true } : {}) })
+      .then((committed) => {
+        if (
+          !dischargesRecovery ||
+          requestedBoardId !== boardId ||
+          recoveryGeneration !== recoveryGenerationForRefresh
+        ) {
+          return
+        }
+
+        if (committed !== true) {
+          // A handled background failure or stale adapter resolves without an
+          // affirmative commit. Keep the recovery obligation alive and let
+          // bounded fallback polling retry it instead of treating the read as
+          // complete.
+          recoveryPending = true
+          startFallbackPolling(boardId, true, recoveryGenerationForRefresh)
+          return
+        }
+
+        recoveryPending = false
+        stopFallbackPolling()
+      })
       .catch(() => {
         // Background refresh failures must not escape the realtime loop.
+        if (
+          dischargesRecovery &&
+          requestedBoardId === boardId &&
+          recoveryGeneration === recoveryGenerationForRefresh
+        ) {
+          recoveryPending = true
+          startFallbackPolling(boardId, true, recoveryGenerationForRefresh)
+        }
       })
       .finally(() => {
         refreshInFlight = false
-        const pendingBoardId = pendingMutationRefreshBoardId
-        pendingMutationRefreshBoardId = null
+        const pendingBoardId = pendingRefreshBoardId
+        const pendingAfterActive = pendingRefreshAfterActive
+        const pendingRecovery = pendingRecoveryRefresh
+        const pendingRecoveryGenerationValue = pendingRecoveryGeneration
+        pendingRefreshBoardId = null
+        pendingRefreshAfterActive = false
+        pendingRecoveryRefresh = false
+        pendingRecoveryGeneration = null
 
         if (pendingBoardId) {
-          startMutationRefresh(pendingBoardId)
+          startBoardRefresh(
+            pendingBoardId,
+            pendingAfterActive,
+            pendingRecovery,
+            pendingRecoveryGenerationValue ?? recoveryGeneration,
+          )
         }
       })
   }
@@ -132,7 +200,7 @@ export function createBoardRealtimeController(
         return
       }
 
-      startMutationRefresh(subscribedBoardId)
+      startBoardRefresh(subscribedBoardId)
     }, MUTATION_DEBOUNCE_MS)
   }
 
@@ -165,28 +233,51 @@ export function createBoardRealtimeController(
     hubConnection.on(BOARD_MUTATION_EVENT, handleBoardMutation)
     hubConnection.on(BOARD_PRESENCE_EVENT, handleBoardPresence)
     hubConnection.onreconnecting(() => {
-      if (requestedBoardId) {
-        startFallbackPolling(requestedBoardId)
+      if (connection === hubConnection && requestedBoardId) {
+        recoveryGeneration += 1
+        startFallbackPolling(requestedBoardId, false, recoveryGeneration)
       }
     })
     hubConnection.onreconnected(async () => {
-      stopFallbackPolling()
       const boardId = requestedBoardId
       const generation = subscriptionGeneration
-      if (boardId) {
-        await queueBoardSubscription(boardId, generation)
-        if (
-          editingCardId !== null &&
-          requestedBoardId === boardId &&
-          subscriptionGeneration === generation
-        ) {
+      const recoveryGenerationAtStart = recoveryGeneration
+      const isCurrentRequest = () =>
+        connection === hubConnection &&
+        requestedBoardId === boardId &&
+        subscriptionGeneration === generation
+      if (!boardId || connection !== hubConnection) return
+      recoveryPending = true
+
+      // Transport recovery alone does not prove a board subscription. Keep
+      // polling until JoinBoard acknowledges this request's generation.
+      try {
+        await queueBoardSubscription(boardId, generation, recoveryGenerationAtStart)
+      } catch (error) {
+        if (isCurrentRequest()) {
+          logWarn('SignalR board rejoin failed, retaining polling fallback.', error)
+          startFallbackPolling(boardId)
+        }
+        return
+      }
+      if (!isCurrentRequest() || hubConnection.state !== HubConnectionState.Connected) return
+
+      // joinBoard owns catch-up so navigation during this await transfers
+      // the recovery obligation to the latest queued board.
+      if (editingCardId !== null) {
+        try {
           await hubConnection.invoke('SetEditingCard', boardId, editingCardId)
+        } catch (error) {
+          if (isCurrentRequest()) {
+            logWarn('SignalR editing presence could not be restored.', error)
+          }
         }
       }
     })
     hubConnection.onclose(() => {
-      if (requestedBoardId) {
-        startFallbackPolling(requestedBoardId)
+      if (connection === hubConnection && requestedBoardId) {
+        recoveryGeneration += 1
+        startFallbackPolling(requestedBoardId, false, recoveryGeneration)
       }
     })
 
@@ -194,7 +285,11 @@ export function createBoardRealtimeController(
     return hubConnection
   }
 
-  const joinBoard = async (boardId: string, generation: number) => {
+  const joinBoard = async (
+    boardId: string,
+    generation: number,
+    recoveryGenerationForJoin = recoveryGeneration,
+  ) => {
     const hubConnection = ensureConnection()
     const isCurrentRequest = () =>
       requestedBoardId === boardId && subscriptionGeneration === generation
@@ -239,14 +334,30 @@ export function createBoardRealtimeController(
     }
 
     await hubConnection.invoke('JoinBoard', boardId)
+    if (connection !== hubConnection) return
     subscribedBoardId = boardId
-    stopFallbackPolling()
+    if (isCurrentRequest() && hubConnection.state === HubConnectionState.Connected) {
+      const ownsRecovery = recoveryPending && recoveryGenerationForJoin === recoveryGeneration
+      if (!recoveryPending || ownsRecovery) {
+        stopFallbackPolling()
+      }
+      if (ownsRecovery) {
+        // Force the store to queue this read behind any active external
+        // background fetch. The recovery obligation is discharged only when
+        // this post-join read reports success.
+        startBoardRefresh(boardId, true, true, recoveryGenerationForJoin)
+      }
+    }
   }
 
-  const queueBoardSubscription = (boardId: string, generation: number) => {
+  const queueBoardSubscription = (
+    boardId: string,
+    generation: number,
+    recoveryGenerationForJoin = recoveryGeneration,
+  ) => {
     const transition = subscriptionTransition
       .catch(() => undefined)
-      .then(() => joinBoard(boardId, generation))
+      .then(() => joinBoard(boardId, generation, recoveryGenerationForJoin))
     subscriptionTransition = transition
     return transition
   }
@@ -258,8 +369,14 @@ export function createBoardRealtimeController(
     // Cancel any debounced mutation fetch from the previous board as soon as
     // navigation changes intent, rather than waiting for the connection move.
     cancelMutationDebounce()
-    pendingMutationRefreshBoardId = null
-    return queueBoardSubscription(boardId, generation)
+    pendingRefreshBoardId = null
+    pendingRefreshAfterActive = false
+    pendingRecoveryRefresh = false
+    pendingRecoveryGeneration = null
+    // A switch while the old rejoin is pending inherits both recovery and
+    // polling. Only this latest request's successful join may retire them.
+    if (recoveryPending) startFallbackPolling(boardId)
+    return queueBoardSubscription(boardId, generation, recoveryGeneration)
   }
 
   const start = async (boardId: string) => {
@@ -285,9 +402,14 @@ export function createBoardRealtimeController(
   const stop = async () => {
     requestedBoardId = null
     subscriptionGeneration++
+    recoveryGeneration += 1
+    recoveryPending = false
     stopFallbackPolling()
     cancelMutationDebounce()
-    pendingMutationRefreshBoardId = null
+    pendingRefreshBoardId = null
+    pendingRefreshAfterActive = false
+    pendingRecoveryRefresh = false
+    pendingRecoveryGeneration = null
     editingCardId = null
 
     if (!connection) {

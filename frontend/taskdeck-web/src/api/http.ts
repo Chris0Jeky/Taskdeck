@@ -4,7 +4,7 @@ import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
 import { resolveApiBaseUrl, shouldUseDemoMode } from '../utils/apiBaseUrl'
-import { demoHttpAdapter } from './demoAdapter'
+import { lazyDemoHttpAdapter } from './lazyDemoAdapter'
 import { notifyAuthExpired } from '../utils/authExpiry'
 import * as tokenStorage from '../utils/tokenStorage'
 import { logError, logWarn } from '../utils/errorReporting'
@@ -22,6 +22,8 @@ declare module 'axios' {
   interface AxiosRequestConfig {
     /** Opt out of the shared retry interceptor for bounded read operations. */
     skipRetry?: boolean
+    /** Internal request owner; retained across automatic retries, never a credential. */
+    __taskdeckCredentialGeneration?: number
     /**
      * Error statuses that are an expected part of this endpoint's contract
      * (e.g. a 404 from the optional card-provenance lookup for manual cards).
@@ -56,13 +58,19 @@ function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
   config.headers = headers
 }
 
+function ownsCurrentSession(config: InternalAxiosRequestConfig | undefined): boolean {
+  // Observe cross-tab/storage changes before comparing the in-memory owner.
+  tokenStorage.getToken()
+  return config?.__taskdeckCredentialGeneration === tokenStorage.getObservedCredentialGeneration()
+}
+
 const http = axios.create({
   // Empty in demo/static mode so a missed mock cannot fall through to loopback.
   baseURL: resolveApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
-  ...(shouldUseDemoMode() ? { adapter: demoHttpAdapter } : {}),
+  ...(shouldUseDemoMode() ? { adapter: lazyDemoHttpAdapter } : {}),
 })
 
 // Request interceptor for auth token
@@ -70,14 +78,24 @@ http.interceptors.request.use(
   (config) => {
     ensureRequestIdHeader(config)
 
-    const token = tokenStorage.getToken()
-    if (token) {
-      if (isTokenExpired(token)) {
-        tokenStorage.clearAll()
-      } else {
-        config.headers.Authorization = `Bearer ${token}`
-      }
+    let token = tokenStorage.getToken()
+    if (token && isTokenExpired(token)) {
+      tokenStorage.clearAll()
+      token = null
     }
+    const generation = tokenStorage.getObservedCredentialGeneration()
+    if (
+      config.__taskdeckCredentialGeneration !== undefined &&
+      config.__taskdeckCredentialGeneration !== generation
+    ) {
+      throw new axios.CanceledError('Request session changed before dispatch')
+    }
+    config.__taskdeckCredentialGeneration = generation
+
+    // Retried/reused configs can carry a bearer from a previous dispatch.
+    // The storage snapshot above is the only authority for this dispatch.
+    config.headers.delete('Authorization')
+    if (token) config.headers.set('Authorization', `Bearer ${token}`)
     return config
   },
   (error) => Promise.reject(error)
@@ -109,11 +127,15 @@ http.interceptors.response.use(
         logError('API Error:', safeDetails)
       }
 
-      // Handle 401 - clear session and redirect to login (skip in demo mode).
+      // Only the initiating session owns expiry side effects. A stale 401 must
+      // still reject to its caller, but cannot erase a replacement login.
       // Callers can set `skipAuth401` on the request config to suppress this
       // behaviour (e.g. token refresh attempts that want to handle 401 locally).
       const skipAuth401 = (error.config as Record<string, unknown> | undefined)?.skipAuth401 === true
-      if (error.response.status === 401 && !isDemoMode && !skipAuth401) {
+      if (
+        error.response.status === 401 && !isDemoMode && !skipAuth401 &&
+        ownsCurrentSession(error.config)
+      ) {
         tokenStorage.clearAll()
         // Deliberately not awaited. Credential removal above is synchronous, and
         // every path that establishes a new session awaits this same deduplicated
@@ -167,6 +189,9 @@ http.interceptors.response.use(
     if (config.skipRetry) return Promise.reject(error)
 
     if (!isRetryableError(error)) return Promise.reject(error)
+    if (!ownsCurrentSession(config)) {
+      throw new axios.CanceledError('Request session changed before retry')
+    }
 
     const attempt = (config.__retryCount ?? 0) + 1
     if (attempt > MAX_RETRIES) return Promise.reject(error)
@@ -208,6 +233,9 @@ http.interceptors.response.use(
     // right at the edge of the timer resolving.
     if (signal?.aborted) {
       return Promise.reject(new axios.CanceledError('Request aborted while waiting to retry'))
+    }
+    if (!ownsCurrentSession(config)) {
+      throw new axios.CanceledError('Request session changed while waiting to retry')
     }
     return http.request(config)
   },

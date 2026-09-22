@@ -442,4 +442,64 @@ describe('CardModal assignment save in flight (#2981)', () => {
 
     wrapper.unmount()
   })
+
+  /*
+   * The close paths (handleClose / closeWithoutPrompt) refuse while an assignment
+   * PUT is unanswered, but the card-mutation affordances were guarded unevenly.
+   *
+   * SAVE was already safe, by an accident of a different guard: `dirty` compares
+   * selection against a baseline only advanced on a successful response, so it
+   * stays true for the whole flight, and `!assignmentDirty` in is-form-valid
+   * disables Save. The field is also draftLocked while saving, so the selection
+   * cannot be reverted to make dirty false mid-flight. The first spec pins that
+   * pre-existing behaviour so the accident cannot be optimised away.
+   *
+   * DELETE was genuinely unguarded: `Delete Card` is gated only by the actions
+   * `disabled` prop, which named editorWritesBlocked and not assignmentSaving.
+   * That is the real window this change closes.
+   */
+  it('keeps card save withheld while an assignment PUT is still in flight', async () => {
+    const { wrapper, deferred } = await mountWithPendingAssignmentSave('modal')
+
+    await wrapper.get('#card-title').setValue('Retitled behind an unanswered PUT')
+    await nextTick()
+
+    // The Save affordance is withdrawn, not merely ignored on click.
+    const save = fieldButton(wrapper, 'Save Changes')
+    expect((save!.element as HTMLButtonElement).disabled).toBe(true)
+    await save!.trigger('click')
+    await flushPromises()
+
+    expect(mockStore.updateCard).not.toHaveBeenCalled()
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    // Once the assignment settles, saving works again - the guard is a delay,
+    // not a disablement.
+    deferred.resolve(savedCard)
+    await flushPromises()
+    await nextTick()
+    const saveAfter = fieldButton(wrapper, 'Save Changes')
+    expect((saveAfter!.element as HTMLButtonElement).disabled).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('refuses a card delete while an assignment PUT is still in flight', async () => {
+    const { wrapper, deferred } = await mountWithPendingAssignmentSave('modal')
+
+    const remove = fieldButton(wrapper, 'Delete Card')
+    expect((remove!.element as HTMLButtonElement).disabled).toBe(true)
+    await remove!.trigger('click')
+    await flushPromises()
+
+    expect(mockStore.deleteCard).not.toHaveBeenCalled()
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    deferred.resolve(savedCard)
+    await flushPromises()
+    await nextTick()
+    expect((fieldButton(wrapper, 'Delete Card')!.element as HTMLButtonElement).disabled).toBe(false)
+
+    wrapper.unmount()
+  })
 })

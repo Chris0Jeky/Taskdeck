@@ -230,6 +230,10 @@ describe('Paper Review unavailable-return root fallback (GH-2599)', () => {
       const landmark = wrapper.get('[data-testid="paper-review-view"]').element
       expect(landmark.getAttribute('tabindex')).toBe('-1')
       expect(document.activeElement).toBe(landmark)
+
+      ;(landmark as HTMLElement).blur()
+      await nextTick()
+      expect(landmark.getAttribute('tabindex')).toBeNull()
     } finally {
       wrapper.unmount()
     }

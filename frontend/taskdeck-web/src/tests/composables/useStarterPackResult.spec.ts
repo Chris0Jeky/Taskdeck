@@ -158,7 +158,7 @@ describe('useStarterPackResult', () => {
 
     it('falls back to counting blocking conflicts when hasBlockingConflicts is undefined', () => {
       const r = makeResult({ conflicts: [makeConflict({ severity: 'blocking' })] })
-      delete (r as Record<string, unknown>).hasBlockingConflicts
+      delete r.hasBlockingConflicts
       const result = ref<StarterPackApplyResult | null>(r)
       const helpers = useStarterPackResult(result)
       expect(helpers.hasBlockingConflicts.value).toBe(true)
@@ -166,7 +166,7 @@ describe('useStarterPackResult', () => {
 
     it('falls back to false when hasBlockingConflicts is undefined and no blocking conflicts', () => {
       const r = makeResult({ conflicts: [makeConflict({ severity: 'warning' })] })
-      delete (r as Record<string, unknown>).hasBlockingConflicts
+      delete r.hasBlockingConflicts
       const result = ref<StarterPackApplyResult | null>(r)
       const helpers = useStarterPackResult(result)
       expect(helpers.hasBlockingConflicts.value).toBe(false)
