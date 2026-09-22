@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import { onBeforeUnmount, provide, watch } from 'vue'
 import ColumnLane from './ColumnLane.vue'
+import {
+  assignmentSaveRegistryKey,
+  createAssignmentSaveRegistry,
+} from '../../composables/useAssignmentSaveRegistry'
 import type { Column, Card, Label } from '../../types/board'
 
-defineProps<{
+const props = defineProps<{
   sortedColumns: Column[]
   cardsByColumn: Map<string, Card[]>
   labels: Label[]
@@ -25,22 +30,26 @@ const emit = defineEmits<{
   cardEditorSavingChange: [saving: boolean]
 }>()
 
-// One CardModal lives inside each ColumnLane. The route boundary needs the
-// aggregate, not whichever lane happened to emit last: a clean modal closing
-// in column B must not clear column A's unanswered assignment PUT.
-const savingColumnIds = new Set<string>()
-let aggregateCardEditorSaving = false
+// The actual assignment PUT owns navigation refusal, not the rendered lane
+// that happened to start it. CardAssignmentField acquires a token directly
+// from this board-session registry and releases it from the request's finally
+// block, even after CardModal/ColumnLane unmount. Multiple lanes aggregate by
+// operation token, and a board replacement invalidates old releases before a
+// new session can acquire ownership.
+const assignmentSaveRegistry = createAssignmentSaveRegistry(saving => {
+  emit('cardEditorSavingChange', saving)
+})
+provide(assignmentSaveRegistryKey, assignmentSaveRegistry)
 
-function handleCardEditorSavingChange(columnId: string, saving: boolean) {
-  if (saving) savingColumnIds.add(columnId)
-  else savingColumnIds.delete(columnId)
+watch(
+  () => props.boardId,
+  (nextBoardId, previousBoardId) => {
+    if (nextBoardId !== previousBoardId) assignmentSaveRegistry.reset()
+  },
+  { flush: 'sync' },
+)
 
-  const nextAggregate = savingColumnIds.size > 0
-  if (nextAggregate === aggregateCardEditorSaving) return
-
-  aggregateCardEditorSaving = nextAggregate
-  emit('cardEditorSavingChange', nextAggregate)
-}
+onBeforeUnmount(() => assignmentSaveRegistry.reset())
 </script>
 
 <template>
@@ -75,7 +84,6 @@ function handleCardEditorSavingChange(columnId: string, saving: boolean) {
           :selected-card-id="selectedCardId"
           @card-drag-start="$emit('cardDragStart', $event)"
           @card-drag-end="$emit('cardDragEnd')"
-          @card-editor-saving-change="handleCardEditorSavingChange(column.id, $event)"
         />
       </div>
 
