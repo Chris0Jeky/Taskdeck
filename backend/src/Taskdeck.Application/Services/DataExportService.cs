@@ -34,7 +34,7 @@ public class DataExportService : IDataExportService
     private const long MaxBufferedRepresentationBytes = 25L * 1024 * 1024;
     // The buffered DTO retains raw byte[] values, Base64 strings, and the JSON serializer's
     // output at the same time. Reserve a fixed envelope allowance for those objects and the
-    // non-artefact sections before accepting a near-boundary export.
+    // nearby export metadata before accepting a near-boundary artefact export.
     private const long BufferedRepresentationOverheadBytes = 1L * 1024 * 1024;
     private const int MaxBufferedArtefactRows = 10_000;
     private const long MaxBufferedTranscriptSerializedCharacters = 1_024_000;
