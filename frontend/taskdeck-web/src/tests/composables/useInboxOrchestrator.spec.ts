@@ -521,6 +521,28 @@ describe('useInboxOrchestrator', () => {
       expect(orch.activeBoardCanWrite.value).toBe(false)
     })
 
+    it('fails closed while scoped board metadata is loading or unavailable', async () => {
+      const pendingBoard = deferred<BoardDetail>()
+      mockRoute.query = { boardId: 'board-pending' }
+      mockBoardsApi.getBoard.mockReturnValueOnce(pendingBoard.promise)
+      const orch = createOrchestrator()
+      mountedCallback!()
+
+      expect(orch.activeBoardCanWrite.value).toBe(false)
+
+      pendingBoard.resolve(makeBoard('board-pending', 'Pending board', 'column-1', 'Column 1'))
+      await flushAsyncWork()
+      expect(orch.activeBoardCanWrite.value).toBe(true)
+
+      mockRoute.query = { boardId: 'board-failed' }
+      mockBoardsApi.getBoard.mockRejectedValueOnce(new Error('metadata unavailable'))
+      watcherForSource(orch.activeBoardId)[1]('board-failed', 'board-pending', () => {})
+      expect(orch.activeBoardCanWrite.value).toBe(false)
+
+      await flushAsyncWork()
+      expect(orch.activeBoardCanWrite.value).toBe(false)
+    })
+
     it('keeps B names after an obsolete A metadata failure resolves last', async () => {
       const boardA = deferred<BoardDetail>()
       const boardB = deferred<BoardDetail>()

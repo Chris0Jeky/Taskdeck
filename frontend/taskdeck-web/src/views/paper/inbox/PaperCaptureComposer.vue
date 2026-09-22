@@ -27,7 +27,7 @@ import type { CaptureSource } from '../../../types/capture'
  * length limit, so the choice is stated plainly next to the control rather
  * than implied.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** Optional board id to default the picker to. */
   defaultBoardId?: string | null
   submitting?: boolean
@@ -37,7 +37,11 @@ const props = defineProps<{
   errorId?: string | null
   /** Server-confirmed write capability for the active Inbox board. */
   canSubmit?: boolean
-}>()
+}>(), {
+  // Preserve the pre-capability prop contract for callers that do not pass a
+  // scoped-board decision: only an explicit `false` disables submission.
+  canSubmit: true,
+})
 
 /** The capture sources this composer can file. */
 export type ComposerSource = Extract<CaptureSource, 'Typed' | 'TranscriptPaste' | 'TranscriptFile'>
@@ -58,6 +62,12 @@ const { t } = useI18n()
 
 const body = ref('')
 const boardId = ref<string | null>(props.defaultBoardId ?? null)
+const boardSelection = computed<string | null>({
+  get: () => boardId.value,
+  set: (value) => {
+    boardId.value = value || null
+  },
+})
 const labelInput = ref('')
 const labels = ref<string[]>([])
 const dueAt = ref<string>('')
@@ -117,6 +127,19 @@ const selectedBoardIsWritable = computed(() => {
 })
 
 /**
+ * `canSubmit` describes the board that opened a scoped Inbox. It must not
+ * disable the composer's board picker escape hatch after the user changes the
+ * destination to no board or to another board. Known read-only picker options
+ * remain blocked by `selectedBoardIsWritable` above.
+ */
+const scopedBoardSelectionCanSubmit = computed(
+  () =>
+    props.canSubmit !== false ||
+    props.defaultBoardId == null ||
+    boardId.value !== props.defaultBoardId,
+)
+
+/**
  * Transcript bodies carry the server's larger limit; a paste beyond it would
  * 400 on arrival, so it is refused here beside the draft instead. `Typed`
  * captures keep the server's general-text limit as the only authority.
@@ -130,7 +153,7 @@ const canSubmit = computed(
     body.value.trim().length > 0 &&
     !props.submitting &&
     !fileReading.value &&
-    props.canSubmit !== false &&
+    scopedBoardSelectionCanSubmit.value &&
     selectedBoardIsWritable.value &&
     !transcriptTooLong.value,
 )
@@ -452,7 +475,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         <label class="paper-composer__label">
           <span class="tk-eyebrow">{{ t('inbox.boardPicker.label') }}</span>
           <select
-            v-model="boardId"
+            v-model="boardSelection"
             class="paper-composer__select"
             data-testid="paper-composer-board"
             :aria-label="t('inbox.boardPicker.composerAria')"

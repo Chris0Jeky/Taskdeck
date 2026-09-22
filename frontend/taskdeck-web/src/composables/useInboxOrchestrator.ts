@@ -107,12 +107,15 @@ export function useInboxOrchestrator(options: {
   })
   /**
    * The scoped Inbox has the same board write boundary as the board page. Keep
-   * older payloads writable, but stop the capture surfaces when the server
-   * explicitly identifies the active board as view-only.
+   * older payloads writable once the matching board is loaded, but fail closed
+   * while that metadata is loading or unavailable: the server is still the
+   * authority, and a capture surface must not advertise a board-scoped write
+   * before its capability is known.
    */
   const activeBoardCanWrite = computed(() => {
     const boardId = activeBoardId.value
-    if (!boardId || scopedBoard.value?.id !== boardId) return true
+    if (!boardId) return true
+    if (scopedBoard.value?.id !== boardId) return false
     return scopedBoard.value.canWrite !== false
   })
   const activeColumnName = computed(() => {
@@ -134,7 +137,8 @@ export function useInboxOrchestrator(options: {
       if (requestGeneration !== scopedBoardLoadGeneration || activeBoardId.value !== boardId) return
       scopedBoard.value = board.id === boardId ? board : null
     } catch {
-      // The scoped inbox remains usable when the board metadata is unavailable.
+      // The list remains usable when metadata is unavailable, but capture
+      // surfaces stay disabled until the matching capability is known.
       if (requestGeneration === scopedBoardLoadGeneration && activeBoardId.value === boardId) {
         scopedBoard.value = null
       }
