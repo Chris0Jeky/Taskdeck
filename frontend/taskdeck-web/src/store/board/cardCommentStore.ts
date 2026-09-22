@@ -4,7 +4,7 @@
 import { cardCommentsApi } from '../../api/cardCommentsApi'
 import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '../../types/comments'
 import type { BoardState } from './boardState'
-import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
+import { beginBoardLoading, captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 
 export function createCardCommentActions(state: BoardState, helpers: BoardHelpers) {
   function getCardComments(cardId: string): CardComment[] {
@@ -31,8 +31,8 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
   async function createCardComment(boardId: string, cardId: string, dto: CreateCardCommentDto) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const createdComment = await cardCommentsApi.createComment(boardId, cardId, dto)
       if (!isCurrentSession()) return createdComment
@@ -51,7 +51,7 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to create card comment')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 
@@ -63,8 +63,8 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
   ) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const updatedComment = await cardCommentsApi.updateComment(boardId, cardId, commentId, dto)
       if (!isCurrentSession()) return updatedComment
@@ -82,15 +82,15 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to update card comment')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 
   async function deleteCardComment(boardId: string, cardId: string, commentId: string) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       await cardCommentsApi.deleteComment(boardId, cardId, commentId)
       if (!isCurrentSession()) return
@@ -104,7 +104,7 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to delete card comment')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 

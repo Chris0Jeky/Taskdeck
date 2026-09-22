@@ -5,7 +5,7 @@ import { cardsApi } from '../../api/cardsApi'
 import { getErrorMessage } from '../../utils/errorMessage'
 import type { CardDetachPreview, CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
 import type { BoardState } from './boardState'
-import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
+import { beginBoardLoading, captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 import type { BoardFetchOptions } from './boardCrudStore'
 
 export function createCardActions(
@@ -74,8 +74,8 @@ export function createCardActions(
   async function createCard(boardId: string, card: CreateCardDto) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const newCard = await cardsApi.createCard(boardId, card)
       if (!isCurrentSession()) return newCard
@@ -98,15 +98,15 @@ export function createCardActions(
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to create card')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 
   async function updateCard(boardId: string, cardId: string, card: UpdateCardDto) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const existingCard = state.currentBoardCards.value.find((c) => c.id === cardId)
       const request = {
@@ -134,7 +134,7 @@ export function createCardActions(
       }
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 
@@ -142,8 +142,8 @@ export function createCardActions(
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
     let refreshChildren = false
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       await cardsApi.deleteCard(boardId, cardId, confirmation)
       if (!isCurrentSession()) return
@@ -176,7 +176,7 @@ export function createCardActions(
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to delete card')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
     // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
     if (isCurrentSession() && refreshChildren) await refreshDetachedChildren(boardId)
@@ -190,8 +190,8 @@ export function createCardActions(
   ) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
 
       const existingCard =
@@ -236,7 +236,7 @@ export function createCardActions(
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to move card')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 

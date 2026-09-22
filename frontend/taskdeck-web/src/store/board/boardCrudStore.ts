@@ -10,7 +10,7 @@ import { buildDemoBoardList } from '../../utils/demoData'
 import { applyBoardCardCounts } from '../../utils/boardCardCounts'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import { initialCardFilters, type BoardState } from './boardState'
-import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
+import { beginBoardLoading, captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 
 // Minimum gap between board-list fetches.  Multiple views (BoardsListView,
 // ActivityView, ReviewView, etc.) can call fetchBoards on mount in quick
@@ -76,6 +76,7 @@ interface ActiveBoardFetch {
   backgroundFailureMessage?: string
   preserveCardComments: boolean
   controller: AbortController
+  finishLoading: () => void
   promise: Promise<boolean>
 }
 
@@ -129,10 +130,13 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       return
     }
     if (helpers.isDemoMode) {
-      state.loading.value = true
-      state.error.value = null
-      state.boards.value = buildDemoBoardList()
-      state.loading.value = false
+      const finishLoading = beginBoardLoading(state)
+      try {
+        state.error.value = null
+        state.boards.value = buildDemoBoardList()
+      } finally {
+        finishLoading()
+      }
       return
     }
 
@@ -140,10 +144,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const isCurrentListGeneration = () => requestGeneration === boardListGeneration
     const controller = new AbortController()
     inFlightBoardListReads.add(controller)
+    const finishLoading = beginBoardLoading(state)
 
     const request = (async () => {
       try {
-        state.loading.value = true
         state.error.value = null
         // Bounded exactly like the detail read below (`startBoardFetch`), and
         // for a reason the share made sharper: once every unfiltered caller in
@@ -262,25 +266,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         throw e
       } finally {
         inFlightBoardListReads.delete(controller)
-        // Gated for the same reason the detail path gates its own loading
-        // write: by the time a superseded read settles, the flag belongs to
-        // the read that replaced it.  Clearing it here would drop the next
-        // session's skeleton and show that user an empty account until their
-        // own read resolves.
-        //
-        // That makes the gate correct only while every bumper of
-        // boardListGeneration also clears state.loading in the same synchronous
-        // turn, so no read is left owning a flag nobody will clear.
-        // resetForLogout is the only bumper today and does exactly that.  A
-        // list-side cancel helper modelled on cancelBackgroundBoardFetch —
-        // which bumps boardFetchGeneration and deliberately leaves the flag
-        // alone — would strand loading true and leave BoardsListView on its
-        // skeleton for good.  Clear the flag alongside any new bumper, or
-        // replace this gate with a per-request ownership token that does not
-        // depend on the coupling.
-        if (isCurrentListGeneration()) {
-          state.loading.value = false
-        }
+        finishLoading()
       }
     })()
 
@@ -425,6 +411,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     // recovery uses it to reject a server response that was already in flight
     // when the write was refused.
     state.currentBoardRequestGeneration.value = requestGeneration
+    const finishLoading = intent === 'explicit' ? beginBoardLoading(state) : () => {}
+    // Retire the old visible owner even if its transport ignores cancellation.
+    // Acquire the replacement first so an explicit-to-explicit handoff stays busy.
+    activeBoardFetch?.finishLoading()
     activeBoardFetch?.controller.abort()
     const controller = new AbortController()
     const mutationEpoch = helpers.getBoardDetailMutationEpoch(id)
@@ -435,6 +425,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       backgroundFailureMessage,
       preserveCardComments,
       controller,
+      finishLoading,
       promise: Promise.resolve(false),
     } satisfies ActiveBoardFetch
 
@@ -472,7 +463,6 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const performFetch = async (): Promise<boolean> => {
       if (helpers.isDemoMode) {
         if (intent === 'explicit') {
-          state.loading.value = true
           state.error.value = null
         }
         const [board, cards] = await Promise.all([
@@ -493,15 +483,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         state.currentBoardCards.value = cards
         state.currentBoardLabels.value = []
         if (!preserveCurrentComments) state.cardCommentsByCardId.value = {}
-        if (intent === 'explicit') {
-          state.loading.value = false
-        }
         return true
       }
 
       try {
         if (intent === 'explicit') {
-          state.loading.value = true
           state.error.value = null
         }
         const readOptions: BoardReadOptions = {
@@ -572,14 +558,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
         helpers.handleApiError(e, 'Failed to fetch board')
         throw e
-      } finally {
-        if (intent === 'explicit' && isCurrentGeneration()) {
-          state.loading.value = false
-        }
       }
     }
 
     const promise = performFetch().finally(() => {
+      finishLoading()
       if (activeBoardFetch !== request) {
         return
       }
@@ -595,8 +578,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
   async function createBoard(board: CreateBoardDto) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const newBoard = await boardsApi.createBoard(board)
       if (!isCurrentSession()) return newBoard
@@ -607,15 +590,15 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to create board')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 
   async function updateBoard(boardId: string, board: UpdateBoardDto) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const updatedBoard = await boardsApi.updateBoard(boardId, board)
       if (!isCurrentSession()) return updatedBoard
@@ -640,15 +623,15 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to update board')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 
   async function deleteBoard(boardId: string) {
     helpers.guardDemoMutation()
     const isCurrentSession = captureBoardSession(state)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       await boardsApi.deleteBoard(boardId)
       if (!isCurrentSession()) return
@@ -682,7 +665,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       if (isCurrentSession()) helpers.handleApiError(e, 'Failed to archive board')
       throw e
     } finally {
-      if (isCurrentSession()) state.loading.value = false
+      finishLoading()
     }
   }
 
@@ -715,6 +698,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
    */
   function resetForLogout() {
     state.boardMutationSessionGeneration.value++
+    state.loadingOperations.clear()
+    state.loading.value = false
     state.boardViewVisit.value = { boardId: null }
     boardListGeneration++
     // The bump comes first so the rejection each abort produces lands on a
@@ -753,7 +738,6 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     state.cardCommentsByCardId.value = {}
     state.boardPresenceMembers.value = []
     state.editingCardId.value = null
-    state.loading.value = false
     state.error.value = null
     state.filters.value = initialCardFilters()
   }

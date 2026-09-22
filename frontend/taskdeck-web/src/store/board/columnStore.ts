@@ -5,7 +5,7 @@ import { watch } from 'vue'
 import { columnsApi } from '../../api/columnsApi'
 import type { CreateColumnDto, UpdateColumnDto } from '../../types/board'
 import type { BoardState, BoardViewVisit } from './boardState'
-import type { BoardHelpers } from './boardStoreHelpers'
+import { beginBoardLoading, type BoardHelpers } from './boardStoreHelpers'
 
 interface ColumnMutationVisit {
   boardId: string
@@ -78,33 +78,38 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     visit: ColumnMutationVisit,
     mutation: () => Promise<T>,
   ): Promise<T> {
-    const previous = mutationTailByBoardId.get(visit.boardId)
-    let operation: Promise<T>
-
-    if (previous) {
-      operation = previous.catch(() => undefined).then(() => {
-        if (!isCurrentVisit(visit)) throw new StaleBoardVisitError()
-        return mutation()
-      })
-    } else {
-      // The first intent starts transport in the initiating call stack. Only a
-      // later intent is queued and therefore needs a pre-transport session gate.
-      if (!isCurrentVisit(visit)) throw new StaleBoardVisitError()
-      operation = mutation()
-    }
-
-    const tail = operation.then(
-      () => undefined,
-      () => undefined,
-    )
-    mutationTailByBoardId.set(visit.boardId, tail)
-
+    const finishLoading = beginBoardLoading(state)
     try {
-      return await operation
-    } finally {
-      if (mutationTailByBoardId.get(visit.boardId) === tail) {
-        mutationTailByBoardId.delete(visit.boardId)
+      const previous = mutationTailByBoardId.get(visit.boardId)
+      let operation: Promise<T>
+
+      if (previous) {
+        operation = previous.catch(() => undefined).then(() => {
+          if (!isCurrentVisit(visit)) throw new StaleBoardVisitError()
+          return mutation()
+        })
+      } else {
+        // The first intent starts transport in the initiating call stack. Only a
+        // later intent is queued and therefore needs a pre-transport session gate.
+        if (!isCurrentVisit(visit)) throw new StaleBoardVisitError()
+        operation = mutation()
       }
+
+      const tail = operation.then(
+        () => undefined,
+        () => undefined,
+      )
+      mutationTailByBoardId.set(visit.boardId, tail)
+
+      try {
+        return await operation
+      } finally {
+        if (mutationTailByBoardId.get(visit.boardId) === tail) {
+          mutationTailByBoardId.delete(visit.boardId)
+        }
+      }
+    } finally {
+      finishLoading()
     }
   }
 
@@ -147,7 +152,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     const visit = captureColumnVisit(boardId)
     return runColumnMutation(visit, async () => {
       try {
-        state.loading.value = true
         state.error.value = null
         const newColumn = await columnsApi.createColumn(boardId, column)
         markColumnMutation(visit)
@@ -172,8 +176,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
           helpers.handleApiError(e, 'Failed to create column')
         }
         throw e
-      } finally {
-        if (isCurrentVisit(visit)) state.loading.value = false
       }
     })
   }
@@ -183,7 +185,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     const visit = captureColumnVisit(boardId)
     return runColumnMutation(visit, async () => {
       try {
-        state.loading.value = true
         state.error.value = null
         const updatedColumn = await columnsApi.updateColumn(boardId, columnId, column)
         markColumnMutation(visit)
@@ -203,8 +204,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
           helpers.handleApiError(e, 'Failed to update column')
         }
         throw e
-      } finally {
-        if (isCurrentVisit(visit)) state.loading.value = false
       }
     })
   }
@@ -214,7 +213,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     const visit = captureColumnVisit(boardId)
     return runColumnMutation(visit, async () => {
       try {
-        state.loading.value = true
         state.error.value = null
         await columnsApi.deleteColumn(boardId, columnId)
         markColumnMutation(visit)
@@ -236,8 +234,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
           helpers.handleApiError(e, 'Failed to delete column')
         }
         throw e
-      } finally {
-        if (isCurrentVisit(visit)) state.loading.value = false
       }
     })
   }
@@ -247,7 +243,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     const visit = captureColumnVisit(boardId)
     return runColumnMutation(visit, async () => {
       try {
-        state.loading.value = true
         state.error.value = null
         const reorderedColumns = await columnsApi.reorderColumns(boardId, columnIds)
         markColumnMutation(visit)
@@ -265,8 +260,6 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
           helpers.handleApiError(e, 'Failed to reorder columns')
         }
         throw e
-      } finally {
-        if (isCurrentVisit(visit)) state.loading.value = false
       }
     })
   }

@@ -63,6 +63,8 @@ export function createBoardState() {
   const boardPresenceMembers = ref<BoardPresenceMember[]>([])
   const editingCardId = ref<string | null>(null)
   const loading = ref(false)
+  // Not reactive: owners publish the visible flag when they enter or leave.
+  const loadingOperations = new Set<symbol>()
   const error = ref<string | null>(null)
 
   const filters = ref<CardFilters>(initialCardFilters())
@@ -81,6 +83,7 @@ export function createBoardState() {
     boardPresenceMembers,
     editingCardId,
     loading,
+    loadingOperations,
     error,
     filters,
   }

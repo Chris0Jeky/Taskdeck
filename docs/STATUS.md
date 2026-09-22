@@ -2,6 +2,21 @@
 
 Last Updated: 2026-09-22
 
+## Board loading belongs to pending operations (#3305)
+
+Board list/detail reads and the mutations that show shared loading now retain individual
+owners. One request finishing cannot dismiss the skeleton or enable retries while another
+operation remains pending. Filtered list reads and queued column/label writes participate
+in the same ownership set; joining an existing list request does not add another owner.
+Logout clears the set synchronously through the existing session generation, and late
+settlements cannot clear a new account's work. Replacing an explicit detail read releases
+its old owner even when the transport ignores cancellation. Background refreshes, direct
+child reads and archive/restore retain their existing behavior without shared loading.
+
+Deferred tests cover cross-module overlap, rejection, logout, independent list requests,
+detail replacement and queued background work. This reduces misleading empty/loading
+states during board maintenance while preserving review-first proposal behavior.
+
 ## Logout retires board mutation settlements (#3306)
 
 Board, card (including archive/restore), label and comment operations capture the shared
@@ -19,7 +34,7 @@ notifications. Store results and errors still settle for the original caller.
 
 This prevents old-account data from reappearing and reduces cleanup after account switching.
 It preserves review-first proposal behavior and does not undo server writes. Same-session
-loading arbitration remains #3305; card/comment ordering PRs #3312/#3304 require separate
+loading arbitration is covered by #3305 above; card/comment ordering PRs #3312/#3304 require separate
 reconciliation with these guards before integration.
 
 ## Column writes follow their board visit (#3314)
@@ -37,7 +52,7 @@ for that recovery and keeps its later result.
 This reduces navigation-induced board maintenance while preserving existing review-first
 proposal behavior. It does not cancel a write already accepted by the server. Shared ownership
 for card, comment, label and board mutations is covered by #3306 above; shared loading arbitration
-remains tracked in #3305. Deferred-response store tests and BoardView lifecycle tests cover the
+is covered by #3305 above. Deferred-response store tests and BoardView lifecycle tests cover the
 route/session boundary, and the existing three ordering assertions now compare actual reactive
 array identities as well as full contents.
 
