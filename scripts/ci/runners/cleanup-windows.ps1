@@ -130,6 +130,11 @@ $worker = {
             }
             if ($rule.IdentityReference.Value -eq $RunnerSid.Value) {
                 $runnerRuleSeen = $true
+                $runnerControlMask = [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+                    [Security.AccessControl.FileSystemRights]::TakeOwnership
+                if (($rule.FileSystemRights -band $runnerControlMask) -ne 0) {
+                    Stop-Worker 'acl_runner_control'
+                }
                 $writeMask = [Security.AccessControl.FileSystemRights]::Write -bor
                     [Security.AccessControl.FileSystemRights]::Delete -bor
                     [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
@@ -150,18 +155,35 @@ $worker = {
         }
     }
 
+    function Assert-NoReparseDescendants {
+        param([Parameter(Mandatory = $true)][string]$Root)
+
+        # Enumerate one directory at a time so a reparse point is rejected before it can be
+        # traversed. Get-ChildItem -Recurse is intentionally avoided here because containment
+        # depends on inspecting each child before adding its path to the walk.
+        $pending = [Collections.Generic.Stack[string]]::new()
+        $pending.Push($Root)
+        while ($pending.Count -gt 0) {
+            $current = $pending.Pop()
+            foreach ($item in @(Get-ChildItem -LiteralPath $current -Force -ErrorAction Stop)) {
+                if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    Stop-Worker 'child_reparse'
+                }
+                if ($item.PSIsContainer) {
+                    $pending.Push($item.FullName)
+                }
+            }
+        }
+    }
+
     function Clear-Children {
         param(
             [Parameter(Mandatory = $true)][string]$Root,
             [Parameter(Mandatory = $true)][string]$ActionCode
         )
 
+        Assert-NoReparseDescendants -Root $Root
         $children = @(Get-ChildItem -LiteralPath $Root -Force -ErrorAction Stop)
-        foreach ($item in $children) {
-            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                Stop-Worker 'child_reparse'
-            }
-        }
         if (-not $DryRun) {
             foreach ($item in $children) {
                 Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop

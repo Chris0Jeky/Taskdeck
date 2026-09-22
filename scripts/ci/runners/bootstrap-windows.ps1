@@ -295,6 +295,11 @@ function Assert-ProtectedAcl {
         }
         if ($rule.IdentityReference.Value -eq $RunnerSid.Value) {
             $runnerRuleSeen = $true
+            $runnerControlMask = [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+                [Security.AccessControl.FileSystemRights]::TakeOwnership
+            if (($rule.FileSystemRights -band $runnerControlMask) -ne 0) {
+                Stop-Contract 'acl_runner_control'
+            }
             $writeMask = [Security.AccessControl.FileSystemRights]::Write -bor
                 [Security.AccessControl.FileSystemRights]::Delete -bor
                 [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
