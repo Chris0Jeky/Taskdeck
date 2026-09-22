@@ -103,19 +103,41 @@ describe('column mutations follow the board screen lifetime', () => {
     expect(helpers.toast.success).not.toHaveBeenCalled()
   })
 
-  it('does not publish an old failure into the next screen', async () => {
+  it.each(['departure', 'logout'])('does not publish an old failure after %s', async (boundary) => {
     const { state, helpers, ui, visit, actions } = setup()
     const response = deferred<Column>()
     api.updateColumn.mockReturnValue(response.promise)
     const pending = actions.updateColumn('board-1', 'a', { name: 'Changed' })
-    ui.endBoardViewVisit(visit)
+    if (boundary === 'logout') createBoardCrudActions(state, helpers as never).resetForLogout()
+    else ui.endBoardViewVisit(visit)
     state.error.value = 'New screen error'
+    state.loading.value = true
     const failure = new Error('Late failure')
     response.reject(failure)
     await expect(pending).rejects.toBe(failure)
     expect(helpers.handleApiError).not.toHaveBeenCalled()
     expect(state.error.value).toBe('New screen error')
     expect(state.loading.value).toBe(true)
+  })
+
+  it('drops pre-logout queued work even when a new login opens the same board', async () => {
+    const { state, helpers, ui, actions } = setup()
+    const response = deferred<Column[]>()
+    api.reorderColumns.mockReturnValue(response.promise)
+    const first = actions.reorderColumns('board-1', ['b', 'a'])
+    const queued = actions.reorderColumns('board-1', ['a', 'b'])
+    const queuedFailure = expect(queued).rejects.toThrow('board visit')
+    createBoardCrudActions(state, helpers as never).resetForLogout()
+    ui.beginBoardViewVisit('board-1')
+    state.currentBoard.value = { id: 'board-1', columns: columns.map(c => ({ ...c })) } as BoardDetail
+    const newAccountColumns = state.currentBoard.value.columns
+    response.resolve([...columns].reverse())
+    await Promise.all([first, queuedFailure])
+    expect(api.reorderColumns).toHaveBeenCalledTimes(1)
+    expect(api.getColumns).not.toHaveBeenCalled()
+    expect(state.currentBoard.value.columns).toBe(newAccountColumns)
+    expect(state.currentBoard.value.columns).toEqual(columns)
+    expect(helpers.toast.success).not.toHaveBeenCalled()
   })
 
   it('retires the previous visit before the next route payload arrives', async () => {
@@ -180,6 +202,26 @@ describe('column mutations follow the board screen lifetime', () => {
     expect(state.currentBoard.value!.columns).toEqual([{ ...columns[0]!, name: 'New visit' }, columns[1]!])
     expect(api.getColumns).toHaveBeenCalledTimes(1)
     expect(helpers.toast.success).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not warn after a recovery read fails outside its reopened visit', async () => {
+    const { state, helpers, ui, visit, actions } = setup()
+    const response = deferred<Column>()
+    const refresh = deferred<Column[]>()
+    api.updateColumn.mockReturnValue(response.promise)
+    api.getColumns.mockReturnValue(refresh.promise)
+    const pending = actions.updateColumn('board-1', 'a', { name: 'Changed' })
+    ui.endBoardViewVisit(visit)
+    const reopened = ui.beginBoardViewVisit('board-1')
+    response.resolve({ ...columns[0]!, name: 'Changed' })
+    await settle()
+    expect(api.getColumns).toHaveBeenCalledTimes(1)
+    ui.endBoardViewVisit(reopened)
+    refresh.reject(new Error('Late recovery failure'))
+    await pending
+    expect(state.currentBoard.value!.columns).toEqual(columns)
+    expect(helpers.toast.warning).not.toHaveBeenCalled()
+    expect(helpers.handleApiError).not.toHaveBeenCalled()
   })
 
   it('does not reconcile an old session response into a new login on the same board', async () => {
