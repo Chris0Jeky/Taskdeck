@@ -29,12 +29,61 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
         if (settings.MaximumUploadBytes <= 0 || settings.OwnerQuotaBytes <= 0 || settings.ModalityQuotaBytes <= 0 || settings.MaximumReferencesPerOwner <= 0)
             throw new InvalidOperationException("Byte-store quotas must be positive.");
         var total = await db.StoredBlobs.Where(x => x.OwnerUserId == owner).SumAsync(x => x.ByteSize, ct);
+        var now = DateTime.UtcNow;
+        var reservedTotal = await db.StoredBlobReservations
+            .Where(x => x.OwnerUserId == owner && x.ExpiresAtUtc > now)
+            .SumAsync(x => x.ByteSize, ct);
         var modalityIds = db.StoredBlobReferences.Where(x => x.OwnerUserId == owner && x.Modality == modality).Select(x => x.BlobId);
         var modalityTotal = await db.StoredBlobs.Where(x => x.OwnerUserId == owner && modalityIds.Contains(x.Id)).SumAsync(x => x.ByteSize, ct);
+        var reservedModality = await db.StoredBlobReservations
+            .Where(x => x.OwnerUserId == owner && x.Modality == modality && x.ExpiresAtUtc > now)
+            .SumAsync(x => x.ByteSize, ct);
         var references = await db.StoredBlobReferences.CountAsync(x => x.OwnerUserId == owner, ct);
-        if (size > settings.MaximumUploadBytes || total > settings.OwnerQuotaBytes - size || modalityTotal > settings.ModalityQuotaBytes - size
-            || references >= settings.MaximumReferencesPerOwner)
+        var reservedReferences = await db.StoredBlobReservations
+            .CountAsync(x => x.OwnerUserId == owner && x.ExpiresAtUtc > now, ct);
+        if (size > settings.MaximumUploadBytes ||
+            size > settings.OwnerQuotaBytes || total > settings.OwnerQuotaBytes - size ||
+            reservedTotal > settings.OwnerQuotaBytes - size - total ||
+            size > settings.ModalityQuotaBytes || modalityTotal > settings.ModalityQuotaBytes - size ||
+            reservedModality > settings.ModalityQuotaBytes - size - modalityTotal ||
+            references >= settings.MaximumReferencesPerOwner ||
+            reservedReferences >= settings.MaximumReferencesPerOwner - references)
             throw new DomainException(ErrorCodes.PayloadTooLarge, "The audio/source storage quota would be exceeded.");
+    }
+
+    public async Task<Guid> ReserveAsync(
+        BlobAcquisition acquisition,
+        DateTime expiresAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireTransaction();
+        if (acquisition.ExpectedByteSize <= 0)
+            throw new DomainException(ErrorCodes.ValidationError, "A positive declared size is required.");
+        var now = DateTime.UtcNow;
+        await db.StoredBlobReservations.Where(x => x.ExpiresAtUtc <= now)
+            .ExecuteDeleteAsync(cancellationToken);
+        await CheckQuota(acquisition.OwnerUserId, acquisition.AssetModality,
+            acquisition.ExpectedByteSize, cancellationToken);
+        var reservation = new StoredBlobReservation(
+            acquisition.OwnerUserId, acquisition.AssetModality, acquisition.ExpectedByteSize,
+            acquisition.ReferrerKind, acquisition.ReferrerId, expiresAtUtc);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO StoredBlobReservations (Id, OwnerUserId, Modality, ByteSize, ReferrerKind, ReferrerId, ExpiresAtUtc) VALUES ({reservation.Id}, {reservation.OwnerUserId}, {(int)reservation.Modality}, {reservation.ByteSize}, {reservation.ReferrerKind}, {reservation.ReferrerId}, {reservation.ExpiresAtUtc})",
+            cancellationToken);
+        return reservation.Id;
+    }
+
+    public async Task<bool> ReleaseReservationAsync(
+        Guid reservationId,
+        Guid ownerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireTransaction();
+        if (reservationId == Guid.Empty || ownerUserId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "A valid reservation and owner are required.");
+        return await db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM StoredBlobReservations WHERE Id = {reservationId} AND OwnerUserId = {ownerUserId}",
+            cancellationToken) == 1;
     }
 
     public async Task<BlobReference> AcquireAsync(BlobAcquisition acquisition, Stream content, CancellationToken cancellationToken = default)
@@ -118,7 +167,13 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
         {
             var ids = db.StoredBlobReferences.Where(x => x.OwnerUserId == ownerUserId && x.Modality == assetModality).Select(x => x.BlobId);
             var size = await db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId && ids.Contains(x.Id)).SumAsync(x => x.ByteSize, cancellationToken);
-            if (size > settings.ModalityQuotaBytes - blob.ByteSize)
+            var now = DateTime.UtcNow;
+            var reserved = await db.StoredBlobReservations
+                .Where(x => x.OwnerUserId == ownerUserId && x.Modality == assetModality && x.ExpiresAtUtc > now)
+                .SumAsync(x => x.ByteSize, cancellationToken);
+            if (blob.ByteSize > settings.ModalityQuotaBytes ||
+                size > settings.ModalityQuotaBytes - blob.ByteSize ||
+                reserved > settings.ModalityQuotaBytes - blob.ByteSize - size)
                 throw new DomainException(ErrorCodes.PayloadTooLarge, "The source modality storage quota would be exceeded.");
         }
         return await AddReference(blob, assetModality, referrerKind, referrerId, cancellationToken);
@@ -168,11 +223,13 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             await db.StoredBlobReferences.CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken));
     }
 
-    public Task<int> DeleteOwnerAsync(Guid ownerUserId, CancellationToken cancellationToken = default)
+    public async Task<int> DeleteOwnerAsync(Guid ownerUserId, CancellationToken cancellationToken = default)
     {
         RequireTransaction();
         if (ownerUserId == Guid.Empty) throw new DomainException(ErrorCodes.ValidationError, "An owner is required.");
-        return db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId).ExecuteDeleteAsync(cancellationToken);
+        await db.StoredBlobReservations.Where(x => x.OwnerUserId == ownerUserId)
+            .ExecuteDeleteAsync(cancellationToken);
+        return await db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId).ExecuteDeleteAsync(cancellationToken);
     }
 
     private sealed class ChunkStream(TaskdeckDbContext context, Guid id, Guid owner, long length) : Stream

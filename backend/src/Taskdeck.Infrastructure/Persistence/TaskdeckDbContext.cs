@@ -69,6 +69,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<StoredBlob> StoredBlobs => Set<StoredBlob>();
     public DbSet<StoredBlobChunk> StoredBlobChunks => Set<StoredBlobChunk>();
     public DbSet<StoredBlobReference> StoredBlobReferences => Set<StoredBlobReference>();
+    public DbSet<StoredBlobReservation> StoredBlobReservations => Set<StoredBlobReservation>();
     public DbSet<Representation> Representations => Set<Representation>();
     public DbSet<RepresentationSupersession> RepresentationSupersessions => Set<RepresentationSupersession>();
     public DbSet<ThinkingAudioAnswer> ThinkingAudioAnswers => Set<ThinkingAudioAnswer>();

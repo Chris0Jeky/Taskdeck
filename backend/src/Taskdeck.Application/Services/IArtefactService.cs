@@ -10,11 +10,24 @@ public sealed record CreateArtefactRequest(
     Guid? BoardId = null,
     Guid? CreatedFromCaptureId = null);
 
+public sealed record CreateStreamingArtefactRequest(
+    Stream Content,
+    string FileName,
+    string MimeType,
+    long ExpectedByteSize,
+    Guid? BoardId = null,
+    Guid? CreatedFromCaptureId = null);
+
 public interface IArtefactService
 {
     Task<Result<SourceArtefactDto>> CreateAsync(
         Guid userId,
         CreateArtefactRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<SourceArtefactDto>> CreateStreamingAsync(
+        Guid userId,
+        CreateStreamingArtefactRequest request,
         CancellationToken cancellationToken = default);
 
     Task<Result<SourceArtefactDto>> GetMetadataAsync(
