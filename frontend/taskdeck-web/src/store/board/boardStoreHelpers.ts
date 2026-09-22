@@ -19,6 +19,18 @@ export function captureBoardSession(state: BoardState): () => boolean {
   return () => state.boardMutationSessionGeneration.value === generation
 }
 
+/** Release only this operation; logout retires every owner through the same session epoch. */
+export function beginBoardLoading(state: BoardState): () => void {
+  const isCurrentSession = captureBoardSession(state)
+  const token = Symbol()
+  state.loadingOperations.add(token)
+  state.loading.value = true
+  return () => {
+    if (!isCurrentSession() || !state.loadingOperations.delete(token)) return
+    state.loading.value = state.loadingOperations.size > 0
+  }
+}
+
 /**
  * Whether this failure is a client-side timeout — a routine outcome on every
  * board read since #2685 bounded them (`timeout: BOARD_REQUEST_TIMEOUT_MS`,

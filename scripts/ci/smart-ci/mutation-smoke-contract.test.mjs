@@ -70,7 +70,7 @@ test('the shared range addresses the seam in the real tracked source', async () 
   // are 0-based while the contract's are 1-based, so a derived assertion would
   // pass whichever base `mutationSmokeRange` happened to use. Passing column 28
   // starts the range inside the expression and drops its outermost mutant.
-  assert.equal(mutationSmokeRange, 'src/store/board/boardCrudStore.ts:673:27-673:77')
+  assert.equal(mutationSmokeRange, 'src/store/board/boardCrudStore.ts:656:27-656:77')
   assert.equal(mutationSmokeContract.source.length, 50)
 
   // Real payload, not a fabricated line: the contract must address the seam in

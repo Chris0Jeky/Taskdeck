@@ -10,7 +10,7 @@ import { watch } from 'vue'
 import { labelsApi } from '../../api/labelsApi'
 import type { CreateLabelDto, Label, UpdateLabelDto } from '../../types/board'
 import type { BoardState } from './boardState'
-import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
+import { beginBoardLoading, captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 
 interface LabelCacheVisit {
   boardId: string
@@ -182,8 +182,8 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
   async function createLabel(boardId: string, label: CreateLabelDto) {
     helpers.guardDemoMutation()
     const visit = captureLabelVisit(boardId)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const newLabel = await labelsApi.createLabel(boardId, label)
       if (!visit.isCurrentSession()) return newLabel
@@ -208,15 +208,15 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       }
       throw e
     } finally {
-      if (isCurrentBoardVisit(visit)) state.loading.value = false
+      finishLoading()
     }
   }
 
   async function updateLabel(boardId: string, labelId: string, label: UpdateLabelDto) {
     helpers.guardDemoMutation()
     const visit = captureLabelVisit(boardId)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       const updatedLabel = await runLabelMutation(
         boardId,
@@ -244,15 +244,15 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       }
       throw e
     } finally {
-      if (isCurrentBoardVisit(visit)) state.loading.value = false
+      finishLoading()
     }
   }
 
   async function deleteLabel(boardId: string, labelId: string) {
     helpers.guardDemoMutation()
     const visit = captureLabelVisit(boardId)
+    const finishLoading = beginBoardLoading(state)
     try {
-      state.loading.value = true
       state.error.value = null
       await runLabelMutation(
         boardId,
@@ -278,7 +278,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       }
       throw e
     } finally {
-      if (isCurrentBoardVisit(visit)) state.loading.value = false
+      finishLoading()
     }
   }
 

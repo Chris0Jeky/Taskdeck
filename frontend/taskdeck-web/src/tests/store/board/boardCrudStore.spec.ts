@@ -766,6 +766,7 @@ describe('boardCrudStore', () => {
       const second = fetchBoard('board-2')
 
       await expect(second).resolves.toBe(true)
+      expect(state.loading.value).toBe(false)
       await expect(first).resolves.toBe(false)
       expect(oldCardsAborted).toBe(true)
       expect(oldLabelsAborted).toBe(true)
@@ -796,6 +797,7 @@ describe('boardCrudStore', () => {
       cardsB.resolve([{ id: 'card-b', columnId: 'column-b' }])
       labelsB.resolve([{ id: 'label-b', name: 'Bug' }])
       await expect(second).resolves.toBe(true)
+      expect(state.loading.value).toBe(false)
 
       boardA.resolve({ id: 'board-a', name: 'Board A', columns: [{ id: 'column-a', cardCount: 0 }] })
       cardsA.resolve([{ id: 'card-a', columnId: 'column-a' }])
@@ -862,6 +864,7 @@ describe('boardCrudStore', () => {
       explicitCards.resolve([{ id: 'card-explicit', columnId: 'column-1' }])
       explicitLabels.resolve([{ id: 'label-explicit', name: 'Explicit' }])
       await expect(explicit).resolves.toBe(true)
+      expect(state.loading.value).toBe(false)
 
       expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
       expect(mockCardsApi.getCards).toHaveBeenCalledTimes(2)

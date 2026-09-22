@@ -8,6 +8,8 @@ const { api } = vi.hoisted(() => ({ api: {
   reorderColumns: vi.fn(), getColumns: vi.fn(),
 } }))
 vi.mock('../../../api/columnsApi', () => ({ columnsApi: api }))
+const { boardApi } = vi.hoisted(() => ({ boardApi: { createBoard: vi.fn() } }))
+vi.mock('../../../api/boardsApi', () => ({ boardsApi: boardApi }))
 import { createColumnActions } from '../../../store/board/columnStore'
 import { createBoardCrudActions } from '../../../store/board/boardCrudStore'
 
@@ -44,6 +46,16 @@ function setup() {
   return { state, helpers, ui, visit, actions }
 }
 
+function startNewScreenOperation(state: ReturnType<typeof createBoardState>, helpers: ReturnType<typeof setup>['helpers']) {
+  const response = deferred<BoardDetail>()
+  boardApi.createBoard.mockReturnValueOnce(response.promise)
+  const pending = createBoardCrudActions(state, helpers as never).createBoard({ name: 'New board' })
+  return async () => {
+    response.resolve({ id: 'new-board', name: 'New board', columns: [] } as unknown as BoardDetail)
+    await pending
+  }
+}
+
 describe('column mutations follow the board screen lifetime', () => {
   beforeEach(() => vi.resetAllMocks())
 
@@ -63,8 +75,8 @@ describe('column mutations follow the board screen lifetime', () => {
             : actions.reorderColumns('board-1', ['b', 'a'])
 
       ui.endBoardViewVisit(visit)
+      const finishNewScreenOperation = startNewScreenOperation(state, helpers)
       state.error.value = 'New screen error'
-      state.loading.value = true
       const result = kind === 'delete' ? undefined : kind === 'reorder' ? [...columns].reverse()
         : { ...columns[0], id: kind === 'create' ? 'new' : 'a', name: 'Changed' }
       response.resolve(result as never)
@@ -79,6 +91,8 @@ describe('column mutations follow the board screen lifetime', () => {
       expect(helpers.handleApiError).not.toHaveBeenCalled()
       expect(state.error.value).toBe('New screen error')
       expect(state.loading.value).toBe(true)
+      await finishNewScreenOperation()
+      expect(state.loading.value).toBe(false)
     },
   )
 
@@ -101,6 +115,7 @@ describe('column mutations follow the board screen lifetime', () => {
     expect(state.currentBoard.value!.columns).toBe(cached)
     expect(state.currentBoard.value!.columns).toEqual(columns)
     expect(helpers.toast.success).not.toHaveBeenCalled()
+    expect(state.loading.value).toBe(false)
   })
 
   it.each(['departure', 'logout'])('does not publish an old failure after %s', async (boundary) => {
@@ -110,14 +125,16 @@ describe('column mutations follow the board screen lifetime', () => {
     const pending = actions.updateColumn('board-1', 'a', { name: 'Changed' })
     if (boundary === 'logout') createBoardCrudActions(state, helpers as never).resetForLogout()
     else ui.endBoardViewVisit(visit)
+    const finishNewScreenOperation = startNewScreenOperation(state, helpers)
     state.error.value = 'New screen error'
-    state.loading.value = true
     const failure = new Error('Late failure')
     response.reject(failure)
     await expect(pending).rejects.toBe(failure)
     expect(helpers.handleApiError).not.toHaveBeenCalled()
     expect(state.error.value).toBe('New screen error')
     expect(state.loading.value).toBe(true)
+    await finishNewScreenOperation()
+    expect(state.loading.value).toBe(false)
   })
 
   it('drops pre-logout queued work even when a new login opens the same board', async () => {
