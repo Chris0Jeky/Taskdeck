@@ -512,6 +512,8 @@ onBeforeRouteUpdate(guardDirtyNavigation)
  * honouring a column end-to-end is the open half of `#1984`.
  */
 function openCapture(_column: Column) {
+  if (routedBoard.value?.canWrite === false) return
+
   void router.push({
     name: 'workspace-inbox',
     query: { boardId: boardId.value },
@@ -526,6 +528,8 @@ function openReview() {
 }
 
 function openCaptureBoard() {
+  if (routedBoard.value?.canWrite === false) return
+
   void router.push({
     name: 'workspace-inbox',
     query: { boardId: boardId.value },
@@ -882,7 +886,11 @@ async function addStarterColumns() {
             data-testid="paper-board-settings"
             @click="openBoardSettings"
           />
-          <PaperHLBtn label="Capture here" @click="openCaptureBoard" />
+          <PaperHLBtn
+            v-if="routedBoard && routedBoard.canWrite !== false"
+            label="Capture here"
+            @click="openCaptureBoard"
+          />
           <PaperHLBtn variant="ember" label="Review" @click="openReview" />
         </div>
       </header>
@@ -1029,6 +1037,7 @@ async function addStarterColumns() {
             :composer-open="composerColumnId === column.id"
             :composer-busy="composerBusy"
             :composer-error="composerError"
+            :can-capture="routedBoard?.canWrite !== false"
             @capture="openCapture"
             @select="emit('column-select', column.id)"
             @toggle-collapse="toggleColumnCollapse"

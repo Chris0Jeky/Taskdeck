@@ -888,8 +888,8 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task Triage_ShouldReturnForbidden_WhenAlreadyLinkedBoardIsReadOnlyForCaller()
     {
-        // The gate has to sit on the effective board, not only on the triage body: a capture created
-        // with a readable board (create is read-gated) and accepted with no body is the same vector.
+        // Create while the caller is write-capable, then demote the membership before triage. The
+        // already-linked board gate must still reject the read-only caller with no target body.
         var ownerClient = _factory.CreateClient();
         var viewerClient = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(ownerClient, "capture-triage-linked-gate-owner");
@@ -898,8 +898,10 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
         var grantResponse = await ownerClient.PostAsJsonAsync(
             $"/api/boards/{board.Id}/access",
-            new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer));
+            new GrantAccessDto(board.Id, viewer.UserId, UserRole.Editor));
         grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var access = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        access.Should().NotBeNull();
 
         var createResponse = await viewerClient.PostAsJsonAsync(
             "/api/capture/items",
@@ -908,6 +910,11 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
         created.Should().NotBeNull();
         created!.BoardId.Should().Be(board.Id);
+
+        var demoteResponse = await ownerClient.PutAsJsonAsync(
+            $"/api/boards/{board.Id}/access/{access!.Id}",
+            new UpdateAccessDto(UserRole.Viewer));
+        demoteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var triageResponse = await viewerClient.PostAsync($"/api/capture/items/{created.Id}/triage", null);
 

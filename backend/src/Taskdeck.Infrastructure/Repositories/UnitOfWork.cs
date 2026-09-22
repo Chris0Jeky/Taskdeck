@@ -262,6 +262,15 @@ public class UnitOfWork : IUnitOfWork
         _transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
     }
 
+    public async Task BeginTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken = default)
+    {
+        _transaction = await _context.Database.BeginTransactionAsync(
+            isolationLevel,
+            cancellationToken);
+    }
+
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
     {
         var transaction = _transaction;

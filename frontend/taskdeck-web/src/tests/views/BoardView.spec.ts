@@ -77,6 +77,7 @@ const mockBoardStore = reactive({
     id: 'board-1',
     name: 'Ops Board',
     description: 'Primary board',
+    canWrite: true,
     columns: [
       {
         id: 'column-1',
@@ -204,6 +205,7 @@ describe('BoardView', () => {
       id: 'board-1',
       name: 'Ops Board',
       description: 'Primary board',
+      canWrite: true,
       columns: [
         {
           id: 'column-1',
@@ -509,6 +511,18 @@ describe('BoardView', () => {
     await waitForUi()
 
     expect(wrapper.get('[data-testid="capture-modal"]').text()).toContain('Capture Ops Board board-1')
+  })
+
+  it('does not expose board capture for a read-only board', async () => {
+    mockBoardStore.currentBoard = {
+      ...mockBoardStore.currentBoard,
+      canWrite: false,
+    }
+    const wrapper = mountView()
+    await waitForUi()
+
+    expect(wrapper.findAll('button').some((node) => node.text().trim() === 'Capture here')).toBe(false)
+    expect(wrapper.find('[data-testid="capture-modal"]').exists()).toBe(false)
   })
 
   it('opens the column form when add card is triggered without columns', async () => {

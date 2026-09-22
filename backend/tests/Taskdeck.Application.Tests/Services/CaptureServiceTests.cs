@@ -125,7 +125,7 @@ public class CaptureServiceTests
             .Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync(user);
         _authorizationServiceMock
-            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
             .ReturnsAsync(Result.Success(true));
         _llmQueueRepositoryMock
             .Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
@@ -177,7 +177,7 @@ public class CaptureServiceTests
             .Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync(user);
         _authorizationServiceMock
-            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
             .ReturnsAsync(Result.Success(true));
         _llmQueueRepositoryMock
             .Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
@@ -250,7 +250,7 @@ public class CaptureServiceTests
             .Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync(user);
         _authorizationServiceMock
-            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
             .ReturnsAsync(Result.Success(false));
 
         var result = await _service.CreateAsync(userId, dto);

@@ -45,6 +45,7 @@ const orchestratorState = {
   isArchivedHistory: ref(false),
   isScopeReplacement: ref(false),
   activeBoardName: ref(''),
+  activeBoardCanWrite: ref(true),
   activeColumnName: ref(''),
   selectedItemId: ref<string | null>(null),
   loadInbox: vi.fn<() => Promise<void>>(),
@@ -100,6 +101,7 @@ describe('PaperInboxView', () => {
     orchestratorState.isArchivedHistory.value = false
     orchestratorState.isScopeReplacement.value = false
     orchestratorState.activeBoardName.value = ''
+    orchestratorState.activeBoardCanWrite.value = true
     orchestratorState.activeColumnName.value = ''
     orchestratorState.selectedItemId.value = null
     orchestratorState.loadInbox.mockResolvedValue(undefined)
@@ -155,6 +157,29 @@ describe('PaperInboxView', () => {
     // may reword, and a selector reading it turns a copy edit into a test edit.
     expect(wrapper.find('textarea[data-testid="paper-composer-body"]').exists()).toBe(true)
     expect(wrapper.attributes('data-variant')).toBe('composer')
+  })
+
+  it('preserves the scoped draft while disabling capture for a read-only board', async () => {
+    orchestratorState.activeBoardId.value = 'board-viewer'
+    orchestratorState.activeBoardName.value = 'Viewer board'
+    orchestratorState.activeBoardCanWrite.value = false
+
+    const wrapper = mount(PaperInboxView)
+    const composerBody = wrapper.get<HTMLTextAreaElement>('[data-testid="paper-composer-body"]')
+    await composerBody.setValue('Keep this draft until write access returns')
+    await composerBody.trigger('keydown', { key: 'Enter', metaKey: true })
+
+    const composer = wrapper.findComponent({ name: 'PaperCaptureComposer' })
+    expect(composer.get<HTMLButtonElement>('button.pbtn-ember').element.disabled).toBe(true)
+    expect(composerBody.element.value).toBe('Keep this draft until write access returns')
+    expect(mockCaptureStore.createItem).not.toHaveBeenCalled()
+
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+    const nib = wrapper.findComponent({ name: 'PaperCaptureNib' })
+    expect(nib.get<HTMLButtonElement>('button.pbtn-ember').element.disabled).toBe(true)
+    expect(nib.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
+    wrapper.unmount()
   })
 
   it('renders archived capture history read-only and blocks Paper capture and triage mutations', async () => {

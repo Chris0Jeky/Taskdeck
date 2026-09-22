@@ -18,6 +18,7 @@ public class BoardAccessRepository : Repository<BoardAccess>, IBoardAccessReposi
     public async Task<BoardAccess?> GetByBoardAndUserAsync(Guid boardId, Guid userId, CancellationToken cancellationToken = default)
     {
         return await _context.BoardAccesses
+            .AsNoTracking()
             .Include(ba => ba.User)
             .Include(ba => ba.Board)
             .FirstOrDefaultAsync(ba => ba.BoardId == boardId && ba.UserId == userId, cancellationToken);
