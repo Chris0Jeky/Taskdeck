@@ -225,6 +225,55 @@ public sealed class SqliteBlobStoreTests
     }
 
     [Fact]
+    public async Task ChunkedReadKeepsOriginalSnapshotAfterFinalReferenceRelease()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"taskdeck-blob-read-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={path};Pooling=False;Default Timeout=15";
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>().UseSqlite(connectionString).Options;
+        var owner = new User("snapshot-owner", "snapshot@example.test", "test-hash");
+        try
+        {
+            Guid referenceId;
+            var bytes = RandomNumberGenerator.GetBytes(StoredBlobChunk.MaximumSize * 2 + 13);
+            await using (var setup = new TaskdeckDbContext(options))
+            {
+                await setup.Database.EnsureCreatedAsync();
+                await setup.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+                setup.Users.Add(owner);
+                await setup.SaveChangesAsync();
+                await using var tx = await setup.Database.BeginTransactionAsync();
+                var source = await new SqliteBlobStore(setup, new()).AcquireAsync(
+                    new(owner.Id, CaptureModality.Audio, bytes.Length, "snapshot-test", null), new MemoryStream(bytes));
+                referenceId = source.ReferenceId;
+                await tx.CommitAsync();
+            }
+
+            await using var readerDb = new TaskdeckDbContext(options);
+            await using var output = (await new SqliteBlobStore(readerDb, new()).OpenReferenceReadAsync(referenceId, owner.Id))!;
+            var firstChunk = new byte[StoredBlobChunk.MaximumSize];
+            (await output.ReadAsync(firstChunk)).Should().Be(firstChunk.Length);
+            firstChunk.Should().Equal(bytes[..firstChunk.Length]);
+
+            await using (var releaserDb = new TaskdeckDbContext(options))
+            {
+                await using var tx = await releaserDb.Database.BeginTransactionAsync();
+                (await new SqliteBlobStore(releaserDb, new()).ReleaseAsync(referenceId, owner.Id)).Should().BeTrue();
+                await tx.CommitAsync();
+            }
+
+            using var received = new MemoryStream();
+            await output.CopyToAsync(received);
+            received.ToArray().Should().Equal(bytes[firstChunk.Length..]);
+        }
+        finally
+        {
+            File.Delete(path);
+            File.Delete(path + "-wal");
+            File.Delete(path + "-shm");
+        }
+    }
+
+    [Fact]
     public async Task AccountEndpointErasesBytesEvenThoughTheUserRowIsRetained()
     {
         using var factory = new TestWebApplicationFactory();
