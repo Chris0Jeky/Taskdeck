@@ -25,6 +25,7 @@ const componentId = `td-input-assist-${Math.random().toString(36).slice(2, 10)}`
 const inputRef = ref<HTMLInputElement | null>(null)
 const panelOpen = ref(false)
 const activeIndex = ref(0)
+let inputFocused = false
 let blurCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 const filteredOptions = computed(() => filterInputAssistOptions(props.options, props.modelValue))
@@ -51,7 +52,8 @@ watch(filteredOptions, (options) => {
 watch(
   () => props.options,
   (options, previousOptions) => {
-    if (!panelOpen.value) {
+    // The blur grace period keeps pointer selection available, not async ownership.
+    if (!inputFocused || !panelOpen.value) {
       return
     }
 
@@ -129,6 +131,7 @@ function onInput(event: Event) {
 }
 
 function onBlur() {
+  inputFocused = false
   blurCloseTimer = setTimeout(() => {
     closePanel()
     blurCloseTimer = null
@@ -136,6 +139,7 @@ function onBlur() {
 }
 
 function onFocus() {
+  inputFocused = true
   if (blurCloseTimer) {
     clearTimeout(blurCloseTimer)
     blurCloseTimer = null
