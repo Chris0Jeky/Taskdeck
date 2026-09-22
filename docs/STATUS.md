@@ -2,6 +2,20 @@
 
 Last Updated: 2026-09-22
 
+## Board-access reads retain session and mutation ownership (#3328)
+
+Board-access reads now retain per-board ownership, so an older response cannot overwrite a
+newer read or a confirmed grant, update or revoke. Independent boards remain concurrent and
+operation tokens keep loading visible until their current work settles. Account replacement
+retires pending publication and clears cached permissions. Same-user token rotation retains
+settled caches, restarts active explicit refreshes and unresolved first reads, and reconciles
+successful old-token mutations with an authoritative read under the replacement credential.
+Mutation transport is never replayed. This avoids manual permission refresh and stale access
+presentation while retaining server authorization and the existing review-first board flow.
+
+Real-Pinia store tests cover session, token, read and mutation races; the source evidence note
+is [board-access ownership](analysis/2026-09-21-permission-read-ownership.md). Same-entry mutation
+ordering remains in #3335; human decisions in OUTSTANDING_TASKS.md remain open.
 ## Column writes follow their board visit (#3314)
 
 Create, update, delete and reorder share one mutation lane per board, preserving intent order
