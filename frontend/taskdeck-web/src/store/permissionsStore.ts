@@ -29,13 +29,20 @@ export const usePermissionsStore = defineStore('permissions', () => {
     revalidateOnTokenRotation: boolean
   }
 
+  interface MutationTail {
+    promise: Promise<void>
+    ownerToken: symbol
+  }
+
   type InvalidationKind = 'session-change' | 'token-rotation'
 
+  let errorOwner: symbol | null = null
   let sessionEpoch = 0
   let lastInvalidation: { epoch: number; kind: InvalidationKind } = {
     epoch: 0,
     kind: 'session-change',
   }
+  const mutationTails = new Map<string, MutationTail>()
   const activeOperations = new Set<symbol>()
   const activeReadByBoard = new Map<string, ReadOwner>()
   const readRetryByBoard = new Map<string, ReadRetry>()
@@ -45,10 +52,20 @@ export const usePermissionsStore = defineStore('permissions', () => {
     loading.value = activeOperations.size > 0
   }
 
+  function clearError() {
+    error.value = null
+    errorOwner = null
+  }
+
+  function recordError(owner: OperationOwner, message: string) {
+    error.value = message
+    errorOwner = owner.token
+  }
+
   function beginOperation(label: string): OperationOwner {
     const owner = { epoch: sessionEpoch, token: Symbol(label), userId: session.userId }
     activeOperations.add(owner.token)
-    error.value = null
+    clearError()
     syncLoading()
     return owner
   }
@@ -120,8 +137,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
     activeReadByBoard.clear()
     readRetryByBoard.clear()
     mutationGenerationByBoard.clear()
+    // In-flight writes may still commit after token or account replacement.
+    // Keep their tails so a new same-entry intent cannot overtake them.
     loading.value = false
-    error.value = null
+    clearError()
   }
 
   function retryMissingActiveReads(isTokenRotation: boolean) {
@@ -162,6 +181,34 @@ export const usePermissionsStore = defineStore('permissions', () => {
       // The read owns its error/toast state. The mutation itself already
       // settled successfully, so do not turn a reconciliation failure into a
       // second, misleading mutation failure.
+    }
+  }
+
+  async function enqueueAccessMutation<T>(
+    boardId: string,
+    accessId: string,
+    label: string,
+    task: (owner: OperationOwner) => Promise<T>,
+  ): Promise<T | undefined> {
+    const key = `${boardId}:${accessId}`
+    const predecessor = mutationTails.get(key)
+    const owner = beginOperation(label)
+    let release!: () => void
+    const tail = new Promise<void>((resolve) => { release = resolve })
+    mutationTails.set(key, { promise: tail, ownerToken: owner.token })
+
+    try {
+      if (predecessor) await predecessor.promise
+      if (!ownsSession(owner)) return undefined
+
+      // Retire only an error produced by this lane's predecessor. Another
+      // access row can fail while this intent waits and must keep its receipt.
+      if (predecessor && errorOwner === predecessor.ownerToken) clearError()
+      return await task(owner)
+    } finally {
+      finishOperation(owner)
+      release()
+      if (mutationTails.get(key)?.promise === tail) mutationTails.delete(key)
     }
   }
 
@@ -234,7 +281,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   async function fetchBoardAccess(boardId: string, revalidateOnTokenRotation = true) {
     if (isDemoMode) {
       loading.value = true
-      error.value = null
+      clearError()
       boardAccess.value.set(boardId, [])
       loading.value = false
       return
@@ -252,7 +299,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     } catch (e: unknown) {
       if (ownsRead(boardId, owner)) {
         const msg = getErrorDisplay(e, 'Failed to fetch board access').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -282,7 +329,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     } catch (e: unknown) {
       if (ownsSession(owner)) {
         const msg = getErrorDisplay(e, 'Failed to grant access').message
-        error.value = msg
+        recordError(owner, msg)
         toast.error(msg)
       }
       throw e
@@ -293,62 +340,70 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   async function updateAccess(boardId: string, accessId: string, dto: UpdateAccessDto) {
     guardDemoMutation()
-    const owner = beginOperation(`update:${boardId}:${accessId}`)
-    try {
-      session.requireUserId('board access management')
-      const updated = await boardAccessApi.updateAccess(boardId, accessId, dto)
-      if (!ownsSession(owner)) {
-        await reconcileStaleMutation(boardId, owner)
-        return updated
-      }
+    return await enqueueAccessMutation(
+      boardId,
+      accessId,
+      `update:${boardId}:${accessId}`,
+      async (owner) => {
+        try {
+          session.requireUserId('board access management')
+          const updated = await boardAccessApi.updateAccess(boardId, accessId, dto)
+          if (!ownsSession(owner)) {
+            await reconcileStaleMutation(boardId, owner)
+            return updated
+          }
 
-      recordMutation(boardId)
-      const existing = boardAccess.value.get(boardId) ?? []
-      if (existing.some(access => access.id === accessId)) {
-        boardAccess.value.set(
-          boardId,
-          existing.map(access => access.id === accessId ? updated : access),
-        )
-      }
-      toast.success('Access updated')
-      return updated
-    } catch (e: unknown) {
-      if (ownsSession(owner)) {
-        const msg = getErrorDisplay(e, 'Failed to update access').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    } finally {
-      finishOperation(owner)
-    }
+          recordMutation(boardId)
+          const existing = boardAccess.value.get(boardId) ?? []
+          if (existing.some(access => access.id === accessId)) {
+            boardAccess.value.set(
+              boardId,
+              existing.map(access => access.id === accessId ? updated : access),
+            )
+          }
+          toast.success('Access updated')
+          return updated
+        } catch (e: unknown) {
+          if (ownsSession(owner)) {
+            const msg = getErrorDisplay(e, 'Failed to update access').message
+            recordError(owner, msg)
+            toast.error(msg)
+          }
+          throw e
+        }
+      },
+    )
   }
 
   async function revokeAccess(boardId: string, accessId: string) {
     guardDemoMutation()
-    const owner = beginOperation(`revoke:${boardId}:${accessId}`)
-    try {
-      session.requireUserId('board access management')
-      await boardAccessApi.revokeAccess(boardId, accessId)
-      if (!ownsSession(owner)) {
-        await reconcileStaleMutation(boardId, owner)
-        return
-      }
+    await enqueueAccessMutation(
+      boardId,
+      accessId,
+      `revoke:${boardId}:${accessId}`,
+      async (owner) => {
+        try {
+          session.requireUserId('board access management')
+          await boardAccessApi.revokeAccess(boardId, accessId)
+          if (!ownsSession(owner)) {
+            await reconcileStaleMutation(boardId, owner)
+            return
+          }
 
-      recordMutation(boardId)
-      const existing = boardAccess.value.get(boardId) ?? []
-      boardAccess.value.set(boardId, existing.filter(access => access.id !== accessId))
-      toast.success('Access revoked')
-    } catch (e: unknown) {
-      if (ownsSession(owner)) {
-        const msg = getErrorDisplay(e, 'Failed to revoke access').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    } finally {
-      finishOperation(owner)
-    }
+          recordMutation(boardId)
+          const existing = boardAccess.value.get(boardId) ?? []
+          boardAccess.value.set(boardId, existing.filter(access => access.id !== accessId))
+          toast.success('Access revoked')
+        } catch (e: unknown) {
+          if (ownsSession(owner)) {
+            const msg = getErrorDisplay(e, 'Failed to revoke access').message
+            recordError(owner, msg)
+            toast.error(msg)
+          }
+          throw e
+        }
+      },
+    )
   }
 
   return {
