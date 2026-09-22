@@ -57,8 +57,8 @@ watch(
       return
     }
 
-    const exactMatch = findExactMatch(props.modelValue, options)
-    const previousExactMatch = findExactMatch(props.modelValue, previousOptions)
+    const exactMatch = findLateOptionMatch(props.modelValue, options)
+    const previousExactMatch = findLateOptionMatch(props.modelValue, previousOptions)
     if (exactMatch && !previousExactMatch) {
       selectOption(exactMatch)
     }
@@ -97,6 +97,21 @@ function findExactMatch(value: string, options: InputAssistOption[] = props.opti
     return option.label.trim().toLowerCase() === normalizedInput
   })
   ?? null
+}
+
+function findLateOptionMatch(value: string, options: InputAssistOption[]): InputAssistOption | null {
+  const normalizedInput = value.trim().toLowerCase()
+  if (!normalizedInput) {
+    return null
+  }
+
+  const byValue = options.find((option) => option.value.trim().toLowerCase() === normalizedInput)
+  if (byValue) {
+    return byValue
+  }
+
+  const byLabel = options.filter((option) => option.label.trim().toLowerCase() === normalizedInput)
+  return byLabel.length === 1 ? byLabel[0] : null
 }
 
 function selectOption(option: InputAssistOption) {

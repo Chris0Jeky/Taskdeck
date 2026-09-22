@@ -8,6 +8,11 @@ const options: InputAssistOption[] = [
   { value: 'health.check', label: 'Health Check' },
 ]
 
+const ambiguousOptions: InputAssistOption[] = [
+  { value: 'board.one', label: 'Shared Board' },
+  { value: 'board.two', label: 'Shared Board' },
+]
+
 const cleanups: Array<() => void> = []
 
 function mountField(initialOptions: InputAssistOption[] = []) {
@@ -74,6 +79,21 @@ describe('InputAssistField late-option focus ownership', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
     expect(document.activeElement).toBe(input.element)
     expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+  })
+
+  it('does not auto-select an ambiguous late label match', async () => {
+    const { wrapper, input } = mountField()
+    input.element.focus()
+    await input.setValue('Shared Board')
+    await wrapper.setProps({ modelValue: 'Shared Board' })
+    const updatesBeforeResponse = wrapper.emitted('update:modelValue')?.length
+
+    await wrapper.setProps({ options: ambiguousOptions })
+
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toHaveLength(updatesBeforeResponse!)
+    expect(document.activeElement).toBe(input.element)
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
   })
 
   it('restores late-option eligibility after an intentional return to the input', async () => {
