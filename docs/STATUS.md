@@ -7,15 +7,17 @@ Last Updated: 2026-09-22
 Comment reads publish only while their exact cache visit, latest-read version and local
 mutation version still match. Successful writes invalidate older snapshots, and repeated
 creates preserve an existing stable comment ID. Same-comment update/delete operations run
-in intent order so the server and cache agree; successful writes from a prior board visit
-reconcile the currently reopened same-board cache after the write finishes.
+in intent order so the server and cache agree. Already submitted queued edits and deletes
+continue across same-session navigation while the departed cache stays protected; successful
+writes from a prior visit reconcile a currently reopened same-board cache after completion.
 
 The imported ordering work also uses the shared session and loading owners from #3306/#3305.
 Logout before any board loads retires queued comment transport, and old settlements or
 reconciliation reads cannot publish into a new account. Queued writes retain loading until
 their own settlement. Deferred tests cover the combined boundaries and preserve the source
 ordering regressions. This prevents confirmed comment edits disappearing during navigation
-and reduces manual refreshes without changing review-first proposal behavior.
+and reduces manual refreshes without changing review-first proposal behavior. Recovery from an
+unanswered old-session write holding a same-comment queue remains tracked in #3362.
 
 ## Board loading belongs to pending operations (#3305)
 

@@ -204,7 +204,7 @@ describe('cardCommentStore visit and mutation ownership', () => {
     expect(helpers.toast.success).not.toHaveBeenCalledWith('Comment updated')
   })
 
-  it('does not start a queued comment write after the board session has ended', async () => {
+  it('does not start a queued comment write after logout has ended the session', async () => {
     const state = createState()
     const helpers = createHelpers()
     const firstEdit = deferred<TestComment>()
@@ -235,6 +235,7 @@ describe('cardCommentStore visit and mutation ownership', () => {
     await flushPromises()
     expect(mockCardCommentsApi.updateComment).toHaveBeenCalledTimes(1)
 
+    state.boardMutationSessionGeneration.value++
     state.currentBoard.value = null
     state.cardCommentsByCardId.value = {}
     firstEdit.resolve({

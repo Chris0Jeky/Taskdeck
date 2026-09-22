@@ -93,6 +93,40 @@ describe('card comment session integration', () => {
     expect(store.loading).toBe(false)
   })
 
+  it.each(['update', 'delete'] as const)('preserves an accepted queued %s after same-session navigation', async (operation) => {
+    const store = useBoardStore()
+    store.currentBoard = structuredClone(boardA)
+    installCommentCache(store, commentA)
+    const first = deferred<CardComment>()
+    const finalComment = { ...commentA, content: 'Last accepted edit' }
+    vi.mocked(cardCommentsApi.updateComment)
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(finalComment)
+    vi.mocked(cardCommentsApi.deleteComment).mockResolvedValueOnce(undefined)
+
+    const firstCall = store.updateCardComment('board-a', 'card-a', 'comment-a', { content: 'First edit' })
+    const queuedCall = operation === 'update'
+      ? store.updateCardComment('board-a', 'card-a', 'comment-a', { content: finalComment.content })
+      : store.deleteCardComment('board-a', 'card-a', 'comment-a')
+    const outcome = queuedCall.then(value => ({ value }), error => ({ error }))
+
+    store.currentBoard = structuredClone(boardB)
+    const nextBoardComment = { ...commentA, boardId: 'board-b', cardId: 'card-b', content: 'Other board' }
+    installCommentCache(store, nextBoardComment)
+    first.resolve({ ...commentA, content: 'First edit' })
+
+    await firstCall
+    await expect(outcome).resolves.toEqual({ value: operation === 'update' ? finalComment : undefined })
+    if (operation === 'update') {
+      expect(cardCommentsApi.updateComment).toHaveBeenLastCalledWith('board-a', 'card-a', 'comment-a', { content: finalComment.content })
+    } else {
+      expect(cardCommentsApi.deleteComment).toHaveBeenCalledWith('board-a', 'card-a', 'comment-a')
+    }
+    expect(store.cardCommentsByCardId).toEqual({ 'card-b': [nextBoardComment] })
+    expect(cardCommentsApi.getComments).not.toHaveBeenCalled()
+    expect(store.loading).toBe(false)
+  })
+
   it('does not publish an old A-to-B-to-A reconciliation after logout and a new same-id account', async () => {
     const store = useBoardStore()
     store.currentBoard = structuredClone(boardA)

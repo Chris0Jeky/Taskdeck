@@ -94,8 +94,9 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       operation = previous.catch(() => undefined).then(() => {
         // The HTTP interceptor reads the token when transport starts. Reject a
         // queued pre-logout intent before the API callback can run under another
-        // session's credentials.
-        if (!isCurrentBoardVisit(visit)) throw new StaleBoardVisitError()
+        // session's credentials. A same-session board change only retires cache
+        // publication; it must not discard an already accepted edit or delete.
+        if (!visit.isCurrentSession()) throw new StaleBoardVisitError()
         return mutation()
       })
     } else {
