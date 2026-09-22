@@ -492,12 +492,13 @@ public class DataExportService : IDataExportService
 
         try
         {
-            // Four bytes per source byte covers the raw buffer, Base64 expansion, and the
-            // UTF-16/UTF-8 JSON representations retained during MVC serialization. Extraction
-            // estimates are already serialized JSON bytes, so two bytes per byte covers their
-            // retained string/object representation and the final JSON buffer.
+            // Five bytes per source byte conservatively covers the raw buffer, the Base64
+            // expansion, the UTF-16 Base64 string, and the UTF-8 JSON output retained during
+            // MVC serialization. Extraction estimates are already serialized JSON bytes, so
+            // two bytes per byte covers their retained string/object representation and the
+            // final JSON buffer.
             return checked(
-                checked(artefactBytes * 4) +
+                checked(artefactBytes * 5) +
                 checked(extractionBytes * 2) +
                 BufferedRepresentationOverheadBytes);
         }

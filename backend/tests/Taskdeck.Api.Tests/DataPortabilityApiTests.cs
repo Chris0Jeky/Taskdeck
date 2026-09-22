@@ -1,17 +1,23 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -292,6 +298,32 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BufferedExport_RejectsSevenMiBLegacyAndBlobArtefacts_WhileStreamingFullContent()
+    {
+        var content = CreateExportPayload(7 * 1024 * 1024);
+
+        using var legacyClient = _factory.CreateClient();
+        var legacyUser = await ApiTestHarness.AuthenticateAsync(legacyClient, "export-budget-legacy");
+        var legacyArtefact = await SeedLegacyArtefactAsync(legacyUser.UserId, content);
+        var legacyBuffered = await legacyClient.GetAsync("/api/account/export");
+        await ApiTestHarness.AssertErrorContractAsync(
+            legacyBuffered,
+            HttpStatusCode.RequestEntityTooLarge,
+            "PayloadTooLarge");
+        await AssertStreamedArtefactContentAsync(legacyClient, legacyArtefact.Id, content);
+
+        using var blobClient = _factory.CreateClient();
+        var blobUser = await ApiTestHarness.AuthenticateAsync(blobClient, "export-budget-blob");
+        var blobArtefact = await SeedBlobArtefactAsync(blobUser.UserId, content);
+        var blobBuffered = await blobClient.GetAsync("/api/account/export");
+        await ApiTestHarness.AssertErrorContractAsync(
+            blobBuffered,
+            HttpStatusCode.RequestEntityTooLarge,
+            "PayloadTooLarge");
+        await AssertStreamedArtefactContentAsync(blobClient, blobArtefact.Id, content);
+    }
+
+    [Fact]
     public async Task ExportUserData_BufferedAndStreaming_ShouldKeepCaptureDispositionWireFormatInParity()
     {
         using var client = _factory.CreateClient();
@@ -366,5 +398,76 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
 
         // Verify they're different users
         userA.UserId.Should().NotBe(userB.UserId);
+    }
+
+    private async Task<SourceArtefact> SeedLegacyArtefactAsync(Guid userId, byte[] content)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var artefact = CreateExportArtefact(userId, content, "legacy-large.txt");
+        db.SourceArtefacts.Add(artefact);
+        db.ArtefactBlobs.Add(new ArtefactBlob(artefact.Id, content));
+        await db.SaveChangesAsync();
+        return artefact;
+    }
+
+    private async Task<SourceArtefact> SeedBlobArtefactAsync(Guid userId, byte[] content)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var store = scope.ServiceProvider.GetRequiredService<IBlobStore>();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var artefact = CreateExportArtefact(userId, content, "blob-large.txt");
+        await using var source = new MemoryStream(content, writable: false);
+        var reference = await store.AcquireAsync(
+            new BlobAcquisition(
+                userId,
+                CaptureModality.Document,
+                content.LongLength,
+                nameof(SourceArtefact),
+                artefact.Id),
+            source);
+        artefact.AttachBlobReference(reference.ReferenceId);
+        db.SourceArtefacts.Add(artefact);
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return artefact;
+    }
+
+    private static SourceArtefact CreateExportArtefact(Guid userId, byte[] content, string fileName) =>
+        new(
+            userId,
+            ArtefactKind.TextFile,
+            "text/plain",
+            fileName,
+            content.LongLength,
+            Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant(),
+            CaptureSource.Import);
+
+    private static byte[] CreateExportPayload(int length)
+    {
+        var content = new byte[length];
+        for (var index = 0; index < content.Length; index++)
+            content[index] = (byte)((index * 31 + 17) % 251);
+        return content;
+    }
+
+    private static async Task AssertStreamedArtefactContentAsync(
+        HttpClient client,
+        Guid artefactId,
+        byte[] expectedContent)
+    {
+        using var response = await client.GetAsync("/api/account/export/stream");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync());
+        var exported = document.RootElement
+            .GetProperty("data")
+            .GetProperty("artefacts")
+            .EnumerateArray()
+            .Single(value => value.GetProperty("id").GetGuid() == artefactId);
+        var encoded = exported.GetProperty("contentBase64").GetString();
+        encoded.Should().NotBeNullOrWhiteSpace();
+        encoded!.Length.Should().Be(Convert.ToBase64String(expectedContent).Length);
+        Convert.FromBase64String(encoded).Should().Equal(expectedContent);
     }
 }

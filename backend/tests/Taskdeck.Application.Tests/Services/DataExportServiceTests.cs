@@ -218,9 +218,12 @@ public class DataExportServiceTests
     {
         SetupUserFound();
         SetupEmptyRepositories();
+        const long representationBudget = 25L * 1024 * 1024;
+        const long representationOverhead = 1L * 1024 * 1024;
+        var largestRawArtefact = (representationBudget - representationOverhead) / 5;
         _artefactRepoMock
             .Setup(r => r.GetTotalByteSizeByUserAsync(_userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(6L * 1024 * 1024);
+            .ReturnsAsync(largestRawArtefact);
 
         var result = await _service.ExportUserDataAsync(_userId);
 
