@@ -7,6 +7,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Mcp;
 
@@ -240,9 +241,11 @@ public class WriteTools
             return Error("Invalid target_column_id format");
 
         var canWriteMove = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
-        if (!canWriteMove.IsSuccess)
+        if (!canWriteMove.IsSuccess &&
+            canWriteMove.ErrorCode != ErrorCodes.NotFound &&
+            canWriteMove.ErrorCode != ErrorCodes.Forbidden)
             return Error(canWriteMove);
-        if (!canWriteMove.Value)
+        if (!canWriteMove.IsSuccess || !canWriteMove.Value)
             return Error("Not authorized to move cards on this board");
 
         var parameters = new Dictionary<string, object>
@@ -330,9 +333,11 @@ public class WriteTools
             return Error("At least one card field or explicit clear action must be provided");
 
         var canWriteUpdate = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
-        if (!canWriteUpdate.IsSuccess)
+        if (!canWriteUpdate.IsSuccess &&
+            canWriteUpdate.ErrorCode != ErrorCodes.NotFound &&
+            canWriteUpdate.ErrorCode != ErrorCodes.Forbidden)
             return Error(canWriteUpdate);
-        if (!canWriteUpdate.Value)
+        if (!canWriteUpdate.IsSuccess || !canWriteUpdate.Value)
             return Error("Not authorized to update cards on this board");
 
         var parameters = new Dictionary<string, object?>
@@ -438,9 +443,11 @@ public class WriteTools
             return Error("Invalid card_id format");
 
         var canWriteArchive = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
-        if (!canWriteArchive.IsSuccess)
+        if (!canWriteArchive.IsSuccess &&
+            canWriteArchive.ErrorCode != ErrorCodes.NotFound &&
+            canWriteArchive.ErrorCode != ErrorCodes.Forbidden)
             return Error(canWriteArchive);
-        if (!canWriteArchive.Value)
+        if (!canWriteArchive.IsSuccess || !canWriteArchive.Value)
             return Error("Not authorized to archive cards on this board");
 
         var parameters = new Dictionary<string, object>
