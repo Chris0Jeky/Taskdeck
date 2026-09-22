@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
+using System.Data;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -138,14 +141,75 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
 
     public async Task<Stream?> OpenReadAsync(Guid blobObjectId, Guid ownerUserId, CancellationToken cancellationToken = default)
     {
-        var blob = await db.StoredBlobs.AsNoTracking().SingleOrDefaultAsync(x => x.Id == blobObjectId && x.OwnerUserId == ownerUserId && x.ContentHash != null, cancellationToken);
-        return blob is null ? null : new ChunkStream(db, blob.Id, blob.OwnerUserId, blob.ByteSize);
+        return await OpenChunkReaderAsync(
+            """
+            SELECT blobs.ByteSize, chunks.Content
+            FROM StoredBlobs AS blobs
+            INNER JOIN StoredBlobChunks AS chunks ON chunks.BlobId = blobs.Id
+            WHERE blobs.Id = $blobId AND blobs.OwnerUserId = $ownerUserId AND blobs.ContentHash IS NOT NULL
+            ORDER BY chunks.Ordinal
+            """,
+            [("$blobId", blobObjectId), ("$ownerUserId", ownerUserId)],
+            cancellationToken);
     }
 
     public async Task<Stream?> OpenReferenceReadAsync(Guid referenceId, Guid ownerUserId, CancellationToken cancellationToken = default)
     {
-        var id = await db.StoredBlobReferences.Where(x => x.Id == referenceId && x.OwnerUserId == ownerUserId).Select(x => (Guid?)x.BlobId).SingleOrDefaultAsync(cancellationToken);
-        return id is null ? null : await OpenReadAsync(id.Value, ownerUserId, cancellationToken);
+        return await OpenChunkReaderAsync(
+            """
+            SELECT blobs.ByteSize, chunks.Content
+            FROM StoredBlobReferences AS refs
+            INNER JOIN StoredBlobs AS blobs ON blobs.Id = refs.BlobId
+            INNER JOIN StoredBlobChunks AS chunks ON chunks.BlobId = blobs.Id
+            WHERE refs.Id = $referenceId AND refs.OwnerUserId = $ownerUserId
+                AND blobs.OwnerUserId = $ownerUserId AND blobs.ContentHash IS NOT NULL
+            ORDER BY chunks.Ordinal
+            """,
+            [("$referenceId", referenceId), ("$ownerUserId", ownerUserId)],
+            cancellationToken);
+    }
+
+    private async Task<Stream?> OpenChunkReaderAsync(string commandText, (string Name, object Value)[] parameters,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        var ownsConnection = connection.State != ConnectionState.Open;
+        if (ownsConnection)
+            await db.Database.OpenConnectionAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        if (db.Database.CurrentTransaction is { } transaction)
+            command.Transaction = transaction.GetDbTransaction();
+        foreach (var (name, value) in parameters)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+
+        DbDataReader? reader = null;
+        try
+        {
+            reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await reader.DisposeAsync();
+                await command.DisposeAsync();
+                if (ownsConnection) await db.Database.CloseConnectionAsync();
+                return null;
+            }
+
+            return new ChunkStream(db, command, reader, ownsConnection, reader.GetInt64(0));
+        }
+        catch
+        {
+            if (reader is not null) await reader.DisposeAsync();
+            await command.DisposeAsync();
+            if (ownsConnection) await db.Database.CloseConnectionAsync();
+            throw;
+        }
     }
 
     public async Task<BlobObjectDescriptor?> FindByHashAsync(Guid ownerUserId, string contentHash, CancellationToken cancellationToken = default)
@@ -175,13 +239,13 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
         return db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId).ExecuteDeleteAsync(cancellationToken);
     }
 
-    private sealed class ChunkStream(TaskdeckDbContext context, Guid id, Guid owner, long length) : Stream
+    private sealed class ChunkStream(TaskdeckDbContext context, DbCommand command, DbDataReader reader, bool ownsConnection, long length) : Stream
     {
         private byte[] buffer = [];
         private int offset;
-        private int ordinal;
         private long position;
         private bool disposed;
+        private bool currentRow = true;
         public override bool CanRead => !disposed;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
@@ -194,18 +258,49 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             if (destination.IsEmpty || position == length) return 0;
             if (offset == buffer.Length)
             {
-                buffer = await context.StoredBlobChunks.Where(x => x.BlobId == id && x.Ordinal == ordinal
-                    && context.StoredBlobs.Any(blob => blob.Id == id && blob.OwnerUserId == owner))
-                    .Select(x => x.Content).SingleOrDefaultAsync(cancellationToken)
-                    ?? throw new IOException("The stored source is no longer available.");
-                offset = 0; ordinal++;
+                if (!currentRow && !await reader.ReadAsync(cancellationToken))
+                    throw new IOException("The stored source is no longer available.");
+                currentRow = false;
+                buffer = await reader.GetFieldValueAsync<byte[]>(1, cancellationToken);
+                offset = 0;
             }
             var count = Math.Min(destination.Length, buffer.Length - offset);
             buffer.AsMemory(offset, count).CopyTo(destination);
             offset += count; position += count;
             return count;
         }
-        protected override void Dispose(bool disposing) { disposed = true; buffer = []; base.Dispose(disposing); }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !disposed)
+            {
+                disposed = true;
+                buffer = [];
+                try { reader.Dispose(); }
+                finally
+                {
+                    try { command.Dispose(); }
+                    finally { if (ownsConnection) context.Database.CloseConnection(); }
+                }
+            }
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (!disposed)
+            {
+                disposed = true;
+                buffer = [];
+                try { await reader.DisposeAsync(); }
+                finally
+                {
+                    try { await command.DisposeAsync(); }
+                    finally { if (ownsConnection) await context.Database.CloseConnectionAsync(); }
+                }
+            }
+            await base.DisposeAsync();
+            GC.SuppressFinalize(this);
+        }
         public override void Flush() { }
         public override long Seek(long value, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
