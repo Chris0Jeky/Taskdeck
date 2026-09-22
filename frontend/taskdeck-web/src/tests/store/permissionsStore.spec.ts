@@ -40,8 +40,9 @@ describe('permissionsStore', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
-    store = usePermissionsStore()
     sessionStore = useSessionStore()
+    sessionStore.userId = 'user-1'
+    store = usePermissionsStore()
     vi.clearAllMocks()
   })
 
@@ -186,6 +187,8 @@ describe('permissionsStore', () => {
 
   describe('guardrails', () => {
     it('throws if grantAccess is called without a session user', async () => {
+      sessionStore.userId = null
+
       await expect(store.grantAccess('board-1', { userId: 'user-2', role: 'Viewer' }))
         .rejects
         .toThrow('You must be logged in to use board access management.')
@@ -193,6 +196,7 @@ describe('permissionsStore', () => {
     })
 
     it('returns null role checks when no session user exists', () => {
+      sessionStore.userId = null
       store.boardAccess.set('board-1', [makeAccess({ userId: 'user-1', role: 'Owner' })])
 
       expect(store.currentUserRole('board-1')).toBeNull()
