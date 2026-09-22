@@ -707,6 +707,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
    * lifecycles are aborted: every open list read and the active detail read.
    */
   function resetForLogout() {
+    state.boardMutationSessionGeneration.value++
+    state.boardViewVisit.value = { boardId: null }
     boardListGeneration++
     // The bump comes first so the rejection each abort produces lands on a
     // stale generation: the catch returns before handleApiError, so no toast

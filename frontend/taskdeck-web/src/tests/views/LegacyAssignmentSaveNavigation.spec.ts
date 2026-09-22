@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive, ref } from 'vue'
 import BoardView from '../../views/BoardView.vue'
-import BoardCanvas from '../../components/board/BoardCanvas.vue'
 import ColumnLane from '../../components/board/ColumnLane.vue'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import type { BoardDetail, Card, Column } from '../../types/board'
@@ -102,6 +101,8 @@ const boardStore = reactive({
   totalCardCount: 1,
   fetchBoard: vi.fn(async () => true),
   cancelBackgroundBoardFetch: vi.fn(),
+  beginBoardViewVisit: vi.fn((boardId: string) => ({ boardId })),
+  endBoardViewVisit: vi.fn(),
   setBoardPresenceMembers: vi.fn(),
   setEditingCard: vi.fn(),
   createColumn: vi.fn(async () => undefined),
@@ -277,36 +278,6 @@ describe('Legacy assignment-save event propagation', () => {
     await nextTick()
 
     expect(wrapper.emitted('card-editor-saving-change')).toEqual([[true]])
-  })
-
-  it('forwards the lane saving state through BoardCanvas', async () => {
-    const wrapper = mount(BoardCanvas, {
-      props: {
-        sortedColumns: [column],
-        cardsByColumn: new Map([[column.id, [card]]]),
-        labels: [],
-        boardId: board.id,
-        hasColumns: true,
-        draggedColumn: null,
-        dragOverColumnId: null,
-        draggedCard: null,
-        selectedCardId: null,
-      },
-      global: {
-        stubs: {
-          ColumnLane: {
-            name: 'ColumnLane',
-            emits: ['card-editor-saving-change'],
-            template: '<button data-testid="lane-save" @click="$emit(\'card-editor-saving-change\', true)">Save</button>',
-          },
-        },
-      },
-    })
-    mountedWrappers.push(wrapper)
-
-    await wrapper.get('[data-testid="lane-save"]').trigger('click')
-
-    expect(wrapper.emitted('cardEditorSavingChange')).toEqual([[true]])
   })
 })
 

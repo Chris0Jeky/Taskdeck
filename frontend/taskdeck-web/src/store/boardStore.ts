@@ -92,6 +92,8 @@ export const useBoardStore = defineStore('board', () => {
     clearFilters: filtering.clearFilters,
 
     // Actions — UI state
+    beginBoardViewVisit: ui.beginBoardViewVisit,
+    endBoardViewVisit: ui.endBoardViewVisit,
     setBoardPresenceMembers: ui.setBoardPresenceMembers,
     setEditingCard: ui.setEditingCard,
 
