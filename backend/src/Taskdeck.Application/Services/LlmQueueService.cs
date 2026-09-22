@@ -67,7 +67,10 @@ public class LlmQueueService : ILlmQueueService
                 return Result.Failure<LlmRequestDto>(requestTypeValidation.ErrorCode, requestTypeValidation.ErrorMessage);
             }
 
-            var requestType = dto.RequestType;
+            // Validation accepts surrounding whitespace, so carry the same normalized value
+            // into capture classification. Otherwise a padded capture type could select the
+            // readable-board gate instead of the write gate below.
+            var requestType = dto.RequestType.Trim();
             var payload = dto.Payload;
             CapturePayloadV1? capturePayload = null;
             if (CaptureRequestContract.IsCaptureRequestType(requestType))

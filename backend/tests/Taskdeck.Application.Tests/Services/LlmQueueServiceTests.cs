@@ -252,6 +252,37 @@ public class LlmQueueServiceTests
     }
 
     [Fact]
+    public async Task AddToQueueAsync_ShouldUseWriteGateForWhitespacePaddedCaptureRequestType()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto(
+            $" {CaptureRequestContract.RequestTypeV1} ",
+            "Capture this padded quick note",
+            boardId);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+        _authorizationServiceMock.Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardId), Times.Once);
+        _authorizationServiceMock.Verify(s => s.CanReadBoardAsync(userId, boardId), Times.Never);
+        _unitOfWorkMock.Verify(
+            u => u.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, default),
+            Times.Once);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+        _llmQueueRepoMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
+    }
+
+    [Fact]
     public async Task AddToQueueAsync_ShouldReturnNotFound_WhenBoardDoesNotExist()
     {
         // Arrange
