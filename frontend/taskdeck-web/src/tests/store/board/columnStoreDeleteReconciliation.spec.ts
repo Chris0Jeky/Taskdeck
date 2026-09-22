@@ -1,3 +1,4 @@
+import { createBoardState } from '../../../store/board/boardState'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -33,6 +34,7 @@ describe('columnStore stale-visit delete reconciliation', () => {
     const deletedColumn = { id: 'col-a', boardId: 'board-1', name: 'Todo' }
     const survivingColumn = { id: 'col-b', boardId: 'board-1', name: 'Done' }
     const state = {
+      ...createBoardState(),
       currentBoard: ref({
         id: 'board-1',
         columns: [deletedColumn, survivingColumn],

@@ -102,6 +102,8 @@ const boardStore = reactive({
   totalCardCount: 1,
   fetchBoard: vi.fn(async () => true),
   cancelBackgroundBoardFetch: vi.fn(),
+  beginBoardViewVisit: vi.fn((boardId: string) => ({ boardId })),
+  endBoardViewVisit: vi.fn(),
   setBoardPresenceMembers: vi.fn(),
   setEditingCard: vi.fn(),
   createColumn: vi.fn(async () => undefined),

@@ -1,3 +1,4 @@
+import { createBoardState } from '../../../store/board/boardState'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
 
@@ -18,6 +19,7 @@ import { createColumnActions } from '../../../store/board/columnStore'
 
 function createMockState() {
   return {
+    ...createBoardState(),
     currentBoard: ref<{ id: string; columns: Array<{ id: string; name: string }> } | null>({
       id: 'board-1',
       columns: [

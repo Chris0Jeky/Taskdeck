@@ -4,13 +4,15 @@
 import { watch } from 'vue'
 import { columnsApi } from '../../api/columnsApi'
 import type { CreateColumnDto, UpdateColumnDto } from '../../types/board'
-import type { BoardState } from './boardState'
+import type { BoardState, BoardViewVisit } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
 interface ColumnMutationVisit {
   boardId: string
   ownerBoardId: string | null
   generation: number
+  viewVisit: BoardViewVisit | undefined
+  sessionGeneration: number
 }
 
 class StaleBoardVisitError extends Error {
@@ -43,13 +45,18 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
       boardId,
       ownerBoardId: state.currentBoard.value?.id ?? null,
       generation: boardVisitGeneration,
+      viewVisit: state.boardViewVisit.value,
+      sessionGeneration: state.boardMutationSessionGeneration.value,
     }
   }
 
   function isCurrentVisit(visit: ColumnMutationVisit) {
     return (
       (state.currentBoard.value?.id ?? null) === visit.ownerBoardId &&
-      boardVisitGeneration === visit.generation
+      boardVisitGeneration === visit.generation &&
+      state.boardMutationSessionGeneration.value === visit.sessionGeneration &&
+      state.boardViewVisit.value === visit.viewVisit &&
+      (visit.viewVisit === undefined || visit.viewVisit.boardId === visit.boardId)
     )
   }
 
@@ -61,8 +68,10 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     return mutationVersionByBoardId.get(boardId) ?? 0
   }
 
-  function markColumnMutation(boardId: string) {
-    mutationVersionByBoardId.set(boardId, currentMutationVersion(boardId) + 1)
+  function markColumnMutation(visit: ColumnMutationVisit) {
+    if (state.boardMutationSessionGeneration.value !== visit.sessionGeneration) return
+    helpers.markBoardDetailMutation(visit.boardId)
+    mutationVersionByBoardId.set(visit.boardId, currentMutationVersion(visit.boardId) + 1)
   }
 
   async function runColumnMutation<T>(
@@ -99,10 +108,15 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
     }
   }
 
-  async function reconcileReopenedBoard(boardId: string): Promise<boolean> {
-    if (state.currentBoard.value?.id !== boardId) return false
+  async function reconcileReopenedBoard(previousVisit: ColumnMutationVisit, deletedColumnId?: string) {
+    const { boardId } = previousVisit
+    if (
+      state.boardMutationSessionGeneration.value !== previousVisit.sessionGeneration ||
+      state.currentBoard.value?.id !== boardId
+    ) return
 
     const visit = captureColumnVisit(boardId)
+    if (!ownsTargetBoard(visit)) return
     const mutationVersion = currentMutationVersion(boardId)
     try {
       const columns = await columnsApi.getColumns(boardId)
@@ -111,16 +125,20 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
         currentMutationVersion(boardId) === mutationVersion
       ) {
         state.currentBoard.value!.columns = columns
-        return true
+        if (deletedColumnId) {
+          // Apply the cascade under the same guard as the refreshed columns;
+          // another route can take ownership at the next await boundary.
+          state.currentBoardCards.value = state.currentBoardCards.value.filter(
+            card => card.columnId !== deletedColumnId,
+          )
+        }
       }
-      return false
     } catch {
       if (ownsTargetBoard(visit)) {
         helpers.toast.warning(
           'Column change saved, but columns could not be refreshed. Refresh the board before editing again.',
         )
       }
-      return false
     }
   }
 
@@ -132,8 +150,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
         state.loading.value = true
         state.error.value = null
         const newColumn = await columnsApi.createColumn(boardId, column)
-        helpers.markBoardDetailMutation(boardId)
-        markColumnMutation(boardId)
+        markColumnMutation(visit)
 
         if (ownsTargetBoard(visit)) {
           // A same-board detail refresh can install the new column before this
@@ -143,7 +160,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
             currentColumns.push(newColumn)
           }
         } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
-          await reconcileReopenedBoard(boardId)
+          await reconcileReopenedBoard(visit)
         }
 
         if (isCurrentVisit(visit)) {
@@ -169,15 +186,14 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
         state.loading.value = true
         state.error.value = null
         const updatedColumn = await columnsApi.updateColumn(boardId, columnId, column)
-        helpers.markBoardDetailMutation(boardId)
-        markColumnMutation(boardId)
+        markColumnMutation(visit)
 
         if (ownsTargetBoard(visit)) {
           const currentColumns = state.currentBoard.value!.columns
           const index = currentColumns.findIndex(candidate => candidate.id === columnId)
           if (index !== -1) currentColumns[index] = updatedColumn
         } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
-          await reconcileReopenedBoard(boardId)
+          await reconcileReopenedBoard(visit)
         }
 
         if (isCurrentVisit(visit)) helpers.toast.success('Column updated successfully')
@@ -201,8 +217,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
         state.loading.value = true
         state.error.value = null
         await columnsApi.deleteColumn(boardId, columnId)
-        helpers.markBoardDetailMutation(boardId)
-        markColumnMutation(boardId)
+        markColumnMutation(visit)
 
         if (ownsTargetBoard(visit)) {
           state.currentBoard.value!.columns = state.currentBoard.value!.columns.filter(
@@ -212,15 +227,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
             card => card.columnId !== columnId,
           )
         } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
-          const reconciled = await reconcileReopenedBoard(boardId)
-          if (reconciled) {
-            // The delete is already durable. Once the authoritative column list
-            // is installed for the reopened visit, remove cards whose server-side
-            // cascade can no longer be represented by any surviving column.
-            state.currentBoardCards.value = state.currentBoardCards.value.filter(
-              card => card.columnId !== columnId,
-            )
-          }
+          await reconcileReopenedBoard(visit, columnId)
         }
 
         if (isCurrentVisit(visit)) helpers.toast.success('Column deleted successfully')
@@ -243,13 +250,12 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
         state.loading.value = true
         state.error.value = null
         const reorderedColumns = await columnsApi.reorderColumns(boardId, columnIds)
-        helpers.markBoardDetailMutation(boardId)
-        markColumnMutation(boardId)
+        markColumnMutation(visit)
 
         if (ownsTargetBoard(visit)) {
           state.currentBoard.value!.columns = reorderedColumns
         } else if (!isCurrentVisit(visit) && state.currentBoard.value?.id === boardId) {
-          await reconcileReopenedBoard(boardId)
+          await reconcileReopenedBoard(visit)
         }
 
         if (isCurrentVisit(visit)) helpers.toast.success('Columns reordered successfully')

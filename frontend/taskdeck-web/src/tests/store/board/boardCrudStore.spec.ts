@@ -1,3 +1,4 @@
+import { createBoardState } from '../../../store/board/boardState'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
 import axios from 'axios'
@@ -59,6 +60,7 @@ import { initialCardFilters, type CardFilters } from '../../../store/board/board
 
 function createMockState() {
   return {
+    ...createBoardState(),
     boards: ref([
       { id: 'board-1', name: 'My Board' },
       { id: 'board-2', name: 'Other' },

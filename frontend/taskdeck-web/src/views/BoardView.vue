@@ -111,6 +111,7 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 }
 
 const boardId = ref(route.params.id as string)
+let boardViewVisit = boardStore.beginBoardViewVisit(boardId.value)
 const previewProposalId = computed(() => typeof route.query?.proposalId === 'string' ? route.query.proposalId : null)
 const proposalMarkers = ref<BoardProposalMarkers>({})
 provide(BOARD_PROPOSAL_MARKERS, readonly(proposalMarkers))
@@ -344,6 +345,7 @@ watch(
       return
     }
 
+    boardViewVisit = boardStore.beginBoardViewVisit(nextBoardId)
     boardId.value = nextBoardId
     boardLoadError.value = null
     resetSelection()
@@ -366,7 +368,8 @@ watch(
       recordBoardLoadFailure(nextBoardId, error)
       logError('Failed to switch board:', error)
     }
-  }
+  },
+  { flush: 'sync' },
 )
 
 watch(
@@ -378,6 +381,7 @@ watch(
 
 onBeforeUnmount(() => {
   viewUnmounted = true
+  boardStore.endBoardViewVisit(boardViewVisit)
   boardStore.cancelBackgroundBoardFetch?.(boardId.value)
   presenceMembers.value = []
   boardStore.setBoardPresenceMembers([])

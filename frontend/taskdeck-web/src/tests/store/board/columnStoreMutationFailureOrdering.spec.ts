@@ -1,3 +1,4 @@
+import { createBoardState } from '../../../store/board/boardState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -43,6 +44,7 @@ describe('columnStore failed predecessor ordering', () => {
       .mockReturnValueOnce(secondResponse.promise)
 
     const state = {
+      ...createBoardState(),
       currentBoard: ref({
         id: 'board-1',
         columns: [

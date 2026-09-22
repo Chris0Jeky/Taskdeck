@@ -110,6 +110,8 @@ const mockBoardStore = reactive({
   totalCardCount: 0,
   fetchBoard: vi.fn(async () => true),
   cancelBackgroundBoardFetch: vi.fn(),
+  beginBoardViewVisit: vi.fn((boardId: string) => ({ boardId })),
+  endBoardViewVisit: vi.fn(),
   setBoardPresenceMembers: vi.fn(),
   setEditingCard: vi.fn(),
   createColumn: vi.fn(async () => {}),
@@ -622,6 +624,36 @@ describe('BoardView', () => {
     expect(realtimeMock.start).toHaveBeenCalledWith('board-1')
     expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+  })
+
+  it('binds visits before loading and retires only the mounted route on unmount', async () => {
+    const load = createDeferred<boolean>()
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => load.promise)
+    const wrapper = mountView()
+    const firstVisit = mockBoardStore.beginBoardViewVisit.mock.results[0]!.value
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenCalledWith('board-1')
+    expect(mockBoardStore.beginBoardViewVisit.mock.invocationCallOrder[0])
+      .toBeLessThan(mockBoardStore.fetchBoard.mock.invocationCallOrder[0]!)
+
+    // A layout change does not leave the BoardView route.
+    usePaperThemeStore().setMode('paper')
+    await nextTick()
+    usePaperThemeStore().disable()
+    await nextTick()
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenCalledTimes(1)
+    expect(mockBoardStore.endBoardViewVisit).not.toHaveBeenCalled()
+
+    routeMock.params.id = 'board-2'
+    // Ownership changes synchronously, before a stale payload can settle.
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenCalledTimes(2)
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenLastCalledWith('board-2')
+    const nextVisit = mockBoardStore.beginBoardViewVisit.mock.results[1]!.value
+    expect(nextVisit).not.toBe(firstVisit)
+    expect(mockBoardStore.currentBoard.id).toBe('board-1')
+    wrapper.unmount()
+    expect(mockBoardStore.endBoardViewVisit).toHaveBeenCalledExactlyOnceWith(nextVisit)
+    load.resolve(true)
+    await flushPromises()
   })
 
   it('keeps Retry authoritative while realtime refreshes queue as background work', async () => {

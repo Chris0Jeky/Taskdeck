@@ -1,3 +1,4 @@
+import { createBoardState } from '../../../store/board/boardState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -52,6 +53,7 @@ const columnB: TestColumn = {
 
 function createState() {
   return {
+    ...createBoardState(),
     currentBoard: ref<{
       id: string
       columns: TestColumn[]
@@ -157,13 +159,17 @@ describe('columnStore mutation ordering and board ownership', () => {
     state.currentBoardCards.value = [
       { id: 'card-next', boardId: 'board-2', columnId: 'col-next' },
     ]
+    const exposedColumns = state.currentBoard.value.columns
+    const exposedCards = state.currentBoardCards.value
     firstResponse.resolve([{ ...columnB }, { ...columnA }])
 
     await first
     await expect(queued).rejects.toThrow('board visit')
 
     expect(mockColumnsApi.reorderColumns).toHaveBeenCalledTimes(1)
-    expect(state.currentBoard.value.columns).toBe(nextColumns)
+    expect(state.currentBoard.value.columns).toBe(exposedColumns)
+    expect(state.currentBoard.value.columns).toEqual(nextColumns)
+    expect(state.currentBoardCards.value).toBe(exposedCards)
     expect(state.currentBoardCards.value).toEqual([
       { id: 'card-next', boardId: 'board-2', columnId: 'col-next' },
     ])
@@ -184,11 +190,15 @@ describe('columnStore mutation ordering and board ownership', () => {
     const nextCards = [{ id: 'card-next', boardId: 'board-2', columnId: 'col-next' }]
     state.currentBoard.value = { id: 'board-2', columns: nextColumns }
     state.currentBoardCards.value = nextCards
+    const exposedColumns = state.currentBoard.value.columns
+    const exposedCards = state.currentBoardCards.value
     response.resolve(undefined)
     await pendingDelete
 
-    expect(state.currentBoard.value.columns).toBe(nextColumns)
-    expect(state.currentBoardCards.value).toBe(nextCards)
+    expect(state.currentBoard.value.columns).toBe(exposedColumns)
+    expect(state.currentBoard.value.columns).toEqual(nextColumns)
+    expect(state.currentBoardCards.value).toBe(exposedCards)
+    expect(state.currentBoardCards.value).toEqual(nextCards)
     expect(helpers.toast.success).not.toHaveBeenCalled()
   })
 
@@ -206,6 +216,7 @@ describe('columnStore mutation ordering and board ownership', () => {
       { ...columnB },
     ]
     state.currentBoard.value = { id: 'board-1', columns: refreshedColumns }
+    const exposedColumns = state.currentBoard.value.columns
     const updated = {
       ...columnA,
       name: 'Backlog',
@@ -214,8 +225,8 @@ describe('columnStore mutation ordering and board ownership', () => {
     response.resolve(updated)
     await pendingUpdate
 
-    expect(state.currentBoard.value.columns).toBe(refreshedColumns)
-    expect(state.currentBoard.value.columns[0]).toEqual(updated)
+    expect(state.currentBoard.value.columns).toBe(exposedColumns)
+    expect(state.currentBoard.value.columns).toEqual([updated, columnB])
     expect(helpers.toast.success).toHaveBeenCalledWith('Column updated successfully')
   })
 
