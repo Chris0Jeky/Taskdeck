@@ -125,6 +125,37 @@ describe('permissionsStore token ownership', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('waits for an old-token update before starting a new same-entry update', async () => {
+    const row = access('access-1')
+    const oldResult = { ...row, role: 'Editor' as const }
+    const newResult = { ...row, role: 'Admin' as const }
+    store.boardAccess.set('board-1', [row])
+    const oldWrite = deferred<BoardAccess>()
+    const oldReconciliation = deferred<BoardAccess[]>()
+    const newWrite = deferred<BoardAccess>()
+    vi.mocked(boardAccessApi.updateAccess)
+      .mockReturnValueOnce(oldWrite.promise)
+      .mockReturnValueOnce(newWrite.promise)
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(oldReconciliation.promise)
+
+    const first = store.updateAccess('board-1', row.id, { role: 'Editor' })
+    session.token = token('replacement')
+    const second = store.updateAccess('board-1', row.id, { role: 'Admin' })
+    expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(1)
+
+    oldWrite.resolve(oldResult)
+    await vi.waitFor(() => expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1'))
+    expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(1)
+    oldReconciliation.resolve([oldResult])
+    await first
+    await vi.waitFor(() => expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(2))
+
+    newWrite.resolve(newResult)
+    await second
+    expect(store.boardAccess.get('board-1')).toEqual([newResult])
+    expect(store.loading).toBe(false)
+  })
+
   it('preserves loaded access while invalidating an old read after same-user token rotation', async () => {
     store.boardAccess.set('board-1', [access('existing')])
     const pending = deferred<BoardAccess[]>()

@@ -137,7 +137,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
     activeReadByBoard.clear()
     readRetryByBoard.clear()
     mutationGenerationByBoard.clear()
-    mutationTails.clear()
+    // In-flight writes may still commit after token or account replacement.
+    // Keep their tails so a new same-entry intent cannot overtake them.
     loading.value = false
     clearError()
   }

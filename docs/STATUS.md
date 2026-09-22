@@ -21,7 +21,8 @@ OUTSTANDING_TASKS.md remain open.
 
 Updates and revokes for one board-access entry now run in submission order. A queued operation
 waits through a predecessor failure, holds its loading ownership while waiting, and checks the
-initiating session again before transport. Other entries remain concurrent. A queued update after
+initiating session again before transport. A new session's same-entry intent also waits for an
+older in-flight write to settle. Other entries remain concurrent. A queued update after
 a successful revoke cannot restore the removed row from an older response; a failed update reports
 its own error. Starting a queued operation does not erase an unrelated entry's error receipt.
 
