@@ -2,6 +2,21 @@
 
 Last Updated: 2026-09-22
 
+## Comment ordering retains session and loading ownership (#3303)
+
+Comment reads publish only while their exact cache visit, latest-read version and local
+mutation version still match. Successful writes invalidate older snapshots, and repeated
+creates preserve an existing stable comment ID. Same-comment update/delete operations run
+in intent order so the server and cache agree; successful writes from a prior board visit
+reconcile the currently reopened same-board cache after the write finishes.
+
+The imported ordering work also uses the shared session and loading owners from #3306/#3305.
+Logout before any board loads retires queued comment transport, and old settlements or
+reconciliation reads cannot publish into a new account. Queued writes retain loading until
+their own settlement. Deferred tests cover the combined boundaries and preserve the source
+ordering regressions. This prevents confirmed comment edits disappearing during navigation
+and reduces manual refreshes without changing review-first proposal behavior.
+
 ## Board loading belongs to pending operations (#3305)
 
 Board list/detail reads and the mutations that show shared loading now retain individual
@@ -34,8 +49,8 @@ notifications. Store results and errors still settle for the original caller.
 
 This prevents old-account data from reappearing and reduces cleanup after account switching.
 It preserves review-first proposal behavior and does not undo server writes. Same-session
-loading arbitration is covered by #3305 above; card/comment ordering PRs #3312/#3304 require separate
-reconciliation with these guards before integration.
+loading arbitration is covered by #3305 above, and comment ordering is integrated through
+#3303 above. Card ordering PR #3312 still requires separate reconciliation before integration.
 
 ## Column writes follow their board visit (#3314)
 
