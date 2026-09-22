@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -53,6 +55,16 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         var metadataResponse = await client.GetAsync($"/api/artefacts/{created.Id}");
         metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        Guid referenceId;
+        using (var storageScope = _factory.Services.CreateScope())
+        {
+            var storage = storageScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var stored = await storage.SourceArtefacts.AsNoTracking().SingleAsync(a => a.Id == created.Id);
+            stored.BlobReferenceId.Should().NotBeNull("new artefacts use owner-scoped blob references");
+            referenceId = stored.BlobReferenceId!.Value;
+            (await storage.ArtefactBlobs.CountAsync(b => b.SourceArtefactId == created.Id)).Should().Be(0);
+        }
+
         var contentResponse = await client.GetAsync($"/api/artefacts/{created.Id}/content");
         contentResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         contentResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
@@ -72,11 +84,47 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         auditActions.Should().Contain(Domain.Enums.AuditAction.Created);
         auditActions.Should().Contain(Domain.Enums.AuditAction.Deleted);
 
-        // Deleting an artefact must cascade-remove its blob so no orphaned bytes remain
-        // (guards against a future regression that disabled the ON DELETE CASCADE).
+        // Releasing the last reference must remove the stored object and its chunks.
         var remainingBlobs = await db.Set<Domain.Entities.ArtefactBlob>()
             .CountAsync(b => b.SourceArtefactId == created.Id);
         remainingBlobs.Should().Be(0);
+        (await db.StoredBlobReferences.CountAsync(r => r.Id == referenceId)).Should().Be(0);
+        (await db.StoredBlobs.CountAsync(b => b.OwnerUserId == user.UserId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DuplicateUploads_ShareOnlyOwnersObject_AndReleaseLastReference()
+    {
+        using var owner = _factory.CreateClient();
+        using var other = _factory.CreateClient();
+        var firstUser = await ApiTestHarness.AuthenticateAsync(owner, "artefact-dedupe-owner");
+        var otherUser = await ApiTestHarness.AuthenticateAsync(other, "artefact-dedupe-other");
+        var bytes = PngBytes(96);
+        var first = await UploadAsync(owner, bytes, "first.png", "image/png");
+        var second = await UploadAsync(owner, bytes, "second.png", "image/png");
+        var foreign = await UploadAsync(other, bytes, "foreign.png", "image/png");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var ownerReferences = await db.StoredBlobReferences.Where(r => r.OwnerUserId == firstUser.UserId).ToListAsync();
+            ownerReferences.Should().HaveCount(2);
+            ownerReferences.Select(r => r.BlobId).Distinct().Should().ContainSingle();
+            (await db.StoredBlobs.CountAsync(b => b.OwnerUserId == firstUser.UserId)).Should().Be(1);
+            (await db.StoredBlobs.CountAsync(b => b.OwnerUserId == otherUser.UserId)).Should().Be(1);
+            ownerReferences.Select(r => r.BlobId).Should().NotContain(
+                await db.StoredBlobReferences.Where(r => r.OwnerUserId == otherUser.UserId).Select(r => r.BlobId).SingleAsync());
+        }
+
+        (await owner.DeleteAsync($"/api/artefacts/{first.Id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await owner.GetByteArrayAsync($"/api/artefacts/{second.Id}/content")).Should().Equal(bytes);
+        (await other.GetByteArrayAsync($"/api/artefacts/{foreign.Id}/content")).Should().Equal(bytes);
+        (await owner.DeleteAsync($"/api/artefacts/{second.Id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var finalScope = _factory.Services.CreateScope();
+        var finalDb = finalScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await finalDb.StoredBlobs.CountAsync(b => b.OwnerUserId == firstUser.UserId)).Should().Be(0);
+        (await finalDb.StoredBlobs.CountAsync(b => b.OwnerUserId == otherUser.UserId)).Should().Be(1);
     }
 
     [Fact]
@@ -121,6 +169,27 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
 
         responses.Count(r => r.StatusCode == HttpStatusCode.Created).Should().Be(1);
         responses.Count(r => r.StatusCode == HttpStatusCode.RequestEntityTooLarge).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task BlobStoreQuotaRejection_ReturnsPayloadTooLargeWithoutPersistingRows()
+    {
+        using var constrained = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["SourceStorage:ModalityQuotaBytes"] = "8"
+                })));
+        using var client = constrained.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-blob-quota");
+        using var response = await PostUploadAsync(client, PngBytes(32), "quota.png", "image/png");
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.RequestEntityTooLarge, "PayloadTooLarge");
+
+        using var scope = constrained.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.SourceArtefacts.CountAsync(a => a.UserId == user.UserId)).Should().Be(0);
+        (await db.StoredBlobs.CountAsync(b => b.OwnerUserId == user.UserId)).Should().Be(0);
+        (await db.StoredBlobReferences.CountAsync(r => r.OwnerUserId == user.UserId)).Should().Be(0);
     }
 
     [Fact]
@@ -360,8 +429,10 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         await using (var scope = _factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            await db.ArtefactBlobs
-                .Where(blob => blob.SourceArtefactId == created.Id)
+            var referenceId = await db.SourceArtefacts.Where(a => a.Id == created.Id)
+                .Select(a => a.BlobReferenceId).SingleAsync();
+            await db.StoredBlobReferences
+                .Where(reference => reference.Id == referenceId)
                 .ExecuteDeleteAsync();
         }
 
@@ -435,6 +506,7 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         (await db.SourceArtefacts.CountAsync(a => a.UserId == user.UserId)).Should().Be(0);
         (await db.ArtefactBlobs.CountAsync(b => b.SourceArtefactId == created.Id)).Should().Be(0);
+        (await db.StoredBlobs.CountAsync(b => b.OwnerUserId == user.UserId)).Should().Be(0);
         (await db.ArtefactExtractions.CountAsync(e => e.SourceArtefactId == created.Id)).Should().Be(0);
     }
 

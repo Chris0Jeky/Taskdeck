@@ -18,6 +18,7 @@ public sealed class SourceArtefactConfiguration : IEntityTypeConfiguration<Sourc
         builder.Property(a => a.FileName).HasMaxLength(SourceArtefact.MaxFileNameLength).IsRequired();
         builder.Property(a => a.ByteSize).IsRequired();
         builder.Property(a => a.Sha256).HasMaxLength(SourceArtefact.Sha256HexLength).IsRequired();
+        builder.Property(a => a.BlobReferenceId);
         builder.Property(a => a.CaptureSource).HasConversion<int>().IsRequired();
         builder.Property(a => a.OriginReference).HasMaxLength(SourceArtefact.MaxOriginReferenceLength);
         builder.Property(a => a.CreatedFromCaptureId);

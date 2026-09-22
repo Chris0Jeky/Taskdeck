@@ -3,16 +3,19 @@ using Microsoft.Data.Sqlite;
 using System.Data;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
 
 /// <summary>
-/// Keeps every metadata query on SourceArtefacts. ArtefactBlobs is accessed only
-/// by explicit content/export calls, so ordinary reads cannot materialize bytes.
+/// Keeps metadata queries on SourceArtefacts. New content uses owner-scoped byte-store
+/// references; legacy ArtefactBlobs are accessed only by explicit content/export calls.
 /// </summary>
 public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISourceArtefactRepository
 {
+    private readonly IBlobStore _blobStore;
     private static readonly IReadOnlyDictionary<Guid, byte[]> EmptyContentMap =
         new Dictionary<Guid, byte[]>();
 
@@ -25,8 +28,9 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
     /// </summary>
     private const int MaxBatchIdCount = 900;
 
-    public SourceArtefactRepository(TaskdeckDbContext context) : base(context)
+    public SourceArtefactRepository(TaskdeckDbContext context, IBlobStore blobStore) : base(context)
     {
+        _blobStore = blobStore;
     }
 
     public Task<SourceArtefact?> GetByIdForUserAsync(
@@ -102,10 +106,20 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             if (usedBytes > quotaBytes - artefact.ByteSize)
                 return ArtefactStoreResult.QuotaExceeded;
 
+            BlobReference reference;
+            try
+            {
+                await using var source = new MemoryStream(content, writable: false);
+                reference = await _blobStore.AcquireAsync(
+                    new BlobAcquisition(artefact.UserId, ToModality(artefact.Kind), content.LongLength,
+                        nameof(SourceArtefact), artefact.Id), source, cancellationToken);
+            }
+            catch (DomainException error) when (error.ErrorCode == ErrorCodes.PayloadTooLarge)
+            {
+                return ArtefactStoreResult.QuotaExceeded;
+            }
+            artefact.AttachBlobReference(reference.ReferenceId);
             await _dbSet.AddAsync(artefact, cancellationToken);
-            await _context.Set<ArtefactBlob>().AddAsync(
-                new ArtefactBlob(artefact.Id, content),
-                cancellationToken);
             await _context.AuditLogs.AddAsync(auditLog, cancellationToken);
             if (boardAuditLog is not null)
                 await _context.AuditLogs.AddAsync(boardAuditLog, cancellationToken);
@@ -119,6 +133,18 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        var referenceId = await _dbSet.AsNoTracking()
+            .Where(a => a.Id == id && a.UserId == userId)
+            .Select(a => a.BlobReferenceId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (referenceId.HasValue)
+        {
+            await using var source = await _blobStore.OpenReferenceReadAsync(referenceId.Value, userId, cancellationToken);
+            if (source is null) return null;
+            using var output = new MemoryStream();
+            await source.CopyToAsync(output, cancellationToken);
+            return output.ToArray();
+        }
         return await (
             from artefact in _context.SourceArtefacts.AsNoTracking()
             join blob in _context.ArtefactBlobs.AsNoTracking()
@@ -157,6 +183,20 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         var map = new Dictionary<Guid, byte[]>(rows.Count);
         foreach (var row in rows)
             map[row.Id] = row.Content;
+
+        var references = await _dbSet.AsNoTracking()
+            .Where(a => a.UserId == userId && idList.Contains(a.Id) && a.BlobReferenceId != null)
+            .Select(a => new { a.Id, a.BlobReferenceId })
+            .ToListAsync(cancellationToken);
+        foreach (var artefact in references)
+        {
+            await using var source = await _blobStore.OpenReferenceReadAsync(
+                artefact.BlobReferenceId!.Value, userId, cancellationToken);
+            if (source is null) continue;
+            using var output = new MemoryStream();
+            await source.CopyToAsync(output, cancellationToken);
+            map[artefact.Id] = output.ToArray();
+        }
         return map;
     }
 
@@ -166,6 +206,17 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         Stream destination,
         CancellationToken cancellationToken = default)
     {
+        var referenceId = await _dbSet.AsNoTracking()
+            .Where(a => a.Id == id && a.UserId == userId)
+            .Select(a => a.BlobReferenceId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (referenceId.HasValue)
+        {
+            await using var source = await _blobStore.OpenReferenceReadAsync(referenceId.Value, userId, cancellationToken);
+            if (source is null) return false;
+            await source.CopyToAsync(destination, 64 * 1024, cancellationToken);
+            return true;
+        }
         await _context.Database.OpenConnectionAsync(cancellationToken);
         try
         {
@@ -239,6 +290,8 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             if (boardAuditLog is not null)
                 await _context.AuditLogs.AddAsync(boardAuditLog, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
+            if (artefact.BlobReferenceId.HasValue)
+                await _blobStore.ReleaseAsync(artefact.BlobReferenceId.Value, userId, cancellationToken);
             return true;
         }, cancellationToken);
     }
@@ -286,4 +339,12 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             await _context.Database.CloseConnectionAsync();
         }
     }
+
+    private static CaptureModality ToModality(ArtefactKind kind) => kind switch
+    {
+        ArtefactKind.Image => CaptureModality.Image,
+        ArtefactKind.Pdf => CaptureModality.Document,
+        ArtefactKind.TextFile => CaptureModality.Text,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
 }

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Text;
+using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +10,8 @@ using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
+using Taskdeck.Infrastructure.Storage;
+using Taskdeck.Application.DTOs;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -33,7 +36,7 @@ public sealed class SourceArtefactRepositoryIntegrationTests
             var user = AddUser(db, "artefact-empty");
             await db.SaveChangesAsync();
 
-            var repo = new SourceArtefactRepository(db);
+            var repo = CreateRepository(db);
             interceptor.Clear();
 
             var result = await repo.GetContentsForUserAsync(Array.Empty<Guid>(), user.Id);
@@ -67,7 +70,7 @@ public sealed class SourceArtefactRepositoryIntegrationTests
             }
             await db.SaveChangesAsync();
 
-            var repo = new SourceArtefactRepository(db);
+            var repo = CreateRepository(db);
             interceptor.Clear();
 
             var result = await repo.GetContentsForUserAsync(seeded.Keys.ToList(), user.Id);
@@ -102,7 +105,7 @@ public sealed class SourceArtefactRepositoryIntegrationTests
             var otherArtefact = AddArtefact(db, other.Id, "foreign.txt", Encoding.UTF8.GetBytes("foreign blob"));
             await db.SaveChangesAsync();
 
-            var repo = new SourceArtefactRepository(db);
+            var repo = CreateRepository(db);
 
             // Request BOTH ids while scoped to the owner — the foreign artefact must be absent.
             var result = await repo.GetContentsForUserAsync(
@@ -133,7 +136,7 @@ public sealed class SourceArtefactRepositoryIntegrationTests
             var artefact = AddArtefact(db, user.Id, "present.txt", content);
             await db.SaveChangesAsync();
 
-            var repo = new SourceArtefactRepository(db);
+            var repo = CreateRepository(db);
             var missing = Guid.NewGuid();
 
             var result = await repo.GetContentsForUserAsync(new[] { artefact.Id, missing }, user.Id);
@@ -156,7 +159,7 @@ public sealed class SourceArtefactRepositoryIntegrationTests
         try
         {
             await using var db = new TaskdeckDbContext(options);
-            var repo = new SourceArtefactRepository(db);
+            var repo = CreateRepository(db);
             var tooMany = Enumerable.Range(0, 901).Select(_ => Guid.NewGuid()).ToList();
 
             var act = async () => await repo.GetContentsForUserAsync(tooMany, Guid.NewGuid());
@@ -181,7 +184,7 @@ public sealed class SourceArtefactRepositoryIntegrationTests
         {
             await using var db = new TaskdeckDbContext(options);
             await db.Database.MigrateAsync();
-            var repo = new SourceArtefactRepository(db);
+            var repo = CreateRepository(db);
             var exactlyMax = Enumerable.Range(0, 900).Select(_ => Guid.NewGuid()).ToList();
 
             var result = await repo.GetContentsForUserAsync(exactlyMax, Guid.NewGuid());
@@ -193,6 +196,48 @@ public sealed class SourceArtefactRepositoryIntegrationTests
             Cleanup(dbPath);
         }
     }
+
+    [Fact]
+    public async Task FailedMetadataWrite_RollsBackAcquiredBlobAndReference()
+    {
+        var (options, _, dbPath) = CreateSqliteOptions();
+        try
+        {
+            Guid userId;
+            await using (var setup = new TaskdeckDbContext(options))
+            {
+                await setup.Database.MigrateAsync();
+                var user = AddUser(setup, "artefact-rollback");
+                await setup.SaveChangesAsync();
+                userId = user.Id;
+            }
+
+            await using (var db = new TaskdeckDbContext(options))
+            {
+                var content = Encoding.UTF8.GetBytes("rollback bytes");
+                var artefact = new SourceArtefact(userId, ArtefactKind.TextFile, "text/plain",
+                    "rollback.txt", content.Length,
+                    Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant(), CaptureSource.Import);
+                var invalidAudit = new AuditLog("SourceArtefact", artefact.Id, AuditAction.Created,
+                    Guid.NewGuid(), "deliberately invalid user FK");
+                var act = async () => await CreateRepository(db).TryAddWithinQuotaAsync(
+                    artefact, content, 1024, invalidAudit, null);
+                await act.Should().ThrowAsync<DbUpdateException>();
+            }
+
+            await using var verify = new TaskdeckDbContext(options);
+            (await verify.SourceArtefacts.CountAsync(a => a.UserId == userId)).Should().Be(0);
+            (await verify.StoredBlobs.CountAsync(b => b.OwnerUserId == userId)).Should().Be(0);
+            (await verify.StoredBlobReferences.CountAsync(r => r.OwnerUserId == userId)).Should().Be(0);
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    private static SourceArtefactRepository CreateRepository(TaskdeckDbContext db)
+        => new(db, new SqliteBlobStore(db, new BlobStorageSettings()));
 
     private static (DbContextOptions<TaskdeckDbContext> Options, CapturingCommandInterceptor Interceptor, string DbPath) CreateSqliteOptions()
     {
