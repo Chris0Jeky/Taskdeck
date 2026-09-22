@@ -445,6 +445,7 @@ describe('cardStore', () => {
      */
     it('re-resolves the card by id after the await, so a shifted array cannot splice the wrong card', async () => {
       state.currentBoard.value!.columns.push({ id: 'col-2', name: 'Done', cardCount: 0 })
+      const unrelatedCard = { ...state.currentBoardCards.value[1] }
       // Baseline: card-1 at index 0, card-2 at index 1.
       expect(state.currentBoardCards.value.map((c: { id: string }) => c.id)).toEqual(['card-1', 'card-2'])
 
@@ -452,20 +453,37 @@ describe('cardStore', () => {
         ...state.currentBoardCards.value[0], id: 'card-1', columnId: 'col-2', updatedAt: '2024-01-06T00:00:00Z',
       }
       mockCardsApi.moveCard.mockImplementationOnce(async () => {
-        // While the move is in flight, card-1 is removed by something else (a
-        // realtime refetch, a teammate's delete). The pre-await index 0 now
-        // points at card-2 -- an innocent bystander.
-        state.currentBoardCards.value.shift()
+        // A refresh reorders the array while retaining both cards. The saved
+        // pre-await index now points at card-2, not the requested card.
+        state.currentBoardCards.value.reverse()
         return movedCard
       })
 
       const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
       await moveCard('board-1', 'card-1', 'col-2', 0)
 
-      // card-2 must survive. Against the stale-index commit it was spliced out
-      // and the array came back as ['card-1'] alone.
+      // Exact IDs catch both loss of the unrelated card and duplication of the target.
       const ids = state.currentBoardCards.value.map((c: { id: string }) => c.id).sort()
       expect(ids).toEqual(['card-1', 'card-2'])
+      expect(state.currentBoardCards.value.find((card) => card.id === 'card-1')).toEqual(movedCard)
+      expect(state.currentBoardCards.value.find((card) => card.id === 'card-2')).toEqual(unrelatedCard)
+    })
+
+    it('does not resurrect a card removed by an authoritative refresh while its move is pending', async () => {
+      const unrelatedCard = { ...state.currentBoardCards.value[1] }
+      const movedCard = { ...state.currentBoardCards.value[0], columnId: 'col-2' }
+      mockCardsApi.moveCard.mockImplementationOnce(async () => {
+        state.currentBoardCards.value.shift()
+        return movedCard
+      })
+      const { moveCard } = createCardActions(state as any, helpers as any, vi.fn().mockResolvedValue(true))
+
+      const result = await moveCard('board-1', 'card-1', 'col-2', 0)
+
+      expect(result).toEqual(movedCard)
+      expect(state.currentBoardCards.value).toEqual([unrelatedCard])
+      expect(helpers.updateColumnCardCount).not.toHaveBeenCalled()
+      expect(helpers.toast.success).not.toHaveBeenCalled()
     })
 
     it('still commits into currentBoardCards when currentBoard is unset', async () => {
@@ -495,7 +513,7 @@ describe('cardStore', () => {
       expect(state.currentBoardCards.value.map((c: { id: string }) => c.id)).toEqual(['other-board-card'])
     })
 
-    it('removes from old position and pushes updated card', async () => {
+    it('replaces the moved card by stable id without changing unrelated cards', async () => {
       const movedCard = {
         id: 'card-1',
         boardId: 'board-1',
@@ -522,9 +540,11 @@ describe('cardStore', () => {
       })
       expect(result).toEqual(movedCard)
       expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
-      expect(state.currentBoardCards.value[state.currentBoardCards.value.length - 1]).toEqual(
-        movedCard,
-      )
+      expect(state.currentBoardCards.value.filter((card) => card.id === 'card-1')).toEqual([movedCard])
+      expect(state.currentBoardCards.value.find((card) => card.id === 'card-2')).toMatchObject({
+        title: 'Second', columnId: 'col-1', position: 1,
+      })
+      expect(state.currentBoardCards.value).toHaveLength(2)
       expect(helpers.toast.success).toHaveBeenCalledWith('Card moved successfully')
       expect(state.loading.value).toBe(false)
     })
