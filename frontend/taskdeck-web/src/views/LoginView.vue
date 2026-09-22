@@ -3,6 +3,7 @@ import type { OidcProviderInfo, RegistrationAvailability } from '../types/auth'
 import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '../store/sessionStore'
+import { SessionOperationSupersededError } from '../utils/sessionOperation'
 import { authApi } from '../api/authApi'
 import { sanitizeInternalRedirect } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
@@ -49,7 +50,8 @@ async function handleSubmit() {
     submitting.value = true
     await session.login({ usernameOrEmail: username.value.trim(), password: password.value })
     navigateAfterLogin()
-  } catch {
+  } catch (error) {
+    if (error instanceof SessionOperationSupersededError) return
     formError.value = session.error || 'Login failed. Please try again.'
   } finally {
     submitting.value = false
@@ -86,7 +88,8 @@ async function handleOAuthCode(code: string, provider: string | undefined) {
       await session.exchangeOAuthCode(code)
     }
     navigateAfterLogin()
-  } catch {
+  } catch (error) {
+    if (error instanceof SessionOperationSupersededError) return
     formError.value = session.error || 'Sign-in failed. Please try again.'
   } finally {
     oauthExchanging.value = false
