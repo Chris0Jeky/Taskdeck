@@ -695,19 +695,34 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return false;
         }
 
-        if (string.Equals(leftHead, rightHead, StringComparison.Ordinal))
+        if (string.Equals(leftHead.Value.Head, rightHead.Value.Head, StringComparison.Ordinal))
         {
-            return true;
+            return ActionArgumentsMatch(
+                leftTokens,
+                leftHead.Value.Index,
+                rightTokens,
+                rightHead.Value.Index);
         }
 
-        return leftHead is "prepare" && rightHead is "finalize" ||
-               leftHead is "finalize" && rightHead is "prepare";
+        return leftHead.Value.Head is "prepare" && rightHead.Value.Head is "finalize" ||
+               leftHead.Value.Head is "finalize" && rightHead.Value.Head is "prepare";
     }
 
-    private static string? GetActionHead(IReadOnlyList<string> tokens)
+    private static bool ActionArgumentsMatch(
+        IReadOnlyList<string> leftTokens,
+        int leftHeadIndex,
+        IReadOnlyList<string> rightTokens,
+        int rightHeadIndex)
     {
-        foreach (var token in tokens)
+        return leftTokens.Skip(leftHeadIndex + 1).SequenceEqual(
+            rightTokens.Skip(rightHeadIndex + 1));
+    }
+
+    private static (string Head, int Index)? GetActionHead(IReadOnlyList<string> tokens)
+    {
+        for (var index = 0; index < tokens.Count; index++)
         {
+            var token = tokens[index];
             if (token is "please" or "kindly" or "to" or "can" or "could" or "would" or
                 "should" or "must" or "will" or "shall" or "may" or "might" or
                 "we" or "you" or "i" or "he" or "she" or "they" or
@@ -718,7 +733,8 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 continue;
             }
 
-            return NormalizeActionHead(token);
+            var normalized = NormalizeActionHead(token);
+            return normalized is null ? null : (normalized, index);
         }
 
         return null;

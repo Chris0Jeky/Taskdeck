@@ -92,6 +92,38 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
         AssertSharedEvidenceSpans(extraction, expectedCount: 2);
     }
 
+    [Theory]
+    [InlineData("Archive the launch packet in SharePoint", "Archive the launch packet in Dropbox")]
+    [InlineData("Archive the launch packet", "Archive the launch checklist")]
+    public async Task ExtractAsync_ShouldKeepSameActionHeadWithDifferentArguments(
+        string firstTitle,
+        string secondTitle)
+    {
+        var extraction = await ExtractSharedOverlapAsync(firstTitle, secondTitle);
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            new[] { firstTitle, secondTitle },
+            "same-verb commitments with different targets must remain separate");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 2);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldCollapseSameCommitmentAcrossVerbInflectionAndPrefix()
+    {
+        var extraction = await ExtractSharedOverlapAsync(
+            "Please prepare the launch packet",
+            "Preparing the launch packet");
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            new[] { "Please prepare the launch packet" },
+            "a grammatical prefix and verb inflection do not create a second commitment");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 1);
+    }
+
     [Fact]
     public async Task ExtractAsync_ShouldCollapseCompatiblePreparationRephrasing()
     {
