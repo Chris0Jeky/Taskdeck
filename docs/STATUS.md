@@ -21,6 +21,17 @@ remains tracked in #3305. Deferred-response store tests and BoardView lifecycle 
 route/session boundary, and the existing three ordering assertions now compare actual reactive
 array identities as well as full contents.
 
+## Assignment saves retain navigation ownership after a lane disappears (#3311)
+
+Legacy board navigation tracks submitted assignment PUTs with individual operation tokens in
+BoardCanvas. Removing a card field or column lane no longer clears an unanswered save or strands
+the route guard: the request's settlement releases its own token, and overlapping saves remain
+aggregated until the last one settles. Board replacement and canvas unmount retire the registry
+generation, so stale releases cannot clear a newer owner's guard. Existing logout clears board
+state and unmounts that canvas. Paper's local editor behavior and assignment transport timeout
+remain unchanged. Registry, field, canvas and Legacy navigation tests cover these boundaries;
+the independent column visit token does not reset or take over assignment-save ownership.
+
 ## Session establishment follows the latest identity intent (#3324)
 
 Login, registration, OAuth/OIDC exchange, refresh and restore now own their asynchronous
