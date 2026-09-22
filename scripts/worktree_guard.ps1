@@ -95,7 +95,7 @@ function Test-GuardAsciiWhitespaceOnly {
     # locale). .NET's IsNullOrWhiteSpace also classifies valid branch characters
     # such as U+00A0 NBSP, which made the two guards disagree on the same name.
     return (-not [string]::IsNullOrEmpty($Value)) -and
-        [System.Text.RegularExpressions.Regex]::IsMatch($Value, "^[\x09-\x0D\x20]+$")
+        [System.Text.RegularExpressions.Regex]::IsMatch($Value, "^[\x09-\x0D\x20]+\z")
 }
 
 $invocationDirectory = (Get-Location).Path
@@ -245,7 +245,7 @@ FATAL [worktree_guard]: Worktree HEAD does not resolve to a commit.
 $symbolicHead = Invoke-GuardGit -Arguments @("symbolic-ref", "--quiet", "--short", "HEAD")
 $headBranch = ""
 if ($symbolicHead.Succeeded -and $symbolicHead.ExitCode -eq 0 -and $symbolicHead.Output.Count -gt 0) {
-    $headBranch = ([string]$symbolicHead.Output[0]).Trim()
+    $headBranch = [string]$symbolicHead.Output[0]
 }
 $headState = if ([string]::IsNullOrEmpty($headBranch)) { "detached" } else { "branch" }
 
@@ -280,7 +280,7 @@ FATAL [worktree_guard]: Worktree HEAD is detached but a branch was required.
 "@
         exit 1
     }
-    if ($hasExpectedBranch -and $headBranch -ne $ExpectedBranch) {
+    if ($hasExpectedBranch -and -not [string]::Equals($headBranch, $ExpectedBranch, [System.StringComparison]::Ordinal)) {
         Write-Error -ErrorAction Continue @"
 FATAL [worktree_guard]: Worktree HEAD is on the wrong branch.
   toplevel: $topLevel
