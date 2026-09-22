@@ -125,7 +125,7 @@ public sealed class ArtefactService : IArtefactService
         {
             return Result.Failure<SourceArtefactDto>(
                 ErrorCodes.PayloadTooLarge,
-                $"Artefact would exceed the configured {_settings.MaxBytesPerUser}-byte user quota");
+                "Artefact storage quota would be exceeded");
         }
 
         if (storeResult != ArtefactStoreResult.Stored)
