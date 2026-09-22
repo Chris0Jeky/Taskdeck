@@ -2,6 +2,25 @@
 
 Last Updated: 2026-09-22
 
+## Column writes follow their board visit (#3314)
+
+Create, update, delete and reorder share one mutation lane per board, preserving intent order
+without blocking unrelated boards. BoardView now binds an explicit visit before loading and
+replaces it when route parameters change; unmount retires only that component's visit. Cached
+detail and Paper/Legacy layout changes do not define a new visit. Queued writes from a retired
+visit stop before transport, and late success/failure cannot patch or notify another screen.
+Logout also retires the mutation session, so an old account's response cannot reconcile a new
+login's board. An already-started successful write can refresh an actively reopened same-board
+visit once, with the column list and delete cascade guarded together. A later queued write waits
+for that recovery and keeps its later result.
+
+This reduces navigation-induced board maintenance while preserving existing review-first
+proposal behavior. It does not cancel a write already accepted by the server. Shared ownership
+for card, comment, label and board mutations remains tracked in #3306; shared loading arbitration
+remains tracked in #3305. Deferred-response store tests and BoardView lifecycle tests cover the
+route/session boundary, and the existing three ordering assertions now compare actual reactive
+array identities as well as full contents.
+
 ## Session establishment follows the latest identity intent (#3324)
 
 Login, registration, OAuth/OIDC exchange, refresh and restore now own their asynchronous
