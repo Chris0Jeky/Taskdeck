@@ -555,7 +555,7 @@ Private memory source continuation (#2808, delivered):
 
 Context Fabric byte-store bridge (#2276, current implementation):
 - New source artefacts hold an owner-scoped `IBlobStore` reference. Repeated uploads of the same bytes by one owner share one stored object; another owner receives a separate object. Downloads and both account-export paths resolve the reference; single deletion releases it in the metadata/audit transaction, while account erasure removes owner bytes. Existing `ArtefactBlob` rows remain readable and deletable through the legacy path after the nullable-reference migration.
-- The upload endpoint still buffers multipart bytes before the per-user quota is checked. #2276 remains open for reserve-before-read at the HTTP boundary and full legacy-byte migration; this bridge does not claim either behavior.
+- The upload endpoint still buffers multipart bytes before the per-user quota is checked. #2276 remains open for reserve-before-read at the HTTP boundary and full legacy-byte migration; this bridge does not claim either behavior. The migration refuses a downgrade while any new artefact holds a blob reference, since the old schema cannot read those bytes.
 
 Transcript prompt identity (#2211, current implementation):
 

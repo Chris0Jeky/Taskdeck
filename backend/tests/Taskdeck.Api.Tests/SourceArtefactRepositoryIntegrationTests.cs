@@ -6,6 +6,8 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -229,6 +231,43 @@ public sealed class SourceArtefactRepositoryIntegrationTests
             (await verify.SourceArtefacts.CountAsync(a => a.UserId == userId)).Should().Be(0);
             (await verify.StoredBlobs.CountAsync(b => b.OwnerUserId == userId)).Should().Be(0);
             (await verify.StoredBlobReferences.CountAsync(r => r.OwnerUserId == userId)).Should().Be(0);
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task MigrationDown_WithReferencedArtefact_FailsWithoutLosingContentPointer()
+    {
+        var (options, _, dbPath) = CreateSqliteOptions();
+        try
+        {
+            Guid artefactId;
+            Guid referenceId = Guid.NewGuid();
+            await using (var db = new TaskdeckDbContext(options))
+            {
+                await db.Database.MigrateAsync();
+                var user = AddUser(db, "artefact-downgrade");
+                var artefact = new SourceArtefact(user.Id, ArtefactKind.TextFile, "text/plain",
+                    "protected.txt", 1, Sha, CaptureSource.Import);
+                artefact.AttachBlobReference(referenceId);
+                db.SourceArtefacts.Add(artefact);
+                await db.SaveChangesAsync();
+                artefactId = artefact.Id;
+            }
+
+            await using (var db = new TaskdeckDbContext(options))
+            {
+                var downgrade = async () => await db.GetService<IMigrator>()
+                    .MigrateAsync("20260912172859_AddCanonicalCardRelations");
+                await downgrade.Should().ThrowAsync<SqliteException>();
+            }
+
+            await using var verify = new TaskdeckDbContext(options);
+            (await verify.SourceArtefacts.AsNoTracking().SingleAsync(a => a.Id == artefactId))
+                .BlobReferenceId.Should().Be(referenceId);
         }
         finally
         {

@@ -21,6 +21,16 @@ namespace Taskdeck.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // A downgrade cannot make new byte-store references readable through the old
+            // ArtefactBlob path. Abort before dropping the holder column if any exist.
+            migrationBuilder.Sql("""
+                CREATE TEMP TABLE ArtefactBlobDowngradeGuard (
+                    ReferenceCount INTEGER NOT NULL CHECK (ReferenceCount = 0)
+                );
+                INSERT INTO ArtefactBlobDowngradeGuard (ReferenceCount)
+                SELECT COUNT(*) FROM SourceArtefacts WHERE BlobReferenceId IS NOT NULL;
+                DROP TABLE ArtefactBlobDowngradeGuard;
+                """);
             migrationBuilder.DropColumn(
                 name: "BlobReferenceId",
                 table: "SourceArtefacts");
