@@ -1,3 +1,4 @@
+using System.Globalization;
 using Taskdeck.Application.DTOs;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -16,9 +17,23 @@ public static class ContactCardYamlParser
 {
     private const string FrontMatterDelimiter = "---";
 
+    /// <summary>Backstop input bound for future callers; card descriptions are capped at 2000 chars at the domain layer.</summary>
+    internal const int MaxDescriptionChars = 64_000;
+
+    /// <summary>Front matter is flat (scalars plus one-level collections); anything deeper is hostile or corrupt.</summary>
+    private const int MaxYamlNestingDepth = 32;
+
+    internal const int MaxShortFieldChars = 500;
+    internal const int MaxIdentifierChars = 100;
+    internal const int MaxNotesChars = 4_000;
+    internal const int MaxHandlesEntries = 100;
+    internal const int MaxTagsEntries = 100;
+    internal const int MaxTagChars = 100;
+
     private static readonly IDeserializer Deserializer = new DeserializerBuilder()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .IgnoreUnmatchedProperties()
+        .WithMaximumRecursion(MaxYamlNestingDepth)
         .Build();
 
     private static readonly ISerializer YamlSerializer = new SerializerBuilder()
@@ -57,6 +72,11 @@ public static class ContactCardYamlParser
             return new ParseResult(null, string.Empty, Array.Empty<string>());
         }
 
+        if (description.Length > MaxDescriptionChars)
+        {
+            return new ParseResult(null, description, new[] { $"Description exceeds the {MaxDescriptionChars}-character front matter limit." });
+        }
+
         var (yamlBlock, body, extractionError) = ExtractFrontMatterBlock(description);
 
         if (extractionError is not null)
@@ -87,10 +107,18 @@ public static class ContactCardYamlParser
 
             return new ParseResult(frontMatter, body, Array.Empty<string>());
         }
+        catch (YamlDotNet.Core.MaximumRecursionLevelReachedException)
+        {
+            return new ParseResult(null, body, new[] { "YAML front matter is nested too deeply." });
+        }
         catch (YamlDotNet.Core.YamlException ex)
         {
             var message = $"Invalid YAML in front matter: {ex.InnerException?.Message ?? ex.Message}";
             return new ParseResult(null, body, new[] { message });
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new ParseResult(null, body, new[] { $"Unexpected error parsing front matter ({ex.GetType().Name})." });
         }
     }
 
@@ -103,6 +131,15 @@ public static class ContactCardYamlParser
         ArgumentNullException.ThrowIfNull(frontMatter);
 
         var yaml = YamlSerializer.Serialize(frontMatter).TrimEnd();
+
+        // Canary mirroring ExtractFrontMatterBlock: a value that escapes the emitter as a
+        // bare delimiter line would corrupt the framing on re-parse. The emitter indents
+        // continuation lines, so this only fires on emitter misbehavior — fail closed.
+        foreach (var line in yaml.Split('\n'))
+        {
+            if (line.TrimEnd() == FrontMatterDelimiter)
+                throw new ArgumentException("Front matter value would corrupt the closing delimiter.", nameof(frontMatter));
+        }
 
         var parts = new List<string>
         {
@@ -143,14 +180,63 @@ public static class ContactCardYamlParser
             errors.Add($"Invalid status '{fm.Status}'. Expected one of: cold, warm, active, referral, interviewing, closed.");
         }
 
-        if (!string.IsNullOrEmpty(fm.LastTouchAt) && !DateOnly.TryParse(fm.LastTouchAt, out _))
+        if (!string.IsNullOrEmpty(fm.LastTouchAt) && !DateOnly.TryParseExact(fm.LastTouchAt, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
         {
             errors.Add($"Invalid last_touch_at format '{fm.LastTouchAt}'. Expected ISO 8601 date (YYYY-MM-DD).");
         }
 
-        if (!string.IsNullOrEmpty(fm.NextTouchAt) && !DateOnly.TryParse(fm.NextTouchAt, out _))
+        if (!string.IsNullOrEmpty(fm.NextTouchAt) && !DateOnly.TryParseExact(fm.NextTouchAt, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
         {
             errors.Add($"Invalid next_touch_at format '{fm.NextTouchAt}'. Expected ISO 8601 date (YYYY-MM-DD).");
+        }
+
+        if (fm.DisplayName is { Length: > MaxShortFieldChars })
+            errors.Add($"Invalid display_name: exceeds {MaxShortFieldChars} characters.");
+
+        if (fm.Company is { Length: > MaxShortFieldChars })
+            errors.Add($"Invalid company: exceeds {MaxShortFieldChars} characters.");
+
+        if (fm.Role is { Length: > MaxShortFieldChars })
+            errors.Add($"Invalid role: exceeds {MaxShortFieldChars} characters.");
+
+        if (fm.Source is { Length: > MaxShortFieldChars })
+            errors.Add($"Invalid source: exceeds {MaxShortFieldChars} characters.");
+
+        if (fm.LocationTz is { Length: > MaxIdentifierChars })
+            errors.Add($"Invalid location_tz: exceeds {MaxIdentifierChars} characters.");
+
+        if (fm.CadenceId is { Length: > MaxIdentifierChars })
+            errors.Add($"Invalid cadence_id: exceeds {MaxIdentifierChars} characters.");
+
+        if (fm.NotesPrivate is { Length: > MaxNotesChars })
+            errors.Add($"Invalid notes_private: exceeds {MaxNotesChars} characters.");
+
+        if (fm.Handles is { Count: > MaxHandlesEntries })
+            errors.Add($"Invalid handles: exceeds {MaxHandlesEntries} entries.");
+        else if (fm.Handles is not null)
+        {
+            foreach (var (key, value) in fm.Handles)
+            {
+                if (key.Length > MaxShortFieldChars || value.Length > MaxShortFieldChars)
+                {
+                    errors.Add($"Invalid handles: an entry exceeds {MaxShortFieldChars} characters.");
+                    break;
+                }
+            }
+        }
+
+        if (fm.Tags is { Count: > MaxTagsEntries })
+            errors.Add($"Invalid tags: exceeds {MaxTagsEntries} entries.");
+        else if (fm.Tags is not null)
+        {
+            foreach (var tag in fm.Tags)
+            {
+                if (tag.Length > MaxTagChars)
+                {
+                    errors.Add($"Invalid tags: an entry exceeds {MaxTagChars} characters.");
+                    break;
+                }
+            }
         }
 
         return errors;
