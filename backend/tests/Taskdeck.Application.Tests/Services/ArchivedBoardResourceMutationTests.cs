@@ -110,7 +110,7 @@ public class ArchivedBoardResourceMutationTests
     public async Task RestoringTheBoard_AllowsTheSameResourceMutation(string operation)
     {
         _board.Archive();
-        _board.Restore();
+        _board.Unarchive();
 
         var result = await MutateAsync(operation);
 
