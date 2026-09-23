@@ -34,11 +34,75 @@ export function reportToSentry(err: unknown, hint?: unknown): boolean {
   const sentry = getSentry()
   if (!sentry || !sentry.captureException) return false
   try {
-    sentry.captureException(err, hint)
+    sentry.captureException(sanitizeForSentry(err), hint)
     return true
   } catch {
     // Reporting must never itself propagate.
     return false
+  }
+}
+
+/**
+ * Minimal structural shape of an axios rejection reason.
+ *
+ * Axios errors carry the full request config (notably
+ * config.headers.Authorization) plus request/response bodies. Taskdeck ships
+ * no Sentry.init/beforeSend of its own, so anything forwarded here reaches
+ * host-configured Sentry unscrubbed. Detect the shape structurally (no axios
+ * import) and normalise it before forwarding.
+ */
+type AxiosLike = {
+  isAxiosError?: unknown
+  message?: unknown
+  config?: { method?: unknown; url?: unknown } | null
+  response?: { status?: unknown } | null
+}
+
+function isAxiosLike(err: unknown): err is AxiosLike {
+  if (!err || typeof err !== 'object') return false
+  const candidate = err as AxiosLike
+  if (candidate.isAxiosError === true) return true
+  return (
+    typeof candidate.config === 'object' &&
+    candidate.config !== null &&
+    typeof candidate.response === 'object' &&
+    candidate.response !== null
+  )
+}
+
+/** Keep only the origin + path of a request URL; drop query and fragment. */
+function safeRequestPath(rawUrl: unknown): string | undefined {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) return undefined
+  try {
+    const parsed = new URL(rawUrl, 'http://localhost')
+    const origin = parsed.origin === 'http://localhost' ? '' : parsed.origin
+    return origin + parsed.pathname
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Normalise an axios-shaped rejection into a header/body-free Error.
+ *
+ * Everything else passes through untouched so Sentry keeps full stack
+ * traces for genuine application errors. Never throws.
+ */
+function sanitizeForSentry(err: unknown): unknown {
+  try {
+    if (!isAxiosLike(err)) return err
+    const status = typeof err.response?.status === 'number' ? err.response.status : undefined
+    const method = typeof err.config?.method === 'string' ? err.config.method.toUpperCase() : undefined
+    const path = safeRequestPath(err.config?.url)
+    const parts: string[] = []
+    if (status !== undefined) parts.push('status ' + String(status))
+    const target = [method, path].filter(Boolean).join(' ')
+    if (target.length > 0) parts.push(target)
+    const safe = parts.length > 0 ? new Error('Request failed (' + parts.join(' ') + ')') : new Error('Request failed')
+    ;(safe as Error & { sentryContext?: Record<string, unknown> }).sentryContext = { status, method, path }
+    return safe
+  } catch {
+    return new Error('Request failed')
   }
 }
 
