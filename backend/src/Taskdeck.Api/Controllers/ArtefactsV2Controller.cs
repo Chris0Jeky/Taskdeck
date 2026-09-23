@@ -19,7 +19,7 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v2/artefacts")]
-public sealed class ArtefactsV2Controller : AuthenticatedControllerBase
+public class ArtefactsV2Controller : AuthenticatedControllerBase
 {
     private readonly IArtefactService _artefacts;
     private readonly ArtefactStorageSettings _settings;
