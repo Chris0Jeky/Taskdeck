@@ -31,10 +31,12 @@ public class DataExportService : IDataExportService
         }
     }
     private const long MaxBufferedArtefactBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
+    // Shared budget for retained artefact and original-source representations. Other export
+    // sections keep their own row/content limits; this is not a whole-package byte guarantee.
     private const long MaxBufferedRepresentationBytes = 25L * 1024 * 1024;
     // The buffered DTO retains raw byte[] values, Base64 strings, and the JSON serializer's
-    // output at the same time. Reserve a fixed envelope allowance for those objects and the
-    // nearby export metadata before accepting a near-boundary artefact export.
+    // output at the same time. This allowance covers the fixed envelope; artefact metadata is
+    // charged separately from its escaped JSON representation.
     private const long BufferedRepresentationOverheadBytes = 1L * 1024 * 1024;
     private const int MaxBufferedArtefactRows = 10_000;
     private const long MaxBufferedTranscriptSerializedCharacters = 1_024_000;
@@ -211,6 +213,28 @@ public class DataExportService : IDataExportService
                     ErrorCodes.PayloadTooLarge,
                     "This export contains too many artefacts to buffer; use the streaming export endpoint");
             }
+            // The aggregate query may predate an upload. Admit the rows actually selected for
+            // export before asking a repository to materialize their content in 500-row batches.
+            long selectedArtefactBytes = 0;
+            long metadataRepresentationBytes = BufferedRepresentationOverheadBytes;
+            var remainingBudget = MaxBufferedRepresentationBytes - sourceStorageEstimate;
+            foreach (var artefact in artefactMetadata)
+            {
+                if (!TryChargeBufferedBytes(ref selectedArtefactBytes, artefact.ByteSize, 1, MaxBufferedArtefactBytes) ||
+                    !TryChargeBufferedBytes(ref metadataRepresentationBytes,
+                        JsonSerializer.SerializeToUtf8Bytes(
+                            MapArtefactForExport(artefact, [], []), PortabilityJsonOptions).LongLength,
+                        4, remainingBudget))
+                    return BufferedArtefactTooLarge();
+            }
+            var admittedRepresentationBytes = metadataRepresentationBytes;
+            if (extractionBytes > MaxBufferedArtefactBytes - selectedArtefactBytes ||
+                !TryChargeBufferedBytes(ref admittedRepresentationBytes, selectedArtefactBytes, 5, remainingBudget) ||
+                !TryChargeBufferedBytes(ref admittedRepresentationBytes, extractionBytes, 2, remainingBudget))
+                return BufferedArtefactTooLarge();
+            // The selected row sizes and aggregate estimates are only admission checks. Charge
+            // the content and extraction objects returned by the repositories again below.
+            var loadedRepresentationBytes = metadataRepresentationBytes;
             var transcriptMetadata = await GetBufferedTranscriptMetadataAsync(userId, cancellationToken);
             if (transcriptMetadata.Count > MaxBufferedTranscriptRows)
             {
@@ -360,12 +384,13 @@ public class DataExportService : IDataExportService
             var exportTranscripts = transcriptMetadata.Select(MapTranscriptForExport).ToList();
 
             var exportArtefacts = new List<UserDataExportArtefactDto>(artefactMetadata.Count);
+            long loadedArtefactAndExtractionBytes = 0;
             // #1355: batch the blob loads in bounded chunks instead of one round-trip per artefact.
             // The chunk size mirrors StreamPageSize so each IN-clause stays well within SQLite's
             // parameter budget. Memory: the raw byte[] dictionary holds at most one chunk at a time
             // (released between chunks), while the mapped DTOs' base64 strings DO accumulate across
-            // chunks — both halves stay bounded because the pre-load MaxBufferedArtefactBytes guard
-            // caps the total artefact bytes this path may buffer. Metadata keeps its original (Id)
+            // chunks — admission from the selected metadata and the per-row loaded-content check
+            // cap the total artefact bytes this path may buffer. Metadata keeps its original (Id)
             // order, so the exported artefact array is byte-for-byte identical to the former
             // per-item path.
             foreach (var chunk in artefactMetadata.Chunk(StreamPageSize))
@@ -382,8 +407,8 @@ public class DataExportService : IDataExportService
                 // (GetAllExtractionHistoryAsync). The batch groups results per artefact in
                 // CreatedAt ASC, Id ASC order — identical to the former sequential paging — so the
                 // exported extractions stay byte-for-byte identical. Peak memory stays bounded: the
-                // pre-load MaxBufferedArtefactBytes guard already caps total extraction bytes across
-                // the whole export, so a single chunk's grouped history can never exceed that cap.
+                // pre-load aggregate estimate caps expected extraction bytes; each loaded batch is
+                // charged again because an extraction can be committed after that estimate.
                 var extractionsByArtefact = await _extractions.GetByArtefactsForUserAsync(
                     chunkIds,
                     userId,
@@ -397,6 +422,17 @@ public class DataExportService : IDataExportService
                     var extractionHistory = extractionsByArtefact.TryGetValue(artefact.Id, out var extractions)
                         ? extractions.Select(MapExtractionForExport).ToList()
                         : (IReadOnlyList<UserDataExportArtefactExtractionDto>)Array.Empty<UserDataExportArtefactExtractionDto>();
+                    var serializedExtractionBytes = JsonSerializer.SerializeToUtf8Bytes(
+                        extractionHistory, PortabilityJsonOptions).LongLength;
+                    if (!TryChargeBufferedBytes(ref loadedArtefactAndExtractionBytes, bytes.LongLength, 1,
+                            MaxBufferedArtefactBytes) ||
+                        !TryChargeBufferedBytes(ref loadedArtefactAndExtractionBytes,
+                            serializedExtractionBytes, 1, MaxBufferedArtefactBytes) ||
+                        !TryChargeBufferedBytes(ref loadedRepresentationBytes, bytes.LongLength, 5,
+                            MaxBufferedRepresentationBytes) ||
+                        !TryChargeBufferedBytes(ref loadedRepresentationBytes,
+                            serializedExtractionBytes, 2, MaxBufferedRepresentationBytes))
+                        return BufferedArtefactTooLarge();
                     exportArtefacts.Add(MapArtefactForExport(artefact, bytes, extractionHistory));
                 }
             }
@@ -435,6 +471,10 @@ public class DataExportService : IDataExportService
             }
             var exportRelations = await LoadRelationsForExportAsync(
                 userId, exportCards, cancellationToken);
+            // A concurrent upload can appear in source storage after the early estimate. Its
+            // loaded rows must share the remaining representation budget with these artefacts.
+            var sourceStorage = await BufferSourceStorageAsync(
+                userId, MaxBufferedRepresentationBytes - loadedRepresentationBytes, cancellationToken);
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -450,7 +490,7 @@ public class DataExportService : IDataExportService
                 exportMemories,
                 exportInsights,
                 nativeCaptures,
-                await BufferSourceStorageAsync(userId, cancellationToken), exportCards, exportRelations);
+                sourceStorage, exportCards, exportRelations);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -506,6 +546,18 @@ public class DataExportService : IDataExportService
         {
             return long.MaxValue;
         }
+    }
+
+    private static Result<UserDataExportDto> BufferedArtefactTooLarge() =>
+        Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge,
+            "This export contains too much serialized artefact content to buffer; use the streaming export endpoint");
+
+    private static bool TryChargeBufferedBytes(ref long used, long bytes, long multiplier, long limit)
+    {
+        if (bytes < 0 || multiplier <= 0 || used > limit || bytes > (limit - used) / multiplier)
+            return false;
+        used += bytes * multiplier;
+        return true;
     }
 
     /// <inheritdoc/>
@@ -1337,7 +1389,7 @@ public class DataExportService : IDataExportService
             x.Id, x.MemoryId, x.Title, x.Text, x.Status, x.Archived, x.Revision, x.CreatedAt, x.UpdatedAt, x.AnswerSourceAssetId)).ToList(),
         memory.SourceCaptureId, memory.AnswerSourceAssetId, memory.EvidenceSourceAssetId);
 
-    private async Task<SourceStorageExportDto?> BufferSourceStorageAsync(Guid userId, CancellationToken ct)
+    private async Task<SourceStorageExportDto?> BufferSourceStorageAsync(Guid userId, long remainingBudget, CancellationToken ct)
     {
         if (_sourceStorage is null) return null;
         await using var sourceSnapshot = await _sourceStorage.OpenReadSnapshotAsync(ct);
@@ -1347,8 +1399,12 @@ public class DataExportService : IDataExportService
             var result = new List<T>();
             await foreach (var row in rows.WithCancellation(ct))
             {
-                consumed += JsonSerializer.SerializeToUtf8Bytes(row, PortabilityJsonOptions).LongLength * 2;
-                if (consumed > 25L * 1024 * 1024)
+                var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(row, PortabilityJsonOptions).LongLength;
+                var rawChunkBytes = row is SourceBlobChunkExportDto chunk ? chunk.Content.LongLength : 0;
+                // Keep room for UTF-16 strings and the eventual UTF-8 response as well as
+                // retained raw chunk bytes. This also catches rows committed after admission.
+                if (!TryChargeBufferedBytes(ref consumed, serializedBytes, 3, remainingBudget) ||
+                    !TryChargeBufferedBytes(ref consumed, rawChunkBytes, 1, remainingBudget))
                     throw new DomainException(ErrorCodes.PayloadTooLarge, "The original source export grew beyond its buffer limit; use the streaming export endpoint");
                 result.Add(row);
             }
