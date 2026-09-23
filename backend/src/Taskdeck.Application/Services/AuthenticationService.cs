@@ -418,6 +418,9 @@ public class AuthenticationService : IAuthenticationService
 
             var newHash = _passwordHasher.HashPassword(newPassword);
             user.UpdatePassword(newHash);
+            // #3418: previously issued JWTs must not survive a password change.
+            // The middleware rejects tokens with iat <= TokenInvalidatedAt.
+            user.InvalidateTokens();
 
             await _unitOfWork.SaveChangesAsync();
             return Result.Success();

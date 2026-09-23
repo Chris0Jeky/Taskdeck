@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.IdentityModel.Tokens.Jwt;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -291,6 +292,29 @@ public class AuthenticationServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_ShouldInvalidatePreviouslyIssuedTokens()
+    {
+        // #3418: a password change must invalidate outstanding JWTs. The middleware
+        // rejects tokens with iat <= TokenInvalidatedAt, so the pre-change token's
+        // iat must fall at or below the recorded cutoff.
+        var service = CreateService();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync(user.Username, default)).ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var login = await service.LoginAsync(new LoginDto(user.Username, "password123"));
+        login.IsSuccess.Should().BeTrue();
+        var issuedAt = new JwtSecurityTokenHandler().ReadJwtToken(login.Value.Token).IssuedAt;
+
+        var change = await service.ChangePasswordAsync(user.Id, "password123", "newpassword123");
+        change.IsSuccess.Should().BeTrue();
+
+        user.TokenInvalidatedAt.Should().NotBeNull();
+        issuedAt.Should().BeOnOrBefore(user.TokenInvalidatedAt!.Value.UtcDateTime);
     }
 
     [Fact]
