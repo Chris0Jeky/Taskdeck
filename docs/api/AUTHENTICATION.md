@@ -155,7 +155,7 @@ curl -s -X POST http://localhost:5000/api/auth/change-password \
   }'
 ```
 
-Response: `204 No Content` on success.
+Response: `204 No Content` on success. All previously issued tokens are invalidated (existing sessions must re-authenticate).
 
 ## GitHub OAuth (optional)
 

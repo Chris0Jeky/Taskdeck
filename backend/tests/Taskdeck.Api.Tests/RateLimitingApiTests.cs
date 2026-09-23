@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -155,7 +156,7 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task AuthChangePassword_ShouldThrottleAfterBurst_ByClientIp()
     {
         using var factory = CreateFactoryWithRateLimits(
-            authPermitLimit: 2,
+            authPermitLimit: 3,
             authWindowSeconds: 60);
         using var client = factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rate-password");
@@ -164,6 +165,17 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
             .StatusCode
             .Should()
             .Be(HttpStatusCode.NoContent);
+
+        // #3418 invalidates outstanding tokens on password change, so re-login for a
+        // fresh token (permit 3) before probing the throttle with change #2.
+        var login = await client.PostAsJsonAsync("/api/auth/login", new
+        {
+            UsernameOrEmail = user.Username,
+            Password = "RateLimitPass!456"
+        });
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await login.Content.ReadFromJsonAsync<AuthResultDto>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload!.Token);
 
         var throttled = await SendChangePasswordRequestAsync(client, "RateLimitPass!456", "RateLimitPass!789");
         await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);
