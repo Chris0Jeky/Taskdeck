@@ -70,6 +70,37 @@ public class ColumnNameAmbiguityTests
         return error.GetString() ?? "";
     }
 
+    private static string SuggestionOf(string result)
+    {
+        using var doc = JsonDocument.Parse(result);
+        doc.RootElement.TryGetProperty("suggestion", out var suggestion).Should().BeTrue(result);
+        return suggestion.GetString() ?? "";
+    }
+
+    private AutomationPlannerService SetupPlannerBoard(User user, Board board, params Column[] columns)
+    {
+        var users = new Mock<IUserRepository>();
+        var boards = new Mock<IBoardRepository>();
+        var access = new Mock<IBoardAccessRepository>();
+        _unitOfWork.Setup(u => u.Users).Returns(users.Object);
+        _unitOfWork.Setup(u => u.Boards).Returns(boards.Object);
+        _unitOfWork.Setup(u => u.BoardAccesses).Returns(access.Object);
+        users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        boards.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        access.Setup(r => r.HasAccessAsync(board.Id, user.Id, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _columnRepo.Setup(r => r.GetByBoardIdAsync(board.Id, default)).ReturnsAsync(columns);
+        foreach (var column in columns)
+        {
+            _columnRepo.Setup(r => r.GetByIdAsync(column.Id, default)).ReturnsAsync(column);
+            _columnRepo.Setup(r => r.GetByIdWithCardsAsync(column.Id, default)).ReturnsAsync(column);
+        }
+        return new AutomationPlannerService(
+            _proposalService.Object,
+            new AutomationPolicyEngine(_unitOfWork.Object),
+            _unitOfWork.Object);
+    }
+
     private void SetupProposalCreation()
     {
         var proposalId = Guid.NewGuid();
@@ -96,10 +127,27 @@ public class ColumnNameAmbiguityTests
 
         var result = await executor.ExecuteAsync(MakeContext(), ParseArgs("""{"title":"Dup card","column_name":"backlog"}"""));
 
-        ErrorOf(result).Should().Contain("mbiguous");
+        ErrorOf(result).Should().Be(ColumnNameResolver.AmbiguousMessage("backlog"));
+        SuggestionOf(result).Should().Be("Use list_board_columns to see available columns");
         _proposalService.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeCreateCard_UniqueColumnName_StillResolves()
+    {
+        SetupColumns(
+            TestDataBuilder.CreateColumn(_boardId, "Backlog", 0),
+            TestDataBuilder.CreateColumn(_boardId, "Done", 1));
+        SetupProposalCreation();
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs("""{"title":"Pinned card","column_name":"DONE"}"""));
+
+        using var doc = JsonDocument.Parse(result);
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(result);
+        doc.RootElement.GetProperty("summary").GetString().Should().Contain("Done");
     }
 
     [Fact]
@@ -120,7 +168,8 @@ public class ColumnNameAmbiguityTests
             MakeContext(),
             ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","target_column":"target"}"""));
 
-        ErrorOf(result).Should().Contain("mbiguous");
+        ErrorOf(result).Should().Be(ColumnNameResolver.AmbiguousMessage("target"));
+        SuggestionOf(result).Should().Be("Use list_board_columns to see available columns");
         _proposalService.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -142,7 +191,8 @@ public class ColumnNameAmbiguityTests
             MakeContext(),
             ParseArgs("""{"source_column":"source","target_column":"target"}"""));
 
-        ErrorOf(result).Should().Contain("mbiguous");
+        ErrorOf(result).Should().Be(ColumnNameResolver.AmbiguousMessage("source"));
+        SuggestionOf(result).Should().Be("Use list_board_columns to see available columns");
         _proposalService.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -164,7 +214,8 @@ public class ColumnNameAmbiguityTests
             MakeContext(),
             ParseArgs("""{"source_column":"source","target_column":"target"}"""));
 
-        ErrorOf(result).Should().Contain("mbiguous");
+        ErrorOf(result).Should().Be(ColumnNameResolver.AmbiguousMessage("target"));
+        SuggestionOf(result).Should().Be("Use list_board_columns to see available columns");
         _proposalService.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -188,7 +239,8 @@ public class ColumnNameAmbiguityTests
 
         var result = await executor.ExecuteAsync(_boardId, ParseArgs("""{"column_name":"backlog"}"""));
 
-        ErrorOf(result).Should().Contain("mbiguous");
+        ErrorOf(result).Should().Be(ColumnNameResolver.AmbiguousMessage("backlog"));
+        SuggestionOf(result).Should().Be("Use list_board_columns to see available columns");
     }
 
     #endregion
@@ -200,34 +252,63 @@ public class ColumnNameAmbiguityTests
     {
         var user = new User("planner", "planner@example.com", "hashedPassword");
         var board = TestDataBuilder.CreateBoard();
-        var first = TestDataBuilder.CreateColumn(board.Id, "Dup", 0);
-        var second = TestDataBuilder.CreateColumn(board.Id, "Dup", 1);
-        var users = new Mock<IUserRepository>();
-        var boards = new Mock<IBoardRepository>();
-        var access = new Mock<IBoardAccessRepository>();
-        _unitOfWork.Setup(u => u.Users).Returns(users.Object);
-        _unitOfWork.Setup(u => u.Boards).Returns(boards.Object);
-        _unitOfWork.Setup(u => u.BoardAccesses).Returns(access.Object);
-        users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
-        boards.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
-        access.Setup(r => r.HasAccessAsync(board.Id, user.Id, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-        _columnRepo.Setup(r => r.GetByBoardIdAsync(board.Id, default)).ReturnsAsync([first, second]);
-        _columnRepo.Setup(r => r.GetByIdAsync(first.Id, default)).ReturnsAsync(first);
-        _columnRepo.Setup(r => r.GetByIdAsync(second.Id, default)).ReturnsAsync(second);
-        _columnRepo.Setup(r => r.GetByIdWithCardsAsync(first.Id, default)).ReturnsAsync(first);
-        _columnRepo.Setup(r => r.GetByIdWithCardsAsync(second.Id, default)).ReturnsAsync(second);
+        var service = SetupPlannerBoard(
+            user,
+            board,
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 0),
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 1));
         SetupProposalCreation();
-        var service = new AutomationPlannerService(
-            _proposalService.Object,
-            new AutomationPolicyEngine(_unitOfWork.Object),
-            _unitOfWork.Object);
 
         var result = await service.ParseInstructionAsync("create card 'DupTarget' in column 'Dup'", user.Id, board.Id);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("mbiguous");
+        result.ErrorMessage.Should().Be(ColumnNameResolver.AmbiguousMessage("Dup"));
+        _proposalService.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AutomationPlanner_MoveColumnAmbiguous_ReturnsValidationErrorWithoutProposal()
+    {
+        var user = new User("planner", "planner@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var service = SetupPlannerBoard(
+            user,
+            board,
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 0),
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 1));
+        SetupProposalCreation();
+
+        var result = await service.ParseInstructionAsync("move column 'Dup' to position 1", user.Id, board.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be(ColumnNameResolver.AmbiguousMessage("Dup"));
+        _proposalService.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AutomationPlanner_BatchAmbiguousColumn_FailsClosedWithoutProposal()
+    {
+        var user = new User("planner", "planner@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var service = SetupPlannerBoard(
+            user,
+            board,
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 0),
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 1));
+        SetupProposalCreation();
+
+        var result = await service.ParseBatchInstructionAsync(
+            ["create card 'DupTarget' in column 'Dup'"], user.Id, board.Id);
+
+        // The batch lane maps unresolvable instructions to a generic parse
+        // failure; pin fail-closed (no proposal) rather than the message text.
+        result.IsSuccess.Should().BeFalse();
         _proposalService.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -263,7 +344,7 @@ public class ColumnNameAmbiguityTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("mbiguous");
+        result.ErrorMessage.Should().Be(ColumnNameResolver.AmbiguousMessage("imported"));
     }
 
     private static void AddToCollection<T>(object target, string name, T value)

@@ -81,10 +81,12 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
             var resolution = ColumnNameResolver.Resolve(columns, columnName);
             if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
             {
+                var availableNames = columns.Select(c => c.Name).ToArray();
                 return JsonSerializer.Serialize(new
                 {
                     error = ColumnNameResolver.AmbiguousMessage(columnName),
-                    suggestion = "Rename one of the duplicate columns on the board, then retry"
+                    suggestion = "Use list_board_columns to see available columns",
+                    available_columns = availableNames
                 }, ToolJsonOptions.Default);
             }
             var column = resolution.Column;

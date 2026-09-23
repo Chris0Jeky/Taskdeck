@@ -78,10 +78,12 @@ public sealed class ProposeMoveCardExecutor : IToolExecutor
         var targetResolution = ColumnNameResolver.Resolve(columns, targetColumnName);
         if (targetResolution.Outcome == ColumnResolutionOutcome.Ambiguous)
         {
+            var availableNames = columns.Select(c => c.Name).ToArray();
             return JsonSerializer.Serialize(new
             {
                 error = ColumnNameResolver.AmbiguousMessage(targetColumnName),
-                suggestion = "Rename one of the duplicate columns on the board, then retry"
+                suggestion = "Use list_board_columns to see available columns",
+                available_columns = availableNames
             }, ToolJsonOptions.Default);
         }
         var targetColumn = targetResolution.Column;

@@ -71,7 +71,8 @@ public sealed class ProposeBulkMoveExecutor : IToolExecutor
             return JsonSerializer.Serialize(new
             {
                 error = ColumnNameResolver.AmbiguousMessage(sourceColumnName),
-                suggestion = "Rename one of the duplicate columns on the board, then retry"
+                suggestion = "Use list_board_columns to see available columns",
+                available_columns = columns.Select(c => c.Name).ToArray()
             }, ToolJsonOptions.Default);
         }
         var sourceColumn = sourceResolution.Column;
@@ -93,7 +94,8 @@ public sealed class ProposeBulkMoveExecutor : IToolExecutor
             return JsonSerializer.Serialize(new
             {
                 error = ColumnNameResolver.AmbiguousMessage(targetColumnName),
-                suggestion = "Rename one of the duplicate columns on the board, then retry"
+                suggestion = "Use list_board_columns to see available columns",
+                available_columns = columns.Select(c => c.Name).ToArray()
             }, ToolJsonOptions.Default);
         }
         var targetColumn = targetResolution.Column;
