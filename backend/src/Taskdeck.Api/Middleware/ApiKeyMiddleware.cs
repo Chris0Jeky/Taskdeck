@@ -136,11 +136,10 @@ public sealed class ApiKeyMiddleware
             // prefix — never pull further secret material into the log entry — and at most 8
             // characters of the presented token are ever logged, whatever the input.
             //
-            // Stripping can in principle empty the slice; that is reported as "short" rather than as
-            // an empty prefix, so an operator never sees a blank value that reads like a missing
-            // field. The format gate above checks for the "tdsk_" literal with a culture-sensitive
-            // StartsWith, under which ignorable characters may precede the literal, so the empty
-            // case is unlikely but not impossible and the fallback stays.
+            // The ordinal format gate guarantees that every accepted token begins with "tdsk_",
+            // so stripping cannot empty an eight-character slice. "short" represents accepted
+            // tokens shorter than eight characters; retain the empty-result fallback defensively
+            // in case the sanitization contract changes.
             var prefix = token.Length >= 8 ? LogSanitizer.StripControlChars(token[..8]) : string.Empty;
             _logger.LogWarning("MCP API key authentication failed: key not found (prefix: {Prefix})",
                 string.IsNullOrEmpty(prefix) ? "short" : prefix);
@@ -156,8 +155,7 @@ public sealed class ApiKeyMiddleware
         if (!keyIsActive)
         {
             var reason = authRecord.RevokedAt is not null ? "revoked" : "expired";
-            _logger.LogWarning("MCP API key authentication failed: key is {Reason} (id: {KeyId})",
-                reason, authRecord.Id);
+            _logger.LogWarning("MCP API key authentication failed: key is {Reason} (id: {KeyId})", authRecord.Id);
             // Return generic message to avoid leaking key state (revoked vs expired)
             await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
                 "Invalid API key.");
@@ -305,7 +303,7 @@ public sealed class ApiKeyMiddleware
     /// lookup misses; app-level account deletion is soft (IsActive=false), surfacing here as
     /// <c>false</c>. Folding the owner check into this query is
     /// the #1404 fix: it removes the separate Users SELECT and lets a stale-owner key be rejected (and
-    /// charged to the pre-auth IP failure budget) before the per-key quota charge.
+    /// charged to the pre-auth IP failure budget) before the per-key charge.
     /// </summary>
     private sealed class ApiKeyAuthProjection
     {
