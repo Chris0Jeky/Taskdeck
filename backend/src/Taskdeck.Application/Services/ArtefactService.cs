@@ -134,6 +134,74 @@ public sealed class ArtefactService : IArtefactService
         return Result.Success(Map(artefact));
     }
 
+    public async Task<Result<SourceArtefactDto>> CreateStreamingAsync(
+        Guid userId,
+        CreateStreamingArtefactRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<SourceArtefactDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
+        if (request.ExpectedByteSize <= 0)
+            return Result.Failure<SourceArtefactDto>(ErrorCodes.ValidationError, "A positive Content-Length is required");
+        if (request.ExpectedByteSize > _settings.MaxBytesPerArtefact)
+            return Result.Failure<SourceArtefactDto>(ErrorCodes.PayloadTooLarge,
+                $"Artefact exceeds the configured {_settings.MaxBytesPerArtefact}-byte size limit");
+
+        var metadata = ArtefactContentValidator.ValidateMetadata(request.FileName, request.MimeType);
+        if (!metadata.IsSuccess)
+            return Result.Failure<SourceArtefactDto>(metadata.ErrorCode, metadata.ErrorMessage);
+
+        Guid? effectiveBoardId = request.BoardId;
+        if (request.CreatedFromCaptureId.HasValue)
+        {
+            var capture = await _unitOfWork.LlmQueue.GetByIdAsync(request.CreatedFromCaptureId.Value, cancellationToken);
+            if (capture is null || capture.UserId != userId)
+                return Result.Failure<SourceArtefactDto>(ErrorCodes.Forbidden,
+                    "The linked capture does not belong to the authenticated user");
+            if (!CaptureRequestContract.IsCaptureRequestType(capture.RequestType))
+                return Result.Failure<SourceArtefactDto>(ErrorCodes.ValidationError,
+                    "The linked queue item is not a capture request");
+            if (request.BoardId.HasValue && capture.BoardId.HasValue &&
+                request.BoardId.Value != capture.BoardId.Value)
+                return Result.Failure<SourceArtefactDto>(ErrorCodes.ValidationError,
+                    "The linked capture belongs to a different board");
+            effectiveBoardId ??= capture.BoardId;
+        }
+
+        if (effectiveBoardId.HasValue &&
+            !await _unitOfWork.BoardAccesses.HasAccessAsync(
+                effectiveBoardId.Value, userId, UserRole.Editor, cancellationToken))
+            return Result.Failure<SourceArtefactDto>(ErrorCodes.Forbidden,
+                "Editor access to the board is required");
+
+        using var validated = ArtefactContentValidator.ValidateWhileReading(request.Content, metadata.Value);
+        StreamingArtefactStoreOutcome stored;
+        try
+        {
+            stored = await _artefacts.TryAddStreamWithinQuotaAsync(
+                new StreamingArtefactWrite(Guid.NewGuid(), userId, metadata.Value.Kind,
+                    metadata.Value.MimeType, metadata.Value.FileName, request.ExpectedByteSize,
+                    effectiveBoardId, request.CreatedFromCaptureId, validated),
+                _settings.MaxBytesPerUser, cancellationToken);
+        }
+        catch (DomainException error) when (error.ErrorCode is ErrorCodes.ValidationError or ErrorCodes.PayloadTooLarge or ErrorCodes.Conflict)
+        {
+            return Result.Failure<SourceArtefactDto>(error.ErrorCode, error.Message);
+        }
+
+        return stored.Result switch
+        {
+            ArtefactStoreResult.Stored => Result.Success(Map(stored.Artefact!)),
+            ArtefactStoreResult.UserInactive => Result.Failure<SourceArtefactDto>(
+                ErrorCodes.Unauthorized, "The authenticated user is no longer active"),
+            ArtefactStoreResult.BoardAccessDenied => Result.Failure<SourceArtefactDto>(
+                ErrorCodes.Forbidden, "Editor access to the board is required"),
+            ArtefactStoreResult.QuotaExceeded => Result.Failure<SourceArtefactDto>(
+                ErrorCodes.PayloadTooLarge, "Artefact storage quota would be exceeded"),
+            _ => throw new InvalidOperationException($"Unknown artefact store result: {stored.Result}")
+        };
+    }
+
     public async Task<Result<SourceArtefactDto>> GetMetadataAsync(
         Guid userId,
         Guid artefactId,

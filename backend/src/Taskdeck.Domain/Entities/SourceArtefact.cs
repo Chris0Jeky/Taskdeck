@@ -54,8 +54,27 @@ public sealed class SourceArtefact : Entity
         Guid? boardId = null,
         string? originReference = null,
         Guid? createdFromCaptureId = null)
-        : base()
+        : this(Guid.NewGuid(), userId, kind, mimeType, fileName, byteSize, sha256,
+            captureSource, boardId, originReference, createdFromCaptureId)
     {
+    }
+
+    public SourceArtefact(
+        Guid id,
+        Guid userId,
+        ArtefactKind kind,
+        string mimeType,
+        string fileName,
+        long byteSize,
+        string sha256,
+        CaptureSource captureSource,
+        Guid? boardId = null,
+        string? originReference = null,
+        Guid? createdFromCaptureId = null)
+        : base(id)
+    {
+        if (id == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Artefact ID cannot be empty");
         if (userId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "User ID cannot be empty");
         if (boardId == Guid.Empty)

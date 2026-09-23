@@ -1,4 +1,5 @@
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.Interfaces;
 
@@ -9,6 +10,19 @@ public enum ArtefactStoreResult
     BoardAccessDenied,
     QuotaExceeded
 }
+
+public sealed record StreamingArtefactWrite(
+    Guid ArtefactId,
+    Guid UserId,
+    ArtefactKind Kind,
+    string MimeType,
+    string FileName,
+    long ExpectedByteSize,
+    Guid? BoardId,
+    Guid? CreatedFromCaptureId,
+    Stream Content);
+
+public sealed record StreamingArtefactStoreOutcome(ArtefactStoreResult Result, SourceArtefact? Artefact);
 
 public interface ISourceArtefactRepository : IRepository<SourceArtefact>
 {
@@ -38,6 +52,12 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
         long quotaBytes,
         AuditLog auditLog,
         AuditLog? boardAuditLog,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Checks authorization and both quotas under the write lock before reading Content.</summary>
+    Task<StreamingArtefactStoreOutcome> TryAddStreamWithinQuotaAsync(
+        StreamingArtefactWrite write,
+        long quotaBytes,
         CancellationToken cancellationToken = default);
 
     Task<byte[]?> GetContentForUserAsync(
