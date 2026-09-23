@@ -75,6 +75,8 @@ function safeRequestPath(rawUrl: unknown): string | undefined {
   if (typeof rawUrl !== 'string' || rawUrl.length === 0) return undefined
   try {
     const parsed = new URL(rawUrl, 'http://localhost')
+    // Opaque schemes carry payloads in pathname; file URLs expose local paths.
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined
     const origin = parsed.origin === 'http://localhost' ? '' : parsed.origin
     return origin + parsed.pathname
   } catch {
