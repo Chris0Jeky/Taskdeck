@@ -233,7 +233,8 @@ public class ChatService : IChatService
 
     public async Task<Result<ChatMessageDto>> SendMessageAsync(Guid sessionId, Guid userId, SendChatMessageDto dto, CancellationToken ct = default)
     {
-        // Atomic quota reservation (issue #1313): reserve a slot before the LLM call, then commit it
+        // Atomic quota reservation (issue #1313): reserve a slot in the provider branch before the LLM
+        // call (#1431: only requests that can reach a provider consume a slot), then commit it
         // with the actual token counts or release it (no usage / failure). The finally guarantees no
         // reservation leaks on any exit path, including a thrown provider error. Billed usage is
         // tracked alongside so the finally can SETTLE (commit billed tokens rather than release them)

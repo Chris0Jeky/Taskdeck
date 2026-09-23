@@ -1829,7 +1829,7 @@ has three omitted historical failed lanes and is **not ready** for selection. Re
 prove one whole-task execution family, then connect the existing canonical gate and independent full
 audits before proposing cutover. [Operations and next steps](ci/continuation/OPERATIONS.md) distinguish
 the implemented reference mechanisms from production authority. Human actions SC-4, SC-6 and SC-7
-remain in [OUTSTANDING_TASKS](../OUTSTANDING_TASKS.md).
+remain in [OUTSTANDING_TASKS.md](../OUTSTANDING_TASKS.md).
 
 **Smart CI Fabric programme (ADR-0066, 2026-08-30 — shadow phase, behaviour-preserving).** The
 repository goes private for the v0.3.0 release on the maintainer's personal GitHub Pro account, so CI

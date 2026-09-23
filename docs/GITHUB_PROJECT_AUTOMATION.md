@@ -172,7 +172,7 @@ Goal:
 - Keep the project populated with near-horizon, dependency-aware items without overloading WIP.
 
 Weekly process:
-1. Review `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TaskdeckNextWorkChecklist.md`.
+1. Review `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/ISSUE_EXECUTION_GUIDE.md`.
 2. Select the highest-priority acceptance-ready items: `Now` candidates must have complete
    dependencies, while a `Next` candidate may be explicitly sequenced behind a named `Now` item.
 3. Create/update issues with explicit acceptance criteria and required labels.
