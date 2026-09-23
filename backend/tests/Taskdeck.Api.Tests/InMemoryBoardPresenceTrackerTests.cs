@@ -45,4 +45,27 @@ public class InMemoryBoardPresenceTrackerTests
         leaveConnectionSnapshot.Should().NotBeNull();
         leaveConnectionSnapshot!.BoardId.Should().Be(boardA);
     }
+
+    [Fact]
+    public void TryGetBoard_ShouldTrackTheObservedBoard()
+    {
+        var tracker = new InMemoryBoardPresenceTracker();
+        var boardA = Guid.NewGuid();
+        var boardB = Guid.NewGuid();
+        const string connectionId = "conn-1";
+        var userId = Guid.NewGuid();
+
+        tracker.TryGetBoard(connectionId, out _).Should().BeFalse();
+
+        tracker.Join(boardA, connectionId, userId, "user");
+        tracker.TryGetBoard(connectionId, out var current).Should().BeTrue();
+        current.Should().Be(boardA);
+
+        tracker.Join(boardB, connectionId, userId, "user");
+        tracker.TryGetBoard(connectionId, out current).Should().BeTrue();
+        current.Should().Be(boardB);
+
+        tracker.Leave(boardB, connectionId);
+        tracker.TryGetBoard(connectionId, out _).Should().BeFalse();
+    }
 }
