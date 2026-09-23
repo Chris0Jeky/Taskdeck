@@ -104,8 +104,14 @@ public sealed class ExternalImportService : IExternalImportService
                 "Cannot import into an archived board.");
         }
 
-        var targetColumn = board.Columns.FirstOrDefault(column =>
-            string.Equals(column.Name, request.TargetColumnName, StringComparison.OrdinalIgnoreCase));
+        var targetResolution = ColumnNameResolver.Resolve(board.Columns, request.TargetColumnName);
+        if (targetResolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+        {
+            return Result.Failure<ExternalImportResultDto>(
+                ErrorCodes.ValidationError,
+                ColumnNameResolver.AmbiguousMessage(request.TargetColumnName));
+        }
+        var targetColumn = targetResolution.Column;
         if (targetColumn == null)
         {
             return Result.Failure<ExternalImportResultDto>(

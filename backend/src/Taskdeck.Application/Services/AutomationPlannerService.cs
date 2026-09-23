@@ -111,7 +111,10 @@ public class AutomationPlannerService : IAutomationPlannerService
                 if (!string.IsNullOrEmpty(columnName))
                 {
                     var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
-                    var column = columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+                    var resolution = ColumnNameResolver.Resolve(columns, columnName);
+                    if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, ColumnNameResolver.AmbiguousMessage(columnName));
+                    var column = resolution.Column;
                     if (column == null)
                         return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Column '{columnName}' not found in board");
                     
@@ -167,7 +170,10 @@ public class AutomationPlannerService : IAutomationPlannerService
 
                     // Find column
                     var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
-                    var column = columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+                    var resolution = ColumnNameResolver.Resolve(columns, columnName);
+                    if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, ColumnNameResolver.AmbiguousMessage(columnName));
+                    var column = resolution.Column;
                     if (column == null)
                         return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Column '{columnName}' not found in board");
 
@@ -394,7 +400,10 @@ public class AutomationPlannerService : IAutomationPlannerService
                                                     if (!columns.Any())
                                                         return Result.Failure<ProposalDto>(ErrorCodes.NotFound, "No columns found in board");
 
-                                                    var column = columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+                                                    var resolution = ColumnNameResolver.Resolve(columns, columnName);
+                                                    if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+                                                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, ColumnNameResolver.AmbiguousMessage(columnName));
+                                                    var column = resolution.Column;
                                                     if (column == null)
                                                         return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Column '{columnName}' not found in board");
 
@@ -752,7 +761,10 @@ public class AutomationPlannerService : IAutomationPlannerService
             if (!string.IsNullOrEmpty(columnName))
             {
                 var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
-                var column = columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+                var resolution = ColumnNameResolver.Resolve(columns, columnName);
+                if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+                    return null;
+                var column = resolution.Column;
                 if (column == null)
                     return null;
                 columnId = column.Id;
@@ -791,7 +803,10 @@ public class AutomationPlannerService : IAutomationPlannerService
             var cardId = resolvedCardId.Value;
 
             var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
-            var column = columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+            var resolution = ColumnNameResolver.Resolve(columns, columnName);
+            if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+                return null;
+            var column = resolution.Column;
             if (column == null)
                 return null;
 
@@ -938,7 +953,9 @@ public class AutomationPlannerService : IAutomationPlannerService
             var columns = (await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken)).ToList();
             if (!columns.Any()) return null;
 
-            var column = columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+            var resolution = ColumnNameResolver.Resolve(columns, columnName);
+            if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous) return null;
+            var column = resolution.Column;
             if (column == null) return null;
             if (position >= columns.Count) return null;
 
