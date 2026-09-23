@@ -155,7 +155,8 @@ public sealed class ApiKeyMiddleware
         if (!keyIsActive)
         {
             var reason = authRecord.RevokedAt is not null ? "revoked" : "expired";
-            _logger.LogWarning("MCP API key authentication failed: key is {Reason} (id: {KeyId})", authRecord.Id);
+            _logger.LogWarning("MCP API key authentication failed: key is {Reason} (id: {KeyId})",
+                reason, authRecord.Id);
             // Return generic message to avoid leaking key state (revoked vs expired)
             await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
                 "Invalid API key.");
@@ -303,7 +304,7 @@ public sealed class ApiKeyMiddleware
     /// lookup misses; app-level account deletion is soft (IsActive=false), surfacing here as
     /// <c>false</c>. Folding the owner check into this query is
     /// the #1404 fix: it removes the separate Users SELECT and lets a stale-owner key be rejected (and
-    /// charged to the pre-auth IP failure budget) before the per-key charge.
+    /// charged to the pre-auth IP failure budget) before the per-key quota charge.
     /// </summary>
     private sealed class ApiKeyAuthProjection
     {
