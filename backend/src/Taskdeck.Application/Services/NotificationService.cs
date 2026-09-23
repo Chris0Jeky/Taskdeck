@@ -50,12 +50,39 @@ public class NotificationService : INotificationService
             }
         }
 
-        var notifications = await _unitOfWork.Notifications.GetByUserIdAsync(
+        var notifications = (await _unitOfWork.Notifications.GetByUserIdAsync(
             userId,
             query.Limit,
             query.UnreadOnly,
             query.BoardId,
-            cancellationToken);
+            cancellationToken)).ToList();
+
+        // A notification's recipient is not permanent authority to read its board.
+        // Revalidate the bounded page in one batch, not once per notification.
+        // Filtering may return fewer than Limit; never scan unbounded history to refill it.
+        if (!query.BoardId.HasValue && _authorizationService is not null)
+        {
+            var boardIds = notifications
+                .Where(notification => notification.BoardId.HasValue)
+                .Select(notification => notification.BoardId!.Value)
+                .Distinct()
+                .ToArray();
+            if (boardIds.Length > 0)
+            {
+                var readableBoards = await _authorizationService.GetReadableBoardIdsAsync(
+                    userId, boardIds, cancellationToken);
+                if (!readableBoards.IsSuccess)
+                {
+                    return Result.Failure<IEnumerable<NotificationDto>>(
+                        ErrorCodes.Forbidden,
+                        "You do not have access to notifications for this board");
+                }
+
+                notifications = notifications.Where(notification =>
+                    !notification.BoardId.HasValue ||
+                    readableBoards.Value.Contains(notification.BoardId.Value)).ToList();
+            }
+        }
 
         return Result.Success(notifications.Select(MapToDto));
     }
@@ -77,6 +104,19 @@ public class NotificationService : INotificationService
 
         if (notification.UserId != userId)
             return Result.Failure<NotificationDto>(ErrorCodes.Forbidden, "You do not have access to this notification");
+
+        // The mutation returns the full notification DTO. A previously learned ID
+        // must not become a content-read bypass after board membership is revoked.
+        if (notification.BoardId.HasValue && _authorizationService is not null)
+        {
+            var boardPermission = await _authorizationService.CanReadBoardAsync(userId, notification.BoardId.Value);
+            if (!boardPermission.IsSuccess || !boardPermission.Value)
+            {
+                return Result.Failure<NotificationDto>(
+                    ErrorCodes.Forbidden,
+                    "You do not have access to notifications for this board");
+            }
+        }
 
         notification.MarkAsRead();
         await _unitOfWork.SaveChangesAsync(cancellationToken);
