@@ -15,4 +15,7 @@ public interface IBoardPresenceTracker
     BoardPresenceSnapshot? UpdateEditingCard(Guid boardId, string connectionId, Guid? editingCardId);
 
     bool IsConnectionJoinedBoard(string connectionId, Guid boardId);
+
+    /// <summary>The board a connection currently observes, if any.</summary>
+    bool TryGetBoard(string connectionId, out Guid boardId);
 }

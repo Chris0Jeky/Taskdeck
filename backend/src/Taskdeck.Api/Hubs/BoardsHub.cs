@@ -33,6 +33,17 @@ public class BoardsHub : Hub
         if (!permission.Value)
             throw new HubException($"{ErrorCodes.Forbidden}:You do not have access to this board");
 
+        // Safety net: the tracker holds one board per connection, but a JoinBoard that
+        // arrives without a matching LeaveBoard would otherwise leave the connection in
+        // the old SignalR group (ghost presence plus stray old-board mutations).
+        if (_presenceTracker.TryGetBoard(Context.ConnectionId, out var previousBoardId)
+            && previousBoardId != boardId)
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, BoardHubGroups.ForBoard(previousBoardId));
+            var previous = _presenceTracker.Leave(previousBoardId, Context.ConnectionId);
+            await PublishPresenceSnapshotAsync(previous);
+        }
+
         await Groups.AddToGroupAsync(Context.ConnectionId, BoardHubGroups.ForBoard(boardId));
         var presence = _presenceTracker.Join(boardId, Context.ConnectionId, userId, displayName);
         await PublishPresenceSnapshotAsync(presence);

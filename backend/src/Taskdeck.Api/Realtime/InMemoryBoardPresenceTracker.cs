@@ -100,6 +100,14 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
         }
     }
 
+    public bool TryGetBoard(string connectionId, out Guid boardId)
+    {
+        lock (_gate)
+        {
+            return _boardByConnection.TryGetValue(connectionId, out boardId);
+        }
+    }
+
     private static BoardPresenceSnapshot CreateSnapshot(
         Guid boardId,
         Dictionary<string, ConnectionPresence> boardConnections)
