@@ -2,6 +2,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -42,6 +43,13 @@ public class BoardAccessService : IBoardAccessService
             var canManage = await EnsureCanManageBoardAccessAsync(board, grantedBy);
             if (!canManage.IsSuccess)
                 return Result.Failure<BoardAccessDto>(canManage.ErrorCode, canManage.ErrorMessage);
+
+            // Ownership transfer is owner-only: an Admin must not escalate anyone
+            // (including themselves) to Owner. Checked before grantee resolution so
+            // a rejected grant performs no user lookups.
+            var canGrantRole = await EnsureCanGrantRoleAsync(board, grantedBy, dto.Role);
+            if (!canGrantRole.IsSuccess)
+                return Result.Failure<BoardAccessDto>(canGrantRole.ErrorCode, canGrantRole.ErrorMessage);
 
             // Resolve the grantee only after the manage-access gate passes. An email-or-username
             // identifier takes precedence over the raw UserId compatibility path. Unknown
@@ -112,6 +120,12 @@ public class BoardAccessService : IBoardAccessService
             var canManage = await EnsureCanManageBoardAccessAsync(board, updatedBy);
             if (!canManage.IsSuccess)
                 return Result.Failure<BoardAccessDto>(canManage.ErrorCode, canManage.ErrorMessage);
+
+            // Same ownership-transfer bar as the grant path: only an effective
+            // owner may move a row to the Owner role.
+            var canGrantRole = await EnsureCanGrantRoleAsync(board, updatedBy, dto.Role);
+            if (!canGrantRole.IsSuccess)
+                return Result.Failure<BoardAccessDto>(canGrantRole.ErrorCode, canGrantRole.ErrorMessage);
 
             access.UpdateRole(dto.Role, updatedBy);
 
@@ -218,6 +232,28 @@ public class BoardAccessService : IBoardAccessService
             return await _unitOfWork.Users.GetByEmailAsync(trimmed);
 
         return await _unitOfWork.Users.GetByUsernameAsync(trimmed);
+    }
+
+    /// <summary>
+    /// Enforces the grant hierarchy: only an effective board owner (the board's
+    /// <c>OwnerId</c> or a holder of an Owner access row) may grant or assign the
+    /// Owner role. Admins keep manage-access rights for roles at or below their
+    /// own (Admin/Editor/Viewer), matching the UserRole.Admin contract
+    /// ("except ownership transfer").
+    /// </summary>
+    private async Task<Result> EnsureCanGrantRoleAsync(Board board, Guid actingUserId, UserRole targetRole)
+    {
+        if (targetRole != UserRole.Owner)
+            return Result.Success();
+
+        if (board.OwnerId == actingUserId)
+            return Result.Success();
+
+        var actingAccess = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(board.Id, actingUserId);
+        if (actingAccess?.Role == UserRole.Owner)
+            return Result.Success();
+
+        return Result.Failure(ErrorCodes.Forbidden, "Only board owners can assign the Owner role");
     }
 
     private async Task<Result> EnsureCanManageBoardAccessAsync(Board board, Guid actingUserId)
