@@ -1,0 +1,77 @@
+{
+  "document_kind": "authoring_template_not_execution_receipt",
+  "template_version": 0,
+  "execution_status": "NOT RUN",
+  "merge_authority": "existing_repository_policy_only",
+  "identity": {
+    "repository": "Chris0Jeky/Taskdeck",
+    "pr_url": null,
+    "merge_base_sha": null,
+    "reviewed_head_sha": null,
+    "tested_revision_sha": null,
+    "tested_revision_kind": null,
+    "fixture_digest": null,
+    "oracle_revision": null
+  },
+  "intent": {
+    "contract_source": "docs/dogfooding/acceptance-pilot/cases.json at 8f8ae386dca4205b0b0e84457dd94c2473367cfa",
+    "outcome": "Record attributable evidence for the existing capture-review-execute-resume loop.",
+    "invariant": "Synthetic activity never enters organic dogfood counts. Review and execution remain separate.",
+    "non_goals": [
+      "Live-provider qualification",
+      "Audience demand or retention claims",
+      "A new scenario runner or merge gate"
+    ]
+  },
+  "risk": {
+    "changed_seams": [],
+    "affected_consumers": [],
+    "data_or_authority_effects": [],
+    "recovery_plan": "Run only against an identified disposable synthetic database; stop if identity or reset safety is unknown."
+  },
+  "planned_checks": [
+    {
+      "id": "P1",
+      "oracle_class": "manual_product_boundary",
+      "expected_outcome": "Capture text survives reload; merely capturing creates no proposal approval or board mutation.",
+      "independence_and_limits": "Use the actual product and durable state. Human comprehension and value remain separate advisory observations; a screenshot alone is insufficient.",
+      "successful_control": "Create and reload a capture through the supported flow.",
+      "negative_or_regression_control": "A no-op save would fail the persisted-content observation.",
+      "existing_gate_reference_or_advisory": "Manual pilot evidence only; existing repository gates are unchanged."
+    },
+    {
+      "id": "P2",
+      "oracle_class": "manual_product_boundary",
+      "expected_outcome": "Declining the prepared proposal leaves the recorded target board/card state unchanged.",
+      "independence_and_limits": "Use the actual product and durable state. Human comprehension and value remain separate advisory observations; a screenshot alone is insufficient.",
+      "successful_control": "Pair with P3 permitted execution; setup and review surfaces must be available.",
+      "negative_or_regression_control": "Inspect exact target identity/content, not only card count; proposal metadata may change.",
+      "existing_gate_reference_or_advisory": "Manual pilot evidence only; existing repository gates are unchanged."
+    },
+    {
+      "id": "P3",
+      "oracle_class": "manual_product_boundary",
+      "expected_outcome": "Only explicit allowed execution creates the intended card in the intended column, durable after reload.",
+      "independence_and_limits": "Use the actual product and durable state. Human comprehension and value remain separate advisory observations; a screenshot alone is insufficient.",
+      "successful_control": "The prepared, supported one-card proposal executes and persists.",
+      "negative_or_regression_control": "Pair with P2 no-board-mutation control; approval without execution must not mutate the board.",
+      "existing_gate_reference_or_advisory": "Manual pilot evidence only; existing repository gates are unchanged."
+    },
+    {
+      "id": "P4",
+      "oracle_class": "manual_product_boundary",
+      "expected_outcome": "Resumption finds the same saved identities without applying the proposal again.",
+      "independence_and_limits": "Use the actual product and durable state. Human comprehension and value remain separate advisory observations; a screenshot alone is insufficient.",
+      "successful_control": "Navigate to the existing capture/card after the declared interruption.",
+      "negative_or_regression_control": "Reopening/navigation must not produce duplicate execution or board mutation.",
+      "existing_gate_reference_or_advisory": "Manual pilot evidence only; existing repository gates are unchanged."
+    }
+  ],
+  "observations": [],
+  "retained_prior_evidence": [],
+  "review_dispositions": [],
+  "unverified_layers": [
+    "No manual task, browser, persistence, live-provider, native-agent, organic-use or usefulness trial is recorded."
+  ],
+  "next_action": "Select one actual slice, pin baseline/candidate and safe initial state, then record each attempt through the existing product tooling. Leave missing evidence unknown."
+}
