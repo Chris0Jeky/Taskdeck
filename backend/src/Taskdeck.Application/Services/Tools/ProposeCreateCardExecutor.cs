@@ -78,8 +78,16 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
 
         if (!string.IsNullOrWhiteSpace(columnName))
         {
-            var column = columns.FirstOrDefault(c =>
-                string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase));
+            var resolution = ColumnNameResolver.Resolve(columns, columnName);
+            if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    error = ColumnNameResolver.AmbiguousMessage(columnName),
+                    suggestion = "Rename one of the duplicate columns on the board, then retry"
+                }, ToolJsonOptions.Default);
+            }
+            var column = resolution.Column;
             if (column == null)
             {
                 var availableNames = columns.Select(c => c.Name).ToArray();

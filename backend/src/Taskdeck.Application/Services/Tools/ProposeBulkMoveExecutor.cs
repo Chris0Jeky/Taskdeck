@@ -65,8 +65,16 @@ public sealed class ProposeBulkMoveExecutor : IToolExecutor
 
         // Resolve columns
         var columns = await _unitOfWork.Columns.GetByBoardIdAsync(context.BoardId, ct);
-        var sourceColumn = columns.FirstOrDefault(c =>
-            string.Equals(c.Name, sourceColumnName, StringComparison.OrdinalIgnoreCase));
+        var sourceResolution = ColumnNameResolver.Resolve(columns, sourceColumnName);
+        if (sourceResolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = ColumnNameResolver.AmbiguousMessage(sourceColumnName),
+                suggestion = "Rename one of the duplicate columns on the board, then retry"
+            }, ToolJsonOptions.Default);
+        }
+        var sourceColumn = sourceResolution.Column;
 
         if (sourceColumn == null)
         {
@@ -79,8 +87,16 @@ public sealed class ProposeBulkMoveExecutor : IToolExecutor
             }, ToolJsonOptions.Default);
         }
 
-        var targetColumn = columns.FirstOrDefault(c =>
-            string.Equals(c.Name, targetColumnName, StringComparison.OrdinalIgnoreCase));
+        var targetResolution = ColumnNameResolver.Resolve(columns, targetColumnName);
+        if (targetResolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = ColumnNameResolver.AmbiguousMessage(targetColumnName),
+                suggestion = "Rename one of the duplicate columns on the board, then retry"
+            }, ToolJsonOptions.Default);
+        }
+        var targetColumn = targetResolution.Column;
 
         if (targetColumn == null)
         {

@@ -75,8 +75,16 @@ public sealed class ProposeMoveCardExecutor : IToolExecutor
 
         // Resolve target column
         var columns = await _unitOfWork.Columns.GetByBoardIdAsync(context.BoardId, ct);
-        var targetColumn = columns.FirstOrDefault(c =>
-            string.Equals(c.Name, targetColumnName, StringComparison.OrdinalIgnoreCase));
+        var targetResolution = ColumnNameResolver.Resolve(columns, targetColumnName);
+        if (targetResolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = ColumnNameResolver.AmbiguousMessage(targetColumnName),
+                suggestion = "Rename one of the duplicate columns on the board, then retry"
+            }, ToolJsonOptions.Default);
+        }
+        var targetColumn = targetResolution.Column;
 
         if (targetColumn == null)
         {
