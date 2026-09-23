@@ -86,7 +86,7 @@ public sealed class ApiKeyMiddleware
 
         var token = authHeader["Bearer ".Length..].Trim();
 
-        if (string.IsNullOrWhiteSpace(token) || !token.StartsWith(ApiKey.KeyPrefix))
+        if (string.IsNullOrWhiteSpace(token) || !token.StartsWith(ApiKey.KeyPrefix, StringComparison.Ordinal))
         {
             await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
                 "Invalid API key format. Keys must start with 'tdsk_'.");
