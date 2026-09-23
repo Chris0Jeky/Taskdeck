@@ -1,9 +1,11 @@
+using System.Globalization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -35,6 +37,39 @@ public sealed class ApiKeyMiddlewarePrefixTests : IDisposable
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
         (await ReadBodyAsync(context)).Should().Contain("Invalid API key format");
+    }
+
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("tr-TR")]
+    public async Task CollationIgnorablePrefix_ReturnsFormatError_NotKeyLookup(string cultureName)
+    {
+        var previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+            const string token = "td\u00ADsk_000000000000000000000000000000000000";
+
+            // Pin the counterexample as well as the result: reverting to the old
+            // overload would accept this prefix and return a lookup error instead.
+            token.StartsWith(ApiKey.KeyPrefix).Should().BeTrue();
+            token.StartsWith(ApiKey.KeyPrefix, StringComparison.Ordinal).Should().BeFalse();
+
+            await using var db = await CreateMigratedContextAsync();
+            var middleware = new ApiKeyMiddleware(
+                _ => throw new InvalidOperationException("a malformed key must not reach the endpoint"),
+                NullLogger<ApiKeyMiddleware>.Instance);
+            var context = CreateMcpContext(token);
+
+            await middleware.InvokeAsync(context, db);
+
+            context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+            (await ReadBodyAsync(context)).Should().Contain("Invalid API key format");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
     }
 
     [Fact]
