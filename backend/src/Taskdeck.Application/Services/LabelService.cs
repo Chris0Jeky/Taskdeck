@@ -10,6 +10,8 @@ namespace Taskdeck.Application.Services;
 
 public class LabelService
 {
+    private const string ArchivedBoardWriteMessage = "Cannot modify labels on an archived board. Restore the board before editing.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
     private readonly IHistoryService? _historyService;
@@ -54,6 +56,9 @@ public class LabelService
             if (board == null)
                 return Result.Failure<LabelDto>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId} not found");
 
+            if (board.IsArchived)
+                return Result.Failure<LabelDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+
             var label = new Label(dto.BoardId, dto.Name, dto.ColorHex);
             await _unitOfWork.Labels.AddAsync(label, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -82,6 +87,10 @@ public class LabelService
             var label = await _unitOfWork.Labels.GetByIdAsync(id, cancellationToken);
             if (label == null)
                 return Result.Failure<LabelDto>(ErrorCodes.NotFound, $"Label with ID {id} not found");
+
+            var board = await _unitOfWork.Boards.GetByIdAsync(label.BoardId, cancellationToken);
+            if (board?.IsArchived == true)
+                return Result.Failure<LabelDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             // Capture pre-mutation state for change summary
             var oldName = label.Name;
@@ -144,6 +153,10 @@ public class LabelService
         var label = await _unitOfWork.Labels.GetByIdAsync(id, cancellationToken);
         if (label == null)
             return Result.Failure(ErrorCodes.NotFound, $"Label with ID {id} not found");
+
+        var board = await _unitOfWork.Boards.GetByIdAsync(label.BoardId, cancellationToken);
+        if (board?.IsArchived == true)
+            return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
         await _unitOfWork.Labels.DeleteAsync(label, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

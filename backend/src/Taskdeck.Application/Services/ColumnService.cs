@@ -10,6 +10,8 @@ namespace Taskdeck.Application.Services;
 
 public class ColumnService
 {
+    private const string ArchivedBoardWriteMessage = "Cannot modify columns on an archived board. Restore the board before editing.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
     private readonly IHistoryService? _historyService;
@@ -44,6 +46,9 @@ public class ColumnService
             var board = await _unitOfWork.Boards.GetByIdAsync(dto.BoardId, cancellationToken);
             if (board == null)
                 return Result.Failure<ColumnDto>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId} not found");
+
+            if (board.IsArchived)
+                return Result.Failure<ColumnDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             // Determine position if not provided
             var position = dto.Position;
@@ -81,6 +86,10 @@ public class ColumnService
             var column = await _unitOfWork.Columns.GetByIdAsync(id, cancellationToken);
             if (column == null)
                 return Result.Failure<ColumnDto>(ErrorCodes.NotFound, $"Column with ID {id} not found");
+
+            var board = await _unitOfWork.Boards.GetByIdAsync(column.BoardId, cancellationToken);
+            if (board?.IsArchived == true)
+                return Result.Failure<ColumnDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             // Capture pre-mutation state for change summary
             var oldName = column.Name;
@@ -147,6 +156,8 @@ public class ColumnService
         if (target == null)
             return Result.Failure(ErrorCodes.NotFound, $"Column with ID {id} not found");
         var board = await _unitOfWork.Boards.GetByIdAsync(target.BoardId, cancellationToken);
+        if (board?.IsArchived == true)
+            return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
         var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(id, cancellationToken);
         if (column == null)
             return Result.Failure(ErrorCodes.NotFound, $"Column with ID {id} not found");
@@ -192,6 +203,9 @@ public class ColumnService
             var board = await _unitOfWork.Boards.GetByIdAsync(boardId, cancellationToken);
             if (board == null)
                 return Result.Failure<IEnumerable<ColumnDto>>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+
+            if (board.IsArchived)
+                return Result.Failure<IEnumerable<ColumnDto>>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             // Get all columns for the board
             var allColumns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId, cancellationToken);
@@ -249,6 +263,10 @@ public class ColumnService
             var column = await _unitOfWork.Columns.GetByIdAsync(columnId, cancellationToken);
             if (column == null)
                 return Result.Failure<ColumnDto>(ErrorCodes.NotFound, $"Column with ID {columnId} not found");
+
+            var board = await _unitOfWork.Boards.GetByIdAsync(column.BoardId, cancellationToken);
+            if (board?.IsArchived == true)
+                return Result.Failure<ColumnDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             var boardColumns = (await _unitOfWork.Columns.GetByBoardIdAsync(column.BoardId, cancellationToken))
                 .OrderBy(c => c.Position)
