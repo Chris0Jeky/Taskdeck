@@ -121,6 +121,10 @@ public class BoardAccessService : IBoardAccessService
             if (!canManage.IsSuccess)
                 return Result.Failure<BoardAccessDto>(canManage.ErrorCode, canManage.ErrorMessage);
 
+            var canManageExisting = await EnsureCanManageExistingAccessAsync(board, access, updatedBy);
+            if (!canManageExisting.IsSuccess)
+                return Result.Failure<BoardAccessDto>(canManageExisting.ErrorCode, canManageExisting.ErrorMessage);
+
             // Same ownership-transfer bar as the grant path: only an effective
             // owner may move a row to the Owner role.
             var canGrantRole = await EnsureCanGrantRoleAsync(board, updatedBy, dto.Role);
@@ -187,6 +191,10 @@ public class BoardAccessService : IBoardAccessService
         if (!canManage.IsSuccess)
             return Result.Failure<IReadOnlyList<Guid>>(canManage.ErrorCode, canManage.ErrorMessage);
 
+        var canManageExisting = await EnsureCanManageExistingAccessAsync(board, access, revokedBy);
+        if (!canManageExisting.IsSuccess)
+            return Result.Failure<IReadOnlyList<Guid>>(canManageExisting.ErrorCode, canManageExisting.ErrorMessage);
+
         IReadOnlyList<Card> detachedCards = [];
         if (board.OwnerId != access.UserId && _assignments is not null)
             detachedCards = await _assignments.StageDetachAsync(access.UserId, boardId, revokedBy, "access-revoked");
@@ -232,6 +240,14 @@ public class BoardAccessService : IBoardAccessService
             return await _unitOfWork.Users.GetByEmailAsync(trimmed);
 
         return await _unitOfWork.Users.GetByUsernameAsync(trimmed);
+    }
+
+    private Task<Result> EnsureCanManageExistingAccessAsync(Board board, BoardAccess access, Guid actingUserId)
+    {
+        // Protect the effective role before mutation, not only the requested new role.
+        // The primary owner stays an Owner even if a redundant access row says otherwise.
+        var effectiveRole = access.UserId == board.OwnerId ? UserRole.Owner : access.Role;
+        return EnsureCanGrantRoleAsync(board, actingUserId, effectiveRole);
     }
 
     /// <summary>
