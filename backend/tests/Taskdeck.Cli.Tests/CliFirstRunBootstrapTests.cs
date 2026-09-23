@@ -191,6 +191,28 @@ public class CliFirstRunBootstrapTests
     }
 
     [Fact]
+    public void EnsureConnectorEncryptionKey_WithCorruptLocalConfig_PreservesCorruptSibling()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        const string corruptContent = "{ this is not valid json";
+        File.WriteAllText(localConfig, corruptContent);
+
+        var configuration = BuildConfiguration(temp.DatabasePath);
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        // A fresh key is persisted...
+        var key = configuration["Connectors:EncryptionKey"];
+        key.Should().NotBeNullOrWhiteSpace();
+        ReadPersistedKey(localConfig).Should().Be(key);
+
+        // ...and the corrupt original survives byte-faithful in a .corrupt-* sibling.
+        var backups = System.IO.Directory.GetFiles(temp.Directory, "appsettings.local.json.corrupt-*");
+        backups.Should().ContainSingle();
+        File.ReadAllText(backups[0]).Should().Be(corruptContent);
+    }
+
+    [Fact]
     public void GenerateKey_ProducesBase64EncodedTwoFiftySixBitKey()
     {
         var key = CliFirstRunBootstrapper.GenerateKey();

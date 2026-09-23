@@ -365,12 +365,27 @@ internal static class CliFirstRunBootstrapper
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
-            // No logger at this pre-DI stage. Warn on stderr and start fresh rather
-            // than silently discarding the corrupt file.
-            Console.Error.WriteLine(
-                $"[CliFirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
-                $"Details: {ex.Message}");
-            return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: false);
+            // No logger at this pre-DI stage. Preserve the corrupt file to a
+            // timestamped .corrupt-* sibling (it may hold a recoverable key) before
+            // starting fresh -- mirroring the API's PreserveCorruptConfig. If the
+            // backup itself cannot be created, fail closed: keep the original and
+            // run this invocation on a transient key rather than clobbering evidence.
+            try
+            {
+                var backupPath = PreserveCorruptConfig(path, text);
+                Console.Error.WriteLine(
+                    $"[CliFirstRun] WARNING: {path} contains invalid JSON ({ex.Message}). " +
+                    $"The original was preserved at {backupPath} and a fresh key will be generated.");
+                return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: false);
+            }
+            catch (Exception backupEx) when (backupEx is IOException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine(
+                    $"[CliFirstRun] WARNING: {path} contains invalid JSON and the corrupt original " +
+                    $"could not be preserved ({backupEx.Message}). Keeping the original and using a " +
+                    "transient in-memory key for this run.");
+                return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: true);
+            }
         }
 
         // Type-safe extraction: a non-string EncryptionKey value (e.g. a number)
@@ -381,6 +396,19 @@ internal static class CliFirstRunBootstrapper
                 : null;
 
         return new ExistingConfig(root, key, PreserveFile: false);
+    }
+
+    /// <summary>
+    /// Backs up an unparsable config file to a timestamped <c>.corrupt-*</c> sibling with
+    /// owner-only permissions before it is rewritten, so a previously-generated secret it may
+    /// still hold is recoverable by an operator instead of being silently overwritten.
+    /// Returns the backup path.
+    /// </summary>
+    private static string PreserveCorruptConfig(string path, string content)
+    {
+        var backupPath = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
+        RestrictedFileWriter.WriteRestrictedFile(backupPath, content);
+        return backupPath;
     }
 
     private static void PersistKey(string path, JsonObject root, string key)
