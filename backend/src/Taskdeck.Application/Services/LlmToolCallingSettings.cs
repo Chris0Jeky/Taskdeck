@@ -24,4 +24,13 @@ public class LlmToolCallingSettings
     /// </summary>
     [Range(0, 1_000_000, ErrorMessage = "MaxToolResultBytes must be between 0 and 1000000.")]
     public int MaxToolResultBytes { get; set; } = 8_000;
+
+    /// <summary>
+    /// Maximum number of session messages included in a completion request.
+    /// Long sessions send only the most recent messages (sliding window), keeping
+    /// prompts within the provider context window and bounding per-turn cost.
+    /// The system prompt travels separately and is unaffected. Default is 50.
+    /// </summary>
+    [Range(1, 1_000, ErrorMessage = "MaxHistoryMessages must be between 1 and 1000.")]
+    public int MaxHistoryMessages { get; set; } = 50;
 }
