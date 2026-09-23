@@ -1,0 +1,64 @@
+# Authoring proposal, not a run receipt. Schema authority: agent-harness PR 289.
+schema: ux-scenario-pack/0
+pack_id: taskdeck-experience-continuity
+status: draft
+authority: advisory
+gate_eligible: false
+local_only: true
+subject:
+  repository: Chris0Jeky/Taskdeck
+  source_revision: 622d9d820f48e68ac7fa77d94c9ca2536155ddf8
+journeys:
+- id: unsaved-thought-continuity
+  goal: Keep an unsaved thought while switching workspace experience; save only after an explicit action.
+  fixture_ref: 'Taskdeck frontend/taskdeck-web/tests/e2e/workspace-overhaul.spec.ts: setup / keeps Home
+    capture and saved thinking across all experience combinations'
+  preconditions:
+  - Use an isolated local E2E backend and unique synthetic account/board through existing authSession
+    and boardHelpers helpers.
+  - Record exact build/configuration and baseline capture, proposal, board-card and provider-call counters.
+    Abort if the counters needed to prove zero-effects are unavailable.
+  - Use one browser controller and a fresh profile. Do not reuse a personal database, cloud browser or
+    live provider.
+  steps:
+  - id: draft
+    action: At /workspace/home, fill LEAVE A THOUGHT HERE with A question worth keeping exactly as written.
+    assertions:
+    - The draft field retains the exact text; no Save to Inbox action has occurred.
+    evidence_required:
+    - action_log
+    - screenshot
+    - network_summary
+  - id: switch
+    action: Switch Workspace experience through classic, companion, unified and studio without saving.
+    assertions:
+    - The same account and route remain; the draft text is unchanged.
+    - Capture, proposal, approval, execution, board-card and provider-call counters have zero unexpected
+      delta attributable to switching.
+    evidence_required:
+    - action_log
+    - trace
+    - network_summary
+    - persisted_state
+  - id: save
+    action: Select Save to Inbox once; observe its response, then reload and inspect the saved capture
+      using the existing fixture API.
+    assertions:
+    - Exactly one capture with the original text exists; the input clears after successful save.
+    - No proposal was implicitly approved or applied; the board-card baseline is unchanged.
+    evidence_required:
+    - action_log
+    - screenshot
+    - network_summary
+    - persisted_state
+  rubric_dimensions:
+  - effectiveness
+  - usability
+  - simplicity
+  - clarity
+  - feel
+  budget:
+    max_actions: 40
+    max_seconds: 600
+    max_judge_calls: 1
+    max_retries: 0
