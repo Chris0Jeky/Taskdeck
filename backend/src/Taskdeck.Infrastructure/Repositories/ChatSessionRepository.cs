@@ -113,9 +113,13 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
     /// Set-based (<see cref="EntityFrameworkQueryableExtensions.ExecuteDeleteAsync{TSource}"/>):
     /// no rows are loaded, so unlike the old per-session loop this cannot silently stop at a
     /// fetch cap. Bypasses the change tracker like the other batched account-deletion deletes.
+    /// Write-lock retried like tracked saves: set-based statements bypass SaveChanges, so the
+    /// shared SQLite retry keeps a contended writer slot from surfacing SQLITE_BUSY.
     /// </remarks>
     public Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
-        => _dbSet.Where(session => session.UserId == userId).ExecuteDeleteAsync(cancellationToken);
+        => SqliteWriteResilience.ExecuteWithWriteLockRetryAsync(
+            ct => _dbSet.Where(session => session.UserId == userId).ExecuteDeleteAsync(ct),
+            cancellationToken);
 
     private static async Task<IReadOnlyList<ChatSession>> GetLimitedOrderedByUpdatedAtAsync(
         IQueryable<ChatSession> query,
