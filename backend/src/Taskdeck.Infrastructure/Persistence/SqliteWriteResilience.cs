@@ -7,11 +7,12 @@ namespace Taskdeck.Infrastructure.Persistence;
 /// writer locks. Mirrors the retry policy embedded in UnitOfWork.SaveChangesAsync: those
 /// statements bypass SaveChanges, so without this wrapper a contended writer slot surfaces
 /// SQLITE_BUSY as a failure instead of riding out the lock like tracked saves do.
-/// Follow-up: unify with the UnitOfWork.SaveChangesAsync private retry instead of mirroring it.
+/// UnitOfWork.SaveChangesAsync shares this same policy (detection, attempts, backoff)
+/// so there is exactly one definition of a transient SQLite write lock.
 /// </summary>
 public static class SqliteWriteResilience
 {
-    private const int MaxWriteLockRetries = 5;
+    internal const int MaxWriteLockRetries = 5;
 
     public static async Task<T> ExecuteWithWriteLockRetryAsync<T>(
         Func<CancellationToken, Task<T>> operation,
@@ -53,7 +54,7 @@ public static class SqliteWriteResilience
         return false;
     }
 
-    private static TimeSpan GetWriteLockRetryDelay(int attempt)
+    internal static TimeSpan GetWriteLockRetryDelay(int attempt)
     {
         var multiplier = attempt + 1;
         return TimeSpan.FromMilliseconds(25 * multiplier * multiplier);

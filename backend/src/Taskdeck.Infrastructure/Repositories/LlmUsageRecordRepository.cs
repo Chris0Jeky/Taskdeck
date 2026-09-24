@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -133,7 +132,7 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
         // write waits/retries rather than surfacing SQLITE_BUSY as a 500 (#1282 parity). A retried
         // attempt re-uses the same reservationId — a prior failed attempt inserted nothing, so no dup.
         var reservationId = Guid.NewGuid();
-        var affected = await WithSqliteWriteRetryAsync(async () =>
+        var affected = await SqliteWriteResilience.ExecuteWithWriteLockRetryAsync(async _ =>
         {
             // Sweep stale reservations (age-based expiry) so the table cannot grow without bound.
             // Correctness does not depend on it — the live predicate below already ignores expired rows.
@@ -226,47 +225,6 @@ WHERE ({requestsPerHour} <= 0 OR (
         return await _context.Database.SqlQuery<long>(sql).SingleAsync(cancellationToken);
     }
 
-    private const int MaxSqliteWriteLockRetries = 5;
-
-    // Mirrors UnitOfWork.SaveChangesAsync's transient-lock handling for the raw-SQL reservation writes:
-    // a contended write waits and retries with backoff instead of surfacing SQLITE_BUSY as a 500 (#1282).
-    private static async Task<T> WithSqliteWriteRetryAsync<T>(
-        Func<Task<T>> operation, CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; ; attempt++)
-        {
-            try
-            {
-                return await operation();
-            }
-            catch (Exception ex) when (attempt < MaxSqliteWriteLockRetries && IsTransientSqliteWriteLock(ex))
-            {
-                var multiplier = attempt + 1;
-                await Task.Delay(TimeSpan.FromMilliseconds(25 * multiplier * multiplier), cancellationToken);
-            }
-        }
-    }
-
-    private static bool IsTransientSqliteWriteLock(Exception exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is SqliteException sqliteException
-                && (sqliteException.SqliteErrorCode == 5 || sqliteException.SqliteErrorCode == 6))
-            {
-                return true;
-            }
-
-            if (current.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
-                || current.Message.Contains("database table is locked", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     public async Task<QuotaCommitResult> CommitReservationAsync(
         Guid reservationId,
         Guid userId,
@@ -298,8 +256,8 @@ WHERE ({requestsPerHour} <= 0 OR (
         // no-op if the row was already released or swept. Raw SQL keeps the caller's shared change
         // tracker (e.g. the chat message being composed) from flushing early. Retried on a transient
         // write lock for #1282 parity with the SaveChanges path this replaced.
-        var affected = await WithSqliteWriteRetryAsync(
-            () => _context.Database.ExecuteSqlInterpolatedAsync(
+        var affected = await SqliteWriteResilience.ExecuteWithWriteLockRetryAsync(
+            _ => _context.Database.ExecuteSqlInterpolatedAsync(
                 $"UPDATE LlmUsageRecords SET Status = {StatusCommitted}, ExpiresAt = NULL, Provider = {safeProvider}, Model = {safeModel}, InputTokens = {safeInput}, OutputTokens = {safeOutput}, UpdatedAt = {now} WHERE Id = {reservationId} AND Status = {StatusReserved}",
                 cancellationToken),
             cancellationToken);
@@ -311,8 +269,8 @@ WHERE ({requestsPerHour} <= 0 OR (
         // in flight), the tokens were still genuinely billed — insert a replacement Committed row so
         // real usage is never dropped from quota or telemetry. The NOT EXISTS guard on the same id makes
         // this a no-op for the already-settled case, so a duplicate commit cannot double-count.
-        var recovered = await WithSqliteWriteRetryAsync(
-            () => _context.Database.ExecuteSqlInterpolatedAsync(
+        var recovered = await SqliteWriteResilience.ExecuteWithWriteLockRetryAsync(
+            _ => _context.Database.ExecuteSqlInterpolatedAsync(
                 $@"INSERT INTO LlmUsageRecords
 (Id, UserId, Surface, Provider, Model, InputTokens, OutputTokens, Status, ExpiresAt, CreatedAt, UpdatedAt)
 SELECT {reservationId}, {userId}, {surfaceValue}, {safeProvider}, {safeModel}, {safeInput}, {safeOutput}, {StatusCommitted}, NULL, {now}, {now}
@@ -334,8 +292,8 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
             return await ReleaseReservationNonSqliteAsync(reservationId, cancellationToken);
         }
 
-        var affected = await WithSqliteWriteRetryAsync(
-            () => _context.Database.ExecuteSqlInterpolatedAsync(
+        var affected = await SqliteWriteResilience.ExecuteWithWriteLockRetryAsync(
+            _ => _context.Database.ExecuteSqlInterpolatedAsync(
                 $"DELETE FROM LlmUsageRecords WHERE Id = {reservationId} AND Status = {StatusReserved}",
                 cancellationToken),
             cancellationToken);
