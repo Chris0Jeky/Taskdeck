@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Health;
@@ -51,7 +52,14 @@ public static class ApplicationServiceRegistration
         services.AddScoped<UserService>();
         services.AddScoped<BoardAccessService>();
         services.AddScoped<IBoardJsonExportImportService, BoardJsonExportImportService>();
-        services.AddScoped<IDatabaseFileExportImportService, DatabaseFileExportImportService>();
+        services.AddScoped<IDatabaseFileExportImportService>(sp =>
+            new DatabaseFileExportImportService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetRequiredService<IWebHostEnvironment>().EnvironmentName,
+                sp.GetRequiredService<DevelopmentSandboxSettings>(),
+                sp.GetRequiredService<DatabaseExportImportSettings>(),
+                sp.GetService<IHistoryService>(),
+                sp.GetService<ILogger<DatabaseFileExportImportService>>()));
         services.AddScoped<IExportImportService>(sp =>
             new ExportImportService(
                 sp.GetRequiredService<IBoardJsonExportImportService>(),

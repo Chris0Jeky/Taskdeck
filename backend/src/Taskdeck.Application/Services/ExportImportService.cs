@@ -25,15 +25,18 @@ public class ExportImportService : IExportImportService
     /// <summary>
     /// Backward-compatible convenience constructor that creates the
     /// underlying services directly. Intended for use in tests and
-    /// non-DI contexts only.
+    /// non-DI contexts only; production resolves through DI, which supplies
+    /// the host environment name. Defaults to Development, matching the
+    /// environment those callers run in.
     /// </summary>
     public ExportImportService(
         IUnitOfWork unitOfWork,
         DevelopmentSandboxSettings? sandboxSettings = null,
-        DatabaseExportImportSettings? databaseSettings = null)
+        DatabaseExportImportSettings? databaseSettings = null,
+        string environmentName = "Development")
         : this(
             new BoardJsonExportImportService(unitOfWork, sandboxSettings),
-            new DatabaseFileExportImportService(unitOfWork, sandboxSettings, databaseSettings))
+            new DatabaseFileExportImportService(unitOfWork, environmentName, sandboxSettings, databaseSettings))
     {
     }
 
