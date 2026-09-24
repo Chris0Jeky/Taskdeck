@@ -433,6 +433,8 @@ public class AuthenticationService : IAuthenticationService
 
             var newHash = _passwordHasher.HashPassword(newPassword);
             user.UpdatePassword(newHash);
+            // Revoke outstanding JWTs issued before this password change (#3408).
+            user.InvalidateTokens();
 
             await _unitOfWork.SaveChangesAsync();
             return Result.Success();
