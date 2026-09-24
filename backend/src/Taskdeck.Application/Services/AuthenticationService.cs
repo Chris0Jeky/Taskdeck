@@ -15,6 +15,15 @@ public class AuthenticationService : IAuthenticationService
 {
     private const string InvalidCredentialsMessage = "Invalid username/email or password";
 
+    /// <summary>
+    /// Fixed non-credential BCrypt hash (default cost) used only for timing
+    /// equalization on the unknown-identifier login path. Verifying against it
+    /// costs the same as a real password check, so absent identifiers are not
+    /// measurably faster than present ones (#3426). It is not a credential and
+    /// must never be stored on a user record.
+    /// </summary>
+    private const string DummyTimingHash = "$2a$11$ag26S4CHpAXHiBbO7Iy56uyiOZOl2MpQJXc4ik1dsKhaj2wCcXbuy";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtSettings _jwtSettings;
     private readonly IRegistrationPolicyService _registrationPolicy;
@@ -45,7 +54,13 @@ public class AuthenticationService : IAuthenticationService
 
             var users = await ResolveLoginCandidatesAsync(loginIdentifier);
             if (users.Count == 0)
+            {
+                // Equalize timing with the known-identifier path, which always pays
+                // at least one BCrypt verify. The result is discarded; the outcome,
+                // error code, and message are unchanged (#3426).
+                _passwordHasher.VerifyPassword(dto.Password ?? string.Empty, DummyTimingHash);
                 return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, InvalidCredentialsMessage);
+            }
 
             User? authenticatedUser = null;
             var hasInactivePasswordMatch = false;
