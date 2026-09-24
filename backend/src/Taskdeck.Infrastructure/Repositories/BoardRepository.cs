@@ -171,6 +171,16 @@ public class BoardRepository : Repository<Board>, IBoardRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<Board>> GetByOwnerIdAsync(Guid ownerId, CancellationToken cancellationToken = default)
+    {
+        var boards = await _dbSet
+            .AsNoTracking()
+            .Where(board => board.OwnerId == ownerId)
+            .ToListAsync(cancellationToken);
+
+        return boards.OrderByDescending(board => board.CreatedAt);
+    }
+
     public async Task<Board?> GetByIdWithDetailsAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _dbSet

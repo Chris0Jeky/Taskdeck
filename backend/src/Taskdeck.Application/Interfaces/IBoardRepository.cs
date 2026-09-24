@@ -32,6 +32,8 @@ public interface IBoardRepository : IRepository<Board>
     Task<IEnumerable<Guid>> SearchIdsAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default);
     Task<IEnumerable<Board>> GetByIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);
     Task<IEnumerable<Guid>> GetOwnedBoardIdsAsync(Guid userId, IEnumerable<Guid> candidateBoardIds, CancellationToken cancellationToken = default);
+    /// <summary>Lists all boards whose <c>OwnerId</c> is the given user (the board-creation ownership, distinct from Owner access rows).</summary>
+    Task<IEnumerable<Board>> GetByOwnerIdAsync(Guid ownerId, CancellationToken cancellationToken = default);
     Task<Board?> GetByIdWithDetailsAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>

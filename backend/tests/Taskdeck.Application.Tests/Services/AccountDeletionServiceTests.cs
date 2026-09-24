@@ -711,6 +711,31 @@ public class AccountDeletionServiceTests
         result.Value.ApiKeysDeleted.Should().Be(0);
     }
 
+    [Fact]
+    public async Task DeleteAccountAsync_RefusesDeletion_WhenUserOwnsBoardsViaOwnerId()
+    {
+        // Arrange - #3400/#3425: board creation sets only Board.OwnerId, so the sole-owner
+        // guard must also fire for outright-owned boards or they are orphaned permanently.
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var ownedBoard = new Board("my-board", ownerId: _userId);
+        _boardRepoMock
+            .Setup(r => r.GetByOwnerIdAsync(_userId, default))
+            .ReturnsAsync(new[] { ownedBoard });
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain("my-board");
+        _boardRepoMock.Verify(r => r.GetByOwnerIdAsync(_userId, default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+    }
+
     private void SetupUserFound()
     {
         _userRepoMock.Setup(r => r.GetByIdAsync(_userId, default)).ReturnsAsync(_testUser);
@@ -753,5 +778,8 @@ public class AccountDeletionServiceTests
         _apiKeyRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<ApiKey>());
+        _boardRepoMock
+            .Setup(r => r.GetByOwnerIdAsync(_userId, default))
+            .ReturnsAsync(Enumerable.Empty<Board>());
     }
 }
