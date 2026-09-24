@@ -44,7 +44,8 @@ public class ArchivedBoardResourceApiTests
         archive.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var denied = await MutateAsync(client, operation, board.Id, column!.Id, label!.Id, reorderIds);
-        await ApiTestHarness.AssertErrorContractAsync(denied, HttpStatusCode.BadRequest, "InvalidOperation");
+        // InvalidOperation is the existing 409 state-conflict contract, not input validation (400).
+        await ApiTestHarness.AssertErrorContractAsync(denied, HttpStatusCode.Conflict, "InvalidOperation");
         (await denied.Content.ReadAsStringAsync()).Should().Contain("Restore the board");
         var columnsAfter = await client.GetFromJsonAsync<List<ColumnDto>>($"/api/boards/{board.Id}/columns");
         var labelsAfter = await client.GetFromJsonAsync<List<LabelDto>>($"/api/boards/{board.Id}/labels");
