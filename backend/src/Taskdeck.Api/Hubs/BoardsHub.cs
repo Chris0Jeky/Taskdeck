@@ -40,18 +40,18 @@ public class BoardsHub : Hub
 
     public async Task LeaveBoard(Guid boardId)
     {
-        var (userId, _) = ResolveCurrentUser();
+        // Leaving is always safe: no read-access check. A revoked member must be
+        // able to leave voluntarily (#3420/#3407). Authentication is still required.
+        _ = ResolveCurrentUser();
 
-        var permission = await _authorizationService.CanReadBoardAsync(userId, boardId);
-        if (!permission.IsSuccess)
-            throw new HubException($"{permission.ErrorCode}:{permission.ErrorMessage}");
-
-        if (!permission.Value)
-            throw new HubException($"{ErrorCodes.Forbidden}:You do not have access to this board");
-
+        // Removal is unconditional (idempotent self-heal for evicted connections),
+        // but only members trigger a presence broadcast, so arbitrary callers
+        // cannot spam arbitrary boards' groups (#3420/#3407).
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, BoardHubGroups.ForBoard(boardId));
+        var wasMember = _presenceTracker.IsConnectionJoinedBoard(Context.ConnectionId, boardId);
         var presence = _presenceTracker.Leave(boardId, Context.ConnectionId);
-        await PublishPresenceSnapshotAsync(presence);
+        if (wasMember)
+            await PublishPresenceSnapshotAsync(presence);
     }
 
     public async Task SetEditingCard(Guid boardId, Guid? cardId)

@@ -30,9 +30,10 @@ export const STALE_PROPOSAL_MS = 24 * 60 * 60 * 1000
  * is visible (#2194).
  *
  * There is nothing to subscribe to: the only SignalR hub is `BoardsHub`
- * (`/hubs/boards`), its groups are strictly per-board, and it emits exactly
+ * (`/hubs/boards`), its groups are strictly per-board, and it emits
  * `boardMutation` / `boardPresence` / `toolStatus` over board/card/column/label
- * entities. `AutomationProposalService` never touches `IBoardRealtimeNotifier`,
+ * entities (plus direct `accessRevoked` notices to evicted connections, #3420).
+ * `AutomationProposalService` never touches `IBoardRealtimeNotifier`,
  * so proposal creation is silent on the wire and the all-boards review queue has
  * no board group to join in the first place. A bounded poll is therefore the
  * whole available mechanism until a proposal event exists server-side.

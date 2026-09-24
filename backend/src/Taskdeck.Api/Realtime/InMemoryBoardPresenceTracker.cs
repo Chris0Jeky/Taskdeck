@@ -43,7 +43,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
         {
             if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
             {
-                return new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow);
+                return EmptySnapshot(boardId);
             }
 
             if (boardConnections.Remove(connectionId))
@@ -52,12 +52,49 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
             if (boardConnections.Count == 0)
             {
                 _connectionsByBoard.Remove(boardId);
-                return new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow);
+                return EmptySnapshot(boardId);
             }
 
             return CreateSnapshot(boardId, boardConnections);
         }
     }
+
+    public BoardPresenceEviction EvictUser(Guid boardId, Guid userId)
+    {
+        lock (_gate)
+        {
+            if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
+            {
+                return new BoardPresenceEviction(
+                    EmptySnapshot(boardId),
+                    []);
+            }
+
+            var evicted = boardConnections
+                .Where(pair => pair.Value.UserId == userId)
+                .Select(pair => pair.Key)
+                .ToList();
+
+            foreach (var connectionId in evicted)
+            {
+                boardConnections.Remove(connectionId);
+                _boardByConnection.Remove(connectionId);
+            }
+
+            if (boardConnections.Count == 0)
+            {
+                _connectionsByBoard.Remove(boardId);
+                return new BoardPresenceEviction(
+                    EmptySnapshot(boardId),
+                    evicted);
+            }
+
+            return new BoardPresenceEviction(CreateSnapshot(boardId, boardConnections), evicted);
+        }
+    }
+
+    private static BoardPresenceSnapshot EmptySnapshot(Guid boardId) =>
+        new(boardId, [], DateTimeOffset.UtcNow);
 
     public BoardPresenceSnapshot? LeaveConnection(string connectionId)
     {
