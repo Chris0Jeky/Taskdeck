@@ -513,29 +513,32 @@ public class AuthenticationServiceEdgeCaseTests
     }
 
     [Fact]
-    public async Task PasswordChange_DoesNotInvalidateExistingTokens()
+    public async Task PasswordChange_RejectsTokensIssuedBeforeTheChange()
     {
-        // Current behavior: password change does NOT set TokenInvalidatedAt.
-        // Existing JWTs remain valid until natural expiry. Document this behavior.
-        var oldPassword = "oldPassword1";
-        var newPassword = "newPassword1";
-        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword(oldPassword));
+        // #3408: ValidateTokenAsync must reject tokens issued before the
+        // password-change invalidation cutoff, mirroring TokenValidationMiddleware.
+        // The pre-change token is crafted with a backdated iat so the test does
+        // not depend on wall-clock second boundaries.
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("oldPassword1"));
         var service = CreateService();
 
-        _userRepoMock.Setup(r => r.GetByUsernameAsync("testuser", default)).ReturnsAsync(user);
         _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
 
-        // Get a token before password change
-        var loginResult = await service.LoginAsync(new LoginDto("testuser", oldPassword));
-        loginResult.IsSuccess.Should().BeTrue();
+        var staleToken = CreateTokenWithIssuedAt(user, DateTime.UtcNow.AddHours(-1));
 
-        // Change password
-        var changeResult = await service.ChangePasswordAsync(user.Id, oldPassword, newPassword);
+        var changeResult = await service.ChangePasswordAsync(user.Id, "oldPassword1", "newPassword1");
         changeResult.IsSuccess.Should().BeTrue();
 
-        // Validate old token — it should still work (TokenInvalidatedAt not set)
-        var validateResult = await service.ValidateTokenAsync(loginResult.Value.Token);
-        validateResult.IsSuccess.Should().BeTrue();
+        var staleResult = await service.ValidateTokenAsync(staleToken);
+        staleResult.IsSuccess.Should().BeFalse();
+        staleResult.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
+
+        // A token minted after the change still validates.
+        _userRepoMock.Setup(r => r.GetByUsernameAsync("testuser", default)).ReturnsAsync(user);
+        var loginResult = await service.LoginAsync(new LoginDto("testuser", "newPassword1"));
+        loginResult.IsSuccess.Should().BeTrue();
+        var freshResult = await service.ValidateTokenAsync(loginResult.Value.Token);
+        freshResult.IsSuccess.Should().BeTrue();
     }
 
     // ─────────────────────────────────────────────────────────
@@ -594,6 +597,27 @@ public class AuthenticationServiceEdgeCaseTests
         // With the fix, GUID fallback no longer throws — user is created successfully
         result.IsSuccess.Should().BeTrue();
         result.Value.User.Username.Should().StartWith("popular-");
+    }
+
+    private static string CreateTokenWithIssuedAt(User user, DateTime issuedAtUtc)
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(DefaultJwtSettings.SecretKey));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer: DefaultJwtSettings.Issuer,
+            audience: DefaultJwtSettings.Audience,
+            claims: new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new Claim(
+                    JwtRegisteredClaimNames.Iat,
+                    new DateTimeOffset(issuedAtUtc).ToUnixTimeSeconds().ToString(),
+                    ClaimValueTypes.Integer64)
+            },
+            notBefore: issuedAtUtc,
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: credentials);
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private AuthenticationService CreateService(JwtSettings? jwtSettings = null)

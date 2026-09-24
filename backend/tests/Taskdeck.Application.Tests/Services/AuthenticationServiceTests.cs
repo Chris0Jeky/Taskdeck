@@ -339,6 +339,39 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task ChangePasswordAsync_ShouldInvalidateOutstandingTokens_WhenPasswordChanged()
+    {
+        // Regression test for #3408/#3418: tokens issued before a password change
+        // must stop authenticating. ChangePasswordAsync stamps TokenInvalidatedAt;
+        // TokenValidationMiddleware (already covered) rejects tokens with iat < cutoff.
+        var service = CreateService();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ChangePasswordAsync(user.Id, "password123", "newpassword123");
+
+        result.IsSuccess.Should().BeTrue();
+        user.TokenInvalidatedAt.Should().NotBeNull("a password change must invalidate outstanding tokens");
+        user.TokenInvalidatedAt!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_ShouldNotInvalidateTokens_WhenCurrentPasswordIsWrong()
+    {
+        var service = CreateService();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ChangePasswordAsync(user.Id, "wrongpassword", "newpassword123");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
+        user.TokenInvalidatedAt.Should().BeNull("a failed password change must not revoke live sessions");
+    }
+
+    [Fact]
     public async Task ValidateTokenAsync_ShouldReturnUser_WhenTokenIsValid()
     {
         var service = CreateService();
