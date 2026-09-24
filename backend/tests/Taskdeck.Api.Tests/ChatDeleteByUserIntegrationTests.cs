@@ -139,9 +139,9 @@ public sealed class ChatDeleteByUserIntegrationTests
                 if (File.Exists(path))
                     File.Delete(path);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
-                // Best-effort temp cleanup; a leaked handle is not a test failure.
+                // Best-effort temp cleanup; a leaked/locked handle is not a test failure.
             }
         }
     }

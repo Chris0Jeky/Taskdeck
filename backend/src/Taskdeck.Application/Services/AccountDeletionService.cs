@@ -183,8 +183,11 @@ public class AccountDeletionService : IAccountDeletionService
 
             // 4. Anonymize chat sessions — delete messages and sessions. Set-based deletes:
             // the old per-session/per-message loop issued 1+N queries plus a tracked delete per
-            // row, and silently kept every session past the 100k fetch cap. Messages go first
-            // (no cascade), then sessions; both report exact counts for the receipt.
+            // row, and silently kept every session past the 100k fetch cap. Order is load-bearing:
+            // messages must go first because there is no message cascade, so deleting sessions
+            // first would FK-violate (or orphan, if constraints are ever relaxed). The receipt
+            // only carries the session count, which ExecuteDeleteAsync reports exactly; the
+            // message count was never a receipt field and stays discarded.
             _ = await _unitOfWork.ChatMessages.DeleteByUserIdAsync(userId, cancellationToken);
             var chatSessionsAnonymized = await _unitOfWork.ChatSessions.DeleteByUserIdAsync(userId, cancellationToken);
 
