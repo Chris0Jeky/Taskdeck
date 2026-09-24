@@ -57,6 +57,33 @@ public class NotificationService : INotificationService
             query.BoardId,
             cancellationToken);
 
+        if (!query.BoardId.HasValue && _authorizationService is not null)
+        {
+            // The unfiltered list must not leak board-scoped notifications for
+            // boards the user can no longer read (#3421). Board-less
+            // notifications (e.g. system) are unaffected.
+            var scopedBoardIds = notifications
+                .Select(n => n.BoardId)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+
+            if (scopedBoardIds.Count > 0)
+            {
+                var readableBoards = await _authorizationService.GetReadableBoardIdsAsync(
+                    userId, scopedBoardIds, cancellationToken);
+                if (!readableBoards.IsSuccess)
+                    return Result.Failure<IEnumerable<NotificationDto>>(
+                        readableBoards.ErrorCode, readableBoards.ErrorMessage);
+
+                var readable = readableBoards.Value;
+                notifications = notifications
+                    .Where(n => !n.BoardId.HasValue || readable.Contains(n.BoardId.Value))
+                    .ToList();
+            }
+        }
+
         return Result.Success(notifications.Select(MapToDto));
     }
 
