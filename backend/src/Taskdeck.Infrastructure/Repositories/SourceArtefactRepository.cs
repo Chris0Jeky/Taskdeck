@@ -102,8 +102,8 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
                     return ArtefactStoreResult.BoardAccessDenied;
             }
 
-            var usedBytes = await GetTotalByteSizeByUserAsync(artefact.UserId, cancellationToken);
-            if (usedBytes > quotaBytes - artefact.ByteSize)
+            if (await ExceedsArtefactQuotaAsync(
+                    artefact.UserId, artefact.ByteSize, quotaBytes, null, cancellationToken))
                 return ArtefactStoreResult.QuotaExceeded;
 
             BlobReference reference;
@@ -126,6 +126,166 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             await _context.SaveChangesAsync(cancellationToken);
             return ArtefactStoreResult.Stored;
         }, cancellationToken);
+    }
+
+    public async Task<StreamingArtefactStoreOutcome> TryAddStreamWithinQuotaAsync(
+        StreamingArtefactWrite write,
+        long quotaBytes,
+        CancellationToken cancellationToken = default)
+    {
+        if (_context.Database.CurrentTransaction is not null)
+            throw new InvalidOperationException(
+                "Streaming source uploads require their own short reservation and finalization transactions.");
+        var acquisition = new BlobAcquisition(write.UserId, ToModality(write.Kind),
+            write.ExpectedByteSize, nameof(SourceArtefact), write.ArtefactId);
+        var reservation = await ExecuteInImmediateWriteTransactionAsync(async () =>
+        {
+            var access = await CheckStreamWriteAccessAsync(write, cancellationToken);
+            if (access != ArtefactStoreResult.Stored)
+                return (Result: access, ReservationId: (Guid?)null);
+            if (await ExceedsArtefactQuotaAsync(write.UserId, write.ExpectedByteSize,
+                    quotaBytes, null, cancellationToken))
+                return (Result: ArtefactStoreResult.QuotaExceeded, ReservationId: (Guid?)null);
+            try
+            {
+                // Reserve under a short write lock, then release it before reading Request.Body.
+                var id = await _blobStore.ReserveAsync(
+                    acquisition, DateTime.UtcNow.AddMinutes(5), cancellationToken);
+                return (Result: ArtefactStoreResult.Stored, ReservationId: (Guid?)id);
+            }
+            catch (DomainException error) when (error.ErrorCode == ErrorCodes.PayloadTooLarge)
+            {
+                return (Result: ArtefactStoreResult.QuotaExceeded, ReservationId: (Guid?)null);
+            }
+        }, cancellationToken);
+
+        if (reservation.ReservationId is not Guid reservationId)
+            return new StreamingArtefactStoreOutcome(reservation.Result, null);
+
+        try
+        {
+            await using var spool = CreateUploadSpool(reservationId);
+            var buffer = new byte[64 * 1024];
+            long received = 0;
+            while (true)
+            {
+                var requested = received < write.ExpectedByteSize
+                    ? (int)Math.Min(buffer.Length, write.ExpectedByteSize - received)
+                    : 1;
+                var count = await write.Content.ReadAsync(buffer.AsMemory(0, requested), cancellationToken);
+                if (count == 0) break;
+                received += count;
+                if (received > write.ExpectedByteSize)
+                    throw new DomainException(ErrorCodes.PayloadTooLarge, "The upload exceeded its declared size.");
+                await spool.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
+            }
+            if (received != write.ExpectedByteSize)
+                throw new DomainException(ErrorCodes.ValidationError,
+                    "The upload ended before its declared size. Retry with the original file.");
+
+            await spool.FlushAsync(cancellationToken);
+            spool.Position = 0;
+            return await ExecuteInImmediateWriteTransactionAsync(async () =>
+            {
+                var activeReservation = await _context.StoredBlobReservations.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.Id == reservationId && x.OwnerUserId == write.UserId &&
+                        x.Modality == acquisition.AssetModality && x.ByteSize == write.ExpectedByteSize &&
+                        x.ReferrerId == write.ArtefactId && x.ExpiresAtUtc > DateTime.UtcNow,
+                        cancellationToken);
+                if (activeReservation is null)
+                    return new StreamingArtefactStoreOutcome(ArtefactStoreResult.QuotaExceeded, null);
+                var access = await CheckStreamWriteAccessAsync(write, cancellationToken);
+                if (access != ArtefactStoreResult.Stored)
+                    return new StreamingArtefactStoreOutcome(access, null);
+                if (await ExceedsArtefactQuotaAsync(write.UserId, write.ExpectedByteSize,
+                        quotaBytes, reservationId, cancellationToken))
+                    return new StreamingArtefactStoreOutcome(ArtefactStoreResult.QuotaExceeded, null);
+
+                if (!await _blobStore.ReleaseReservationAsync(reservationId, write.UserId, cancellationToken))
+                    throw new InvalidOperationException("The reserved source upload disappeared during finalization.");
+                BlobReference reference;
+                try
+                {
+                    reference = await _blobStore.AcquireAsync(acquisition, spool, cancellationToken);
+                }
+                catch (DomainException error) when (error.ErrorCode == ErrorCodes.PayloadTooLarge)
+                {
+                    return new StreamingArtefactStoreOutcome(ArtefactStoreResult.QuotaExceeded, null);
+                }
+
+                var artefact = new SourceArtefact(write.ArtefactId, write.UserId, write.Kind,
+                    write.MimeType, write.FileName, reference.ByteSize, reference.ContentHash,
+                    CaptureSource.Import, write.BoardId, createdFromCaptureId: write.CreatedFromCaptureId);
+                artefact.AttachBlobReference(reference.ReferenceId);
+                await _dbSet.AddAsync(artefact, cancellationToken);
+                await _context.AuditLogs.AddAsync(new AuditLog(
+                    "SourceArtefact", artefact.Id, AuditAction.Created, write.UserId,
+                    $"kind={artefact.Kind}; bytes={artefact.ByteSize}"), cancellationToken);
+                if (artefact.BoardId.HasValue)
+                    await _context.AuditLogs.AddAsync(new AuditLog(
+                        "SourceArtefact", artefact.BoardId.Value, AuditAction.Created, write.UserId,
+                        $"artefactId={artefact.Id}; kind={artefact.Kind}; bytes={artefact.ByteSize}"), cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+                return new StreamingArtefactStoreOutcome(ArtefactStoreResult.Stored, artefact);
+            }, cancellationToken);
+        }
+        finally
+        {
+            // DeleteOnClose removes the private spool on normal completion or process death.
+            // Cancellation still releases the durable quota claim with an independent token.
+            await ExecuteInImmediateWriteTransactionAsync(async () =>
+            {
+                await _blobStore.ReleaseReservationAsync(reservationId, write.UserId, CancellationToken.None);
+                return true;
+            }, CancellationToken.None);
+        }
+    }
+
+    private async Task<ArtefactStoreResult> CheckStreamWriteAccessAsync(
+        StreamingArtefactWrite write, CancellationToken cancellationToken)
+    {
+        if (!await _context.Users.AnyAsync(
+                user => user.Id == write.UserId && user.IsActive, cancellationToken))
+            return ArtefactStoreResult.UserInactive;
+        if (!write.BoardId.HasValue) return ArtefactStoreResult.Stored;
+        var boardId = write.BoardId.Value;
+        var hasEditorAccess = await _context.Boards.AnyAsync(
+                board => board.Id == boardId && board.OwnerId == write.UserId, cancellationToken)
+            || await _context.BoardAccesses.AnyAsync(
+                access => access.BoardId == boardId && access.UserId == write.UserId &&
+                          access.Role <= UserRole.Editor, cancellationToken);
+        return hasEditorAccess ? ArtefactStoreResult.Stored : ArtefactStoreResult.BoardAccessDenied;
+    }
+
+    private async Task<bool> ExceedsArtefactQuotaAsync(
+        Guid userId, long incomingBytes, long quotaBytes, Guid? replacingReservationId,
+        CancellationToken cancellationToken)
+    {
+        if (incomingBytes > quotaBytes) return true;
+        var usedBytes = await GetTotalByteSizeByUserAsync(userId, cancellationToken);
+        if (usedBytes > quotaBytes - incomingBytes) return true;
+        var now = DateTime.UtcNow;
+        var reserved = await _context.StoredBlobReservations
+            .Where(x => x.OwnerUserId == userId && x.ExpiresAtUtc > now &&
+                (!replacingReservationId.HasValue || x.Id != replacingReservationId.Value))
+            .SumAsync(x => x.ByteSize, cancellationToken);
+        return reserved > quotaBytes - incomingBytes - usedBytes;
+    }
+
+    private static FileStream CreateUploadSpool(Guid reservationId)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"taskdeck-upload-{reservationId:N}.tmp");
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            BufferSize = 64 * 1024,
+            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+        };
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        return new FileStream(path, options);
     }
 
     public async Task<byte[]?> GetContentForUserAsync(

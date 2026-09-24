@@ -588,6 +588,44 @@ public class BoardServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.CanWrite.Should().BeTrue();
     }
+    [Fact]
+    public async Task GetBoardDetailAsync_ShouldStampCanWriteTrue_WhenNoAuthorizationService()
+    {
+        // Null authorization (CLI / unauthenticated composition) means no enforcement,
+        // so detail must agree with the list stamp: the caller can write.
+        var board = TestDataBuilder.CreateBoard("Detail Board");
+        _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(board.Id, default))
+            .ReturnsAsync(board);
+
+        var result = await _service.GetBoardDetailAsync(board.Id, Guid.NewGuid());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CanWrite.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ListBoardsPaginatedAsync_ShouldStampCanWriteTrue_WhenNoAuthorizationService()
+    {
+        // Parity lock for the detail stamp above: with no authorization service every
+        // visible board is writable.
+        var actingUserId = Guid.NewGuid();
+        var boards = new[]
+        {
+            new Board("Board A", "desc", actingUserId),
+            new Board("Board B", "desc", actingUserId)
+        };
+        var boardIds = boards.Select(b => b.Id).ToList();
+        _boardRepoMock.Setup(r => r.SearchIdsAsync(null, false, default))
+            .ReturnsAsync(boardIds);
+        _boardRepoMock.Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(boards);
+
+        var result = await _service.ListBoardsPaginatedAsync(actingUserId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().HaveCount(2);
+        result.Value.Items.Should().OnlyContain(b => b.CanWrite);
+    }
 
     #endregion
 }

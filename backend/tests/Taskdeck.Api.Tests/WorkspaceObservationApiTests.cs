@@ -51,6 +51,8 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
         }));
         var (client, board, cardId, source) = await Setup(app);
         Guid? viewerId = null;
+        Guid? erasedOwnerId = null;
+        Guid remainingOwnerId = Guid.Empty;
         if (change == "revoke")
         {
             client = app.CreateClient(); viewerId = (await ApiTestHarness.AuthenticateAsync(client, "late-viewer")).UserId;
@@ -64,6 +66,8 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
             var coOwner = app.CreateClient(); var account = await ApiTestHarness.AuthenticateAsync(coOwner, "remaining-owner");
             using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             db.BoardAccesses.Add(new BoardAccess(board, account.UserId, UserRole.Owner, account.UserId));
+            erasedOwnerId = await db.Boards.Where(x => x.Id == board).Select(x => x.OwnerId).SingleAsync();
+            remainingOwnerId = account.UserId;
             await db.SaveChangesAsync();
         }
         race.Change = async () =>
@@ -76,9 +80,13 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
             else if (change == "revoke") await db.BoardAccesses.Where(x => x.BoardId == board && x.UserId == viewerId).ExecuteDeleteAsync();
             else if (change == "erase-account")
             {
+                // #3425: deletion refuses while the user owns the board outright, so transfer
+                // creation-ownership to the remaining owner first (no transfer endpoint exists
+                // yet). This runs after the final service read, so the erasure below must
+                // still drive the commit rejection.
+                await db.Boards.Where(x => x.Id == board).ExecuteUpdateAsync(set => set.SetProperty(x => x.OwnerId, remainingOwnerId));
                 (await client.PostAsJsonAsync("/api/account/delete", new AccountDeletionRequest("password123", "DELETE MY ACCOUNT"))).EnsureSuccessStatusCode();
-                var owner = await db.Boards.Where(x => x.Id == board).Select(x => x.OwnerId).SingleAsync();
-                (await db.Users.Where(x => x.Id == owner).Select(x => x.IsActive).SingleAsync()).Should().BeFalse();
+                (await db.Users.Where(x => x.Id == erasedOwnerId).Select(x => x.IsActive).SingleAsync()).Should().BeFalse();
             }
             else await db.Cards.Where(x => x.Id == cardId).ExecuteUpdateAsync(set => set.SetProperty(x => x.Title, "Later committed evidence"));
         };

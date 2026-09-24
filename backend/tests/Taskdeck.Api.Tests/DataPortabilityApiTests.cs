@@ -85,7 +85,10 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
             (await client.PostAsJsonAsync($"/api/boards/{boardId}/cards", new CreateCardDto(boardId, board.Columns[0].Id, "Child", null, null, null, ParentCardId: parent.Id, EstimatedEffortMinutes: 135))).EnsureSuccessStatusCode();
             return boardId;
         }
-        await Seed(owner); var retained = await Seed(other);
+        var doomed = await Seed(owner); var retained = await Seed(other);
+        // #3425: deletion refuses while the user owns active boards; archiving first
+        // exercises the supported disposal path before erasure.
+        (await owner.DeleteAsync($"/api/boards/{doomed}")).EnsureSuccessStatusCode();
         (await owner.PostAsJsonAsync("/api/account/delete", new AccountDeletionRequest("password123", "DELETE MY ACCOUNT"))).EnsureSuccessStatusCode();
         var cards = (await other.GetFromJsonAsync<List<CardDto>>($"/api/boards/{retained}/cards"))!;
         cards.Should().HaveCount(2);

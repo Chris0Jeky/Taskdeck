@@ -450,4 +450,94 @@ public class ContactCardYamlParserTests
         var errors = ContactCardYamlParser.Validate(fm);
         errors.Should().BeEmpty();
     }
+    // ── Hardening (swarm wave 2B) ───────────────────────────────────
+
+    [Fact]
+    public void Parse_OversizedDescription_ReturnsLimitError()
+    {
+        var text = new string('x', ContactCardYamlParser.MaxDescriptionChars + 1);
+
+        var result = ContactCardYamlParser.Parse(text);
+
+        result.Errors.Should().ContainSingle()
+            .Which.Should().Contain("exceeds");
+    }
+
+    [Fact]
+    public void Validate_LenientNonIsoDate_ReturnsError()
+    {
+        // DateOnly.TryParse would accept these; the contract is strict ISO 8601.
+        var fm = new ContactCardFrontMatter { LastTouchAt = "03/15/2024" };
+
+        var errors = ContactCardYamlParser.Validate(fm);
+
+        errors.Should().ContainSingle()
+            .Which.Should().Contain("last_touch_at");
+    }
+
+    [Fact]
+    public void Parse_RecursiveAlias_DoesNotThrowOrHang()
+    {
+        // Self-referential alias: resolving *t re-enters the anchor it is defined on.
+        var text = "---\ntype: contact\ntags: &t\n  - *t\n---\n";
+
+        var act = () => ContactCardYamlParser.Parse(text);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Parse_AliasReuse_ExpandsLinearlyIntoFlatDto()
+    {
+        // Billion-laughs needs nesting depth to go exponential; the front matter DTO is
+        // flat (scalars plus one-level collections), so alias reuse stays linear.
+        var refs = string.Join(", ", System.Linq.Enumerable.Repeat("*aval", 9));
+        var text = "---\ntype: contact\nsource: &aval z\n"
+            + "tags: [" + refs + "]\n---\n";
+
+        var result = ContactCardYamlParser.Parse(text);
+
+        result.Errors.Should().BeEmpty();
+        result.FrontMatter!.Tags.Should().HaveCount(9);
+    }
+
+    [Fact]
+    public void RoundTrip_DelimiterLikeValue_DoesNotCorruptFraming()
+    {
+        var fm = new ContactCardFrontMatter { NotesPrivate = "line1\n---\nline2" };
+
+        var serialized = ContactCardYamlParser.Serialize(fm);
+        var result = ContactCardYamlParser.Parse(serialized);
+
+        result.Errors.Should().BeEmpty();
+        result.FrontMatter!.NotesPrivate.Should().Contain("---");
+    }
+
+    [Fact]
+    public void Validate_OversizedFields_ReturnErrors()
+    {
+        var fm = new ContactCardFrontMatter
+        {
+            DisplayName = new string('n', ContactCardYamlParser.MaxShortFieldChars + 1),
+            Tags = new System.Collections.Generic.List<string> { new string('t', ContactCardYamlParser.MaxTagChars + 1) }
+        };
+
+        var errors = ContactCardYamlParser.Validate(fm);
+
+        errors.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Validate_TooManyTags_ReturnsError()
+    {
+        var tags = new System.Collections.Generic.List<string>();
+        for (var i = 0; i <= ContactCardYamlParser.MaxTagsEntries; i++)
+            tags.Add("tag" + i);
+        var fm = new ContactCardFrontMatter { Tags = tags };
+
+        var errors = ContactCardYamlParser.Validate(fm);
+
+        errors.Should().ContainSingle()
+            .Which.Should().Contain("tags");
+    }
 }

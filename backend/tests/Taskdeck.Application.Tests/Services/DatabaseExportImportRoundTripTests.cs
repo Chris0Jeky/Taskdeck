@@ -4,6 +4,7 @@ using Moq;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -360,6 +361,7 @@ public class DatabaseExportImportRoundTripTests : IDisposable
     {
         return new DatabaseFileExportImportService(
             _unitOfWorkMock.Object,
+            "Development",
             new DevelopmentSandboxSettings { Enabled = sandboxEnabled },
             new DatabaseExportImportSettings
             {
@@ -371,7 +373,9 @@ public class DatabaseExportImportRoundTripTests : IDisposable
     private static User CreateUser()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        return new User($"dbtest_{suffix}", $"dbtest_{suffix}@example.com", "hashedpassword");
+        // Every test in this fixture exercises the admin-only database
+        // service, so the shared user carries the Admin role.
+        return new User($"dbtest_{suffix}", $"dbtest_{suffix}@example.com", "hashedpassword", UserRole.Admin);
     }
 
     private string CreateTempFilePath()

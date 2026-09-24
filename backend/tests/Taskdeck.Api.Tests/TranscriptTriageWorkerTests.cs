@@ -968,6 +968,8 @@ public class TranscriptTriageWorkerTests
 
         public Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
             => Task.FromResult<IEnumerable<LlmRequest>>([]);
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingByUserAsync(Guid userId, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IEnumerable<LlmRequest>>([]);
 
         public Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(new Dictionary<RequestStatus, int>());

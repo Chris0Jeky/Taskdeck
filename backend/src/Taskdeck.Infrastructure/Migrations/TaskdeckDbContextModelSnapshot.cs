@@ -2848,6 +2848,42 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("StoredBlobReferences");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.StoredBlobReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ByteSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Modality")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReferrerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReferrerKind")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("OwnerUserId", "ExpiresAtUtc");
+
+                    b.HasIndex("OwnerUserId", "Modality", "ExpiresAtUtc");
+
+                    b.ToTable("StoredBlobReservations", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.ThinkingAudioAnswer", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3896,6 +3932,15 @@ namespace Taskdeck.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("BlobId", "OwnerUserId")
                         .HasPrincipalKey("Id", "OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.StoredBlobReservation", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

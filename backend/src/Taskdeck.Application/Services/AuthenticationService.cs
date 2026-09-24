@@ -15,6 +15,15 @@ public class AuthenticationService : IAuthenticationService
 {
     private const string InvalidCredentialsMessage = "Invalid username/email or password";
 
+    /// <summary>
+    /// Fixed non-credential BCrypt hash (default cost) used only for timing
+    /// equalization on the unknown-identifier login path. Verifying against it
+    /// costs the same as a real password check, so absent identifiers are not
+    /// measurably faster than present ones (#3426). It is not a credential and
+    /// must never be stored on a user record.
+    /// </summary>
+    private const string DummyTimingHash = "$2a$11$ag26S4CHpAXHiBbO7Iy56uyiOZOl2MpQJXc4ik1dsKhaj2wCcXbuy";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtSettings _jwtSettings;
     private readonly IRegistrationPolicyService _registrationPolicy;
@@ -45,7 +54,13 @@ public class AuthenticationService : IAuthenticationService
 
             var users = await ResolveLoginCandidatesAsync(loginIdentifier);
             if (users.Count == 0)
+            {
+                // Equalize timing with the known-identifier path, which always pays
+                // at least one BCrypt verify. The result is discarded; the outcome,
+                // error code, and message are unchanged (#3426).
+                _passwordHasher.VerifyPassword(dto.Password ?? string.Empty, DummyTimingHash);
                 return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, InvalidCredentialsMessage);
+            }
 
             User? authenticatedUser = null;
             var hasInactivePasswordMatch = false;
@@ -101,6 +116,12 @@ public class AuthenticationService : IAuthenticationService
 
             if (string.IsNullOrWhiteSpace(normalizedEmail))
                 return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
+
+            // Centralized server-side password policy (#3402/#3419), checked before
+            // paying BCrypt's cost. Client-side checks remain UX-only.
+            var passwordError = PasswordPolicy.Validate(dto.Password);
+            if (passwordError != null)
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, passwordError);
 
             // Reject requests that cannot currently satisfy restrictive policy before
             // paying BCrypt's cost. The authoritative claim/consumption is repeated
@@ -413,11 +434,18 @@ public class AuthenticationService : IAuthenticationService
             if (!user.IsActive)
                 return Result.Failure(ErrorCodes.Forbidden, "User account is inactive");
 
+            // Reject weak replacement passwords before paying BCrypt's verify cost (#3402/#3419).
+            var newPasswordError = PasswordPolicy.Validate(newPassword);
+            if (newPasswordError != null)
+                return Result.Failure(ErrorCodes.ValidationError, newPasswordError);
+
             if (!_passwordHasher.VerifyPassword(currentPassword, user.PasswordHash))
                 return Result.Failure(ErrorCodes.AuthenticationFailed, "Current password is incorrect");
 
             var newHash = _passwordHasher.HashPassword(newPassword);
             user.UpdatePassword(newHash);
+            // Revoke outstanding JWTs issued before this password change (#3408).
+            user.InvalidateTokens();
 
             await _unitOfWork.SaveChangesAsync();
             return Result.Success();
@@ -467,6 +495,16 @@ public class AuthenticationService : IAuthenticationService
             if (!user.IsActive)
                 return Result.Failure<UserDto>(ErrorCodes.Forbidden, "User account is inactive");
 
+            // Reject tokens issued before the user's invalidation cutoff, mirroring
+            // TokenValidationMiddleware (#3408). Tokens without an iat claim pass
+            // through, matching the middleware's legacy-token behavior.
+            if (user.TokenInvalidatedAt.HasValue)
+            {
+                var tokenIssuedAt = GetTokenIssuedAt(result.ClaimsIdentity);
+                if (tokenIssuedAt.HasValue && tokenIssuedAt.Value < user.TokenInvalidatedAt.Value)
+                    return Result.Failure<UserDto>(ErrorCodes.Unauthorized, "Token has been invalidated. Please sign in again.");
+            }
+
             return Result.Success(MapToDto(user));
         }
         catch (SecurityTokenException)
@@ -477,9 +515,9 @@ public class AuthenticationService : IAuthenticationService
         {
             return Result.Failure<UserDto>(ex.ErrorCode, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Result.Failure<UserDto>(ErrorCodes.UnexpectedError, $"Token validation failed: {ex.Message}");
+            return Result.Failure<UserDto>(ErrorCodes.UnexpectedError, "Token validation failed due to an unexpected error");
         }
     }
 
@@ -570,6 +608,18 @@ public class AuthenticationService : IAuthenticationService
         }
 
         return unique;
+    }
+
+    private static DateTimeOffset? GetTokenIssuedAt(ClaimsIdentity claimsIdentity)
+    {
+        var iatClaim = claimsIdentity.FindFirst(JwtRegisteredClaimNames.Iat);
+        if (iatClaim == null)
+            return null;
+
+        if (long.TryParse(iatClaim.Value, out var unixSeconds))
+            return DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+
+        return null;
     }
 
     private static UserDto MapToDto(User user)

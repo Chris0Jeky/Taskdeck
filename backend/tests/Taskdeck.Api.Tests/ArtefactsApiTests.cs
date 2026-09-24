@@ -37,6 +37,199 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync($"/api/artefacts/{Guid.NewGuid()}"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync($"/api/artefacts/{Guid.NewGuid()}/content"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.DeleteAsync($"/api/artefacts/{Guid.NewGuid()}"));
+        using var raw = CreateRawUpload(PngBytes(), "image/png");
+        await ApiTestHarness.AssertUnauthorizedAsync(await client.PostAsync("/api/v2/artefacts?fileName=evidence.png", raw));
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldRoundTripWithoutChangingLegacyMultipartClients()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "artefact-v2-roundtrip");
+        var bytes = PngBytes(97);
+        using var raw = CreateRawUpload(bytes, "image/png");
+
+        using var response = await client.PostAsync("/api/v2/artefacts?fileName=raw.png", raw);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = (await response.Content.ReadFromJsonAsync<SourceArtefactDto>())!;
+        created.ByteSize.Should().Be(bytes.Length);
+        response.Headers.Location?.ToString().Should().Be($"/api/artefacts/{created.Id}");
+        (await client.GetByteArrayAsync($"/api/artefacts/{created.Id}/content")).Should().Equal(bytes);
+
+        using var legacy = CreateUpload("notes"u8.ToArray(), "notes.txt", "text/plain");
+        using var legacyResponse = await client.PostAsync("/api/artefacts", legacy);
+        legacyResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldRejectInvalidMetadataAndBytesWithoutRows()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-v2-validation");
+        using var missingName = CreateRawUpload(PngBytes(), "image/png");
+        using var wrongSignature = CreateRawUpload("MZ executable"u8.ToArray(), "image/png");
+        using var invalidText = CreateRawUpload(new byte[] { 0xEF, 0xBF, 0xBD, 0x00 }, "text/plain");
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            await client.PostAsync("/api/v2/artefacts", missingName),
+            HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(
+            await client.PostAsync("/api/v2/artefacts?fileName=bad.png", wrongSignature),
+            HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(
+            await client.PostAsync("/api/v2/artefacts?fileName=bad.txt", invalidText),
+            HttpStatusCode.BadRequest, "ValidationError");
+        await AssertNoArtefactRowsAsync(user.UserId);
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldRejectQuotaBeforeReadingSourceStream()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-v2-quota");
+        using var first = CreateRawUpload(PngBytes(800), "image/png");
+        using var firstResponse = await client.PostAsync("/api/v2/artefacts?fileName=first.png", first);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IArtefactService>();
+        await using var unreadable = new ThrowOnReadStream();
+        var denied = await service.CreateStreamingAsync(user.UserId,
+            new CreateStreamingArtefactRequest(unreadable, "second.png", "image/png", 800));
+
+        denied.IsSuccess.Should().BeFalse();
+        denied.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        unreadable.ReadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldRollBackShortAndOverlongStreams()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-v2-length");
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IArtefactService>();
+        var bytes = PngBytes(32);
+
+        await using var shortBody = new MemoryStream(bytes, writable: false);
+        var shortResult = await service.CreateStreamingAsync(user.UserId,
+            new CreateStreamingArtefactRequest(shortBody, "short.png", "image/png", bytes.Length + 1));
+        shortResult.IsSuccess.Should().BeFalse();
+        shortResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+
+        await using var longBody = new MemoryStream(bytes, writable: false);
+        var longResult = await service.CreateStreamingAsync(user.UserId,
+            new CreateStreamingArtefactRequest(longBody, "long.png", "image/png", bytes.Length - 1));
+        longResult.IsSuccess.Should().BeFalse();
+        longResult.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+
+        await AssertNoArtefactRowsAsync(user.UserId);
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldRejectForeignBoardBeforeReadingBody()
+    {
+        using var owner = _factory.CreateClient();
+        using var outsider = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(owner, "artefact-v2-board-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(owner, "artefact-v2-board");
+        var outsiderUser = await ApiTestHarness.AuthenticateAsync(outsider, "artefact-v2-board-outsider");
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IArtefactService>();
+        await using var unreadable = new ThrowOnReadStream();
+
+        var denied = await service.CreateStreamingAsync(outsiderUser.UserId,
+            new CreateStreamingArtefactRequest(unreadable, "foreign.png", "image/png", 8, board.Id));
+
+        denied.IsSuccess.Should().BeFalse();
+        denied.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        unreadable.ReadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldRejectModalityQuotaBeforeReadingBody()
+    {
+        using var constrained = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["SourceStorage:ModalityQuotaBytes"] = "8"
+                })));
+        using var client = constrained.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-v2-modality-quota");
+        await using var scope = constrained.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IArtefactService>();
+        await using var unreadable = new ThrowOnReadStream();
+
+        var denied = await service.CreateStreamingAsync(user.UserId,
+            new CreateStreamingArtefactRequest(unreadable, "quota.png", "image/png", 32));
+
+        denied.IsSuccess.Should().BeFalse();
+        denied.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        unreadable.ReadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldNotHoldSqliteWriterWhileClientBodyStalls()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-v2-slow-body");
+        await using var serviceScope = _factory.Services.CreateAsyncScope();
+        var service = serviceScope.ServiceProvider.GetRequiredService<IArtefactService>();
+        await using var content = new GateReadStream(PngBytes());
+        var upload = service.CreateStreamingAsync(user.UserId,
+            new CreateStreamingArtefactRequest(content, "slow.png", "image/png", content.Length));
+        await content.ReadStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await using var writerScope = _factory.Services.CreateAsyncScope();
+            var db = writerScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.Boards.Add(new Board("Independent write", ownerId: user.UserId));
+            await db.SaveChangesAsync().WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        finally
+        {
+            content.Release();
+        }
+
+        (await upload).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task VersionedRawUpload_ShouldCountInFlightReservationAgainstUserQuota()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-v2-inflight-quota");
+        await using var firstScope = _factory.Services.CreateAsyncScope();
+        var firstService = firstScope.ServiceProvider.GetRequiredService<IArtefactService>();
+        await using var pendingContent = new GateReadStream(PngBytes(800));
+        var pending = firstService.CreateStreamingAsync(user.UserId,
+            new CreateStreamingArtefactRequest(pendingContent, "pending.png", "image/png", 800));
+        await pendingContent.ReadStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await using var secondScope = _factory.Services.CreateAsyncScope();
+            var secondService = secondScope.ServiceProvider.GetRequiredService<IArtefactService>();
+            await using var unreadable = new ThrowOnReadStream();
+            var denied = await secondService.CreateStreamingAsync(user.UserId,
+                new CreateStreamingArtefactRequest(unreadable, "second.png", "image/png", 800));
+            denied.IsSuccess.Should().BeFalse();
+            denied.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+            unreadable.ReadCount.Should().Be(0);
+        }
+        finally
+        {
+            pendingContent.Release();
+        }
+
+        (await pending).IsSuccess.Should().BeTrue();
+        await using var inspectScope = _factory.Services.CreateAsyncScope();
+        var db = inspectScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.StoredBlobReservations.CountAsync(reservation => reservation.OwnerUserId == user.UserId))
+            .Should().Be(0);
     }
 
     [Fact]
@@ -557,6 +750,9 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         (await db.SourceArtefacts.CountAsync(artefact => artefact.UserId == userId)).Should().Be(0);
+        (await db.StoredBlobReservations.CountAsync(reservation => reservation.OwnerUserId == userId)).Should().Be(0);
+        (await db.StoredBlobReferences.CountAsync(reference => reference.OwnerUserId == userId)).Should().Be(0);
+        (await db.StoredBlobs.CountAsync(blob => blob.OwnerUserId == userId)).Should().Be(0);
     }
 
     private sealed class GateReadStream : MemoryStream
@@ -585,6 +781,34 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
 
             return await base.ReadAsync(buffer, cancellationToken);
         }
+    }
+
+    private static ByteArrayContent CreateRawUpload(byte[] bytes, string mimeType)
+    {
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
+        return content;
+    }
+
+    private sealed class ThrowOnReadStream : Stream
+    {
+        public int ReadCount { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count)
+            => throw new InvalidOperationException("Quota rejection must precede stream reads");
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ReadCount++;
+            throw new InvalidOperationException("Quota rejection must precede stream reads");
+        }
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static byte[] PngBytes(int length = 8)

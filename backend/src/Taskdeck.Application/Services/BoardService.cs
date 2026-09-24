@@ -100,8 +100,12 @@ public class BoardService
 
         var detail = await GetBoardDetailAsync(id, cancellationToken);
         if (!detail.IsSuccess) return detail;
-        var writable = _authorizationService is null ? null : await _authorizationService.CanWriteBoardAsync(actingUserId, id);
-        return Result.Success(detail.Value with { CanWrite = writable is { IsSuccess: true, Value: true } });
+        var writable = _authorizationService is null
+            || (await _authorizationService.CanWriteBoardAsync(actingUserId, id)) is { IsSuccess: true, Value: true };
+        // No authorization service configured (CLI / unauthenticated composition) means no
+        // authorization is being enforced at all, so the caller can write — the same
+        // convention ListBoardsPaginatedAsync and EnsureBoardPermissionAsync follow.
+        return Result.Success(detail.Value with { CanWrite = writable });
     }
 
     /// <summary>

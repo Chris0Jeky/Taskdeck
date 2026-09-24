@@ -1,8 +1,8 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Realtime;
-using Taskdeck.Api.Services;
 using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -51,7 +51,14 @@ public static class ApplicationServiceRegistration
         services.AddScoped<UserService>();
         services.AddScoped<BoardAccessService>();
         services.AddScoped<IBoardJsonExportImportService, BoardJsonExportImportService>();
-        services.AddScoped<IDatabaseFileExportImportService, DatabaseFileExportImportService>();
+        services.AddScoped<IDatabaseFileExportImportService>(sp =>
+            new DatabaseFileExportImportService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetRequiredService<IWebHostEnvironment>().EnvironmentName,
+                sp.GetRequiredService<DevelopmentSandboxSettings>(),
+                sp.GetRequiredService<DatabaseExportImportSettings>(),
+                sp.GetService<IHistoryService>(),
+                sp.GetService<ILogger<DatabaseFileExportImportService>>()));
         services.AddScoped<IExportImportService>(sp =>
             new ExportImportService(
                 sp.GetRequiredService<IBoardJsonExportImportService>(),
@@ -109,8 +116,6 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IArtefactService, ArtefactService>();
         services.AddScoped<IArtefactTextExtractor, PlainTextArtefactTextExtractor>();
         services.AddScoped<IArtefactExtractionService, ArtefactExtractionService>();
-        services.AddSingleton<InMemoryActiveUserCache>();
-        services.AddSingleton<IActiveUserCache>(sp => sp.GetRequiredService<InMemoryActiveUserCache>());
         services.AddScoped<IBoardMetricsService>(sp =>
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
@@ -132,6 +137,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<InboxTriageDigestAgent>();
         services.AddSingleton<IEgressRegistry>(new EgressRegistry());
         services.AddScoped<SignalRBoardRealtimeNotifier>();
+        services.AddScoped<IBoardConnectionEvictor, SignalRBoardConnectionEvictor>();
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();

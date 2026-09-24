@@ -81,6 +81,35 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
     }
 
     [Fact]
+    public async Task GetByOwnerIdAsync_ShouldReturnOnlyOutrightOwnedBoards()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var owner = new User("brd-ownerid-owner", "brd-ownerid-owner@example.com", "hash");
+        var other = new User("brd-ownerid-other", "brd-ownerid-other@example.com", "hash");
+        db.Users.AddRange(owner, other);
+
+        var owned = new Board("Outright owned board", ownerId: owner.Id);
+        var foreign = new Board("Foreign board", ownerId: other.Id);
+        var archived = new Board("Archived owned board", ownerId: owner.Id);
+        archived.Archive();
+        db.Boards.AddRange(owned, foreign, archived);
+        await db.SaveChangesAsync();
+
+        // Guest access alone must not surface: access rows are not ownership.
+        db.BoardAccesses.Add(new BoardAccess(foreign.Id, owner.Id, UserRole.Owner, other.Id));
+        await db.SaveChangesAsync();
+
+        var result = (await repo.GetByOwnerIdAsync(owner.Id, includeArchived: false)).ToList();
+
+        result.Should().ContainSingle(b => b.Id == owned.Id);
+        (await repo.GetByOwnerIdAsync(other.Id, includeArchived: false)).Should().ContainSingle(b => b.Id == foreign.Id);
+        (await repo.GetByOwnerIdAsync(owner.Id, includeArchived: true)).Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task CountReadableByUserIdAsync_ShouldCountOwnedAndSharedBoards()
     {
         using var scope = _factory.Services.CreateScope();

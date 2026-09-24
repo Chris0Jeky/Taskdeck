@@ -934,6 +934,44 @@ public class McpToolsTests : IDisposable
         (await service.GetCardAsync(boardId, card.Id)).Value.IsArchived.Should().Be(!archive);
     }
 
+    [Fact]
+    public async Task CardLifecycleTools_ArchiveForwardsChildrenFingerprint_WhenSupplied()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var parent = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Parent", null, null, null))).Value;
+        var child = await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Child", null, null, null, ParentCardId: parent.Id));
+        child.IsSuccess.Should().BeTrue(child.ErrorMessage);
+        var preview = await service.PreviewDetachAsync(boardId, parent.Id);
+        preview.IsSuccess.Should().BeTrue(preview.ErrorMessage);
+        var tools = CreateWriteTools(scope, user.Id);
+        var json = await tools.ArchiveCardLifecycle(boardId.ToString(), parent.Id.ToString(), parent.UpdatedAt.ToString("O"), expected_children_fingerprint: preview.Value.ExpectedChildrenFingerprint);
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        proposal.Operations.Should().ContainSingle().Which.ActionType.Should().Be("archive-lifecycle");
+        using var parameters = JsonDocument.Parse(proposal.Operations.Single().Parameters);
+        parameters.RootElement.GetProperty("expectedChildrenFingerprint").GetString().Should().Be(preview.Value.ExpectedChildrenFingerprint);
+    }
+
+    [Fact]
+    public async Task CardLifecycleTools_ArchiveOmitsChildrenFingerprint_WhenAbsent()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Lifecycle", null, null, null))).Value;
+        var tools = CreateWriteTools(scope, user.Id);
+        var json = await tools.ArchiveCardLifecycle(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"));
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        proposal.Operations.Should().ContainSingle().Which.ActionType.Should().Be("archive-lifecycle");
+        using var parameters = JsonDocument.Parse(proposal.Operations.Single().Parameters);
+        parameters.RootElement.TryGetProperty("expectedChildrenFingerprint", out _).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, false)]

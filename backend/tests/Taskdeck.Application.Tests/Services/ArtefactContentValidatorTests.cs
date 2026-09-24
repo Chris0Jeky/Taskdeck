@@ -75,6 +75,35 @@ public sealed class ArtefactContentValidatorTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ValidateWhileReading_ShouldAcceptUtf8SplitAcrossSingleByteReads()
+    {
+        await using var source = new SingleByteReadStream("café 🚀"u8.ToArray());
+        var metadata = ArtefactContentValidator.ValidateMetadata("notes.txt", "text/plain");
+        metadata.IsSuccess.Should().BeTrue();
+        using var validated = ArtefactContentValidator.ValidateWhileReading(source, metadata.Value);
+        using var output = new MemoryStream();
+
+        await validated.CopyToAsync(output);
+
+        output.ToArray().Should().Equal("café 🚀"u8.ToArray());
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidTextFixtures))]
+    public async Task ValidateWhileReading_ShouldRejectInvalidTextEvenWhenSplit(byte[] bytes)
+    {
+        await using var source = new SingleByteReadStream(bytes);
+        var metadata = ArtefactContentValidator.ValidateMetadata("notes.txt", "text/plain");
+        using var validated = ArtefactContentValidator.ValidateWhileReading(source, metadata.Value);
+        using var output = new MemoryStream();
+
+        var act = async () => await validated.CopyToAsync(output);
+
+        await act.Should().ThrowAsync<DomainException>()
+            .Where(error => error.ErrorCode == ErrorCodes.ValidationError);
+    }
+
     [Theory]
     [MemberData(nameof(InvalidTextFixtures))]
     public async Task ReadAndValidateAsync_ShouldRejectInvalidUtf8AndDisallowedControls(byte[] bytes)
@@ -142,4 +171,10 @@ public sealed class ArtefactContentValidatorTests
 
     private static byte[] PngBytes()
         => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    private sealed class SingleByteReadStream(byte[] bytes) : MemoryStream(bytes, writable: false)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => base.ReadAsync(buffer[..Math.Min(1, buffer.Length)], cancellationToken);
+    }
 }

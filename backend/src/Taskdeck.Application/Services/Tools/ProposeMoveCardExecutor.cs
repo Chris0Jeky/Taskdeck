@@ -75,8 +75,18 @@ public sealed class ProposeMoveCardExecutor : IToolExecutor
 
         // Resolve target column
         var columns = await _unitOfWork.Columns.GetByBoardIdAsync(context.BoardId, ct);
-        var targetColumn = columns.FirstOrDefault(c =>
-            string.Equals(c.Name, targetColumnName, StringComparison.OrdinalIgnoreCase));
+        var targetResolution = ColumnNameResolver.Resolve(columns, targetColumnName);
+        if (targetResolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+        {
+            var availableNames = columns.Select(c => c.Name).ToArray();
+            return JsonSerializer.Serialize(new
+            {
+                error = ColumnNameResolver.AmbiguousMessage(targetColumnName),
+                suggestion = "Use list_board_columns to see available columns",
+                available_columns = availableNames
+            }, ToolJsonOptions.Default);
+        }
+        var targetColumn = targetResolution.Column;
 
         if (targetColumn == null)
         {
