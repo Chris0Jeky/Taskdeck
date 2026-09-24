@@ -148,6 +148,37 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task GetOldestPendingByUserAsync_WithCreatedAtTies_ShouldReturnIdOrderedPrefix()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-tie-user", "llm-tie@example.com", "hash");
+        db.Users.Add(user);
+
+        // Shared CreatedAt: the contract is (CreatedAt, Id) order in the returned list,
+        // regardless of which tied rows a provider's LIMIT keeps at the boundary.
+        var stamp = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero);
+        var rows = Enumerable.Range(0, 4)
+            .Select(_ => new LlmRequest(user.Id, "inbox.capture.text", "{\"t\":\"tie\"}"))
+            .ToList();
+        db.LlmRequests.AddRange(rows);
+        await db.SaveChangesAsync();
+        foreach (var row in rows)
+        {
+            db.Entry(row).Property(nameof(Entity.CreatedAt)).CurrentValue = stamp;
+        }
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = (await repo.GetOldestPendingByUserAsync(user.Id, limit: 3)).ToList();
+
+        result.Should().HaveCount(3);
+        result.Select(r => r.Id).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
     public async Task GetByStatusForDisplayAsync_BoundsAtSql_NewestFirst_IncludesAllTypes()
     {
         // The display read (#1237) is for the ops queue listing: bounded at the database, newest-first,

@@ -589,6 +589,9 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             // the only consumer (InboxTriageAssistant) reads scalar Id/Payload, never navigations.
             // Re-sort defensively: the inner LIMIT selects the correct oldest-N rows, and the
             // re-sort makes oldest-first a contract even if EF reshapes the composed query.
+            // CreatedAt is always UTC (Entity constructor), so TEXT ordering is chronological.
+            // At a CreatedAt-tie LIMIT boundary the kept rows are deterministic per provider
+            // (SQLite compares Guids as TEXT); the old in-memory order had no tie-break at all.
             var rows = await _context.LlmRequests
                 .FromSqlInterpolated($"SELECT * FROM LlmRequests WHERE UserId = {userId} AND Status = {(int)RequestStatus.Pending} ORDER BY CreatedAt ASC, Id LIMIT {limit}")
                 .AsNoTracking()
