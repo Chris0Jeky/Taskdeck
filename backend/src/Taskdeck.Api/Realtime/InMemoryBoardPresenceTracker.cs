@@ -43,7 +43,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
         {
             if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
             {
-                return new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow);
+                return EmptySnapshot(boardId);
             }
 
             if (boardConnections.Remove(connectionId))
@@ -52,7 +52,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
             if (boardConnections.Count == 0)
             {
                 _connectionsByBoard.Remove(boardId);
-                return new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow);
+                return EmptySnapshot(boardId);
             }
 
             return CreateSnapshot(boardId, boardConnections);
@@ -66,7 +66,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
             if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
             {
                 return new BoardPresenceEviction(
-                    new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow),
+                    EmptySnapshot(boardId),
                     []);
             }
 
@@ -85,13 +85,16 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
             {
                 _connectionsByBoard.Remove(boardId);
                 return new BoardPresenceEviction(
-                    new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow),
+                    EmptySnapshot(boardId),
                     evicted);
             }
 
             return new BoardPresenceEviction(CreateSnapshot(boardId, boardConnections), evicted);
         }
     }
+
+    private static BoardPresenceSnapshot EmptySnapshot(Guid boardId) =>
+        new(boardId, [], DateTimeOffset.UtcNow);
 
     public BoardPresenceSnapshot? LeaveConnection(string connectionId)
     {

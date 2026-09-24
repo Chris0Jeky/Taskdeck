@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -14,6 +15,7 @@ public class BoardAccessService : IBoardAccessService
     private readonly CardAssignmentService? _assignments;
     private readonly ICardAssignmentStore? _assignmentStore;
     private readonly IBoardConnectionEvictor _connectionEvictor;
+    private readonly ILogger<BoardAccessService>? _logger;
 
     // No DevelopmentSandboxSettings dependency: the development sandbox never widens write-class
     // authorization (ADR-0068 / #1866). Board-access management stays owner-or-manager only.
@@ -22,13 +24,15 @@ public class BoardAccessService : IBoardAccessService
         INotificationService? notificationService = null,
         CardAssignmentService? assignments = null,
         ICardAssignmentStore? assignmentStore = null,
-        IBoardConnectionEvictor? connectionEvictor = null)
+        IBoardConnectionEvictor? connectionEvictor = null,
+        ILogger<BoardAccessService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _assignments = assignments;
         _assignmentStore = assignmentStore;
         _connectionEvictor = connectionEvictor ?? NoOpBoardConnectionEvictor.Instance;
+        _logger = logger;
     }
 
     public async Task<Result<BoardAccessDto>> GrantAccessAsync(GrantAccessDto dto, Guid grantedBy)
@@ -170,15 +174,33 @@ public class BoardAccessService : IBoardAccessService
             var result = await StageRevokeAccessAsync(boardId, accessId, revokedBy);
             if (!result.IsSuccess) { await _unitOfWork.RollbackTransactionAsync(); return result; }
             await _unitOfWork.CommitTransactionAsync();
+            // Evict before the detach broadcasts below: the access row is gone, so
+            // live connections must leave the board group before any further
+            // boardMutation goes out (#3420/#3407). Best-effort: revocation already
+            // committed, so a realtime failure is logged, never thrown.
+            await EvictRevokedUserSafeAsync(boardId, result.Value.RevokedUserId);
             if (_assignments is not null)
                 foreach (var cardId in result.Value.DetachedCardIds)
                     await _assignments.NotifyAsync(boardId, cardId);
-            // Evict after commit: the access row is gone, so live connections must
-            // leave the board group immediately (#3420/#3407).
-            await _connectionEvictor.EvictUserFromBoardAsync(boardId, result.Value.RevokedUserId);
             return result;
         }
         catch { await _unitOfWork.RollbackTransactionAsync(); throw; }
+    }
+
+    private async Task EvictRevokedUserSafeAsync(Guid boardId, Guid revokedUserId)
+    {
+        try
+        {
+            await _connectionEvictor.EvictUserFromBoardAsync(boardId, revokedUserId);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(
+                ex,
+                "Failed to evict revoked user {UserId} from board {BoardId} realtime group",
+                revokedUserId,
+                boardId);
+        }
     }
 
     private async Task<Result<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>> StageRevokeAccessAsync(Guid boardId, Guid accessId, Guid revokedBy)

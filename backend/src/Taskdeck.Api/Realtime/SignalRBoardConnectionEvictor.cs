@@ -22,6 +22,10 @@ public sealed class SignalRBoardConnectionEvictor : IBoardConnectionEvictor
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        // Tracker first, then group removal, then broadcasts: evicted connections
+        // miss the boardPresence snapshot and get accessRevoked direct instead.
+        // Residual race: a JoinBoard whose auth check passed pre-commit can land
+        // after this runs and retain membership without access (#3420/#3407).
         var eviction = _presenceTracker.EvictUser(boardId, userId);
         if (eviction.EvictedConnectionIds.Count == 0)
             return;

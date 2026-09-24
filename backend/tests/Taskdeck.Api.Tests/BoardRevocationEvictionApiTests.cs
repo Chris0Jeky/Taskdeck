@@ -28,12 +28,12 @@ public class BoardRevocationEvictionApiTests : IClassFixture<TestWebApplicationF
     [Fact]
     public async Task RevokedMember_ShouldStopReceivingBoardMutations()
     {
-        // #3420/#3407: revoke removes the BoardAccess row but leaves live
-        // connections in the SignalR board group.
+        // #3420/#3407: revoke removes the BoardAccess row and must evict live
+        // connections from the SignalR board group.
         var ownerClient = _factory.CreateClient();
         var memberClient = _factory.CreateClient();
 
-        _ = await ApiTestHarness.AuthenticateAsync(ownerClient, "evict-owner");
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "evict-owner");
         var member = await ApiTestHarness.AuthenticateAsync(memberClient, "evict-member");
         var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "evict-board");
 
@@ -43,28 +43,45 @@ public class BoardRevocationEvictionApiTests : IClassFixture<TestWebApplicationF
         grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var access = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
 
-        await using var connection = CreateHubConnection(member.Token);
-        await connection.StartAsync();
-        await connection.InvokeAsync("JoinBoard", board.Id);
+        await using var memberConnection = CreateHubConnection(member.Token);
+        await memberConnection.StartAsync();
+        await using var ownerConnection = CreateHubConnection(owner.Token);
+        await ownerConnection.StartAsync();
 
-        var revokeResponse = await ownerClient.DeleteAsync($"/api/boards/{board.Id}/access/{access!.Id}");
-        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        var mutationReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        connection.On<object>("boardMutation", _ => mutationReceived.TrySetResult());
+        // Positive control: prove boardMutation reaches this harness client at all,
+        // so the negative assertion below cannot pass vacuously.
+        var memberPreRevoke = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        memberConnection.On<object>("boardMutation", _ => memberPreRevoke.TrySetResult());
+        await memberConnection.InvokeAsync("JoinBoard", board.Id);
+        await ownerConnection.InvokeAsync("JoinBoard", board.Id);
 
         var colResponse = await ownerClient.PostAsJsonAsync(
             $"/api/boards/{board.Id}/columns",
             new CreateColumnDto(board.Id, "EvictCol", null, null));
         colResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var preCompleted = await Task.WhenAny(memberPreRevoke.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        preCompleted.Should().Be(memberPreRevoke.Task, "the harness must observe boardMutation before revoke");
+
+        var revokeResponse = await ownerClient.DeleteAsync($"/api/boards/{board.Id}/access/{access!.Id}");
+        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Over-eviction control: the still-authorized owner must keep receiving.
+        var ownerPostRevoke = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        ownerConnection.On<object>("boardMutation", _ => ownerPostRevoke.TrySetResult());
+        var memberPostRevoke = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        memberConnection.On<object>("boardMutation", _ => memberPostRevoke.TrySetResult());
+
         var col = await colResponse.Content.ReadFromJsonAsync<ColumnDto>();
         var cardResponse = await ownerClient.PostAsJsonAsync(
             $"/api/boards/{board.Id}/cards",
             new CreateCardDto(board.Id, col!.Id, "post-revoke card", null, null, null));
         cardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var completed = await Task.WhenAny(mutationReceived.Task, Task.Delay(TimeSpan.FromSeconds(5)));
-        completed.Should().NotBe(mutationReceived.Task, "a revoked member must be evicted from the board group");
+        var ownerCompleted = await Task.WhenAny(ownerPostRevoke.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        ownerCompleted.Should().Be(ownerPostRevoke.Task, "a still-authorized member must keep receiving board mutations");
+
+        var memberCompleted = await Task.WhenAny(memberPostRevoke.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        memberCompleted.Should().NotBe(memberPostRevoke.Task, "a revoked member must be evicted from the board group");
     }
 
     [Fact]

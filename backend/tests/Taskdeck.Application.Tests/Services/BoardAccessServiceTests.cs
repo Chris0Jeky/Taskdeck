@@ -751,6 +751,29 @@ public class BoardAccessServiceTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task RevokeAccessAsync_ShouldSucceed_WhenEvictorThrows()
+    {
+        // Post-commit eviction is best-effort: revocation already committed, so a
+        // realtime failure is logged, never thrown (#3420/#3407).
+        var owner = CreateUser("owner");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, targetUser.Id, UserRole.Editor, owner.Id);
+        var evictorMock = new Mock<IBoardConnectionEvictor>();
+        evictorMock.Setup(e => e.EvictUserFromBoardAsync(board.Id, targetUser.Id, default))
+            .ThrowsAsync(new InvalidOperationException("realtime down"));
+        var service = new BoardAccessService(_unitOfWorkMock.Object, connectionEvictor: evictorMock.Object);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(owner.Id, default)).ReturnsAsync(owner);
+
+        var result = await service.RevokeAccessAsync(board.Id, access.Id, owner.Id);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
     private static User CreateUser(string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
