@@ -13,11 +13,4 @@ public interface IChatMessageRepository : IRepository<ChatMessage>
     /// </summary>
     Task<IReadOnlyDictionary<Guid, int>> CountBySessionIdsAsync(IEnumerable<Guid> sessionIds, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Set-based delete of every message in every session owned by the user.
-    /// Messages carry no UserId, so implementations scope through the parent sessions.
-    /// Call before deleting the sessions themselves: there is no cascade.
-    /// Returns the number of deleted rows.
-    /// </summary>
-    Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 }

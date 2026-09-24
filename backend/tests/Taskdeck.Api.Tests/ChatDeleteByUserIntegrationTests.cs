@@ -9,14 +9,15 @@ using Xunit;
 namespace Taskdeck.Api.Tests;
 
 /// <summary>
-/// Proves the set-based account-deletion chat cleanup deletes exactly the owner's rows:
-/// user-scoped, exact counts, and complete past any fetch-cap volume (the old per-row loop
-/// silently kept everything beyond its 100k fetch cap).
+/// Proves the set-based account-deletion chat cleanup deletes exactly the owner's rows with
+/// one session delete: user-scoped, exact counts, messages removed by the database cascade,
+/// and complete past any fetch-cap volume (the old per-row loop silently kept everything
+/// beyond its 100k fetch cap).
 /// </summary>
 public sealed class ChatDeleteByUserIntegrationTests
 {
     [Fact]
-    public async Task DeleteByUserIdAsync_DeletesOnlyTheOwnersMessagesAndSessions_WithExactCounts()
+    public async Task DeleteByUserIdAsync_DeletesOnlyTheOwnersSessions_WithExactCount_AndCascadesMessages()
     {
         var dbPath = CreateDbPath();
         try
@@ -36,17 +37,15 @@ public sealed class ChatDeleteByUserIntegrationTests
             await db.SaveChangesAsync();
             db.ChangeTracker.Clear();
 
-            var messageRepository = new ChatMessageRepository(db);
             var sessionRepository = new ChatSessionRepository(db);
-            var messagesDeleted = await messageRepository.DeleteByUserIdAsync(owner.Id);
             var sessionsDeleted = await sessionRepository.DeleteByUserIdAsync(owner.Id);
 
-            messagesDeleted.Should().Be(2);
             sessionsDeleted.Should().Be(1);
-            (await db.ChatMessages.CountAsync()).Should().Be(1);
             (await db.ChatSessions.CountAsync()).Should().Be(1);
-            (await db.ChatMessages.SingleAsync()).SessionId.Should().Be(otherSession.Id);
             (await db.ChatSessions.SingleAsync()).UserId.Should().Be(other.Id);
+            // The owner's two messages vanish with their session via ON DELETE CASCADE.
+            (await db.ChatMessages.CountAsync()).Should().Be(1);
+            (await db.ChatMessages.SingleAsync()).SessionId.Should().Be(otherSession.Id);
         }
         finally
         {
@@ -58,8 +57,8 @@ public sealed class ChatDeleteByUserIntegrationTests
     public async Task DeleteByUserIdAsync_RemovesEveryRow_PastBatchVolumes()
     {
         // ExecuteDeleteAsync issues one set-based statement: unlike the old capped fetch
-        // loop, there is no volume at which rows silently survive. 2501 rows exercises a
-        // multi-thousand delete deterministically without timing sensitivity.
+        // loop, there is no volume at which rows silently survive. 2501 messages exercises
+        // cascade completeness at multi-thousand volume deterministically.
         const int messageCount = 2501;
         var dbPath = CreateDbPath();
         try
@@ -75,15 +74,12 @@ public sealed class ChatDeleteByUserIntegrationTests
             await db.SaveChangesAsync();
             db.ChangeTracker.Clear();
 
-            var messageRepository = new ChatMessageRepository(db);
             var sessionRepository = new ChatSessionRepository(db);
-            var messagesDeleted = await messageRepository.DeleteByUserIdAsync(owner.Id);
             var sessionsDeleted = await sessionRepository.DeleteByUserIdAsync(owner.Id);
 
-            messagesDeleted.Should().Be(messageCount);
             sessionsDeleted.Should().Be(1);
-            (await db.ChatMessages.CountAsync()).Should().Be(0);
             (await db.ChatSessions.CountAsync()).Should().Be(0);
+            (await db.ChatMessages.CountAsync()).Should().Be(0);
         }
         finally
         {
@@ -101,10 +97,8 @@ public sealed class ChatDeleteByUserIntegrationTests
             await db.Database.MigrateAsync();
             var owner = AddUser(db, "chat-empty-owner");
 
-            var messageRepository = new ChatMessageRepository(db);
             var sessionRepository = new ChatSessionRepository(db);
 
-            (await messageRepository.DeleteByUserIdAsync(owner.Id)).Should().Be(0);
             (await sessionRepository.DeleteByUserIdAsync(owner.Id)).Should().Be(0);
         }
         finally

@@ -181,14 +181,12 @@ public class AccountDeletionService : IAccountDeletionService
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
             var privateWorkspaceDeleted = await _workspaceInsights.DeleteByUserAsync(userId, cancellationToken);
 
-            // 4. Anonymize chat sessions — delete messages and sessions. Set-based deletes:
-            // the old per-session/per-message loop issued 1+N queries plus a tracked delete per
-            // row, and silently kept every session past the 100k fetch cap. Order is load-bearing:
-            // messages must go first because there is no message cascade, so deleting sessions
-            // first would FK-violate (or orphan, if constraints are ever relaxed). The receipt
-            // only carries the session count, which ExecuteDeleteAsync reports exactly; the
-            // message count was never a receipt field and stays discarded.
-            _ = await _unitOfWork.ChatMessages.DeleteByUserIdAsync(userId, cancellationToken);
+            // 4. Anonymize chat sessions with one set-based delete: the old per-session/
+            // per-message loop issued 1+N queries plus a tracked delete per row, and silently
+            // kept every session past the 100k fetch cap. Messages need no separate delete:
+            // ChatMessage.SessionId is a required FK with DeleteBehavior.Cascade, so the
+            // database removes them atomically with their sessions (same reliance as the
+            // transcript-evidence cascade above). The receipt carries the exact session count.
             var chatSessionsAnonymized = await _unitOfWork.ChatSessions.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 5. Delete external logins, MFA credentials, and API keys (authentication

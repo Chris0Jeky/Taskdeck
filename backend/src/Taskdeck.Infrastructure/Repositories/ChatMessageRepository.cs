@@ -28,21 +28,6 @@ public class ChatMessageRepository : Repository<ChatMessage>, IChatMessageReposi
             .ToListAsync(cancellationToken);
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Messages carry no UserId, so ownership scopes through the parent sessions. Set-based,
-    /// children-first: call before deleting the sessions themselves (no cascade).
-    /// </remarks>
-    public Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var ownedSessionIds = _context.ChatSessions
-            .Where(session => session.UserId == userId)
-            .Select(session => session.Id);
-        return _dbSet
-            .Where(message => ownedSessionIds.Contains(message.SessionId))
-            .ExecuteDeleteAsync(cancellationToken);
-    }
-
     public async Task<IReadOnlyDictionary<Guid, int>> CountBySessionIdsAsync(IEnumerable<Guid> sessionIds, CancellationToken cancellationToken = default)
     {
         var idList = sessionIds.ToList();

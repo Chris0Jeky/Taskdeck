@@ -352,28 +352,24 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
-    public async Task DeleteAccountAsync_DeletesChatSessionsAndMessagesSetBased()
+    public async Task DeleteAccountAsync_DeletesChatSessionsSetBased()
     {
         // The old per-session/per-message loop issued 1+N queries plus a tracked delete
         // per row, and silently kept everything past the 100k fetch cap. Chat cleanup is
-        // now two set-based deletes, messages first (no cascade), with exact counts.
+        // now one set-based session delete; messages cascade at the database.
         SetupUserFound();
         SetupEmptyRepositories();
-        var callOrder = new List<string>();
-        _chatMessageRepoMock
-            .Setup(r => r.DeleteByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
-            .Callback(() => callOrder.Add("messages"))
-            .ReturnsAsync(7);
         _chatSessionRepoMock
             .Setup(r => r.DeleteByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
-            .Callback(() => callOrder.Add("sessions"))
             .ReturnsAsync(3);
 
         var result = await _service.DeleteAccountAsync(_userId, new AccountDeletionRequest(_password, "DELETE MY ACCOUNT"));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.ChatSessionsAnonymized.Should().Be(3);
-        callOrder.Should().Equal("messages", "sessions");
+        _chatSessionRepoMock.Verify(
+            r => r.DeleteByUserIdAsync(_userId, It.IsAny<CancellationToken>()),
+            Times.Once);
         _chatSessionRepoMock.Verify(
             r => r.GetByUserIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -821,9 +817,6 @@ public class AccountDeletionServiceTests
         _llmQueueRepoMock
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
-        _chatMessageRepoMock
-            .Setup(r => r.DeleteByUserIdAsync(_userId, default))
-            .ReturnsAsync(0);
         _chatSessionRepoMock
             .Setup(r => r.DeleteByUserIdAsync(_userId, default))
             .ReturnsAsync(0);
