@@ -194,6 +194,9 @@ public class CardAssignmentApiTests(TestWebApplicationFactory factory) : IClassF
             var other = await outsider.GetFromJsonAsync<JsonElement>(path);
             other.GetProperty("data").GetProperty("cards").EnumerateArray().Should().NotContain(c => c.GetProperty("id").GetGuid() == card.Id);
         }
+        // #3425: deletion refuses while the user owns active boards; archiving is
+        // flag-only so the card assignment survives for the removal count below.
+        (await client.DeleteAsync($"/api/boards/{card.BoardId}")).EnsureSuccessStatusCode();
         var deletion = await client.PostAsJsonAsync("/api/account/delete", new AccountDeletionRequest("password123", "DELETE MY ACCOUNT"));
         deletion.EnsureSuccessStatusCode();
         (await deletion.Content.ReadFromJsonAsync<AccountDeletionResultDto>())!.CardAssignmentsRemoved.Should().Be(1);
