@@ -28,6 +28,9 @@ public class AccountDeletionServiceTests
     private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly Mock<ITranscriptRepository> _transcriptRepoMock;
+    private readonly Mock<IBoardRepository> _boardRepoMock;
+    private readonly Mock<IMfaCredentialRepository> _mfaRepoMock;
+    private readonly Mock<IApiKeyRepository> _apiKeyRepoMock;
     private readonly AccountDeletionService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -50,6 +53,9 @@ public class AccountDeletionServiceTests
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
         _artefactRepoMock = new Mock<ISourceArtefactRepository>();
         _transcriptRepoMock = new Mock<ITranscriptRepository>();
+        _boardRepoMock = new Mock<IBoardRepository>();
+        _mfaRepoMock = new Mock<IMfaCredentialRepository>();
+        _apiKeyRepoMock = new Mock<IApiKeyRepository>();
         _artefactRepoMock.Setup(r => r.DeleteByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
         _transcriptRepoMock.Setup(r => r.DeleteByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -65,6 +71,9 @@ public class AccountDeletionServiceTests
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.MfaCredentials).Returns(_mfaRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ApiKeys).Returns(_apiKeyRepoMock.Object);
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword(_password));
 
@@ -638,6 +647,70 @@ public class AccountDeletionServiceTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task DeleteAccountAsync_DeletesMfaCredential_AndClearsMfaFlag()
+    {
+        // Arrange - #3425: MFA secrets must not linger on the anonymized record
+        SetupUserFound();
+        SetupEmptyRepositories();
+        _testUser.EnableMfa();
+        _mfaRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(new MfaCredential(_userId, "JBSWY3DPEHPK3PXP"));
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MfaCredentialsDeleted.Should().Be(1);
+        _mfaRepoMock.Verify(r => r.DeleteByUserIdAsync(_userId, default), Times.Once);
+        _userRepoMock.Verify(r => r.UpdateAsync(It.Is<User>(u => !u.MfaEnabled), default), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_DeletesApiKeys()
+    {
+        // Arrange - #3425: API keys must be removed with the account
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var key1 = new ApiKey(_userId, "hash-1", "pref-1", "cli", ApiKeyScope.Read);
+        var key2 = new ApiKey(_userId, "hash-2", "pref-2", "mcp", ApiKeyScope.Full);
+        _apiKeyRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(new[] { key1, key2 });
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ApiKeysDeleted.Should().Be(2);
+        _apiKeyRepoMock.Verify(r => r.DeleteAsync(key1, default), Times.Once);
+        _apiKeyRepoMock.Verify(r => r.DeleteAsync(key2, default), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_ReportsZeroCredentialCounters_WhenNoneExist()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MfaCredentialsDeleted.Should().Be(0);
+        result.Value.ApiKeysDeleted.Should().Be(0);
+    }
+
     private void SetupUserFound()
     {
         _userRepoMock.Setup(r => r.GetByIdAsync(_userId, default)).ReturnsAsync(_testUser);
@@ -674,5 +747,11 @@ public class AccountDeletionServiceTests
         _notifPrefRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, default))
             .ReturnsAsync((NotificationPreference?)null);
+        _mfaRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync((MfaCredential?)null);
+        _apiKeyRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(Enumerable.Empty<ApiKey>());
     }
 }
