@@ -720,6 +720,9 @@ public class WorkerResilienceTests
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AutomationProposal>>(
                 _proposals.Where(p => ids.Contains(p.Id)).ToList());
+        public Task<IReadOnlyList<ProposalHeaderDto>> GetHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ProposalHeaderDto>>(
+                _proposals.Where(p => ids.Contains(p.Id)).Select(p => new ProposalHeaderDto(p.Id, p.RequestedByUserId, p.BoardId)).ToList());
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(0);
         public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)

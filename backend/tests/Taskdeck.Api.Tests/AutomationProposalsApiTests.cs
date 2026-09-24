@@ -818,6 +818,89 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task ApproveProposals_UnknownId_ReturnsNotFoundWithExactMessage()
+    {
+        var client = _factory.CreateClient();
+        var caller = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-unknown");
+        var board = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-unknown");
+        var own = await CreateBatchApprovalProposalAsync(client, caller.UserId, board);
+        var unknown = Guid.NewGuid();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(own), new ApproveProposalSelectionRequest { Id = unknown, ExpectedProposalUpdatedAt = DateTimeOffset.UtcNow }]
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
+    public async Task ApproveProposals_FailFast_ReturnsFirstMissingBeforeLaterForbidden()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+        var caller = await ApiTestHarness.AuthenticateAsync(callerClient, "automation-batch-order");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-batch-order-other");
+        var callerBoard = await ApiTestHarness.CreateBoardWithColumnAsync(callerClient, "batch-order");
+        var otherBoard = await ApiTestHarness.CreateBoardWithColumnAsync(otherClient, "batch-order-other");
+        var foreign = await CreateBatchApprovalProposalAsync(otherClient, other.UserId, otherBoard);
+        var unknown = Guid.NewGuid();
+
+        var response = await callerClient.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [new ApproveProposalSelectionRequest { Id = unknown, ExpectedProposalUpdatedAt = DateTimeOffset.UtcNow }, Select(foreign)]
+            });
+
+        // Request order wins: the missing id (first) 404s before the foreign id (second) 403s.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
+    public async Task DismissProposals_UnknownId_ReturnsNotFoundWithExactMessage()
+    {
+        var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "automation-dismiss-unknown");
+        var unknown = Guid.NewGuid();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/dismiss",
+            new DismissProposalsRequest { Ids = [unknown] });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
+    public async Task DismissProposals_FailFast_ReturnsFirstMissingBeforeLaterForbidden()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(callerClient, "automation-dismiss-order");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-dismiss-order-other");
+        var otherBoard = await ApiTestHarness.CreateBoardWithColumnAsync(otherClient, "dismiss-order-other");
+        var foreign = await CreateBatchApprovalProposalAsync(otherClient, other.UserId, otherBoard);
+        var unknown = Guid.NewGuid();
+
+        var response = await callerClient.PostAsJsonAsync(
+            "/api/automation/proposals/dismiss",
+            new DismissProposalsRequest { Ids = [unknown, foreign.Id] });
+
+        // Request order wins: the missing id (first) 404s before the foreign id (second) 403s.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var failFastDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        failFastDocument.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
     public async Task ApproveProposals_RejectsMixedBoardsWhenOneWriteGrantWasRevoked()
     {
         var reviewerClient = _factory.CreateClient();

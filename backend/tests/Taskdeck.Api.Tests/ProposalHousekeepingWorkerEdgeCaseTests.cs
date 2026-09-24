@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Tests.Support;
@@ -295,6 +296,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
             => Task.FromResult<IEnumerable<AutomationProposal>>(_proposals.Take(limit).ToList());
 
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ProposalHeaderDto>> GetHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> HasAppliedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -331,6 +333,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
             => throw new InvalidOperationException("Database connection failed");
 
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ProposalHeaderDto>> GetHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> HasAppliedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

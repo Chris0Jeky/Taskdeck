@@ -254,23 +254,26 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         // Resolve every requested proposal before entering the all-or-none service. A board
         // collaborator may single-approve through the existing route, but the batch surface is
         // deliberately limited to the reviewer's own proposals so a broad selection cannot make
-        // decisions on another author's behalf.
+        // decisions on another author's behalf. Headers load in one query; the request-order
+        // iteration below preserves the old per-row fail-fast errors exactly.
+        var headers = await _proposalService.GetProposalHeadersByIdsAsync(
+            request.Proposals.Select(proposal => proposal.Id),
+            cancellationToken);
         var boardIds = new HashSet<Guid>();
         foreach (var selection in request.Proposals)
         {
             var proposalId = selection.Id;
-            var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
-            if (!proposalResult.IsSuccess)
-                return proposalResult.ToErrorActionResult();
+            if (!headers.TryGetValue(proposalId, out var header))
+                return Result.Failure(ErrorCodes.NotFound, $"Proposal with ID {proposalId} not found").ToErrorActionResult();
 
-            if (proposalResult.Value.RequestedByUserId != decidedByUserId)
+            if (header.RequestedByUserId != decidedByUserId)
             {
                 return Result.Failure(
                     ErrorCodes.Forbidden,
                     "Batch approval is limited to your own proposals").ToErrorActionResult();
             }
 
-            if (proposalResult.Value.BoardId is Guid boardId)
+            if (header.BoardId is Guid boardId)
                 boardIds.Add(boardId);
         }
 
@@ -599,14 +602,15 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 $"Cannot dismiss more than {MaxProposalListLimit} proposals at once"));
         }
 
-        // Verify the caller owns each proposal being dismissed
+        // Verify the caller owns each proposal being dismissed. Headers load in one query;
+        // the request-order iteration preserves the old per-row fail-fast errors exactly.
+        var headers = await _proposalService.GetProposalHeadersByIdsAsync(request.Ids, cancellationToken);
         foreach (var proposalId in request.Ids.Distinct())
         {
-            var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
-            if (!proposalResult.IsSuccess)
-                return proposalResult.ToErrorActionResult();
+            if (!headers.TryGetValue(proposalId, out var header))
+                return Result.Failure(ErrorCodes.NotFound, $"Proposal with ID {proposalId} not found").ToErrorActionResult();
 
-            if (proposalResult.Value.RequestedByUserId != callerUserId)
+            if (header.RequestedByUserId != callerUserId)
             {
                 return Result.Failure(ErrorCodes.Forbidden, "You can only dismiss your own proposals.").ToErrorActionResult();
             }
