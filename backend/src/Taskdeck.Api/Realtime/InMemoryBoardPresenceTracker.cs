@@ -59,6 +59,40 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
         }
     }
 
+    public BoardPresenceEviction EvictUser(Guid boardId, Guid userId)
+    {
+        lock (_gate)
+        {
+            if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
+            {
+                return new BoardPresenceEviction(
+                    new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow),
+                    []);
+            }
+
+            var evicted = boardConnections
+                .Where(pair => pair.Value.UserId == userId)
+                .Select(pair => pair.Key)
+                .ToList();
+
+            foreach (var connectionId in evicted)
+            {
+                boardConnections.Remove(connectionId);
+                _boardByConnection.Remove(connectionId);
+            }
+
+            if (boardConnections.Count == 0)
+            {
+                _connectionsByBoard.Remove(boardId);
+                return new BoardPresenceEviction(
+                    new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow),
+                    evicted);
+            }
+
+            return new BoardPresenceEviction(CreateSnapshot(boardId, boardConnections), evicted);
+        }
+    }
+
     public BoardPresenceSnapshot? LeaveConnection(string connectionId)
     {
         lock (_gate)

@@ -40,14 +40,9 @@ public class BoardsHub : Hub
 
     public async Task LeaveBoard(Guid boardId)
     {
-        var (userId, _) = ResolveCurrentUser();
-
-        var permission = await _authorizationService.CanReadBoardAsync(userId, boardId);
-        if (!permission.IsSuccess)
-            throw new HubException($"{permission.ErrorCode}:{permission.ErrorMessage}");
-
-        if (!permission.Value)
-            throw new HubException($"{ErrorCodes.Forbidden}:You do not have access to this board");
+        // Leaving is always safe: no read-access check. A revoked member must be
+        // able to leave voluntarily (#3420/#3407). Authentication is still required.
+        _ = ResolveCurrentUser();
 
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, BoardHubGroups.ForBoard(boardId));
         var presence = _presenceTracker.Leave(boardId, Context.ConnectionId);

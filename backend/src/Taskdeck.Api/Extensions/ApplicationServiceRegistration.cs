@@ -140,6 +140,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<InboxTriageDigestAgent>();
         services.AddSingleton<IEgressRegistry>(new EgressRegistry());
         services.AddScoped<SignalRBoardRealtimeNotifier>();
+        services.AddScoped<IBoardConnectionEvictor, SignalRBoardConnectionEvictor>();
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();

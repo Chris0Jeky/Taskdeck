@@ -13,6 +13,7 @@ public class BoardAccessService : IBoardAccessService
     private readonly INotificationService _notificationService;
     private readonly CardAssignmentService? _assignments;
     private readonly ICardAssignmentStore? _assignmentStore;
+    private readonly IBoardConnectionEvictor _connectionEvictor;
 
     // No DevelopmentSandboxSettings dependency: the development sandbox never widens write-class
     // authorization (ADR-0068 / #1866). Board-access management stays owner-or-manager only.
@@ -20,12 +21,14 @@ public class BoardAccessService : IBoardAccessService
         IUnitOfWork unitOfWork,
         INotificationService? notificationService = null,
         CardAssignmentService? assignments = null,
-        ICardAssignmentStore? assignmentStore = null)
+        ICardAssignmentStore? assignmentStore = null,
+        IBoardConnectionEvictor? connectionEvictor = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _assignments = assignments;
         _assignmentStore = assignmentStore;
+        _connectionEvictor = connectionEvictor ?? NoOpBoardConnectionEvictor.Instance;
     }
 
     public async Task<Result<BoardAccessDto>> GrantAccessAsync(GrantAccessDto dto, Guid grantedBy)
@@ -168,34 +171,37 @@ public class BoardAccessService : IBoardAccessService
             if (!result.IsSuccess) { await _unitOfWork.RollbackTransactionAsync(); return result; }
             await _unitOfWork.CommitTransactionAsync();
             if (_assignments is not null)
-                foreach (var cardId in result.Value)
+                foreach (var cardId in result.Value.DetachedCardIds)
                     await _assignments.NotifyAsync(boardId, cardId);
+            // Evict after commit: the access row is gone, so live connections must
+            // leave the board group immediately (#3420/#3407).
+            await _connectionEvictor.EvictUserFromBoardAsync(boardId, result.Value.RevokedUserId);
             return result;
         }
         catch { await _unitOfWork.RollbackTransactionAsync(); throw; }
     }
 
-    private async Task<Result<IReadOnlyList<Guid>>> StageRevokeAccessAsync(Guid boardId, Guid accessId, Guid revokedBy)
+    private async Task<Result<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>> StageRevokeAccessAsync(Guid boardId, Guid accessId, Guid revokedBy)
     {
         var access = await _unitOfWork.BoardAccesses.GetByIdAsync(accessId);
         if (access == null || access.BoardId != boardId)
-            return Result.Failure<IReadOnlyList<Guid>>(ErrorCodes.NotFound, $"Board access with ID {accessId} not found");
+            return Result.Failure<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>(ErrorCodes.NotFound, $"Board access with ID {accessId} not found");
 
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
         if (board == null)
-            return Result.Failure<IReadOnlyList<Guid>>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+            return Result.Failure<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
         var revokingUser = await _unitOfWork.Users.GetByIdAsync(revokedBy);
         if (revokingUser == null)
-            return Result.Failure<IReadOnlyList<Guid>>(ErrorCodes.NotFound, $"Revoking user with ID {revokedBy} not found");
+            return Result.Failure<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>(ErrorCodes.NotFound, $"Revoking user with ID {revokedBy} not found");
 
         var canManage = await EnsureCanManageBoardAccessAsync(board, revokedBy);
         if (!canManage.IsSuccess)
-            return Result.Failure<IReadOnlyList<Guid>>(canManage.ErrorCode, canManage.ErrorMessage);
+            return Result.Failure<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>(canManage.ErrorCode, canManage.ErrorMessage);
         // Revocation is demotion to nothing: same owner-row protection as update.
         var canModify = await EnsureCanModifyAccessAsync(board, revokedBy, access);
         if (!canModify.IsSuccess)
-            return Result.Failure<IReadOnlyList<Guid>>(canModify.ErrorCode, canModify.ErrorMessage);
+            return Result.Failure<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>(canModify.ErrorCode, canModify.ErrorMessage);
 
         IReadOnlyList<Card> detachedCards = [];
         if (board.OwnerId != access.UserId && _assignments is not null)
@@ -204,7 +210,7 @@ public class BoardAccessService : IBoardAccessService
         await _unitOfWork.BoardAccesses.DeleteAsync(access);
         await _unitOfWork.SaveChangesAsync();
 
-        return Result.Success<IReadOnlyList<Guid>>(detachedCards.Select(card => card.Id).ToArray());
+        return Result.Success<(IReadOnlyList<Guid> DetachedCardIds, Guid RevokedUserId)>((detachedCards.Select(card => card.Id).ToArray(), access.UserId));
     }
 
     public async Task<Result<IEnumerable<BoardAccessDto>>> GetBoardAccessListAsync(Guid boardId)
