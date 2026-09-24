@@ -106,6 +106,51 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task LoginAsync_ShouldPayOneDummyVerify_WhenIdentifierIsUnknown()
+    {
+        var passwordHasher = new Mock<IPasswordHasher>(MockBehavior.Strict);
+        var service = CreateService(passwordHasher: passwordHasher.Object);
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        _userRepoMock.Setup(r => r.GetByEmailAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        string? dummyHash = null;
+        passwordHasher
+            .Setup(h => h.VerifyPassword("password123", It.IsAny<string>()))
+            .Callback<string, string>((_, hash) => dummyHash = hash)
+            .Returns(false);
+
+        var result = await service.LoginAsync(new LoginDto("ghost-user", "password123"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
+        result.ErrorMessage.Should().Be("Invalid username/email or password");
+        passwordHasher.Verify(
+            h => h.VerifyPassword("password123", It.IsAny<string>()),
+            Times.Once,
+            "unknown identifiers must pay one BCrypt verify so absent accounts are not measurably faster (#3426)");
+        dummyHash.Should().NotBeNullOrWhiteSpace();
+        dummyHash.Should().StartWith("$2", "the dummy must be a real BCrypt hash at full cost, not an empty or malformed fast path");
+    }
+
+    [Fact]
+    public async Task LoginAsync_ShouldReturnAuthFailed_WhenIdentifierUnknownAndPasswordIsNull()
+    {
+        var passwordHasher = new Mock<IPasswordHasher>(MockBehavior.Strict);
+        var service = CreateService(passwordHasher: passwordHasher.Object);
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        _userRepoMock.Setup(r => r.GetByEmailAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        passwordHasher
+            .Setup(h => h.VerifyPassword(string.Empty, It.IsAny<string>()))
+            .Returns(false);
+
+        var result = await service.LoginAsync(new LoginDto("ghost-user", null!));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
+    }
+
+    [Fact]
     public async Task RegisterAsync_ShouldNormalizeIdentifiersBeforeExistenceCheckAndPersistence()
     {
         var service = CreateService();
