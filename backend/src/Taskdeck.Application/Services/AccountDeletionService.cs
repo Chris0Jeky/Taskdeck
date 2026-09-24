@@ -110,9 +110,12 @@ public class AccountDeletionService : IAccountDeletionService
         }
 
         // Guard: board creation sets only Board.OwnerId (no Owner access row is ever
-        // created), so also refuse deletion while the user owns boards outright -
-        // otherwise those boards would be orphaned permanently (#3400, #3425).
-        var ownedBoards = (await _unitOfWork.Boards.GetByOwnerIdAsync(userId, cancellationToken)).ToList();
+        // created), so also refuse deletion while the user owns active boards
+        // outright - otherwise those boards would be orphaned permanently
+        // (#3400, #3425). Archived boards are already disposed of (DELETE is a
+        // soft delete and no ownership-transfer flow exists yet, see #3424),
+        // so they do not block deletion.
+        var ownedBoards = (await _unitOfWork.Boards.GetByOwnerIdAsync(userId, includeArchived: false, cancellationToken)).ToList();
         if (ownedBoards.Count > 0)
         {
             var firstOwned = ownedBoards.First();

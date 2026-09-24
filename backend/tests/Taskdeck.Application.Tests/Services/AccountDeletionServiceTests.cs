@@ -720,7 +720,7 @@ public class AccountDeletionServiceTests
         SetupEmptyRepositories();
         var ownedBoard = new Board("my-board", ownerId: _userId);
         _boardRepoMock
-            .Setup(r => r.GetByOwnerIdAsync(_userId, default))
+            .Setup(r => r.GetByOwnerIdAsync(_userId, false, default))
             .ReturnsAsync(new[] { ownedBoard });
 
         var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
@@ -732,8 +732,32 @@ public class AccountDeletionServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
         result.ErrorMessage.Should().Contain("my-board");
-        _boardRepoMock.Verify(r => r.GetByOwnerIdAsync(_userId, default), Times.Once);
+        _boardRepoMock.Verify(r => r.GetByOwnerIdAsync(_userId, false, default), Times.Once);
         _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_IgnoresArchivedOwnedBoards()
+    {
+        // Arrange - #3425: DELETE is a soft delete, so archived boards are already
+        // disposed of and must not block deletion (no transfer flow exists yet).
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var archivedBoard = new Board("old-board", ownerId: _userId);
+        archivedBoard.Archive();
+        _boardRepoMock
+            .Setup(r => r.GetByOwnerIdAsync(_userId, true, default))
+            .ReturnsAsync(new[] { archivedBoard });
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        _boardRepoMock.Verify(r => r.GetByOwnerIdAsync(_userId, false, default), Times.Once);
+        _boardRepoMock.Verify(r => r.GetByOwnerIdAsync(_userId, true, default), Times.Never);
     }
 
     private void SetupUserFound()
@@ -779,7 +803,7 @@ public class AccountDeletionServiceTests
             .Setup(r => r.GetByUserIdAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<ApiKey>());
         _boardRepoMock
-            .Setup(r => r.GetByOwnerIdAsync(_userId, default))
+            .Setup(r => r.GetByOwnerIdAsync(_userId, false, default))
             .ReturnsAsync(Enumerable.Empty<Board>());
     }
 }

@@ -171,11 +171,11 @@ public class BoardRepository : Repository<Board>, IBoardRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<Board>> GetByOwnerIdAsync(Guid ownerId, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<Board>> GetByOwnerIdAsync(Guid ownerId, bool includeArchived, CancellationToken cancellationToken = default)
     {
         var boards = await _dbSet
             .AsNoTracking()
-            .Where(board => board.OwnerId == ownerId)
+            .Where(board => board.OwnerId == ownerId && (includeArchived || !board.IsArchived))
             .ToListAsync(cancellationToken);
 
         return boards.OrderByDescending(board => board.CreatedAt);
