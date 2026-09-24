@@ -23,6 +23,12 @@ public class UserService : IUserService
     {
         try
         {
+            // Centralized server-side password policy (#3402/#3419), checked before
+            // paying BCrypt's cost.
+            var passwordError = PasswordPolicy.Validate(dto.Password);
+            if (passwordError != null)
+                return Result.Failure<UserDto>(ErrorCodes.ValidationError, passwordError);
+
             var exists = await _unitOfWork.Users.ExistsAsync(dto.Username, dto.Email);
             if (exists)
                 return Result.Failure<UserDto>(ErrorCodes.Conflict, "A user with the same username or email already exists");
