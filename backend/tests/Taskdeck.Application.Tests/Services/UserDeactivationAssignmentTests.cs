@@ -28,7 +28,7 @@ public class UserDeactivationAssignmentTests
         foreach (var card in f.Cards)
             card.Assignments.Should().ContainSingle().Which.UserId.Should().Be(f.OtherUserId);
         f.Cards.Select(card => card.UpdatedAt).Should().NotEqual(versions);
-        f.Order.Should().Equal("begin", "read", "detach", "save", "commit", "invalidate", "notify", "notify");
+        f.Order.Should().Equal("begin", "read", "detach", "save", "commit", "notify", "notify");
         f.Audits.Should().HaveCount(2);
         foreach (var audit in f.Audits)
         {
@@ -116,7 +116,6 @@ public class UserDeactivationAssignmentTests
         await act.Should().ThrowAsync<InvalidOperationException>();
         f.Unit.Verify(unit => unit.CommitTransactionAsync(default), Times.Once);
         f.Unit.Verify(unit => unit.RollbackTransactionAsync(default), Times.Never);
-        f.Cache.Verify(cache => cache.Invalidate(f.User.Id), Times.Once);
     }
 
     private sealed class Fixture
@@ -124,7 +123,6 @@ public class UserDeactivationAssignmentTests
         public Mock<IUnitOfWork> Unit { get; } = new();
         public Mock<IUserRepository> Users { get; } = new();
         public Mock<ICardAssignmentStore> Store { get; } = new();
-        public Mock<IActiveUserCache> Cache { get; } = new();
         public Mock<IBoardRealtimeNotifier> Notifier { get; } = new();
         public User User { get; } = new("leaving", "leaving@example.invalid", "test-hash");
         public Guid OtherUserId { get; } = Guid.NewGuid();
@@ -149,14 +147,13 @@ public class UserDeactivationAssignmentTests
             Unit.Setup(unit => unit.BeginTransactionAsync(default)).Callback(() => Order.Add("begin")).Returns(Task.CompletedTask);
             Unit.Setup(unit => unit.SaveChangesAsync(default)).Callback(() => Order.Add("save")).ReturnsAsync(1);
             Unit.Setup(unit => unit.CommitTransactionAsync(default)).Callback(() => Order.Add("commit")).Returns(Task.CompletedTask);
-            Cache.Setup(cache => cache.Invalidate(User.Id)).Callback(() => Order.Add("invalidate"));
             Notifier.Setup(n => n.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), default))
                 .Returns((BoardRealtimeEvent evt, CancellationToken _) =>
                 {
                     Order.Add("notify"); Events.Add(evt); return Task.CompletedTask;
                 });
             Service = new UserService(Unit.Object,
-                new CardAssignmentService(Unit.Object, Store.Object, Mock.Of<IAuthorizationService>(), Notifier.Object), Cache.Object);
+                new CardAssignmentService(Unit.Object, Store.Object, Mock.Of<IAuthorizationService>(), Notifier.Object));
         }
 
         public Card AddCard(bool archived)
@@ -170,7 +167,6 @@ public class UserDeactivationAssignmentTests
 
         public void AssertNoReceipt()
         {
-            Cache.Verify(cache => cache.Invalidate(It.IsAny<Guid>()), Times.Never);
             Notifier.Verify(n => n.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), default), Times.Never);
         }
     }
