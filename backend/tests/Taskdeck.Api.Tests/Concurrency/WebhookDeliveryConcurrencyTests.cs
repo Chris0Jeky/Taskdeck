@@ -100,21 +100,20 @@ public class WebhookDeliveryConcurrencyTests : IClassFixture<TestWebApplicationF
         webhookCards.Select(c => c.Title).Distinct().Should().HaveCount(mutationCount,
             "each card title should be unique (no duplicate processing)");
 
-        // Poll for webhook delivery records (created asynchronously)
+        // Poll for webhook delivery records (created asynchronously after the HTTP
+        // response returns). 30 s budget absorbs loaded runners; the count assertion
+        // below still fails hard on missing/duplicated records (#3456).
         using var scope = _factory.Services.CreateScope();
         var deliveryRepo = scope.ServiceProvider
             .GetRequiredService<IOutboundWebhookDeliveryRepository>();
 
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
-        IReadOnlyList<OutboundWebhookDelivery> deliveries = [];
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            deliveries = await deliveryRepo.GetBySubscriptionAsync(
-                webhookSub!.Subscription.Id, limit: mutationCount + 5);
-            if (deliveries.Count >= mutationCount)
-                break;
-            await Task.Delay(100);
-        }
+        var deliveries = await ApiTestHarness.PollUntilAsync(
+            () => deliveryRepo.GetBySubscriptionAsync(webhookSub!.Subscription.Id, limit: mutationCount + 5),
+            found => found.Count >= mutationCount,
+            $"all {mutationCount} webhook delivery records to persist",
+            maxAttempts: 300,
+            interval: TimeSpan.FromMilliseconds(100),
+            diagnostics: found => $"persisted {found?.Count ?? 0} of {mutationCount}");
 
         deliveries.Should().HaveCount(mutationCount,
             $"each of the {mutationCount} card mutations should create exactly one webhook delivery record");
