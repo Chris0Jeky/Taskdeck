@@ -13,23 +13,24 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
     /// <summary>
     /// Well-known audit entity ID for whole-database export/import operations,
-    /// which address the singleton database rather than a row. Keeps the full
-    /// export/import trail queryable via entity history.
+    /// which address the singleton database rather than a row. The trail is
+    /// reachable via user history; the "Database" entity type is not accepted
+    /// by the entity-history endpoint, which only serves Board/Column/Card/Label.
     /// </summary>
     internal static readonly Guid AuditedDatabaseId = Guid.Parse("b7e4a2c1-8f3d-4a5e-9c1b-6d2f8a0e4c7a");
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
     private readonly DatabaseExportImportSettings _databaseSettings;
-    private readonly string? _environmentName;
+    private readonly string _environmentName;
     private readonly IHistoryService? _historyService;
     private readonly ILogger<DatabaseFileExportImportService>? _logger;
 
     public DatabaseFileExportImportService(
         IUnitOfWork unitOfWork,
+        string environmentName,
         DevelopmentSandboxSettings? sandboxSettings = null,
         DatabaseExportImportSettings? databaseSettings = null,
-        string? environmentName = null,
         IHistoryService? historyService = null,
         ILogger<DatabaseFileExportImportService>? logger = null)
     {
@@ -52,6 +53,9 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
         if (!_sandboxSettings.Enabled)
             return Result.Failure<byte[]>(ErrorCodes.Forbidden, "Database export is only allowed when DevelopmentSandbox is enabled");
+
+        if (user.DefaultRole is not (UserRole.Owner or UserRole.Admin))
+            return Result.Failure<byte[]>(ErrorCodes.Forbidden, "Database export requires the Owner or Admin role");
 
         var databasePathResult = ResolveDatabasePath();
         if (!databasePathResult.IsSuccess)
@@ -92,6 +96,9 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
         if (!_sandboxSettings.Enabled)
             return Result.Failure(ErrorCodes.Forbidden, "Database import is only allowed when DevelopmentSandbox is enabled");
+
+        if (user.DefaultRole is not (UserRole.Owner or UserRole.Admin))
+            return Result.Failure(ErrorCodes.Forbidden, "Database import requires the Owner or Admin role");
 
         if (dbFile == null || dbFile.Length == 0)
             return Result.Failure(ErrorCodes.ValidationError, "Database import payload cannot be empty");
@@ -193,8 +200,6 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
     }
 
     private bool IsProductionEnvironment() =>
-        // A null environment means direct construction (tests); production
-        // deployments always resolve through DI, which supplies the host name.
         string.Equals(_environmentName, "Production", StringComparison.OrdinalIgnoreCase);
 
     private Task AuditDatabaseActionAsync(AuditAction action, Guid userId, string details) =>

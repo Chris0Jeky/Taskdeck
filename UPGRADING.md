@@ -198,6 +198,7 @@ take before a major upgrade.
 There is also a whole-database export/import pair (`GET /api/export/database`,
 `POST /api/import/database`). It is a developer/sandbox convenience, not the supported migration
 path — for moving a workspace, copy the database file as described above.
+It additionally requires the `Owner` or `Admin` global role and refuses in `Production`.
 
 ## General upgrade procedure
 

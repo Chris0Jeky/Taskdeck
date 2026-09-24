@@ -55,9 +55,9 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IDatabaseFileExportImportService>(sp =>
             new DatabaseFileExportImportService(
                 sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetRequiredService<IWebHostEnvironment>().EnvironmentName,
                 sp.GetRequiredService<DevelopmentSandboxSettings>(),
                 sp.GetRequiredService<DatabaseExportImportSettings>(),
-                sp.GetRequiredService<IWebHostEnvironment>().EnvironmentName,
                 sp.GetService<IHistoryService>(),
                 sp.GetService<ILogger<DatabaseFileExportImportService>>()));
         services.AddScoped<IExportImportService>(sp =>

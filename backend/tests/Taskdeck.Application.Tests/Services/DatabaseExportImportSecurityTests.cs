@@ -13,7 +13,8 @@ namespace Taskdeck.Application.Tests.Services;
 
 /// <summary>
 /// Security regression tests for #3412: full-database export/import must
-/// refuse in Production regardless of the sandbox flag, and must leave an
+/// refuse in Production regardless of the sandbox flag, must refuse
+/// non-admin roles even with the sandbox enabled, and must leave an
 /// audit entry on success.
 /// </summary>
 public class DatabaseExportImportSecurityTests : IDisposable
@@ -51,17 +52,19 @@ public class DatabaseExportImportSecurityTests : IDisposable
     [InlineData("production")]
     public async Task ExportDatabase_ProductionEnvironment_RefusesEvenWithFlagEnabled(string environment)
     {
-        var user = new User("dbsec", "dbsec@example.com", "hashedpassword");
-        // Nonexistent path proves refusal precedes any file access.
+        var userId = Guid.NewGuid();
+        // Nonexistent path plus Times.Never prove refusal precedes
+        // any file access and any user lookup.
         var dbPath = NextTempFilePath();
         var service = CreateService($"Data Source={dbPath}", environment);
-        _users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
 
-        var result = await service.ExportDatabaseAsync(user.Id);
+        var result = await service.ExportDatabaseAsync(userId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         result.ErrorMessage.Should().Contain("Production");
+        _users.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), default), Times.Never);
+        File.Exists(dbPath).Should().BeFalse("refusal must precede any file side effect");
     }
 
     [Theory]
@@ -70,24 +73,66 @@ public class DatabaseExportImportSecurityTests : IDisposable
     [InlineData("production")]
     public async Task ImportDatabase_ProductionEnvironment_RefusesEvenWithFlagEnabled(string environment)
     {
-        var user = new User("dbsec", "dbsec@example.com", "hashedpassword");
+        var userId = Guid.NewGuid();
         var dbPath = NextTempFilePath();
         var service = CreateService($"Data Source={dbPath}", environment);
+
+        var result = await service.ImportDatabaseAsync(CreateSqlitePayload(), userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("Production");
+        _users.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), default), Times.Never);
+        File.Exists(dbPath).Should().BeFalse("refusal must precede any file side effect");
+    }
+
+    [Theory]
+    [InlineData(UserRole.Editor)]
+    [InlineData(UserRole.Viewer)]
+    public async Task ExportDatabase_NonAdminRole_RefusesEvenWithSandboxEnabled(UserRole role)
+    {
+        var user = new User("dbsec", "dbsec@example.com", "hashedpassword", role);
+        var dbPath = NextTempFilePath();
+        await File.WriteAllBytesAsync(dbPath, CreateSqlitePayload(512));
+        var service = CreateService($"Data Source={dbPath}", "Development");
+        _users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ExportDatabaseAsync(user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("Owner or Admin");
+        _history.Verify(h => h.LogActionAsync(
+            It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(),
+            It.IsAny<Guid?>(), It.IsAny<string?>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Editor)]
+    [InlineData(UserRole.Viewer)]
+    public async Task ImportDatabase_NonAdminRole_RefusesEvenWithSandboxEnabled(UserRole role)
+    {
+        var user = new User("dbsec", "dbsec@example.com", "hashedpassword", role);
+        var dbPath = NextTempFilePath();
+        var service = CreateService($"Data Source={dbPath}", "Development");
         _users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
 
         var result = await service.ImportDatabaseAsync(CreateSqlitePayload(), user.Id);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
-        result.ErrorMessage.Should().Contain("Production");
+        result.ErrorMessage.Should().Contain("Owner or Admin");
         File.Exists(dbPath).Should().BeFalse("refusal must precede any file side effect");
+        _history.Verify(h => h.LogActionAsync(
+            It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(),
+            It.IsAny<Guid?>(), It.IsAny<string?>()), Times.Never);
     }
 
     [Fact]
     public async Task ExportDatabase_Success_WritesAuditEntry()
     {
-        var user = new User("dbsec", "dbsec@example.com", "hashedpassword");
-        var dbPath = CreateTempFilePath();
+        var user = new User("dbsec", "dbsec@example.com", "hashedpassword", UserRole.Admin);
+        var dbPath = NextTempFilePath();
         await File.WriteAllBytesAsync(dbPath, CreateSqlitePayload(512));
         var service = CreateService($"Data Source={dbPath}", "Development");
         _users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
@@ -106,8 +151,8 @@ public class DatabaseExportImportSecurityTests : IDisposable
     [Fact]
     public async Task ImportDatabase_Success_WritesAuditEntry()
     {
-        var user = new User("dbsec", "dbsec@example.com", "hashedpassword");
-        var dbPath = CreateTempFilePath();
+        var user = new User("dbsec", "dbsec@example.com", "hashedpassword", UserRole.Admin);
+        var dbPath = NextTempFilePath();
         await File.WriteAllBytesAsync(dbPath, CreateSqlitePayload(512));
         var service = CreateService($"Data Source={dbPath}", "Development");
         _users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
@@ -126,8 +171,8 @@ public class DatabaseExportImportSecurityTests : IDisposable
     [Fact]
     public async Task ExportDatabase_AuditFailure_DoesNotFailExport()
     {
-        var user = new User("dbsec", "dbsec@example.com", "hashedpassword");
-        var dbPath = CreateTempFilePath();
+        var user = new User("dbsec", "dbsec@example.com", "hashedpassword", UserRole.Admin);
+        var dbPath = NextTempFilePath();
         await File.WriteAllBytesAsync(dbPath, CreateSqlitePayload(512));
         var service = CreateService($"Data Source={dbPath}", "Development");
         _users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
@@ -141,23 +186,36 @@ public class DatabaseExportImportSecurityTests : IDisposable
         result.IsSuccess.Should().BeTrue("audit logging is best-effort and must not break the operation");
     }
 
-    private DatabaseFileExportImportService CreateService(string? connectionString, string? environmentName)
+    [Fact]
+    public async Task ImportDatabase_AuditFailure_DoesNotFailImport()
+    {
+        var user = new User("dbsec", "dbsec@example.com", "hashedpassword", UserRole.Admin);
+        var dbPath = NextTempFilePath();
+        await File.WriteAllBytesAsync(dbPath, CreateSqlitePayload(512));
+        var service = CreateService($"Data Source={dbPath}", "Development");
+        _users.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _history.Setup(h => h.LogActionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(),
+                It.IsAny<Guid?>(), It.IsAny<string?>()))
+            .ThrowsAsync(new InvalidOperationException("audit store unavailable"));
+
+        var result = await service.ImportDatabaseAsync(CreateSqlitePayload(256), user.Id);
+
+        result.IsSuccess.Should().BeTrue("audit logging is best-effort and must not break the operation");
+    }
+
+    private DatabaseFileExportImportService CreateService(string? connectionString, string environmentName)
     {
         return new DatabaseFileExportImportService(
             _unitOfWork.Object,
+            environmentName,
             new DevelopmentSandboxSettings { Enabled = true },
             new DatabaseExportImportSettings
             {
                 ConnectionString = connectionString,
                 MaxImportBytes = DatabaseExportImportSettings.DefaultMaxImportBytes
             },
-            environmentName,
             _history.Object);
-    }
-
-    private string CreateTempFilePath()
-    {
-        return NextTempFilePath();
     }
 
     private string NextTempFilePath()
