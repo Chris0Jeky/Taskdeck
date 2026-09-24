@@ -1,3 +1,4 @@
+using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Interfaces;
@@ -9,6 +10,11 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
     Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Loads minimal headers for the given ids in a single query without operation includes,
+    /// for batch pre-checks that must not pay full-entity cost per row.
+    /// </summary>
+    Task<IReadOnlyList<ProposalHeaderDto>> GetHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default);
     // includeDeferred:false (default) hides currently-snoozed pending proposals for review-queue
     // reads; completeness-sensitive callers (GDPR data export) pass includeDeferred:true so a

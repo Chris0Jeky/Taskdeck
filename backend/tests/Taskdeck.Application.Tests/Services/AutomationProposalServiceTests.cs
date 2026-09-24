@@ -189,6 +189,26 @@ public class AutomationProposalServiceTests
     #region CreateProposalAsync Tests
 
     [Fact]
+    public async Task GetProposalHeadersByIdsAsync_ShouldMapRepoHeaders_ById()
+    {
+        var boardId = Guid.NewGuid();
+        var headers = new[]
+        {
+            new ProposalHeaderDto(Guid.NewGuid(), Guid.NewGuid(), boardId),
+            new ProposalHeaderDto(Guid.NewGuid(), Guid.NewGuid(), null),
+        };
+        _proposalRepoMock.Setup(r => r.GetHeadersByIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(headers);
+
+        var result = await _service.GetProposalHeadersByIdsAsync(headers.Select(header => header.Id));
+
+        result.Should().HaveCount(2);
+        result[headers[0].Id].Should().Be(headers[0]);
+        result[headers[1].Id].Should().Be(headers[1]);
+        _proposalRepoMock.Verify(r => r.GetHeadersByIdsAsync(It.IsAny<IEnumerable<Guid>>(), default), Times.Once);
+    }
+
+    [Fact]
     public async Task CreateProposalAsync_ShouldReturnSuccess_WithValidData()
     {
         // Arrange
