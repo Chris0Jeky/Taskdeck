@@ -181,19 +181,12 @@ public class AccountDeletionService : IAccountDeletionService
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
             var privateWorkspaceDeleted = await _workspaceInsights.DeleteByUserAsync(userId, cancellationToken);
 
-            // 4. Anonymize chat sessions — delete messages and sessions
-            var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
-            var chatSessionsAnonymized = 0;
-            foreach (var session in chatSessions)
-            {
-                var messages = await _unitOfWork.ChatMessages.GetBySessionIdAsync(session.Id, limit: 100000, cancellationToken: cancellationToken);
-                foreach (var message in messages)
-                {
-                    await _unitOfWork.ChatMessages.DeleteAsync(message, cancellationToken);
-                }
-                await _unitOfWork.ChatSessions.DeleteAsync(session, cancellationToken);
-                chatSessionsAnonymized++;
-            }
+            // 4. Anonymize chat sessions — delete messages and sessions. Set-based deletes:
+            // the old per-session/per-message loop issued 1+N queries plus a tracked delete per
+            // row, and silently kept every session past the 100k fetch cap. Messages go first
+            // (no cascade), then sessions; both report exact counts for the receipt.
+            _ = await _unitOfWork.ChatMessages.DeleteByUserIdAsync(userId, cancellationToken);
+            var chatSessionsAnonymized = await _unitOfWork.ChatSessions.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 5. Delete external logins, MFA credentials, and API keys (authentication
             //    material must not outlive the account).

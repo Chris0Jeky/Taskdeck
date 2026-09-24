@@ -108,6 +108,15 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
         return rowsUpdated == 1;
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Set-based (<see cref="EntityFrameworkQueryableExtensions.ExecuteDeleteAsync{TSource}"/>):
+    /// no rows are loaded, so unlike the old per-session loop this cannot silently stop at a
+    /// fetch cap. Bypasses the change tracker like the other batched account-deletion deletes.
+    /// </remarks>
+    public Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+        => _dbSet.Where(session => session.UserId == userId).ExecuteDeleteAsync(cancellationToken);
+
     private static async Task<IReadOnlyList<ChatSession>> GetLimitedOrderedByUpdatedAtAsync(
         IQueryable<ChatSession> query,
         int limit,

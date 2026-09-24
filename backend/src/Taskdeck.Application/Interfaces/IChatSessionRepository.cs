@@ -14,4 +14,11 @@ public interface IChatSessionRepository : IRepository<ChatSession>
         Guid boardId,
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Set-based delete of every session owned by the user.
+    /// Call after <see cref="IChatMessageRepository.DeleteByUserIdAsync"/>: there is no cascade.
+    /// Returns the number of deleted rows.
+    /// </summary>
+    Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 }
