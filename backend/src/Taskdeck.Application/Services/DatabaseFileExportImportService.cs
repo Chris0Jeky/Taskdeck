@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
@@ -9,18 +10,34 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
     private const int SqliteHeaderLength = 16;
     private static readonly byte[] SqliteHeader = "SQLite format 3\0"u8.ToArray();
 
+    /// <summary>
+    /// Well-known audit entity ID for whole-database export/import operations,
+    /// which address the singleton database rather than a row. Keeps the full
+    /// export/import trail queryable via entity history.
+    /// </summary>
+    internal static readonly Guid AuditedDatabaseId = Guid.Parse("b7e4a2c1-8f3d-4a5e-9c1b-6d2f8a0e4c7a");
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
     private readonly DatabaseExportImportSettings _databaseSettings;
+    private readonly string? _environmentName;
+    private readonly IHistoryService? _historyService;
+    private readonly ILogger<DatabaseFileExportImportService>? _logger;
 
     public DatabaseFileExportImportService(
         IUnitOfWork unitOfWork,
         DevelopmentSandboxSettings? sandboxSettings = null,
-        DatabaseExportImportSettings? databaseSettings = null)
+        DatabaseExportImportSettings? databaseSettings = null,
+        string? environmentName = null,
+        IHistoryService? historyService = null,
+        ILogger<DatabaseFileExportImportService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
         _databaseSettings = databaseSettings ?? new DatabaseExportImportSettings();
+        _environmentName = environmentName;
+        _historyService = historyService;
+        _logger = logger;
     }
 
     public async Task<Result<byte[]>> ExportDatabaseAsync(Guid userId)
