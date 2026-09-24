@@ -9,13 +9,11 @@ namespace Taskdeck.Application.Services;
 public class UserService : IUserService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IActiveUserCache? _activeUserCache;
     private readonly CardAssignmentService _assignments;
 
-    public UserService(IUnitOfWork unitOfWork, CardAssignmentService assignments, IActiveUserCache? activeUserCache = null)
+    public UserService(IUnitOfWork unitOfWork, CardAssignmentService assignments)
     {
         _unitOfWork = unitOfWork;
-        _activeUserCache = activeUserCache;
         _assignments = assignments;
     }
 
@@ -148,9 +146,8 @@ public class UserService : IUserService
             throw;
         }
 
-        // Never publish or invalidate before commit. The production composite notifier owns
+        // Never publish before commit. The production composite notifier owns
         // channel failure logging; a post-commit failure must not enter the rollback block.
-        _activeUserCache?.Invalidate(userId);
         foreach (var card in detachedCards)
             await _assignments.NotifyAsync(card.BoardId, card.Id);
 
@@ -167,9 +164,6 @@ public class UserService : IUserService
         // Revoke pre-deactivation JWTs: sessions must not resurrect on reactivation (#3403).
         user.InvalidateTokens();
         await _unitOfWork.SaveChangesAsync();
-
-        // Invalidate the cache so the middleware picks up the re-activated status
-        _activeUserCache?.Invalidate(userId);
 
         return Result.Success();
     }

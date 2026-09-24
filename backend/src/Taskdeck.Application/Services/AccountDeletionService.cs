@@ -26,7 +26,6 @@ public class AccountDeletionService : IAccountDeletionService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
-    private readonly IActiveUserCache? _activeUserCache;
     private readonly ILogger<AccountDeletionService>? _logger;
     private readonly ISourceArtefactRepository _artefacts;
     private readonly ITranscriptRepository _transcripts;
@@ -38,7 +37,6 @@ public class AccountDeletionService : IAccountDeletionService
         ISourceArtefactRepository artefacts,
         ITranscriptRepository transcripts,
         IWorkspaceInsightRepository workspaceInsights,
-        IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null,
         ICaptureStore? captureStore = null,
         IBlobStore? blobStore = null,
@@ -48,7 +46,6 @@ public class AccountDeletionService : IAccountDeletionService
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
-        _activeUserCache = activeUserCache;
         _logger = logger;
         _artefacts = artefacts;
         _transcripts = transcripts;
@@ -263,10 +260,6 @@ public class AccountDeletionService : IAccountDeletionService
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
-            // Invalidate the active-user cache AFTER the transaction commits so that
-            // concurrent requests cannot repopulate the cache from the still-active row
-            // during the commit window.
-            _activeUserCache?.Invalidate(userId);
             if (_assignments is not null)
                 foreach (var card in detachedAssignments)
                     await _assignments.NotifyAsync(card.BoardId, card.Id, cancellationToken);
