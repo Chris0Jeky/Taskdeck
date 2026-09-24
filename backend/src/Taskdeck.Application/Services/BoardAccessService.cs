@@ -126,6 +126,12 @@ public class BoardAccessService : IBoardAccessService
             var canGrantRole = await EnsureCanGrantRoleAsync(board, updatedBy, dto.Role);
             if (!canGrantRole.IsSuccess)
                 return Result.Failure<BoardAccessDto>(canGrantRole.ErrorCode, canGrantRole.ErrorMessage);
+            // Target-side hierarchy: a non-owner manager must not demote (or
+            // otherwise touch) an owner row, even when the new role itself is
+            // grantable.
+            var canModify = await EnsureCanModifyAccessAsync(board, updatedBy, access);
+            if (!canModify.IsSuccess)
+                return Result.Failure<BoardAccessDto>(canModify.ErrorCode, canModify.ErrorMessage);
 
             access.UpdateRole(dto.Role, updatedBy);
 
@@ -186,6 +192,10 @@ public class BoardAccessService : IBoardAccessService
         var canManage = await EnsureCanManageBoardAccessAsync(board, revokedBy);
         if (!canManage.IsSuccess)
             return Result.Failure<IReadOnlyList<Guid>>(canManage.ErrorCode, canManage.ErrorMessage);
+        // Revocation is demotion to nothing: same owner-row protection as update.
+        var canModify = await EnsureCanModifyAccessAsync(board, revokedBy, access);
+        if (!canModify.IsSuccess)
+            return Result.Failure<IReadOnlyList<Guid>>(canModify.ErrorCode, canModify.ErrorMessage);
 
         IReadOnlyList<Card> detachedCards = [];
         if (board.OwnerId != access.UserId && _assignments is not null)
@@ -238,22 +248,48 @@ public class BoardAccessService : IBoardAccessService
     /// Enforces the grant hierarchy: only an effective board owner (the board's
     /// <c>OwnerId</c> or a holder of an Owner access row) may grant or assign the
     /// Owner role. Admins keep manage-access rights for roles at or below their
-    /// own (Admin/Editor/Viewer), matching the UserRole.Admin contract
-    /// ("except ownership transfer").
+    /// own (Admin/Editor/Viewer), matching the UserRole.Admin contract.
     /// </summary>
     private async Task<Result> EnsureCanGrantRoleAsync(Board board, Guid actingUserId, UserRole targetRole)
     {
         if (targetRole != UserRole.Owner)
             return Result.Success();
 
-        if (board.OwnerId == actingUserId)
-            return Result.Success();
-
-        var actingAccess = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(board.Id, actingUserId);
-        if (actingAccess?.Role == UserRole.Owner)
+        if (await IsEffectiveOwnerAsync(board, actingUserId))
             return Result.Success();
 
         return Result.Failure(ErrorCodes.Forbidden, "Only board owners can assign the Owner role");
+    }
+
+    /// <summary>
+    /// Enforces the target-side hierarchy: only an effective board owner may
+    /// change or revoke an access row held by an owner (an Owner-role row or a
+    /// row belonging to the board's <c>OwnerId</c> holder). Admins keep full
+    /// manage-access rights over non-owner rows.
+    /// </summary>
+    private async Task<Result> EnsureCanModifyAccessAsync(Board board, Guid actingUserId, BoardAccess targetAccess)
+    {
+        var targetIsOwner = targetAccess.Role == UserRole.Owner || targetAccess.UserId == board.OwnerId;
+        if (!targetIsOwner)
+            return Result.Success();
+
+        if (await IsEffectiveOwnerAsync(board, actingUserId))
+            return Result.Success();
+
+        return Result.Failure(ErrorCodes.Forbidden, "Only board owners can modify owner access");
+    }
+
+    /// <summary>
+    /// A user is an effective board owner when they hold the board's
+    /// <c>OwnerId</c> or an Owner access row.
+    /// </summary>
+    private async Task<bool> IsEffectiveOwnerAsync(Board board, Guid userId)
+    {
+        if (board.OwnerId == userId)
+            return true;
+
+        var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(board.Id, userId);
+        return access?.Role == UserRole.Owner;
     }
 
     private async Task<Result> EnsureCanManageBoardAccessAsync(Board board, Guid actingUserId)
