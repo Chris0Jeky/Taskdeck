@@ -514,8 +514,12 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await conn2.StartAsync();
         await conn2.InvokeAsync("JoinBoard", boardB.Id);
 
-        // Give events time to arrive (they shouldn't)
-        await Task.Delay(500);
+        // Fail-fast negative: watch a full quiet window, but fail the moment a second
+        // event arrives instead of sleeping 500 ms and hoping (#3456). A leaked board-B
+        // broadcast now fails immediately rather than passing vacuously on a slow runner.
+        var quietDeadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (events.Count <= 1 && DateTimeOffset.UtcNow < quietDeadline)
+            await Task.Delay(50);
 
         // Only the initial join event from board A should be present
         var collected = events.ToList();
