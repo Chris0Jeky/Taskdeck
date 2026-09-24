@@ -62,9 +62,10 @@ execution as a compromised session: `abort` it, rotate nothing else, and restart
 The start phase fails before local checks unless all of these are simultaneously true:
 
 - explicit selection resolves to that exact PR, or omitted selection resolves from the current branch;
-- the worktree is clean and local `HEAD` equals the PR head OID;
+- inherited `GH_REPO` is empty, and every later GitHub query is pinned to the checkout repository;
+- the raw working tree and index match the selected head, and local `HEAD` equals the PR head OID;
 - a fresh fetch of the named base equals the PR base OID;
-- the merge base equals that exact base OID; and
+- the merge base of the immutable selected head and base OIDs equals that exact base OID; and
 - GitHub reports the PR as mergeable.
 
 The opening state captures a fresh evidence-session identity, PR number, opening head/base, local
@@ -89,6 +90,7 @@ Run all of these unless the repository's current testing guide defines a narrowe
 the changed seam:
 
 ```bash
+set -euo pipefail
 dotnet build backend/Taskdeck.sln -c Release
 dotnet test backend/Taskdeck.sln -c Release -m:1
 (
@@ -106,10 +108,10 @@ Read the full diff using the same validated selection as Step 1:
 
 ```bash
 # Explicit selection (replace VALIDATED_PR_NUMBER with the same validated decimal digits):
-gh pr diff VALIDATED_PR_NUMBER
+gh pr diff VALIDATED_PR_NUMBER -R Chris0Jeky/Taskdeck
 
 # Omitted selection (use this instead when $ARGUMENTS was empty):
-# gh pr diff
+# gh pr diff -R Chris0Jeky/Taskdeck
 ```
 
 Check the diff for:
@@ -147,7 +149,7 @@ The finish phase captures cursor-complete review threads and their comments, thr
 state, top-level PR comments, review summaries, and check states twice. It fails closed unless both
 pairs of normalized snapshots are identical. It then rereads the PR and fails closed unless the
 number, head ref/OID, base ref/OID, mergeability, parent update timestamp, local `HEAD`, and
-clean-worktree state still equal the opening snapshot.
+raw working-tree/index state still equal the opening snapshot.
 Before reading any opening field, it copies the opening record once and verifies that exact copy's
 complete canonical content against the operator-carried session token, then consumes only those
 authenticated bytes, so repository code cannot rewrite opening metadata in place — or between the
@@ -159,7 +161,8 @@ closed.
 **Evidence tools cannot come from a checkout.** `.codex/config.toml` prepends the gitignored,
 writable `.runtime-codex/bin` directory to `PATH`, so the collector treats every external program
 it runs as an evidence tool — `gh`, `git`, `jq`, `cmp`, `openssl`, `sha256sum`, `awk`, `readlink`,
-`cp`, `mv`, `rm`, `ln`, `mkdir`, `mktemp`, `tr`, and any `TASKDECK_*_EXECUTABLE` override. The
+`cp`, `mv`, `rm`, `ln`, `mkdir`, `mktemp`, `tr`, and any `TASKDECK_*_EXECUTABLE` override. `perl`
+is pinned and contained by the same mechanism. The
 order matters and is the whole mechanism:
 
 1. Before any external program runs, the collector discovers its checkout roots with bash alone —
@@ -169,9 +172,9 @@ order matters and is the whole mechanism:
 2. Every `PATH` entry inside one of those roots, every relative entry, and every `.runtime-codex`
    directory is dropped, and the sanitized `PATH` is exported. A checkout-local forgery is
    therefore never a resolution candidate rather than something rejected after it has already run.
-3. Only then are the tools resolved, to absolute paths, with symlinks followed so a link in a
-   trusted directory cannot point into a checkout. Anything landing inside a discovered root is
-   refused by name.
+3. Only then are the tools resolved to absolute paths. The bootstrap `readlink` must itself be a
+   regular file; after it is trusted, every other symlink is followed and the validated final target
+   is the path that executes. Anything landing inside a discovered root is refused by name.
 4. Once Git reports the measured checkout — which can differ from the collector's own — every
    resolved tool is re-checked against it and against its primary checkout.
 
@@ -180,6 +183,11 @@ So a forged tool in the collector's own checkout family never executes at all; a
 read-only identity probe and before any GitHub query. `sha256_text`, the primitive that
 authenticates the opening state, additionally splits the digest with bash rather than piping
 through `awk`, so no external program stands between `sha256sum` and the comparison.
+
+**Cleanliness is filter-free.** The collector compares the index to the immutable selected head,
+then hashes raw working-tree bytes with `git hash-object --no-filters`. It permits only the
+repository's byte-preserving LF/CRLF normalization policy, using the selected head's attributes;
+worktree-local attribute overrides, unsupported encodings, and every other raw mismatch fail closed.
 
 **Git replacement refs are disabled** for every Git invocation, so a transient `refs/replace/` ref
 cannot redirect the scan-definition reads between the two clean-checkout boundaries.

@@ -6,6 +6,7 @@ collector="$script_dir/collect-pre-merge-evidence.sh"
 skill_file="$script_dir/../../.claude/skills/pre-merge-gate/SKILL.md"
 real_jq="$(command -v jq)"
 real_awk="$(command -v awk)"
+real_readlink="$(command -v readlink)"
 if ! real_git="$(command -v git.exe 2>/dev/null)"; then
   real_git="$(command -v git)"
 fi
@@ -76,8 +77,12 @@ case "${1-}" in
     ;;
   status)
     ;;
+  diff-index)
+    ;;
+  ls-tree)
+    ;;
   ls-files)
-    if [[ "$MOCK_SCENARIO" == "index-inspection-failure" ]]; then
+    if [[ "$MOCK_SCENARIO" == "index-inspection-failure" && "${2-}" == "-v" ]]; then
       count_file="$MOCK_ROOT/index-inspection-count"
       count=0; [[ -f "$count_file" ]] && count="$(<"$count_file")"
       count=$((count + 1)); printf '%s' "$count" >"$count_file"
@@ -95,6 +100,10 @@ case "${1-}" in
   fetch)
     ;;
   merge-base)
+    if [[ "${2-}" != "$head_oid" || "${3-}" != "$base_oid" ]]; then
+      printf 'mock git: ancestry must use the selected immutable head and base OIDs\n' >&2
+      exit 3
+    fi
     printf '%s\n' "$base_oid"
     ;;
   *)
@@ -162,7 +171,7 @@ run_race_hook() {
 }
 
 if [[ "$command_name" == "repo" && "${1-}" == "view" ]]; then
-  printf 'owner/repo\n'
+  printf '%s\n' "${GH_REPO:-owner/repo}"
   exit 0
 fi
 
@@ -872,6 +881,32 @@ rg -Fq '# gh pr diff' "$skill_file" ||
   fail "skill does not document current-branch diff inspection for omitted selection"
 pass "diff inspection reuses the validated explicit or current-branch selection"
 
+proving_block="$("$real_awk" '
+  { sub(/\r$/, "") }
+  $0 == "## Step 2: Run local checks" { in_section = 1; next }
+  in_section && $0 == "```bash" { in_block = 1; next }
+  in_block && $0 == "```" { exit }
+  in_block { print }
+' "$skill_file")"
+[[ "$proving_block" == $'set -euo pipefail\n'* ]] ||
+  fail "the documented proving block does not enable fail-fast shell semantics first"
+dotnet() {
+  [[ "${1-}" == "build" ]] && return 37
+  return 0
+}
+npm() { return 0; }
+npx() { return 0; }
+export -f dotnet npm npx
+if (cd "$script_dir/../.." && bash -c "$proving_block") >/dev/null 2>&1; then
+  fail "the documented proving block masked an earlier backend failure"
+fi
+proving_block_control="${proving_block/set -euo pipefail/true}"
+if ! (cd "$script_dir/../.." && bash -c "$proving_block_control") >/dev/null 2>&1; then
+  fail "the fail-fast proving canary does not distinguish a block without errexit"
+fi
+unset -f dotnet npm npx
+pass "the documented proving block fails on its first red command"
+
 if rg -q 'evidence_session|\$\([^)]*collect-pre-merge-evidence\.sh start' "$skill_file"; then
   fail "skill captures the operator token in process-local shell state"
 fi
@@ -902,6 +937,124 @@ if [[ -s "$case_root/calls.log" ]]; then
   fail "invalid PR argument reached GitHub or Git"
 fi
 pass "non-numeric explicit PR arguments fail before external commands"
+
+case_root="$fixture_root/github-repository-override"
+make_mocks "$case_root"
+prepare_scan_definitions happy "$case_root"
+if GH_REPO=attacker/other \
+  MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$collector" start 42 >/dev/null 2>"$case_root/override.err"; then
+  fail "GH_REPO redirected an evidence session"
+fi
+rg -Fq 'GH_REPO must be unset' "$case_root/override.err" ||
+  fail "the GitHub repository override was not rejected for the stated reason"
+if [[ -s "$case_root/calls.log" ]]; then
+  fail "the GitHub repository override reached an external evidence tool"
+fi
+override_control="$(make_defective_collector "$case_root" github-repository-override \
+  's@die "GH_REPO must be unset for checkout-bound pre-merge evidence"@:@')"
+GH_REPO=attacker/other \
+  MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$override_control" start 42 >"$case_root/control-token" 2>/dev/null ||
+  fail "the GH_REPO canary passes even without rejecting the override"
+state_path="$(printf '%s\n' "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)"
+"$real_jq" -e '.repository == "attacker/other"' "$state_path" >/dev/null ||
+  fail "the GH_REPO canary does not distinguish redirected repository identity"
+pass "GH_REPO cannot redirect checkout-bound GitHub evidence"
+
+case_root="$fixture_root/immutable-ancestry"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+ancestry_control_root="$fixture_root/immutable-ancestry-control"
+make_mocks "$ancestry_control_root"
+ancestry_control="$(make_defective_collector "$ancestry_control_root" mutable-ancestry \
+  's@merge-base "$selected_head" "$selected_base"@merge-base HEAD FETCH_HEAD@')"
+prepare_scan_definitions happy "$ancestry_control_root"
+if MOCK_ROOT="$ancestry_control_root" MOCK_SCENARIO=happy \
+  MOCK_WORKTREE_ROOT="$ancestry_control_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$ancestry_control_root/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$ancestry_control_root/bin/git" \
+  TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$ancestry_control" start 42 >/dev/null 2>"$ancestry_control_root/ancestry.err"; then
+  fail "mutable HEAD/FETCH_HEAD pseudorefs supplied PR ancestry"
+fi
+rg -Fq 'ancestry must use the selected immutable head and base OIDs' \
+  "$ancestry_control_root/ancestry.err" ||
+  fail "the immutable ancestry mutation did not reach the guarded merge-base seam"
+pass "PR ancestry is computed from the selected immutable head and base OIDs"
+
+case_root="$fixture_root/immutable-ancestry-grafts"
+make_mocks "$case_root"
+real_repo="$(make_real_checkout "$case_root" false)"
+unrelated_tree="$("$real_git" -C "$real_repo" rev-parse 'HEAD^{tree}')"
+unrelated_head="$(printf 'unrelated pull request head\n' |
+  "$real_git" -C "$real_repo" commit-tree "$unrelated_tree")"
+"$real_git" -C "$real_repo" switch -q -c unrelated-head "$unrelated_head"
+printf '%s %s\n' "$unrelated_head" "$(<"$case_root/base-oid")" \
+  >"$real_repo/.git/info/grafts"
+printf '%s\n' "$unrelated_head" >"$case_root/head-oid"
+grafted_merge_base="$(GIT_NO_REPLACE_OBJECTS=1 "$real_git" -C "$real_repo" \
+  merge-base "$unrelated_head" "$(<"$case_root/base-oid")" 2>/dev/null)"
+[[ "$grafted_merge_base" == "$(<"$case_root/base-oid")" ]] ||
+  fail "the ancestry-graft fixture does not redirect immutable merge-base operands"
+if run_real happy "$case_root" "$real_repo" start >/dev/null 2>"$case_root/grafts.err"; then
+  fail "a Git graft redirected immutable PR ancestry"
+fi
+rg -Fq 'exact-head evidence rejects non-empty Git grafts' "$case_root/grafts.err" ||
+  fail "the ancestry graft was not rejected for the stated reason"
+grafts_control="$(make_defective_collector "$case_root" immutable-ancestry-grafts \
+  's@    \[\[ ! -s "$grafts_file" \]\] ||@    : ||@')"
+run_real happy "$case_root" "$real_repo" start "$grafts_control" \
+  >"$case_root/operator-session-token" 2>"$case_root/grafts-control.err" ||
+  fail "the graft canary passes even without rejecting Git grafts"
+pass "Git grafts cannot redirect ancestry between immutable selected OIDs"
+
+case_root="$fixture_root/bootstrap-readlink"
+make_mocks "$case_root"
+planted_root="$case_root/planted-checkout"
+external_bin="$case_root/external-bin"
+mkdir -p "$planted_root/.git" "$planted_root/scripts/github" \
+  "$planted_root/.runtime-codex/bin" "$external_bin"
+cp "$collector" "$planted_root/scripts/github/collect-pre-merge-evidence.sh"
+chmod +x "$planted_root/scripts/github/collect-pre-merge-evidence.sh"
+cat >"$planted_root/.runtime-codex/bin/readlink" <<MALICIOUS_READLINK
+#!/usr/bin/env bash
+printf 'invoked\n' >"$case_root/readlink-invoked"
+printf '%s\n' '$real_readlink'
+MALICIOUS_READLINK
+chmod +x "$planted_root/.runtime-codex/bin/readlink"
+MSYS=winsymlinks:nativestrict ln -s \
+  "$planted_root/.runtime-codex/bin/readlink" "$external_bin/readlink"
+[[ -L "$external_bin/readlink" ]] || fail "the bootstrap-readlink fixture is not a symlink"
+MSYS=winsymlinks:nativestrict ln -s "$case_root/bin/gh" "$external_bin/gh"
+[[ -L "$external_bin/gh" ]] || fail "the bootstrap-readlink control tool is not a symlink"
+prepare_scan_definitions happy "$case_root"
+if MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_READLINK_EXECUTABLE="$external_bin/readlink" \
+  TASKDECK_GH_EXECUTABLE="$external_bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$planted_root/scripts/github/collect-pre-merge-evidence.sh" start 42 \
+  >/dev/null 2>"$case_root/readlink.err"; then
+  fail "a symlinked bootstrap readlink was accepted"
+fi
+rg -Fq 'refusing a symlinked bootstrap readlink executable' "$case_root/readlink.err" ||
+  fail "the bootstrap readlink symlink was not rejected for the stated reason"
+[[ ! -e "$case_root/readlink-invoked" ]] ||
+  fail "the symlinked bootstrap readlink target executed before validation"
+readlink_control="$(make_defective_collector "$case_root" bootstrap-readlink \
+  's@die "refusing a symlinked bootstrap readlink executable: $resolved"@:@')"
+MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_READLINK_EXECUTABLE="$external_bin/readlink" \
+  TASKDECK_GH_EXECUTABLE="$external_bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$readlink_control" start 42 >/dev/null 2>/dev/null || true
+[[ -e "$case_root/readlink-invoked" ]] ||
+  fail "the bootstrap readlink canary passes when the pre-validation rejection is removed"
+pass "bootstrap readlink validation never executes a symlink target"
 
 # The PATH-resolution half of this canary moved to the checkout-local PATH sanitization
 # canary below: a checkout-local directory is now dropped from PATH before any tool is
@@ -1029,6 +1182,38 @@ run_real happy "$case_root" "$real_repo" finish >"$case_root/packet.json"
 ' "$case_root/packet.json" >/dev/null ||
   fail "an unmodified real checkout did not produce a complete packet"
 pass "a real Git checkout with unchanged scan definitions completes the evidence packet"
+
+case_root="$fixture_root/clean-filter-bypass"
+make_mocks "$case_root"
+real_repo="$(make_real_checkout "$case_root" false)"
+filter_program="$case_root/filter-clean"
+cat >"$filter_program" <<FILTER_PROGRAM
+#!/usr/bin/env bash
+printf 'invoked\n' >"$case_root/filter-invoked"
+printf '%s\n' 'unrelated head change'
+FILTER_PROGRAM
+chmod +x "$filter_program"
+printf '%s\n' 'README.md filter=taskdeck-canary' >"$real_repo/.git/info/attributes"
+"$real_git" -C "$real_repo" config filter.taskdeck-canary.clean "$filter_program"
+printf '%s\n' 'compromised working bytes' >"$real_repo/README.md"
+if run_real happy "$case_root" "$real_repo" start >/dev/null 2>"$case_root/filter.err"; then
+  fail "repository-local clean-filter configuration hid modified working bytes"
+fi
+rg -q 'repository-local info/attributes|raw working-tree bytes differ' "$case_root/filter.err" ||
+  fail "the clean-filter fixture was not rejected at the raw-byte boundary"
+[[ ! -e "$case_root/filter-invoked" ]] ||
+  fail "the raw-byte boundary executed a repository-local clean filter"
+# Use the filtered content comparison for this deliberately defective control. Porcelain
+# status can retain a stat-based modification on Windows even when the clean filter makes
+# the working file compare equal to HEAD, which would mask the bypass being demonstrated.
+filter_control="$(make_defective_collector "$case_root" clean-filter \
+  's@  assert_raw_worktree_matches_head "$expected_head"@  "$git_executable" diff --quiet HEAD -- || die "exact-head evidence requires a clean worktree"@')"
+run_real happy "$case_root" "$real_repo" start "$filter_control" \
+  >"$case_root/operator-session-token" 2>"$case_root/filter-control.err" ||
+  fail "the clean-filter canary passes when raw-byte verification is replaced by filtered diff"
+[[ -e "$case_root/filter-invoked" ]] ||
+  fail "the clean-filter mutation never executed the repository-local filter"
+pass "raw working-tree verification cannot be forged by repository-local clean filters"
 
 case_root="$fixture_root/replacement-ref-race"
 make_mocks "$case_root"
@@ -1370,9 +1555,9 @@ if run_primary_git_case "$linked_worktree/scripts/github/collect-pre-merge-evide
   >/dev/null 2>"$case_root/unlinked-git.err"; then
   fail "a forged git in an unlinked runtime directory opened an evidence session"
 fi
-rg -Fq 'refusing an evidence tool resolved inside a PR-writable runtime directory' \
-  "$case_root/unlinked-git.err" ||
-  fail "the unlinked runtime directory was not refused for the stated reason"
+# On POSIX the PATH sanitizer removes this directory before resolution; on MSYS the resolver
+# can retain the entry long enough to emit its explicit runtime-directory refusal. The security
+# property is the same on both platforms and is asserted directly: the forged program never runs.
 if rg -q '^git ' "$case_root/calls.log"; then
   fail "the forged git in an unlinked runtime directory was invoked"
 fi

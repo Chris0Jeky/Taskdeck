@@ -255,6 +255,13 @@ collector_repo_root="$(cd -- "$collector_script_directory/../.." >/dev/null 2>&1
   die "cannot resolve the collector checkout root"
 collector_working_directory="$(pwd -P)" || die "cannot resolve the working directory"
 
+# `gh` treats GH_REPO as an override for otherwise checkout-derived repository selection.
+# Accepting it would let every PR/check query target another repository while the local Git
+# identity still came from this checkout. Reject it before any external evidence tool runs;
+# later GitHub commands also carry the authenticated repository explicitly.
+[[ -z "${GH_REPO:-}" ]] ||
+  die "GH_REPO must be unset for checkout-bound pre-merge evidence"
+
 remember_repository_root "$collector_repo_root"
 discover_repository_roots "$collector_script_directory"
 discover_repository_roots "$collector_working_directory"
@@ -325,6 +332,7 @@ resolve_trusted_executable() {
   local candidate_directory
   local target_directory
   local resolved
+  local resolved_target
   local root
 
   if [[ "$candidate" == */* ]]; then
@@ -341,11 +349,18 @@ resolve_trusted_executable() {
   resolved="${candidate_directory%/}/${candidate_path##*/}"
   [[ -x "$resolved" ]] ||
     die "required executable is unavailable after absolute resolution: $label ($resolved)"
-  # The link path is what gets executed, so argv[0]-sensitive multi-call binaries keep
-  # working; the target's directory is held to the same rejection separately.
+  # readlink bootstraps symlink resolution for every other tool. It cannot safely inspect
+  # itself through an unvalidated symlink: invoking that link would execute its target before
+  # containment had been proved. Require the bootstrap executable to be a real program file.
+  if [[ "$label" == "readlink" && -z "$readlink_executable" && -L "$resolved" ]]; then
+    die "refusing a symlinked bootstrap readlink executable: $resolved"
+  fi
   dereference_program_path "$candidate_path"
   target_directory="$(absolute_directory "$dereferenced_program_path")" ||
     die "cannot resolve the directory of the required executable: $label ($candidate_path)"
+  resolved_target="${target_directory%/}/${dereferenced_program_path##*/}"
+  [[ -x "$resolved_target" ]] ||
+    die "required executable target is unavailable after dereference: $label ($resolved_target)"
   # Containment is tested first so a checkout-local tool is always reported as such; the name
   # rule below is the fallback for a runtime directory no discovered checkout can claim.
   for root in ${repository_roots[@]+"${repository_roots[@]}"}; do
@@ -358,7 +373,9 @@ resolve_trusted_executable() {
     path_is_untrusted_tool_directory "$target_directory"; then
     die "refusing an evidence tool resolved inside a PR-writable runtime directory: $label ($resolved)"
   fi
-  resolved_executable_path="$resolved"
+  # Execute the validated final target rather than a mutable symlink path. The path originally
+  # selected from PATH is still checked above, but it never remains the execution handle.
+  resolved_executable_path="$resolved_target"
   resolved_executable_directory="$candidate_directory"
   resolved_executable_target_directory="$target_directory"
 }
@@ -396,9 +413,6 @@ assert_trusted_executables_outside() {
 
 register_trusted_executable readlink "${TASKDECK_READLINK_EXECUTABLE:-readlink}"
 readlink_executable="$resolved_executable_path"
-# Re-run the now fully armed rule against readlink itself. PATH is already sanitized, so a
-# checkout-local readlink was never a candidate; this closes the symlinked-readlink case.
-resolve_trusted_executable readlink "$readlink_executable"
 
 register_trusted_executable gh "${TASKDECK_GH_EXECUTABLE:-gh}"
 gh_executable="$resolved_executable_path"
@@ -499,6 +513,7 @@ resolve_state_path() {
   state_file=""
   state_worktree="$resolved_top_level"
   state_git_dir="$resolved_git_dir"
+  state_common_git_dir="$resolved_common_git_dir"
 }
 
 # The digest field is split with bash string operations, never a pipeline through awk. awk is
@@ -629,12 +644,109 @@ validate_pr_snapshot() {
   ' "$snapshot_file" >/dev/null || die "PR lookup returned an incomplete identity snapshot"
 }
 
+# Parse the NUL-delimited result of one immutable-tree filter query. A selected head that
+# assigns an external filter is rejected before Git hashes working bytes, so the clean hash
+# below cannot execute repository-selected code.
+immutable_path_has_no_filter() {
+  [[ $# -eq 1 ]] || return 1
+  local expected_path="$1"
+  local reported_path
+  local attribute
+  local value
+  local count=0
+
+  while IFS= read -r -d '' reported_path &&
+    IFS= read -r -d '' attribute &&
+    IFS= read -r -d '' value; do
+    [[ "$reported_path" == "$expected_path" && "$attribute" == "filter" ]] || return 1
+    case "$value" in
+      unspecified | unset) ;;
+      *) return 2 ;;
+    esac
+    count=$((count + 1))
+  done
+  [[ "$count" -eq 1 ]]
+}
+
+# Compare each tracked worktree file to the authenticated head. `git status` is not sufficient:
+# a checkout-local clean filter can map changed bytes back to the committed blob and report a
+# false clean tree. Raw hashes bypass every filter. Only on a mismatch do Git's own built-in clean
+# rules run, with attributes pinned to the selected head and every external filter rejected first.
+assert_raw_worktree_matches_head() {
+  [[ $# -eq 1 ]] || die "raw worktree verifier received an invalid argument count"
+  local expected_head="$1"
+  local attributes_file
+  local grafts_file
+
+  for attributes_file in \
+    "$state_git_dir/info/attributes" \
+    "$state_common_git_dir/info/attributes"; do
+    [[ ! -s "$attributes_file" ]] ||
+      die "exact-head evidence rejects non-empty repository-local info/attributes: $attributes_file"
+  done
+  for grafts_file in \
+    "$state_git_dir/info/grafts" \
+    "$state_common_git_dir/info/grafts"; do
+    [[ ! -s "$grafts_file" ]] ||
+      die "exact-head evidence rejects non-empty Git grafts: $grafts_file"
+  done
+  "$git_executable" diff-index --cached --quiet "$expected_head" -- ||
+    die "exact-head evidence rejects staged or index-only changes"
+
+  if ! "$git_executable" ls-tree -r -z --full-tree "$expected_head" |
+    while IFS= read -r -d '' entry; do
+      [[ "$entry" == *$'\t'* ]] || exit 1
+      local metadata="${entry%%$'\t'*}"
+      local path="${entry#*$'\t'}"
+      local mode
+      local object_type
+      local expected_blob
+      local working_path
+      local actual_blob
+      local cleaned_blob
+      read -r mode object_type expected_blob <<<"$metadata"
+      [[ "$object_type" == "blob" && ( "$mode" == "100644" || "$mode" == "100755" ) ]] || {
+        printf 'BLOCKED: raw exact-head evidence does not support tracked mode %s at %s\n' \
+          "$mode" "$path" >&2
+        exit 1
+      }
+      working_path="${state_worktree%/}/$path"
+      [[ -f "$working_path" && ! -L "$working_path" ]] || {
+        printf 'BLOCKED: tracked working file is missing or changed type: %s\n' "$path" >&2
+        exit 1
+      }
+      actual_blob="$("$git_executable" hash-object --no-filters -- "$working_path")" || exit 1
+      if [[ "$actual_blob" == "$expected_blob" ]]; then
+        continue
+      fi
+      if ! printf '%s\0' "$path" |
+        GIT_ATTR_NOSYSTEM=1 "$git_executable" --attr-source="$expected_head" \
+          -c core.attributesFile=/dev/null check-attr --stdin -z filter |
+        immutable_path_has_no_filter "$path"; then
+        printf 'BLOCKED: immutable checkout attributes select an external filter for %s\n' \
+          "$path" >&2
+        exit 1
+      fi
+      cleaned_blob="$(
+        GIT_ATTR_NOSYSTEM=1 "$git_executable" --attr-source="$expected_head" \
+          -c core.attributesFile=/dev/null \
+          hash-object --path="$path" -- "$working_path"
+      )" || exit 1
+      [[ "$cleaned_blob" == "$expected_blob" ]] || {
+        printf 'BLOCKED: raw working-tree bytes differ from selected head: %s\n' "$path" >&2
+        exit 1
+      }
+    done; then
+    die "cannot prove raw working-tree bytes against the selected head"
+  fi
+}
+
 assert_clean_exact_checkout() {
   local expected_head="$1"
   local local_head
-  local worktree_status
   local hidden_index_entries
   local replacement_refs
+  local untracked_paths
 
   local_head="$("$git_executable" rev-parse HEAD)" || die "cannot resolve local HEAD"
   [[ "$local_head" == "$expected_head" ]] ||
@@ -651,9 +763,10 @@ assert_clean_exact_checkout() {
   fi
   [[ -z "$replacement_refs" ]] || die "exact-head evidence rejects Git replacement refs"
 
-  worktree_status="$("$git_executable" status --porcelain=v1 --untracked-files=all)" ||
-    die "cannot inspect worktree status"
-  [[ -z "$worktree_status" ]] || die "exact-head evidence requires a clean worktree"
+  assert_raw_worktree_matches_head "$expected_head"
+  untracked_paths="$("$git_executable" ls-files --others --exclude-standard --directory --no-empty-directory)" ||
+    die "cannot inspect untracked worktree paths"
+  [[ -z "$untracked_paths" ]] || die "exact-head evidence requires no untracked paths"
 }
 
 start_collection() {
@@ -694,7 +807,7 @@ start_collection() {
   umask 077
   snapshot_tmp="$("$mktemp_executable")"
   trap '"$rm_executable" -f "${snapshot_tmp:-}" "${state_tmp:-}"' EXIT
-  "$gh_executable" pr view "${pr_args[@]}" \
+  "$gh_executable" pr view "${pr_args[@]}" -R "$repo_full_name" \
     --json number,headRefName,headRefOid,baseRefName,baseRefOid,mergeable,updatedAt,url \
     >"$snapshot_tmp" || die "cannot resolve the selected pull request"
   validate_pr_snapshot "$snapshot_tmp"
@@ -716,7 +829,8 @@ start_collection() {
   fetched_base="$("$git_executable" rev-parse FETCH_HEAD)" || die "cannot resolve fetched base"
   [[ "$fetched_base" == "$selected_base" ]] ||
     die "fetched base $fetched_base is not PR base $selected_base"
-  merge_base="$("$git_executable" merge-base HEAD FETCH_HEAD)" || die "cannot resolve merge base"
+  merge_base="$("$git_executable" merge-base "$selected_head" "$selected_base")" ||
+    die "cannot resolve merge base"
   [[ "$merge_base" == "$selected_base" ]] ||
     die "PR head does not incorporate exact base $selected_base (merge base: $merge_base)"
 
@@ -883,13 +997,14 @@ collect_feedback_snapshot() {
 }
 
 collect_checks_snapshot() {
-  [[ $# -eq 2 ]] || die "checks collector received an invalid argument count"
+  [[ $# -eq 3 ]] || die "checks collector received an invalid argument count"
   local snapshot_dir="$1"
-  local pr_number="$2"
+  local repo_full_name="$2"
+  local pr_number="$3"
   local command_exit=0
 
   "$mkdir_executable" -p "$snapshot_dir"
-  "$gh_executable" pr checks "$pr_number" \
+  "$gh_executable" pr checks "$pr_number" -R "$repo_full_name" \
     --json name,state,bucket,link,workflow >"$snapshot_dir/entries-raw.json" || command_exit=$?
   "$jq_executable" -e 'type == "array"' "$snapshot_dir/entries-raw.json" >/dev/null ||
     die "PR checks returned an invalid payload"
@@ -1025,7 +1140,7 @@ finish_collection() {
   collect_feedback_snapshot "$temp_dir/feedback-first" \
     "$repo_full_name" "$repo_owner" "$repo_name" "$pr_number"
 
-  collect_checks_snapshot "$temp_dir/checks-first" "$pr_number"
+  collect_checks_snapshot "$temp_dir/checks-first" "$repo_full_name" "$pr_number"
   "$jq_executable" '[.[] | select(
     ((.name // "") | ascii_downcase | test("secret[ _-]*scan|gitleaks"))
   )]' "$temp_dir/checks-first/entries.json" >"$temp_dir/secret-candidates.json"
@@ -1090,7 +1205,7 @@ finish_collection() {
     "$temp_dir/feedback-first/canonical.json" \
     "$temp_dir/feedback-second/canonical.json" ||
     die "PR feedback changed while evidence was collected"
-  collect_checks_snapshot "$temp_dir/checks-second" "$pr_number"
+  collect_checks_snapshot "$temp_dir/checks-second" "$repo_full_name" "$pr_number"
   "$cmp_executable" -s \
     "$temp_dir/checks-first/canonical.json" \
     "$temp_dir/checks-second/canonical.json" ||
@@ -1099,7 +1214,7 @@ finish_collection() {
     secrets_verdict="CLEAN"
   fi
 
-  "$gh_executable" pr view "$pr_number" \
+  "$gh_executable" pr view "$pr_number" -R "$repo_full_name" \
     --json number,headRefName,headRefOid,baseRefName,baseRefOid,mergeable,updatedAt,url \
     >"$temp_dir/closing.json" || die "cannot resolve the closing PR identity"
   validate_pr_snapshot "$temp_dir/closing.json"
