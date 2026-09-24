@@ -282,6 +282,8 @@ tables are empty, but a reason to export before downgrading if you ever turned t
   resource requests return generic access-denied JSON-RPC errors. HTTP MCP is unchanged and no
   fallback account is authorized.
 
+- **Account deletion refuses while you own boards outright, and removes MFA/API-key credentials (#3425, #3400).** The sole-owner guard scanned only BoardAccess rows, but board creation records ownership in Boards.OwnerId — so creators could delete their accounts and orphan boards permanently. Deletion now fails closed naming the first owned active board; delete (archive) your boards first — archived boards do not block deletion (no ownership-transfer flow exists yet — see #3424). Successful deletion also deletes MFA credentials, clears the MFA flag, and deletes API keys; the result reports MfaCredentialsDeleted and ApiKeysDeleted counts. Automated deletions for board owners now receive InvalidOperation instead of orphaning boards.
+
 ## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
 
 *Tagged 2026-08-30 at `9d2ea3c7c`. This heading is kept verbatim because the quick start inside the
