@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
@@ -302,6 +303,75 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
             "an aborted 401 must still count against the failure budget");
         authLayerInvocations.Should().Be(1,
             "the follow-up request must be rejected pre-auth, proving the aborted failure was charged");
+    }
+
+    [Fact]
+    public async Task AbortDuringKeyLookup_StillConsumesFailureBudget()
+    {
+        // Simulates a client aborting while the ApiKeyMiddleware key lookup is in flight: the
+        // lookup unwinds with OperationCanceledException before the failed-item key is set and
+        // before any 401 is assigned. The middleware finally must still charge the failure
+        // budget because the request aborted while unauthenticated.
+        using var limiter = CreateLimiter(1, 60);
+        var authLayerInvocations = 0;
+        var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
+        {
+            authLayerInvocations++;
+            var abortSource = new CancellationTokenSource();
+            context.RequestAborted = abortSource.Token;
+            abortSource.Cancel();
+            throw new OperationCanceledException("client aborted during the key lookup");
+        });
+
+        var aborted = CreateMcpContext("203.0.113.101");
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => middleware.InvokeAsync(aborted, limiter));
+        authLayerInvocations.Should().Be(1);
+
+        // The aborted lookup consumed the (single-permit) budget: the next attempt is rejected
+        // by the pre-check without reaching the auth layer at all.
+        var second = CreateMcpContext("203.0.113.101");
+        await middleware.InvokeAsync(second, limiter);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
+            "an abort during the key lookup must still count against the failure budget");
+        authLayerInvocations.Should().Be(1,
+            "the follow-up request must be rejected pre-auth, proving the aborted lookup was charged");
+    }
+
+    [Fact]
+    public async Task AbortAfterSuccessfulAuthentication_DoesNotConsumeFailureBudget()
+    {
+        // Same abort, but the request authenticated before aborting: the finally must not charge
+        // the failure budget, so the next attempt from the same address still reaches auth.
+        using var limiter = CreateLimiter(1, 60);
+        var authLayerInvocations = 0;
+        var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
+        {
+            authLayerInvocations++;
+            if (authLayerInvocations == 1)
+            {
+                context.User = new ClaimsPrincipal(new ClaimsIdentity("TestAuth"));
+                var abortSource = new CancellationTokenSource();
+                context.RequestAborted = abortSource.Token;
+                abortSource.Cancel();
+                throw new OperationCanceledException("authenticated client aborted");
+            }
+
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            return Task.CompletedTask;
+        });
+
+        var aborted = CreateMcpContext("203.0.113.102");
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => middleware.InvokeAsync(aborted, limiter));
+        authLayerInvocations.Should().Be(1);
+
+        var second = CreateMcpContext("203.0.113.102");
+        await middleware.InvokeAsync(second, limiter);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status200OK,
+            "an abort after successful authentication must not count against the failure budget");
+        authLayerInvocations.Should().Be(2,
+            "the follow-up request must reach auth, proving the authenticated abort was not charged");
     }
 
     // ── Helpers ──

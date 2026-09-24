@@ -82,8 +82,16 @@ public sealed class McpAuthenticationRateLimitingMiddleware
             // lookup count). ApiKeyMiddleware sets AuthenticationFailedItemKey BEFORE writing the
             // response, so the failed attempt is visible here regardless of how far the aborted
             // write got; the 401 status check is kept as a defensive secondary signal.
+            //
+            // An abort before the auth outcome is known is charged too: ApiKeyMiddleware runs the
+            // key lookup with the request abort token and only marks failure afterwards, so a
+            // client that disconnects mid-lookup unwinds with no failed-item key and no 401.
+            // An aborted-but-unauthenticated request therefore counts as a failed attempt, while
+            // an authenticated request that aborts is never charged.
             if (context.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey)
-                || context.Response.StatusCode == StatusCodes.Status401Unauthorized)
+                || context.Response.StatusCode == StatusCodes.Status401Unauthorized
+                || (context.RequestAborted.IsCancellationRequested
+                    && context.User?.Identity?.IsAuthenticated != true))
             {
                 limiter.RecordFailedAttempt(context);
             }
