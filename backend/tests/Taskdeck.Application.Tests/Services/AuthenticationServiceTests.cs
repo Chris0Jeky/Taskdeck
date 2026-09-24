@@ -399,6 +399,57 @@ public class AuthenticationServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("x")]
+    [InlineData("12345")]
+    public async Task RegisterAsync_ShouldRejectWeakPassword(string password)
+    {
+        // #3402/#3419: no server-side password policy; trivial passwords are accepted.
+        var service = CreateService();
+
+        _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<string>(), It.IsAny<string>(), default)).ReturnsAsync(false);
+
+        var result = await service.RegisterAsync(new CreateUserDto("newuser", "newuser@example.com", password));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ShouldRejectPasswordExceedingBcryptLimit()
+    {
+        // #3419: BCrypt silently truncates past 72 bytes, so an overlong password
+        // must be rejected instead of hashed.
+        var service = CreateService();
+
+        _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<string>(), It.IsAny<string>(), default)).ReturnsAsync(false);
+
+        var result = await service.RegisterAsync(new CreateUserDto("newuser", "newuser@example.com", new string('x', 100)));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_ShouldRejectWeakNewPassword()
+    {
+        // #3402/#3419: change-password path has no password validation.
+        var service = CreateService();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ChangePasswordAsync(user.Id, "password123", "x");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        user.TokenInvalidatedAt.Should().BeNull("a rejected password change must not revoke live sessions");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
     private AuthenticationService CreateService(
         JwtSettings? jwtSettings = null,
         IPasswordHasher? passwordHasher = null)

@@ -117,6 +117,12 @@ public class AuthenticationService : IAuthenticationService
             if (string.IsNullOrWhiteSpace(normalizedEmail))
                 return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
 
+            // Centralized server-side password policy (#3402/#3419), checked before
+            // paying BCrypt's cost. Client-side checks remain UX-only.
+            var passwordError = PasswordPolicy.Validate(dto.Password);
+            if (passwordError != null)
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, passwordError);
+
             // Reject requests that cannot currently satisfy restrictive policy before
             // paying BCrypt's cost. The authoritative claim/consumption is repeated
             // transactionally below so races and duplicate identities still roll back.
@@ -427,6 +433,11 @@ public class AuthenticationService : IAuthenticationService
 
             if (!user.IsActive)
                 return Result.Failure(ErrorCodes.Forbidden, "User account is inactive");
+
+            // Reject weak replacement passwords before paying BCrypt's verify cost (#3402/#3419).
+            var newPasswordError = PasswordPolicy.Validate(newPassword);
+            if (newPasswordError != null)
+                return Result.Failure(ErrorCodes.ValidationError, newPasswordError);
 
             if (!_passwordHasher.VerifyPassword(currentPassword, user.PasswordHash))
                 return Result.Failure(ErrorCodes.AuthenticationFailed, "Current password is incorrect");
