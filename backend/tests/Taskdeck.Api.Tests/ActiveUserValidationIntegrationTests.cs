@@ -58,7 +58,7 @@ public class ActiveUserValidationIntegrationTests : IClassFixture<TestWebApplica
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "immediate-invalidation");
 
-        // Access a protected endpoint to warm the cache
+        // Verify the user can access protected endpoints before deletion
         var warmupResponse = await client.GetAsync("/api/boards");
         warmupResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 

@@ -1682,6 +1682,7 @@ Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
     - added `ActiveUserValidationMiddleware` that checks user active status on every authenticated request with 30-second in-memory cache
     - cache invalidated on user deletion/deactivation so stale JWTs are rejected within seconds
     - complements the `TokenValidationMiddleware` (PR `#698`) with runtime active-user enforcement
+    - correction (2026-09-24): the middleware was in fact never registered, so the cache never ran; the unwired middleware plus the orphaned cache were removed and live enforcement documented as `TokenValidationMiddleware` only
 124. Expired proposal review UX delivery (`#678`+`#690`/`#729`, 2026-04-03):
     - added `IsExpired` flag on `ProposalDto` and domain `CanBeDismissed` method
     - expired proposals in Review now show distinct "Expired" status badge with dismiss action and explanatory notice
