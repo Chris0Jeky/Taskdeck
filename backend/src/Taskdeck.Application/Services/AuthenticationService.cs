@@ -494,9 +494,9 @@ public class AuthenticationService : IAuthenticationService
         {
             return Result.Failure<UserDto>(ex.ErrorCode, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Result.Failure<UserDto>(ErrorCodes.UnexpectedError, $"Token validation failed: {ex.Message}");
+            return Result.Failure<UserDto>(ErrorCodes.UnexpectedError, "Token validation failed due to an unexpected error");
         }
     }
 
