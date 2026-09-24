@@ -76,6 +76,31 @@ public class UserServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("x")]
+    [InlineData("12345")]
+    public async Task CreateUserAsync_ShouldRejectWeakPassword(string password)
+    {
+        // #3402: admin-create path has no password validation.
+        // Arrange
+        var dto = new CreateUserDto("newuser", "newuser@example.com", password);
+
+        _userRepoMock.Setup(r => r.ExistsAsync(dto.Username, dto.Email, default))
+            .ReturnsAsync(false);
+        _userRepoMock.Setup(r => r.AddAsync(It.IsAny<User>(), default))
+            .ReturnsAsync((User u, CancellationToken ct) => u);
+
+        // Act
+        var result = await _service.CreateUserAsync(dto);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
     [Fact]
     public async Task CreateUserAsync_ShouldReturnValidationError_WhenUsernameIsEmpty()
     {
