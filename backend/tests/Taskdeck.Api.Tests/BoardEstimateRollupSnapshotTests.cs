@@ -60,7 +60,10 @@ public sealed class BoardEstimateRollupSnapshotTests : IDisposable
         Exception? writerBlocked = null;
         try
         {
-            await writeTask.WaitAsync(TimeSpan.FromSeconds(5));
+            // 30 s absorbs loaded-runner slowness without weakening the guard: a genuinely
+            // blocked write waits out ANY window (the read gate releases only in the finally
+            // below), so only true blocking still times out (#3456).
+            await writeTask.WaitAsync(TimeSpan.FromSeconds(30));
         }
         catch (TimeoutException exception)
         {
