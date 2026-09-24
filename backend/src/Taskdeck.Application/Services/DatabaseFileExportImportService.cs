@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -42,6 +43,9 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
     public async Task<Result<byte[]>> ExportDatabaseAsync(Guid userId)
     {
+        if (IsProductionEnvironment())
+            return Result.Failure<byte[]>(ErrorCodes.Forbidden, "Database export is not allowed in Production");
+
         var user = await _unitOfWork.Users.GetByIdAsync(userId);
         if (user == null)
             return Result.Failure<byte[]>(ErrorCodes.NotFound, $"User with ID {userId} not found");
@@ -68,6 +72,7 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             if (bytes.Length == 0)
                 return Result.Failure<byte[]>(ErrorCodes.ValidationError, "Database export produced an empty file");
 
+            await AuditDatabaseActionAsync(AuditAction.DataExported, userId, "Full database export");
             return Result.Success(bytes);
         }
         catch (Exception ex)
@@ -78,6 +83,9 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
     public async Task<Result> ImportDatabaseAsync(byte[] dbFile, Guid userId)
     {
+        if (IsProductionEnvironment())
+            return Result.Failure(ErrorCodes.Forbidden, "Database import is not allowed in Production");
+
         var user = await _unitOfWork.Users.GetByIdAsync(userId);
         if (user == null)
             return Result.Failure(ErrorCodes.NotFound, $"User with ID {userId} not found");
@@ -155,6 +163,7 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             DeleteDatabaseSideFile(databasePath + "-wal");
             DeleteDatabaseSideFile(databasePath + "-shm");
 
+            await AuditDatabaseActionAsync(AuditAction.DataImported, userId, "Full database import");
             return Result.Success();
         }
         catch (IOException ex)
@@ -182,6 +191,15 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             TryDeleteFile(backupPath);
         }
     }
+
+    private bool IsProductionEnvironment() =>
+        // A null environment means direct construction (tests); production
+        // deployments always resolve through DI, which supplies the host name.
+        string.Equals(_environmentName, "Production", StringComparison.OrdinalIgnoreCase);
+
+    private Task AuditDatabaseActionAsync(AuditAction action, Guid userId, string details) =>
+        AuditLogWriter.SafeLogAsync(
+            _historyService, _logger, "Database", AuditedDatabaseId, action, userId, changes: details);
 
     internal Result<string> ResolveDatabasePath()
     {

@@ -10,6 +10,7 @@ namespace Taskdeck.Api.Tests;
 
 public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
@@ -144,6 +145,7 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
 
     public ExportApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -295,23 +297,41 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task DatabaseEndpoints_ShouldReturnForbidden_WhenSandboxIsDisabled()
     {
-        await EnsureAuthenticatedAsync();
+        // Admin passes the AdminOnly policy, so the 403 proves the
+        // service-level sandbox refusal rather than the policy itself.
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsAdminAsync(client, "export-sandbox-admin", _factory);
 
         await ApiTestHarness.AssertForbiddenAsync(
-            await _client.GetAsync("/api/export/database"));
+            await client.GetAsync("/api/export/database"));
 
         using var importContent = CreateDatabaseImportContent(CreateSqlitePayload());
         await ApiTestHarness.AssertForbiddenAsync(
-            await _client.PostAsync("/api/import/database", importContent));
+            await client.PostAsync("/api/import/database", importContent));
+    }
+
+    [Fact]
+    public async Task DatabaseEndpoints_ShouldReturnForbidden_WhenUserIsNotAdmin()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "export-non-admin");
+
+        await ApiTestHarness.AssertForbiddenAsync(
+            await client.GetAsync("/api/export/database"));
+
+        using var importContent = CreateDatabaseImportContent(CreateSqlitePayload());
+        await ApiTestHarness.AssertForbiddenAsync(
+            await client.PostAsync("/api/import/database", importContent));
     }
 
     [Fact]
     public async Task ImportDatabase_ShouldReturnBadRequest_WhenFileIsMissing()
     {
-        await EnsureAuthenticatedAsync();
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsAdminAsync(client, "export-missing-file-admin", _factory);
 
         using var content = new MultipartFormDataContent();
-        var response = await _client.PostAsync("/api/import/database", content);
+        var response = await client.PostAsync("/api/import/database", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
