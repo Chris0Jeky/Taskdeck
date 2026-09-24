@@ -339,6 +339,39 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
     }
 
     [Fact]
+    public async Task AbortAfterValidKeyPerKeyRejection_DoesNotConsumeFailureBudget()
+    {
+        // A key confirmed valid (ApiKeyIdItemKey set) but rejected by its per-key limiter is not yet
+        // an authenticated principal; if it disconnects on the 429 it must still not be charged.
+        using var limiter = CreateLimiter(1, 60);
+        var authLayerInvocations = 0;
+        var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
+        {
+            authLayerInvocations++;
+            if (authLayerInvocations == 1)
+            {
+                context.Items[ApiKeyMiddleware.ApiKeyIdItemKey] = Guid.NewGuid();
+                var abortSource = new CancellationTokenSource();
+                context.RequestAborted = abortSource.Token;
+                abortSource.Cancel();
+                throw new OperationCanceledException("valid key disconnected during its per-key 429");
+            }
+
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            return Task.CompletedTask;
+        });
+
+        var aborted = CreateMcpContext("203.0.113.103");
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => middleware.InvokeAsync(aborted, limiter));
+
+        var second = CreateMcpContext("203.0.113.103");
+        await middleware.InvokeAsync(second, limiter);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status200OK,
+            "a confirmed-valid key must never spend the shared address failure budget");
+    }
+
+    [Fact]
     public async Task AbortAfterSuccessfulAuthentication_DoesNotConsumeFailureBudget()
     {
         // Same abort, but the request authenticated before aborting: the finally must not charge
