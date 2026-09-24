@@ -549,6 +549,162 @@ public class BoardAccessServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
+    [Fact]
+    public async Task UpdateAccessAsync_ShouldReturnForbidden_WhenAdminDemotesOwnerRow()
+    {
+        var owner = CreateUser("owner");
+        var updater = CreateUser("updater");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, targetUser.Id, UserRole.Owner, owner.Id);
+        var dto = new UpdateAccessDto(UserRole.Viewer);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(updater.Id, default)).ReturnsAsync(updater);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, updater.Id, default))
+            .ReturnsAsync(new BoardAccess(board.Id, updater.Id, UserRole.Admin, owner.Id));
+
+        var result = await _service.UpdateAccessAsync(board.Id, access.Id, dto, updater.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        access.Role.Should().Be(UserRole.Owner);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateAccessAsync_ShouldSucceed_WhenOwnerDemotesOwnerRow()
+    {
+        var owner = CreateUser("owner");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, targetUser.Id, UserRole.Owner, owner.Id);
+        var dto = new UpdateAccessDto(UserRole.Viewer);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(owner.Id, default)).ReturnsAsync(owner);
+
+        var result = await _service.UpdateAccessAsync(board.Id, access.Id, dto, owner.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Role.Should().Be(UserRole.Viewer);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAccessAsync_ShouldSucceed_WhenAdminUpdatesPeerAdminRow()
+    {
+        var owner = CreateUser("owner");
+        var updater = CreateUser("updater");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, targetUser.Id, UserRole.Admin, owner.Id);
+        var dto = new UpdateAccessDto(UserRole.Editor);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(updater.Id, default)).ReturnsAsync(updater);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, updater.Id, default))
+            .ReturnsAsync(new BoardAccess(board.Id, updater.Id, UserRole.Admin, owner.Id));
+
+        var result = await _service.UpdateAccessAsync(board.Id, access.Id, dto, updater.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Role.Should().Be(UserRole.Editor);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAccessAsync_ShouldReturnForbidden_WhenAdminModifiesOwnerIdHolderRow()
+    {
+        var owner = CreateUser("owner");
+        var updater = CreateUser("updater");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, owner.Id, UserRole.Admin, owner.Id);
+        var dto = new UpdateAccessDto(UserRole.Viewer);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(updater.Id, default)).ReturnsAsync(updater);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, updater.Id, default))
+            .ReturnsAsync(new BoardAccess(board.Id, updater.Id, UserRole.Admin, owner.Id));
+
+        var result = await _service.UpdateAccessAsync(board.Id, access.Id, dto, updater.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        access.Role.Should().Be(UserRole.Admin);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateAccessAsync_ShouldSucceed_WhenOwnerRowHolderDemotesPeerOwnerRow()
+    {
+        var owner = CreateUser("owner");
+        var updater = CreateUser("updater");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, targetUser.Id, UserRole.Owner, owner.Id);
+        var dto = new UpdateAccessDto(UserRole.Editor);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(updater.Id, default)).ReturnsAsync(updater);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, updater.Id, default))
+            .ReturnsAsync(new BoardAccess(board.Id, updater.Id, UserRole.Owner, owner.Id));
+
+        var result = await _service.UpdateAccessAsync(board.Id, access.Id, dto, updater.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Role.Should().Be(UserRole.Editor);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task RevokeAccessAsync_ShouldReturnForbidden_WhenAdminRevokesOwnerRow()
+    {
+        var owner = CreateUser("owner");
+        var revoker = CreateUser("revoker");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, targetUser.Id, UserRole.Owner, owner.Id);
+        var revokerAccess = new BoardAccess(board.Id, revoker.Id, UserRole.Admin, owner.Id);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(revoker.Id, default)).ReturnsAsync(revoker);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, revoker.Id, default))
+            .ReturnsAsync(revokerAccess);
+
+        var result = await _service.RevokeAccessAsync(board.Id, access.Id, revoker.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        _boardAccessRepoMock.Verify(r => r.DeleteAsync(It.IsAny<BoardAccess>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task RevokeAccessAsync_ShouldSucceed_WhenOwnerRevokesOwnerRow()
+    {
+        var owner = CreateUser("owner");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var access = new BoardAccess(board.Id, targetUser.Id, UserRole.Owner, owner.Id);
+
+        _boardAccessRepoMock.Setup(r => r.GetByIdAsync(access.Id, default)).ReturnsAsync(access);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(owner.Id, default)).ReturnsAsync(owner);
+
+        var result = await _service.RevokeAccessAsync(board.Id, access.Id, owner.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        _boardAccessRepoMock.Verify(r => r.DeleteAsync(access, default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
     private static User CreateUser(string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
