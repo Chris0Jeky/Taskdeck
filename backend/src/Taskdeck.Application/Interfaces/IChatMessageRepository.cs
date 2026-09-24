@@ -12,4 +12,5 @@ public interface IChatMessageRepository : IRepository<ChatMessage>
     /// Used by data export to avoid an N+1 query when counting messages across many sessions.
     /// </summary>
     Task<IReadOnlyDictionary<Guid, int>> CountBySessionIdsAsync(IEnumerable<Guid> sessionIds, CancellationToken cancellationToken = default);
+
 }
