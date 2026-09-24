@@ -1,6 +1,19 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-22
+Last Updated: 2026-09-24
+
+## Swarm wave-2B correctness fixes ship (PRs #3372-#3374, #3384)
+
+Four review-swarm fixes merged without behavior changes to the review flow itself. Board
+detail and board list now agree on the CanWrite stamp when no authorization service is
+composed (CLI/unauthenticated composition means no enforcement, so the caller can write).
+The contact-card YAML front matter parser caps nesting depth and input size, enforces
+strict ISO dates, validates field lengths, and canaries delimiter corruption on
+serialize. Deferred realtime flushes attempt every staged event instead of dropping the
+batch tail on a mid-batch failure (a lone failure rethrows as-is; multiple failures
+surface as AggregateException). The MCP API-key prefix check is an exact ordinal match.
+Each fix carries targeted regression tests; open swarm follow-ups are PRs #3375, #3383,
+#3385 and issues #3377-#3382.
 
 ## Board-access reads retain session and mutation ownership (#3328)
 
