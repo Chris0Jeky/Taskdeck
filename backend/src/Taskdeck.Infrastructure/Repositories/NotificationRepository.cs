@@ -124,11 +124,13 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
             query = query.Where(n => n.BoardId == boardId.Value);
         }
 
-        return await query.ExecuteUpdateAsync(
-            setters => setters
-                .SetProperty(n => n.IsRead, true)
-                .SetProperty(n => n.ReadAt, readAt)
-                .SetProperty(n => n.UpdatedAt, readAt),
+        return await SqliteWriteResilience.ExecuteWithWriteLockRetryAsync(
+            ct => query.ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(n => n.IsRead, true)
+                    .SetProperty(n => n.ReadAt, readAt)
+                    .SetProperty(n => n.UpdatedAt, readAt),
+                ct),
             cancellationToken);
     }
 
