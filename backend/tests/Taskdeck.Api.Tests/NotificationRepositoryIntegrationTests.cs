@@ -545,8 +545,14 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
             readId = alreadyRead.Id;
             otherId = otherUnread.Id;
 
-            // Backdate the already-read row so the test can prove the batch leaves it untouched.
-            db.Entry(alreadyRead).Property(n => n.ReadAt).CurrentValue = DateTimeOffset.UtcNow.AddHours(-1);
+            // Backdate stamps so the test proves what the batch writes: unread rows must
+            // advance to now (proving UpdatedAt is set, not just inherited from construction),
+            // while the already-read row must keep both original stamps.
+            var backdate = DateTimeOffset.UtcNow.AddHours(-1);
+            db.Entry(unread1).Property(n => n.UpdatedAt).CurrentValue = backdate;
+            db.Entry(unread2).Property(n => n.UpdatedAt).CurrentValue = backdate;
+            db.Entry(alreadyRead).Property(n => n.ReadAt).CurrentValue = backdate;
+            db.Entry(alreadyRead).Property(n => n.UpdatedAt).CurrentValue = backdate;
             await db.SaveChangesAsync();
 
             // ExecuteUpdate bypasses the tracker: clear so the batch runs against clean state.
@@ -578,6 +584,8 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
             byId[readId].ReadAt.Should().NotBeNull();
             byId[readId].ReadAt!.Value.Should().BeBefore(
                 DateTimeOffset.UtcNow.AddMinutes(-30), "already-read rows keep their original ReadAt");
+            byId[readId].UpdatedAt.Should().BeBefore(
+                DateTimeOffset.UtcNow.AddMinutes(-30), "already-read rows keep their original UpdatedAt");
 
             byId[otherId].IsRead.Should().BeFalse("other users are unaffected");
         }
@@ -612,6 +620,9 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
             onOtherId = onOther.Id;
             noBoardId = noBoard.Id;
 
+            db.Entry(onTarget).Property(n => n.UpdatedAt).CurrentValue = DateTimeOffset.UtcNow.AddHours(-1);
+            await db.SaveChangesAsync();
+
             db.ChangeTracker.Clear();
 
             var count = await repo.MarkAllAsReadAsync(user.Id, targetBoardId);
@@ -628,6 +639,10 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
             var byId = rows.ToDictionary(n => n.Id);
 
             byId[onTargetId].IsRead.Should().BeTrue();
+            byId[onTargetId].ReadAt.Should().NotBeNull();
+            byId[onTargetId].ReadAt!.Value.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-1));
+            byId[onTargetId].UpdatedAt.Should().BeAfter(
+                DateTimeOffset.UtcNow.AddMinutes(-1), "the batch stamps UpdatedAt under the board predicate too");
             byId[onOtherId].IsRead.Should().BeFalse("other boards are unaffected by the board filter");
             byId[noBoardId].IsRead.Should().BeFalse("unscoped rows are unaffected by the board filter");
         }
