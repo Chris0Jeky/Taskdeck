@@ -2,7 +2,7 @@ namespace Taskdeck.Api.Realtime;
 
 public interface IBoardPresenceTracker
 {
-    BoardPresenceSnapshot Join(
+    BoardPresenceJoinResult Join(
         Guid boardId,
         string connectionId,
         Guid userId,

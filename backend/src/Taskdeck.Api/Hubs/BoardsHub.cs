@@ -34,8 +34,18 @@ public class BoardsHub : Hub
             throw new HubException($"{ErrorCodes.Forbidden}:You do not have access to this board");
 
         await Groups.AddToGroupAsync(Context.ConnectionId, BoardHubGroups.ForBoard(boardId));
-        var presence = _presenceTracker.Join(boardId, Context.ConnectionId, userId, displayName);
-        await PublishPresenceSnapshotAsync(presence);
+        var join = _presenceTracker.Join(boardId, Context.ConnectionId, userId, displayName);
+        if (join.PreviousBoardSnapshot is { } previous)
+        {
+            // The connection switched boards without leaving the old one first (missed or
+            // failed LeaveBoard, non-web client). Drop it from the old SignalR group so it
+            // stops receiving the old board's mutations, and publish the old board's updated
+            // roster so its members do not keep a ghost entry.
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, BoardHubGroups.ForBoard(previous.BoardId));
+            await PublishPresenceSnapshotAsync(previous);
+        }
+
+        await PublishPresenceSnapshotAsync(join.Snapshot);
     }
 
     public async Task LeaveBoard(Guid boardId)

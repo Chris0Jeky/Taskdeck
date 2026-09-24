@@ -6,7 +6,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
     private readonly Dictionary<Guid, Dictionary<string, ConnectionPresence>> _connectionsByBoard = new();
     private readonly Dictionary<string, Guid> _boardByConnection = new();
 
-    public BoardPresenceSnapshot Join(
+    public BoardPresenceJoinResult Join(
         Guid boardId,
         string connectionId,
         Guid userId,
@@ -14,13 +14,25 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
     {
         lock (_gate)
         {
+            BoardPresenceSnapshot? previousSnapshot = null;
             if (_boardByConnection.TryGetValue(connectionId, out var previousBoardId) && previousBoardId != boardId)
             {
                 if (_connectionsByBoard.TryGetValue(previousBoardId, out var previousBoardConnections))
                 {
                     previousBoardConnections.Remove(connectionId);
                     if (previousBoardConnections.Count == 0)
+                    {
                         _connectionsByBoard.Remove(previousBoardId);
+                        previousSnapshot = EmptySnapshot(previousBoardId);
+                    }
+                    else
+                    {
+                        previousSnapshot = CreateSnapshot(previousBoardId, previousBoardConnections);
+                    }
+                }
+                else
+                {
+                    previousSnapshot = EmptySnapshot(previousBoardId);
                 }
             }
 
@@ -33,7 +45,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
             boardConnections[connectionId] = new ConnectionPresence(userId, displayName, EditingCardId: null);
             _boardByConnection[connectionId] = boardId;
 
-            return CreateSnapshot(boardId, boardConnections);
+            return new BoardPresenceJoinResult(CreateSnapshot(boardId, boardConnections), previousSnapshot);
         }
     }
 
