@@ -834,8 +834,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain($"Proposal with ID {unknown} not found");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
     }
 
     [Fact]
@@ -859,8 +859,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         // Request order wins: the missing id (first) 404s before the foreign id (second) 403s.
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain($"Proposal with ID {unknown} not found");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
     }
 
     [Fact]
@@ -875,8 +875,29 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             new DismissProposalsRequest { Ids = [unknown] });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain($"Proposal with ID {unknown} not found");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
+    public async Task DismissProposals_FailFast_ReturnsFirstMissingBeforeLaterForbidden()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(callerClient, "automation-dismiss-order");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-dismiss-order-other");
+        var otherBoard = await ApiTestHarness.CreateBoardWithColumnAsync(otherClient, "dismiss-order-other");
+        var foreign = await CreateBatchApprovalProposalAsync(otherClient, other.UserId, otherBoard);
+        var unknown = Guid.NewGuid();
+
+        var response = await callerClient.PostAsJsonAsync(
+            "/api/automation/proposals/dismiss",
+            new DismissProposalsRequest { Ids = [unknown, foreign.Id] });
+
+        // Request order wins: the missing id (first) 404s before the foreign id (second) 403s.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var failFastDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        failFastDocument.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
     }
 
     [Fact]
