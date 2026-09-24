@@ -109,6 +109,21 @@ public class AccountDeletionService : IAccountDeletionService
             }
         }
 
+        // Guard: board creation sets only Board.OwnerId (no Owner access row is ever
+        // created), so also refuse deletion while the user owns active boards
+        // outright - otherwise those boards would be orphaned permanently
+        // (#3400, #3425). Archived boards are already disposed of (DELETE is a
+        // soft delete and no ownership-transfer flow exists yet, see #3424),
+        // so they do not block deletion.
+        var ownedBoards = (await _unitOfWork.Boards.GetByOwnerIdAsync(userId, includeArchived: false, cancellationToken)).ToList();
+        if (ownedBoards.Count > 0)
+        {
+            var firstOwned = ownedBoards.First();
+            return Result.Failure<AccountDeletionResultDto>(
+                ErrorCodes.InvalidOperation,
+                $"Cannot delete account: you own board '{firstOwned.Name}' ({firstOwned.Id}). Delete the boards you own before deleting your account.");
+        }
+
         try
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -166,27 +181,38 @@ public class AccountDeletionService : IAccountDeletionService
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
             var privateWorkspaceDeleted = await _workspaceInsights.DeleteByUserAsync(userId, cancellationToken);
 
-            // 4. Anonymize chat sessions — delete messages and sessions
-            var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
-            var chatSessionsAnonymized = 0;
-            foreach (var session in chatSessions)
-            {
-                var messages = await _unitOfWork.ChatMessages.GetBySessionIdAsync(session.Id, limit: 100000, cancellationToken: cancellationToken);
-                foreach (var message in messages)
-                {
-                    await _unitOfWork.ChatMessages.DeleteAsync(message, cancellationToken);
-                }
-                await _unitOfWork.ChatSessions.DeleteAsync(session, cancellationToken);
-                chatSessionsAnonymized++;
-            }
+            // 4. Anonymize chat sessions with one set-based delete: the old per-session/
+            // per-message loop issued 1+N queries plus a tracked delete per row, and silently
+            // kept every session past the 100k fetch cap. Messages need no separate delete:
+            // ChatMessage.SessionId is a required FK with DeleteBehavior.Cascade, so the
+            // database removes them atomically with their sessions (same reliance as the
+            // transcript-evidence cascade above). The receipt carries the exact session count.
+            var chatSessionsAnonymized = await _unitOfWork.ChatSessions.DeleteByUserIdAsync(userId, cancellationToken);
 
-            // 5. Delete external logins (personal data)
+            // 5. Delete external logins, MFA credentials, and API keys (authentication
+            //    material must not outlive the account).
             var externalLogins = await _unitOfWork.ExternalLogins.GetByUserIdAsync(userId, cancellationToken);
             var externalLoginsDeleted = 0;
             foreach (var login in externalLogins)
             {
                 await _unitOfWork.ExternalLogins.DeleteAsync(login, cancellationToken);
                 externalLoginsDeleted++;
+            }
+
+            var mfaCredentialsDeleted = 0;
+            var mfaCredential = await _unitOfWork.MfaCredentials.GetByUserIdAsync(userId, cancellationToken);
+            if (mfaCredential is not null)
+            {
+                await _unitOfWork.MfaCredentials.DeleteByUserIdAsync(userId, cancellationToken);
+                mfaCredentialsDeleted = 1;
+            }
+
+            var apiKeys = await _unitOfWork.ApiKeys.GetByUserIdAsync(userId, cancellationToken);
+            var apiKeysDeleted = 0;
+            foreach (var apiKey in apiKeys)
+            {
+                await _unitOfWork.ApiKeys.DeleteAsync(apiKey, cancellationToken);
+                apiKeysDeleted++;
             }
 
             // 6. Delete user preferences (personal data)
@@ -223,6 +249,9 @@ public class AccountDeletionService : IAccountDeletionService
             // Invalidate all active JWT tokens so that any in-flight sessions are
             // rejected by the TokenValidationMiddleware.
             user.InvalidateTokens();
+            // Credentials are deleted in step 5; also clear the flag so the anonymized
+            // record is not MFA-marked (#3425).
+            user.DisableMfa();
             user.Deactivate();
             await _unitOfWork.Users.UpdateAsync(user, cancellationToken);
 
@@ -257,7 +286,9 @@ public class AccountDeletionService : IAccountDeletionService
                 WorkspaceMemoriesDeleted: privateWorkspaceDeleted.Memories,
                 WorkspaceMemoryRevisionsDeleted: privateWorkspaceDeleted.Revisions,
                 QuietInsightsDeleted: privateWorkspaceDeleted.Insights,
-                CardAssignmentsRemoved: detachedAssignments.Count));
+                CardAssignmentsRemoved: detachedAssignments.Count,
+                MfaCredentialsDeleted: mfaCredentialsDeleted,
+                ApiKeysDeleted: apiKeysDeleted));
         }
         catch (Exception ex)
         {

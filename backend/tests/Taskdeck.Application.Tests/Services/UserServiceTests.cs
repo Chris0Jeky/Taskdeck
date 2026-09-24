@@ -76,6 +76,31 @@ public class UserServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("x")]
+    [InlineData("12345")]
+    public async Task CreateUserAsync_ShouldRejectWeakPassword(string password)
+    {
+        // #3402: admin-create path has no password validation.
+        // Arrange
+        var dto = new CreateUserDto("newuser", "newuser@example.com", password);
+
+        _userRepoMock.Setup(r => r.ExistsAsync(dto.Username, dto.Email, default))
+            .ReturnsAsync(false);
+        _userRepoMock.Setup(r => r.AddAsync(It.IsAny<User>(), default))
+            .ReturnsAsync((User u, CancellationToken ct) => u);
+
+        // Act
+        var result = await _service.CreateUserAsync(dto);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
     [Fact]
     public async Task CreateUserAsync_ShouldReturnValidationError_WhenUsernameIsEmpty()
     {
@@ -323,6 +348,22 @@ public class UserServiceTests
     }
 
     [Fact]
+    public async Task DeactivateUserAsync_ShouldInvalidateTokens_WhenUserExists()
+    {
+        // #3403: deactivation stamps the revocation cutoff so sessions never
+        // span the transition, even across a future reactivation.
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default))
+            .ReturnsAsync(user);
+
+        var result = await _service.DeactivateUserAsync(user.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        user.TokenInvalidatedAt.Should().NotBeNull("deactivation must stamp the token revocation cutoff");
+    }
+
+    [Fact]
     public async Task DeactivateUserAsync_ShouldInvalidateActiveUserCache()
     {
         // Arrange
@@ -381,6 +422,23 @@ public class UserServiceTests
         result.IsSuccess.Should().BeTrue();
         user.IsActive.Should().BeTrue();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_ShouldInvalidateTokens_WhenUserExists()
+    {
+        // #3403: reactivation must revoke pre-deactivation JWTs so sessions
+        // cannot silently resurrect across the transition.
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        user.Deactivate();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default))
+            .ReturnsAsync(user);
+
+        var result = await _service.ActivateUserAsync(user.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        user.TokenInvalidatedAt.Should().NotBeNull("reactivation must invalidate pre-deactivation tokens");
     }
 
     [Fact]

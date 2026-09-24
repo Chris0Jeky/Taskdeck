@@ -884,7 +884,7 @@ export/import endpoints, which return `403` unless it is on.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. | No |
+| `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. The database export/import endpoints additionally require the `Owner` or `Admin` global role and refuse in `Production`. | No |
 
 ## Connectors
 

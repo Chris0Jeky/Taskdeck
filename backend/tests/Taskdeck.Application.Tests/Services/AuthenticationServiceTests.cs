@@ -106,6 +106,51 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task LoginAsync_ShouldPayOneDummyVerify_WhenIdentifierIsUnknown()
+    {
+        var passwordHasher = new Mock<IPasswordHasher>(MockBehavior.Strict);
+        var service = CreateService(passwordHasher: passwordHasher.Object);
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        _userRepoMock.Setup(r => r.GetByEmailAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        string? dummyHash = null;
+        passwordHasher
+            .Setup(h => h.VerifyPassword("password123", It.IsAny<string>()))
+            .Callback<string, string>((_, hash) => dummyHash = hash)
+            .Returns(false);
+
+        var result = await service.LoginAsync(new LoginDto("ghost-user", "password123"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
+        result.ErrorMessage.Should().Be("Invalid username/email or password");
+        passwordHasher.Verify(
+            h => h.VerifyPassword("password123", It.IsAny<string>()),
+            Times.Once,
+            "unknown identifiers must pay one BCrypt verify so absent accounts are not measurably faster (#3426)");
+        dummyHash.Should().NotBeNullOrWhiteSpace();
+        dummyHash.Should().StartWith("$2", "the dummy must be a real BCrypt hash at full cost, not an empty or malformed fast path");
+    }
+
+    [Fact]
+    public async Task LoginAsync_ShouldReturnAuthFailed_WhenIdentifierUnknownAndPasswordIsNull()
+    {
+        var passwordHasher = new Mock<IPasswordHasher>(MockBehavior.Strict);
+        var service = CreateService(passwordHasher: passwordHasher.Object);
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        _userRepoMock.Setup(r => r.GetByEmailAsync("ghost-user", default)).ReturnsAsync((User?)null);
+        passwordHasher
+            .Setup(h => h.VerifyPassword(string.Empty, It.IsAny<string>()))
+            .Returns(false);
+
+        var result = await service.LoginAsync(new LoginDto("ghost-user", null!));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
+    }
+
+    [Fact]
     public async Task RegisterAsync_ShouldNormalizeIdentifiersBeforeExistenceCheckAndPersistence()
     {
         var service = CreateService();
@@ -294,6 +339,39 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task ChangePasswordAsync_ShouldInvalidateOutstandingTokens_WhenPasswordChanged()
+    {
+        // Regression test for #3408/#3418: tokens issued before a password change
+        // must stop authenticating. ChangePasswordAsync stamps TokenInvalidatedAt;
+        // TokenValidationMiddleware (already covered) rejects tokens with iat < cutoff.
+        var service = CreateService();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ChangePasswordAsync(user.Id, "password123", "newpassword123");
+
+        result.IsSuccess.Should().BeTrue();
+        user.TokenInvalidatedAt.Should().NotBeNull("a password change must invalidate outstanding tokens");
+        user.TokenInvalidatedAt!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_ShouldNotInvalidateTokens_WhenCurrentPasswordIsWrong()
+    {
+        var service = CreateService();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ChangePasswordAsync(user.Id, "wrongpassword", "newpassword123");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
+        user.TokenInvalidatedAt.Should().BeNull("a failed password change must not revoke live sessions");
+    }
+
+    [Fact]
     public async Task ValidateTokenAsync_ShouldReturnUser_WhenTokenIsValid()
     {
         var service = CreateService();
@@ -319,6 +397,57 @@ public class AuthenticationServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("x")]
+    [InlineData("12345")]
+    public async Task RegisterAsync_ShouldRejectWeakPassword(string password)
+    {
+        // #3402/#3419: no server-side password policy; trivial passwords are accepted.
+        var service = CreateService();
+
+        _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<string>(), It.IsAny<string>(), default)).ReturnsAsync(false);
+
+        var result = await service.RegisterAsync(new CreateUserDto("newuser", "newuser@example.com", password));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ShouldRejectPasswordExceedingBcryptLimit()
+    {
+        // #3419: BCrypt silently truncates past 72 bytes, so an overlong password
+        // must be rejected instead of hashed.
+        var service = CreateService();
+
+        _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<string>(), It.IsAny<string>(), default)).ReturnsAsync(false);
+
+        var result = await service.RegisterAsync(new CreateUserDto("newuser", "newuser@example.com", new string('x', 100)));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_ShouldRejectWeakNewPassword()
+    {
+        // #3402/#3419: change-password path has no password validation.
+        var service = CreateService();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ChangePasswordAsync(user.Id, "password123", "x");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        user.TokenInvalidatedAt.Should().BeNull("a rejected password change must not revoke live sessions");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     private AuthenticationService CreateService(

@@ -81,8 +81,10 @@ public class RealtimeBoardHubApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task LeaveBoard_ShouldReturnForbidden_WhenUserCannotReadBoard()
+    public async Task LeaveBoard_ShouldSucceed_WhenUserCannotReadBoard()
     {
+        // Leaving is always safe: no read-access check, so a revoked member can
+        // leave voluntarily instead of being trapped in the group (#3420/#3407).
         var ownerClient = _factory.CreateClient();
         var outsiderClient = _factory.CreateClient();
 
@@ -94,8 +96,7 @@ public class RealtimeBoardHubApiTests : IClassFixture<TestWebApplicationFactory>
         await connection.StartAsync();
 
         var leaveAction = async () => await connection.InvokeAsync("LeaveBoard", board.Id);
-        var exception = await leaveAction.Should().ThrowAsync<HubException>();
-        exception.Which.Message.Should().Contain(ErrorCodes.Forbidden);
+        await leaveAction.Should().NotThrowAsync();
     }
 
     [Fact]

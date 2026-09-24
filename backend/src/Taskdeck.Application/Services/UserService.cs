@@ -23,6 +23,12 @@ public class UserService : IUserService
     {
         try
         {
+            // Centralized server-side password policy (#3402/#3419), checked before
+            // paying BCrypt's cost.
+            var passwordError = PasswordPolicy.Validate(dto.Password);
+            if (passwordError != null)
+                return Result.Failure<UserDto>(ErrorCodes.ValidationError, passwordError);
+
             var exists = await _unitOfWork.Users.ExistsAsync(dto.Username, dto.Email);
             if (exists)
                 return Result.Failure<UserDto>(ErrorCodes.Conflict, "A user with the same username or email already exists");
@@ -126,6 +132,8 @@ public class UserService : IUserService
             // Cleanup includes archived cards and every board, without granting board authority.
             detachedCards = await _assignments.StageDetachAsync(userId, null, userId, "user-deactivated");
             user.Deactivate();
+            // Revoke outstanding JWTs so sessions never span the transition (#3403).
+            user.InvalidateTokens();
             await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.CommitTransactionAsync();
         }
@@ -156,6 +164,8 @@ public class UserService : IUserService
             return Result.Failure(ErrorCodes.NotFound, $"User with ID {userId} not found");
 
         user.Activate();
+        // Revoke pre-deactivation JWTs: sessions must not resurrect on reactivation (#3403).
+        user.InvalidateTokens();
         await _unitOfWork.SaveChangesAsync();
 
         // Invalidate the cache so the middleware picks up the re-activated status
