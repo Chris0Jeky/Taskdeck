@@ -61,7 +61,8 @@ public class NotificationService : INotificationService
         {
             // The unfiltered list must not leak board-scoped notifications for
             // boards the user can no longer read (#3421). Board-less
-            // notifications (e.g. system) are unaffected.
+            // notifications (e.g. system) are unaffected. Filtering applies after
+            // the repository limit, so a page may hold fewer than Limit items.
             var scopedBoardIds = notifications
                 .Select(n => n.BoardId)
                 .Where(id => id.HasValue)

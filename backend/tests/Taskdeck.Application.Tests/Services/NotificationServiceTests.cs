@@ -189,7 +189,7 @@ public class NotificationServiceTests
         _authorizationServiceMock
             .Setup(s => s.GetReadableBoardIdsAsync(
                 userId,
-                It.Is<IEnumerable<Guid>>(ids => ids.Contains(readableBoardId) && ids.Contains(revokedBoardId)),
+                It.Is<IEnumerable<Guid>>(ids => new HashSet<Guid>(ids).SetEquals(new[] { readableBoardId, revokedBoardId })),
                 default))
             .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { readableBoardId }));
 
@@ -198,7 +198,7 @@ public class NotificationServiceTests
             new NotificationQueryDto(UnreadOnly: false, BoardId: null, Limit: 20));
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Select(n => n.Message).Should().BeEquivalentTo("visible", "global");
+        result.Value.Select(n => n.BoardId).Should().BeEquivalentTo(new Guid?[] { readableBoardId, null });
     }
 
     [Fact]
