@@ -484,6 +484,16 @@ public class AuthenticationService : IAuthenticationService
             if (!user.IsActive)
                 return Result.Failure<UserDto>(ErrorCodes.Forbidden, "User account is inactive");
 
+            // Reject tokens issued before the user's invalidation cutoff, mirroring
+            // TokenValidationMiddleware (#3408). Tokens without an iat claim pass
+            // through, matching the middleware's legacy-token behavior.
+            if (user.TokenInvalidatedAt.HasValue)
+            {
+                var tokenIssuedAt = GetTokenIssuedAt(result.ClaimsIdentity);
+                if (tokenIssuedAt.HasValue && tokenIssuedAt.Value < user.TokenInvalidatedAt.Value)
+                    return Result.Failure<UserDto>(ErrorCodes.Unauthorized, "Token has been invalidated. Please sign in again.");
+            }
+
             return Result.Success(MapToDto(user));
         }
         catch (SecurityTokenException)
@@ -587,6 +597,18 @@ public class AuthenticationService : IAuthenticationService
         }
 
         return unique;
+    }
+
+    private static DateTimeOffset? GetTokenIssuedAt(ClaimsIdentity claimsIdentity)
+    {
+        var iatClaim = claimsIdentity.FindFirst(JwtRegisteredClaimNames.Iat);
+        if (iatClaim == null)
+            return null;
+
+        if (long.TryParse(iatClaim.Value, out var unixSeconds))
+            return DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+
+        return null;
     }
 
     private static UserDto MapToDto(User user)
