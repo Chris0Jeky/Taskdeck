@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
@@ -234,10 +235,14 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
         var blockedB = CreateMcpContext("198.51.100.77");
         var inFlightA = middleware.InvokeAsync(blockedA, limiter);
         var inFlightB = middleware.InvokeAsync(blockedB, limiter);
-        while (Volatile.Read(ref authLayerEntered) < 2)
-        {
-            await Task.Delay(10);
-        }
+        // Bounded poll: a fault before auth-layer entry must fail fast with diagnostics,
+        // not hang until the xunit session timeout (#3456).
+        await ApiTestHarness.PollUntilAsync(
+            () => Task.FromResult(Volatile.Read(ref authLayerEntered)),
+            entered => entered >= 2,
+            "both in-flight requests to reach the auth layer",
+            maxAttempts: 50,
+            interval: TimeSpan.FromMilliseconds(100));
 
         // Over-cap requests are rejected immediately without reaching the auth layer.
         for (var i = 0; i < 3; i++)
