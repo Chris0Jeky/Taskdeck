@@ -107,6 +107,31 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
         return await query.ToListAsync(cancellationToken);
     }
 
+    public async Task<int> MarkAllAsReadAsync(
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Set-based bulk update mirroring Notification.MarkAsRead(): IsRead + ReadAt +
+        // UpdatedAt stamped with one timestamp, no row materialization. ExecuteUpdate
+        // bypasses this context's change tracker, so callers must not rely on previously
+        // loaded Notification entities being refreshed; the service loads nothing first.
+        var readAt = DateTimeOffset.UtcNow;
+        var query = _dbSet.Where(n => n.UserId == userId && !n.IsRead);
+
+        if (boardId.HasValue)
+        {
+            query = query.Where(n => n.BoardId == boardId.Value);
+        }
+
+        return await query.ExecuteUpdateAsync(
+            setters => setters
+                .SetProperty(n => n.IsRead, true)
+                .SetProperty(n => n.ReadAt, readAt)
+                .SetProperty(n => n.UpdatedAt, readAt),
+            cancellationToken);
+    }
+
     /// <inheritdoc />
     /// <remarks>
     /// Uses raw SQL (ExecuteSqlRawAsync) which bypasses the EF Core change tracker.
