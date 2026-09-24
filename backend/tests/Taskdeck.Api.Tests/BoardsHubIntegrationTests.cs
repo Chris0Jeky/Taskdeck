@@ -316,8 +316,10 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
     }
 
     [Fact]
-    public async Task LeaveBoard_WithoutAccess_ShouldThrowHubException()
+    public async Task LeaveBoard_WithoutAccess_ShouldSucceed()
     {
+        // Leaving is always safe: no read-access check, so a revoked member can
+        // leave voluntarily instead of being trapped in the group (#3420/#3407).
         using var client1 = _factory.CreateClient();
         var user1 = await ApiTestHarness.AuthenticateAsync(client1, "hub-lvnoauthz1");
         var board = await ApiTestHarness.CreateBoardAsync(client1, "hub-lvnoauthz-board");
@@ -329,8 +331,7 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await connection.StartAsync();
 
         var act = () => connection.InvokeAsync("LeaveBoard", board.Id);
-        await act.Should().ThrowAsync<HubException>()
-            .WithMessage("*Forbidden*");
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
