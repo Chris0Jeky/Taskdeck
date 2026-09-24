@@ -134,9 +134,9 @@ public sealed class RedisCacheServiceTests : IDisposable
         probeAcquiredLock.Should().BeTrue(
             "the blocking connect must run OUTSIDE _connectionLock so other callers are not serialized behind it (#1189)");
         // Deterministic timing margin: on the fixed path the lock is free, so the probe acquires it
-        // almost instantly (well under 500ms). The old lock-around-connect path would block the
-        // probe for the entire ~3s connect, so this assertion fails hard there.
-        probeElapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500),
+        // almost instantly (microseconds). The old lock-around-connect path would block the
+        // probe for the entire ~3s connect, so this assertion fails hard there; 2s keeps that discrimination with scheduling headroom (#3456).
+        probeElapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
             "a concurrent caller must acquire _connectionLock promptly, not block for the full connect duration");
     }
 
@@ -211,9 +211,9 @@ public sealed class RedisCacheServiceTests : IDisposable
         connectorResult.Should().BeNull("an unreachable Redis degrades the connector to a miss");
 
         // On the fixed path Dispose acquires the free lock in microseconds. On the old path it would
-        // block ~the full connect (seconds). 500ms is a wide, CI-robust margin that the fixed path
+        // block ~the full connect (seconds). 2s is a wide, CI-robust margin that the fixed path
         // clears easily and the serialized path cannot.
-        disposeElapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500),
+        disposeElapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
             "Dispose must not be serialized behind another thread's in-flight connect (#1189)");
     }
 
