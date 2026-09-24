@@ -461,6 +461,8 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingByUserAsync(Guid userId, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
@@ -588,6 +590,8 @@ public class WorkerResilienceTests
                 .Skip(offset).Take(limit).ToList());
         public Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).Where(i => i.UserId == userId && i.Status == status));
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingByUserAsync(Guid userId, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult(_pending.Concat(_processing).Where(i => i.UserId == userId && i.Status == RequestStatus.Pending).OrderBy(i => i.CreatedAt).Take(limit));
         public Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(new Dictionary<RequestStatus, int>());
         public Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
