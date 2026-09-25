@@ -606,7 +606,15 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task Triage_ShouldBeIdempotent_WhenAlreadyTriaging()
     {
-        await AuthenticateAsAsync("capture-triage-repeat");
+        // #3228: the shared fixture runs background workers that can finish the first
+        // triage between the two posts, legitimately re-enqueueing the duplicate as
+        // AlreadyTriaging=false. This workerless host holds the capture in Triaging so
+        // the duplicate deterministically observes the in-flight path.
+        // The local intentionally shadows the shared-fixture client so every call below
+        // targets the workerless host and its isolated database.
+        await using var factory = new HostedWorkerDisabledTestWebApplicationFactory();
+        using var _client = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(_client, "capture-triage-repeat");
         var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-triage-repeat-board");
 
         var createResponse = await _client.PostAsJsonAsync(
@@ -617,9 +625,24 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         created.Should().NotBeNull();
 
         var first = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
-        var second = await _client.PostAsync($"/api/capture/items/{created.Id}/triage", null);
+        // The duplicate request follows the hold check, once in-flight state is proven.
 
         first.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var firstResult = await first.Content.ReadFromJsonAsync<CaptureTriageEnqueueResultDto>();
+        firstResult.Should().NotBeNull();
+        firstResult!.Status.Should().Be(CaptureStatus.Triaging);
+        firstResult.AlreadyTriaging.Should().BeFalse();
+
+        // Deterministic hold check: with no workers running, the capture must still
+        // be in flight when the duplicate request arrives.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var inFlight = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+            inFlight.Status.Should().Be(RequestStatus.Processing);
+        }
+        var second = await _client.PostAsync($"/api/capture/items/{created.Id}/triage", null);
+
         second.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var secondResult = await second.Content.ReadFromJsonAsync<CaptureTriageEnqueueResultDto>();
         secondResult.Should().NotBeNull();
