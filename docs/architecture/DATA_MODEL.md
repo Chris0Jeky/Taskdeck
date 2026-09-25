@@ -1085,8 +1085,9 @@ Per-request token usage tracking for quota and cost visibility.
 
 `Status`/`ExpiresAt` back the quota-reservation flow: a `Reserved` row holds one request slot
 and an estimated token count, and only counts toward quota while `ExpiresAt > now`, so a crashed
-process's stale reservation is ignored and swept on the next attempt. `Commit` overwrites the
-estimate with actual counts and clears `ExpiresAt`.
+process's stale reservation is ignored and swept on the next attempt. `Commit` stores the
+caller's settlement count (authoritative provider usage when available, otherwise an estimate)
+and clears `ExpiresAt`.
 
 **Atomic admission in the tested SQLite configuration.** SQLite reservations use one conditional
 `INSERT ... SELECT` statement whose limit subqueries run under the SQLite writer lock, so concurrent
