@@ -94,6 +94,7 @@ public class CardCommentService
             if (!publishResult.IsSuccess)
                 return Result.Failure<CardCommentDto>(publishResult.ErrorCode, publishResult.ErrorMessage);
 
+            boardResult.Value.RecordDependentMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var created = await _unitOfWork.CardComments.GetByIdWithMentionsAsync(comment.Id, cancellationToken);
@@ -178,6 +179,7 @@ public class CardCommentService
             if (!publishResult.IsSuccess)
                 return Result.Failure<CardCommentDto>(publishResult.ErrorCode, publishResult.ErrorMessage);
 
+            boardResult.Value.RecordDependentMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var updated = await _unitOfWork.CardComments.GetByIdWithMentionsAsync(comment.Id, cancellationToken);
@@ -228,27 +230,28 @@ public class CardCommentService
                 $"card_id={cardId}"),
             cancellationToken);
 
+        boardResult.Value.RecordDependentMutation();
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 
-    private async Task<Result> EnsureBoardWritableAsync(
+    private async Task<Result<Board>> EnsureBoardWritableAsync(
         Guid boardId,
         CancellationToken cancellationToken)
     {
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId, cancellationToken);
         if (board is null)
-            return Result.Failure(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+            return Result.Failure<Board>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
         // Board archive freezes discussion mutations; an archived card on an active board does not.
         if (board.IsArchived)
         {
-            return Result.Failure(
+            return Result.Failure<Board>(
                 ErrorCodes.InvalidOperation,
                 "Cannot modify comments on an archived board. Restore the board before editing.");
         }
 
-        return Result.Success();
+        return Result.Success(board);
     }
 
     private async Task<Result<Card>> EnsureCardBelongsToBoardAsync(
