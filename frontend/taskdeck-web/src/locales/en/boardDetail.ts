@@ -17,6 +17,9 @@
  * capture/review lane, and `card.capture` is the one door into it.
  */
 export default {
+  // Persistent error toast when the server revokes access to the open board;
+  // BoardView redirects to the boards list alongside it.
+  accessRevoked: 'Your access to this board was removed.',
   actions: {
     settings: 'Board settings',
     // Board-level card presentation. The mode hides the excerpt and the meta
