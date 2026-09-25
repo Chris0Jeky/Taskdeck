@@ -134,6 +134,15 @@ export function createCardActions(
         afterActive: true,
         preserveCardComments: true,
         backgroundFailureMessage: message,
+        onBackgroundForbidden: recoveryVisit.onBackgroundForbidden
+          ? (boardId) => {
+            if (boardId === visit.boardId &&
+              state.boardMutationSessionGeneration.value === visit.sessionGeneration &&
+              state.boardViewVisit.value === recoveryVisit) {
+              recoveryVisit.onBackgroundForbidden?.(boardId)
+            }
+          }
+          : undefined,
       })
     } catch {
       // A post-commit read failure must not turn a confirmed write into a

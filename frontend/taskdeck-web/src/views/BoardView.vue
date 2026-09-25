@@ -117,7 +117,14 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 }
 
 const boardId = ref(route.params.id as string)
-let boardViewVisit = boardStore.beginBoardViewVisit(boardId.value)
+function beginRouteVisit(id: string) {
+  const visit = boardStore.beginBoardViewVisit(id)
+  visit.onBackgroundForbidden = (deniedId) => {
+    if (boardViewVisit === visit) retireRevokedBoard(deniedId)
+  }
+  return visit
+}
+let boardViewVisit = beginRouteVisit(boardId.value)
 const previewProposalId = computed(() => typeof route.query?.proposalId === 'string' ? route.query.proposalId : null)
 const proposalMarkers = ref<BoardProposalMarkers>({})
 provide(BOARD_PROPOSAL_MARKERS, readonly(proposalMarkers))
@@ -180,20 +187,30 @@ const realtime = createBoardRealtimeController({
     presenceMembers.value = normalized
     boardStore.setBoardPresenceMembers(normalized)
   },
-  onAccessRevoked: (revokedBoardId) => {
-    if (viewUnmounted || revokedBoardId !== boardId.value) {
-      return
-    }
-
-    // Hide cached board content immediately and retire the unsaved-editor guard.
-    // Wait one render tick so Paper's child route guard unmounts before replace.
-    boardAccessRevoked.value = true
-    toast.error(t('boardDetail.accessRevoked'))
-    void nextTick()
-      .then(() => router.replace('/workspace/boards'))
-      .catch((error) => logError('Failed to leave revoked board:', error))
-  },
+  onAccessRevoked: retireRevokedBoard,
 })
+
+function retireRevokedBoard(revokedBoardId: string) {
+  if (viewUnmounted || boardAccessRevoked.value || revokedBoardId !== boardId.value) return
+  const visit = boardViewVisit
+
+  // The route may still be waiting to join realtime. Retire it directly instead
+  // of sending A's denial through a controller that still owns B or no board.
+  boardAccessRevoked.value = true
+  pendingRealtimeRecovery = undefined
+  boardRealtimeLoadGeneration++
+  boardStore.endBoardViewVisit(visit)
+  presenceMembers.value = []
+  boardStore.setBoardPresenceMembers([])
+  void realtime.stop().catch((error) => logError('Failed to stop revoked board realtime:', error))
+  toast.error(t('boardDetail.accessRevoked'))
+  // Unmount child editor guards before leaving, but never redirect a new visit.
+  void nextTick().then(() => {
+    if (!viewUnmounted && boardViewVisit === visit && boardId.value === revokedBoardId && boardAccessRevoked.value) {
+      return router.replace('/workspace/boards')
+    }
+  }).catch((error) => logError('Failed to leave revoked board:', error))
+}
 
 const boardLoadErrorSummary = computed(() => routedBoard.value
   ? "We couldn't refresh this board. Your last loaded board is still shown."
@@ -421,7 +438,7 @@ watch(
       return
     }
 
-    boardViewVisit = boardStore.beginBoardViewVisit(nextBoardId)
+    boardViewVisit = beginRouteVisit(nextBoardId)
     boardId.value = nextBoardId
     boardAccessRevoked.value = false
     boardLoadError.value = null
