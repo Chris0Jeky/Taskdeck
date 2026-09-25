@@ -2,6 +2,16 @@
 
 Last Updated: 2026-09-25
 
+## Board access revocation exits the active board (#3455)
+
+The board realtime client now handles the server's `accessRevoked` event for its confirmed,
+currently requested board. It retires pending refresh and fallback polling, shows a persistent
+translated notice, hides cached board content, and replaces the revoked board route with the boards
+list even when an editor had blocked ordinary navigation. Events for another
+board, an old subscription during a switch, or an unmounted view do not redirect. Focused
+composable and route-view tests cover the event, cleanup, notice, and navigation; a live
+server-driven revocation was not exercised locally.
+
 ## Proposal decisions populate insight cohorts (#3415)
 
 Single approve, single reject and batch approve now stage one content-free
