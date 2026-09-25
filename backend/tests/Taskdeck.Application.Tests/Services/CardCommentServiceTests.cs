@@ -15,6 +15,7 @@ namespace Taskdeck.Application.Tests.Services;
 public class CardCommentServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
+    private readonly Mock<IBoardRepository> _boardRepositoryMock = new();
     private readonly Mock<ICardRepository> _cardRepositoryMock = new();
     private readonly Mock<ICardCommentRepository> _cardCommentRepositoryMock = new();
     private readonly Mock<IUserRepository> _userRepositoryMock = new();
@@ -26,6 +27,7 @@ public class CardCommentServiceTests
 
     public CardCommentServiceTests()
     {
+        _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.Boards).Returns(_boardRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.Cards).Returns(_cardRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.CardComments).Returns(_cardCommentRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.Users).Returns(_userRepositoryMock.Object);
@@ -52,6 +54,9 @@ public class CardCommentServiceTests
     public async Task CreateCommentAsync_ShouldPublishMentionNotification_ForReadableMention()
     {
         var board = TestDataBuilder.CreateBoard();
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Mention card");
         var actor = new User("actor_user", "actor_user@example.com", "hash");
@@ -92,6 +97,9 @@ public class CardCommentServiceTests
     public async Task CreateCommentAsync_ShouldSkipMentionNotification_WhenMentionedUserCannotReadBoard()
     {
         var board = TestDataBuilder.CreateBoard();
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Mention card");
         var actor = new User("actor_user", "actor_user@example.com", "hash");
@@ -127,6 +135,9 @@ public class CardCommentServiceTests
     public async Task UpdateCommentAsync_ShouldReturnForbidden_WhenActorIsNotAuthorOrModerator()
     {
         var board = TestDataBuilder.CreateBoard();
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Comment card");
         var author = new User("author_user", "author_user@example.com", "hash");
@@ -159,6 +170,9 @@ public class CardCommentServiceTests
     public async Task DeleteCommentAsync_ShouldAllowAdminModeration()
     {
         var board = TestDataBuilder.CreateBoard();
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Comment card");
         var author = new User("author_user", "author_user@example.com", "hash");

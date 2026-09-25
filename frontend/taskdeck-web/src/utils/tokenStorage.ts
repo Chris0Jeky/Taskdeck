@@ -99,6 +99,9 @@ export function captureSessionContinuity(): SessionContinuity {
 export function isSameSessionContinuity(snapshot: SessionContinuity): boolean {
   getToken()
   const currentUserId = getSession()?.userId ?? null
+  // Another tab may publish a break between the marker, token and metadata
+  // reads. Recheck after the last shared read before accepting an old owner.
+  observeCrossTabSessionBreak()
   return (
     getObservedSessionBreakGeneration() === snapshot.breakGeneration &&
     (snapshot.userId !== null && currentUserId !== null
