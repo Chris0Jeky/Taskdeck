@@ -1,17 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-25
-
-## Board JSON import bounds (#3422)
-
-Board JSON import and preview reject oversized collections before starting a database transaction:
-100 columns, 5,000 cards, 500 labels, 500 relations or legacy dependencies, 5,000 assignee
-mappings, and 50,000 nested card entries (label references, source assignees, thinking layers
-and items). The typed DTO and JSON import routes share these checks and return a validation
-error that the API maps to HTTP 400. Existing small-board round trips remain supported; an
-export above these limits cannot be reimported until it is split or reduced. The HTTP JSON
-body limit remains the outer byte bound, and starter-pack imports are a separate bulk-create
-surface.
+Last Updated: 2026-09-22
 
 ## Board-access reads retain session and mutation ownership (#3328)
 
