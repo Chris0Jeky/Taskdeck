@@ -2,6 +2,7 @@ import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import { i18n } from '../i18n'
 import type { ReviewSummaryCard } from '../components/review/ReviewSummaryCards.vue'
 import { useToastStore } from '../store/toastStore'
@@ -1702,7 +1703,7 @@ export function useReviewProposals() {
   async function loadBoardOptions() {
     try {
       loadingBoards.value = true
-      availableBoards.value = await boardsApi.getBoards(undefined, true)
+      availableBoards.value = await boardsApi.getBoards(undefined, true, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
     } catch {
       // Board options are non-critical
     } finally {
