@@ -127,9 +127,6 @@ if (args.Contains("--mcp"))
             ?? new Taskdeck.Application.Services.ObservabilitySettings();
         mcpHttpBuilder.Services.AddTaskdeckObservability(mcpObservabilitySettings);
 
-        // MCP telemetry (operation logger, etc.).
-        mcpHttpBuilder.Services.AddMcpTelemetry();
-
         // CORS services with NO policies registered at all -- deliberately not AddTaskdeckCors (#1602).
         // MapTaskdeckMcpEndpoint stamps the endpoint with DisableCorsAttribute, which is ICorsMetadata,
         // and ASP.NET Core's EndpointMiddleware refuses to execute an endpoint carrying CORS metadata
@@ -312,9 +309,6 @@ if (args.Contains("--mcp"))
             // Stdio identity: maps the OS process owner to the local default user.
             services.AddSingleton<StdioIdentityResolutionWarning>();
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
-
-            // MCP telemetry (operation logger, etc.).
-            services.AddMcpTelemetry();
 
             // MCP server: stdio transport + all resources and tools.
             services.AddMcpServer()
@@ -527,7 +521,6 @@ builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdec
 // Register MCP HTTP transport (Streamable HTTP alongside REST on the same Kestrel instance).
 // The HttpUserContextProvider resolves user identity from the API key set by ApiKeyMiddleware.
 builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
-builder.Services.AddMcpTelemetry();
 // Stateless is pinned explicitly — see the standalone MCP host above for why the
 // ModelContextProtocol 2.0.0 default flip must not be inherited silently.
 builder.Services.AddMcpServer()
