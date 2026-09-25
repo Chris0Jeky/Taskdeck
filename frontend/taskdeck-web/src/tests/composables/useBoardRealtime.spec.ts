@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBoardRealtimeController } from '../../composables/useBoardRealtime'
 import { HttpTransportType } from '@microsoft/signalr'
-import { removeToken } from '../../utils/tokenStorage'
+import { removeSession, removeToken, setSession, setToken } from '../../utils/tokenStorage'
 
 const callbacks: {
   accessRevoked?: (event: { boardId: string }) => void
@@ -82,6 +82,7 @@ describe('createBoardRealtimeController', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.removeItem('taskdeck_token')
+    localStorage.removeItem('taskdeck_session')
     callbacks.accessRevoked = undefined
     callbacks.boardMutation = undefined
     callbacks.boardPresence = undefined
@@ -621,6 +622,77 @@ describe('createBoardRealtimeController', () => {
     await switchBoard
     expect(onAccessRevoked).not.toHaveBeenCalled()
     expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-2')
+    await controller.stop()
+  })
+
+  const refreshFirstToken = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXJzdCJ9.synthetic'
+  const refreshSecondToken = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZWNvbmQifQ.synthetic'
+
+  function signInAs(userId: string, token: string) {
+    expect(setToken(token)).toBe(true)
+    expect(setSession({ userId, username: `${userId}-name`, email: `${userId}@example.test` })).toBe(true)
+  }
+
+  it('retires the board when a Forbidden rejoin settles after a same-user token refresh (#3515)', async () => {
+    signInAs('user-a', refreshFirstToken)
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+    const pendingJoin = createDeferred<void>()
+    mockConnection.invoke.mockImplementationOnce(() => pendingJoin.promise)
+    const rejoin = callbacks.reconnected?.()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(mockConnection.invoke.mock.calls.filter(([method]) => method === 'JoinBoard')).toHaveLength(2)
+    signInAs('user-a', refreshSecondToken)
+
+    pendingJoin.reject(new Error('Forbidden:You do not have access to this board'))
+    await rejoin
+    expect(onAccessRevoked).toHaveBeenCalledExactlyOnceWith('board-1')
+    await controller.stop()
+  })
+
+  it('ignores a Forbidden rejoin after logout followed by same-user re-login (#3515)', async () => {
+    vi.useFakeTimers()
+    signInAs('user-a', refreshFirstToken)
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+    const pendingJoin = createDeferred<void>()
+    mockConnection.invoke.mockImplementationOnce(() => pendingJoin.promise)
+    const rejoin = callbacks.reconnected?.()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    removeToken()
+    removeSession()
+    signInAs('user-a', refreshSecondToken)
+
+    pendingJoin.reject(new Error('Forbidden:You do not have access to this board'))
+    await rejoin
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
+    await controller.stop()
+  })
+
+  it('ignores a Forbidden rejoin after new-user replacement (#3515)', async () => {
+    vi.useFakeTimers()
+    signInAs('user-a', refreshFirstToken)
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+    const pendingJoin = createDeferred<void>()
+    mockConnection.invoke.mockImplementationOnce(() => pendingJoin.promise)
+    const rejoin = callbacks.reconnected?.()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    signInAs('user-b', refreshSecondToken)
+
+    pendingJoin.reject(new Error('Forbidden:You do not have access to this board'))
+    await rejoin
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
     await controller.stop()
   })
 

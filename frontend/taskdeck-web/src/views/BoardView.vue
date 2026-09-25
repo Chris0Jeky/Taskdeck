@@ -33,7 +33,7 @@ import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 import { isDemoMode } from '../utils/demoMode'
 import { getErrorMessage } from '../utils/errorMessage'
 import { logError } from '../utils/errorReporting'
-import { getObservedCredentialGeneration, getToken } from '../utils/tokenStorage'
+import { captureSessionContinuity, getObservedCredentialGeneration, getToken, isSameSessionContinuity, type SessionContinuity } from '../utils/tokenStorage'
 
 const route = useRoute()
 const router = useRouter()
@@ -154,13 +154,13 @@ const realtime = createBoardRealtimeController({
     const boardLoadErrorAtStart = boardLoadError.value
     const storeErrorAtStart = boardStore.error
     getToken()
-    const credentialGeneration = getObservedCredentialGeneration()
+    const requestSession: SessionContinuity = captureSessionContinuity()
     const committed = await boardStore.fetchBoard(id, {
       ...options,
       onBackgroundForbidden: (forbiddenBoardId) => {
         if (viewUnmounted || forbiddenBoardId !== id || forbiddenBoardId !== boardId.value) return
         getToken()
-        if (getObservedCredentialGeneration() !== credentialGeneration) return
+        if (!isSameSessionContinuity(requestSession)) return
         realtime.notifyAccessRevoked(forbiddenBoardId)
       },
     })
@@ -234,17 +234,40 @@ interface BoardRealtimeLoad {
   generation: number
   requestGeneration: number
   credentialGeneration: number
+  session: SessionContinuity
+  credentialRetries: number
   mode: 'start' | 'switchBoard'
 }
 let boardRealtimeLoadGeneration = 0
 let pendingRealtimeRecovery: BoardRealtimeLoad | undefined
 
-function ownsRealtimeLoad(load: BoardRealtimeLoad) {
-  getToken()
+function ownsRealtimeVisit(load: BoardRealtimeLoad) {
   return !viewUnmounted && !boardAccessRevoked.value &&
     boardId.value === load.id && boardViewVisit === load.visit &&
     boardRealtimeLoadGeneration === load.generation &&
-    getObservedCredentialGeneration() === load.credentialGeneration
+    isSameSessionContinuity(load.session)
+}
+
+function hasCurrentRealtimeCredential(load: BoardRealtimeLoad) {
+  getToken()
+  return getObservedCredentialGeneration() === load.credentialGeneration
+}
+
+function ownsRealtimeLoad(load: BoardRealtimeLoad) {
+  return ownsRealtimeVisit(load) && hasCurrentRealtimeCredential(load)
+}
+
+async function continueRealtimeWithCurrentCredential(load: BoardRealtimeLoad) {
+  if (!ownsRealtimeVisit(load)) return
+  pendingRealtimeRecovery = undefined
+  if (load.credentialRetries >= 1) {
+    boardLoadError.value = 'Your session refreshed again while loading this board. Retry to reconnect live updates.'
+    return
+  }
+
+  // Same user, new credential: revalidate once instead of joining on the old
+  // read. A second refresh remains an explicit Retry, not an unbounded loop.
+  await loadBoardWithRealtime(load.id, load.mode, load.credentialRetries + 1)
 }
 
 async function connectLoadedBoard(load: BoardRealtimeLoad) {
@@ -252,7 +275,10 @@ async function connectLoadedBoard(load: BoardRealtimeLoad) {
   boardLoadError.value = null
   try {
     await realtime[load.mode](load.id)
-    if (ownsRealtimeLoad(load)) realtimeStarted = true
+    // The controller observes the current token and owns same-user continuity
+    // during its asynchronous join. Do not lose that completed connection merely
+    // because a token refresh finished while the join was in flight.
+    if (ownsRealtimeVisit(load)) realtimeStarted = true
   } catch (error) {
     logError('Failed to connect loaded board realtime:', error)
   }
@@ -260,27 +286,49 @@ async function connectLoadedBoard(load: BoardRealtimeLoad) {
 
 async function resumeRecoveredBoardRealtime() {
   const load = pendingRealtimeRecovery
-  if (!load || !ownsRealtimeLoad(load) || boardStore.currentBoard?.id !== load.id ||
+  if (!load || !ownsRealtimeVisit(load) || boardStore.currentBoard?.id !== load.id ||
     !(boardStore.currentBoardPayloadGeneration > load.requestGeneration)) return
 
   // Consume before awaiting the controller so repeated payload notifications
   // cannot issue duplicate joins. Connection failures follow existing handling.
   pendingRealtimeRecovery = undefined
-  await connectLoadedBoard(load)
+  try {
+    if (!hasCurrentRealtimeCredential(load)) await continueRealtimeWithCurrentCredential(load)
+    else await connectLoadedBoard(load)
+  } catch (error) {
+    recordBoardLoadFailure(load.id, error)
+    logError('Failed to reconnect recovered board:', error)
+  }
 }
 
-async function loadBoardWithRealtime(id: string, mode: BoardRealtimeLoad['mode']) {
+async function loadBoardWithRealtime(id: string, mode: BoardRealtimeLoad['mode'], credentialRetries = 0) {
   getToken()
   const load: BoardRealtimeLoad = {
     id, mode, visit: boardViewVisit, generation: ++boardRealtimeLoadGeneration,
     requestGeneration: 0,
     credentialGeneration: getObservedCredentialGeneration(),
+    session: captureSessionContinuity(),
+    credentialRetries,
   }
   pendingRealtimeRecovery = undefined
-  const request = boardStore.fetchBoard(id)
-  load.requestGeneration = boardStore.currentBoardRequestGeneration
-  const committed = await request
-  if (!ownsRealtimeLoad(load)) return
+  let committed: boolean
+  try {
+    const request = boardStore.fetchBoard(id)
+    load.requestGeneration = boardStore.currentBoardRequestGeneration
+    committed = await request
+  } catch (error) {
+    if (!ownsRealtimeVisit(load)) return
+    if (!hasCurrentRealtimeCredential(load)) {
+      await continueRealtimeWithCurrentCredential(load)
+      return
+    }
+    throw error
+  }
+  if (!ownsRealtimeVisit(load)) return
+  if (!hasCurrentRealtimeCredential(load)) {
+    await continueRealtimeWithCurrentCredential(load)
+    return
+  }
 
   if (committed) {
     await connectLoadedBoard(load)

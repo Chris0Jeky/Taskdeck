@@ -919,7 +919,7 @@ describe('boardCrudStore', () => {
       expect(onBackgroundForbidden).not.toHaveBeenCalled()
     })
 
-    it('surfaces a current background 403 without replacing cached board state', async () => {
+    it('notifies a current background 403 without replacing cached board state or setting a store error', async () => {
       const forbidden = {
         message: 'Request failed with status code 403',
         response: { status: 403 },
@@ -931,21 +931,12 @@ describe('boardCrudStore', () => {
       mockBoardsApi.getBoard.mockRejectedValueOnce(forbidden)
       mockCardsApi.getCards.mockResolvedValueOnce([])
       mockLabelsApi.getLabels.mockResolvedValueOnce([])
-      helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
-        const message = getErrorMessage(error, fallback)
-        state.error.value = message
-        return message
-      })
-
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
       const onBackgroundForbidden = vi.fn()
       await expect(fetchBoard('board-1', { intent: 'background', onBackgroundForbidden })).resolves.toBe(false)
 
-      expect(helpers.handleApiError).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'You no longer have access to this board' }),
-        'You no longer have access to this board',
-      )
-      expect(state.error.value).toBe('You no longer have access to this board')
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.error.value).toBeNull()
       expect(onBackgroundForbidden).toHaveBeenCalledExactlyOnceWith('board-1')
       expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Cached board' })
       expect(state.currentBoardCards.value).toEqual([{ id: 'cached-card' }])

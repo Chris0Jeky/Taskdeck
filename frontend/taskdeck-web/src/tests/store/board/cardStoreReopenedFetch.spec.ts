@@ -11,7 +11,6 @@ vi.mock('../../../api/boardsApi', () => ({ boardsApi: { getBoard: api.getBoard }
 vi.mock('../../../api/cardsApi', () => ({ cardsApi: api }))
 vi.mock('../../../api/labelsApi', () => ({ labelsApi: { getLabels: api.getLabels } }))
 vi.mock('../../../api/http', () => ({ BOARD_REQUEST_TIMEOUT_MS: 10000 }))
-vi.mock('../../../utils/tokenStorage', () => ({ getToken: () => null, getObservedCredentialGeneration: () => 0 }))
 vi.mock('../../../utils/demoData', () => ({ buildDemoBoardList: () => [] }))
 vi.mock('../../../utils/errorMessage', () => ({ getErrorMessage: (_error: unknown, fallback: string) => fallback }))
 vi.mock('axios', () => ({ default: { isCancel: () => false } }))

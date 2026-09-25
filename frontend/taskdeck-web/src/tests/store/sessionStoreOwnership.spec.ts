@@ -103,6 +103,33 @@ describe('session identity operation ownership (#3324)', () => {
     expect(store.userId).toBe('bob')
   })
 
+  it('publishes an account switch before the new token exposes torn session metadata', async () => {
+    save(response('alice'))
+    const snapshot = tokenStorage.captureSessionContinuity()
+    const bob = response('bob')
+    vi.mocked(authApi.login).mockResolvedValue(bob)
+    const originalSetItem = localStorage.setItem.bind(localStorage)
+    const writes: string[] = []
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      originalSetItem(key, value)
+      writes.push(key)
+      if (key === 'taskdeck_token' && value === bob.token) {
+        expect(tokenStorage.getSession()?.userId).toBe('alice')
+        expect(tokenStorage.isSameSessionContinuity(snapshot)).toBe(false)
+      }
+    })
+
+    try {
+      await useSessionStore().login({ usernameOrEmail: 'bob', password: 'test' })
+    } finally {
+      setItem.mockRestore()
+    }
+
+    expect(writes.indexOf('taskdeck_session_break')).toBeGreaterThanOrEqual(0)
+    expect(writes.indexOf('taskdeck_session_break')).toBeLessThan(writes.indexOf('taskdeck_token'))
+    expect(tokenStorage.getSession()?.userId).toBe('bob')
+  })
+
   const flows = ['login', 'register', 'exchangeOAuthCode', 'exchangeOidcCode'] as const
   function start(store: ReturnType<typeof useSessionStore>, flow: typeof flows[number]) {
     if (flow === 'login') return store.login({ usernameOrEmail: 'alice', password: 'test' })

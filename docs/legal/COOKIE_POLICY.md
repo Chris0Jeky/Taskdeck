@@ -60,6 +60,7 @@ They are set in `localStorage` under predictable keys.
 |---|---|---|---|
 | Auth token | `taskdeck_token` | Holds the JWT used to authenticate API requests. Without this the app cannot stay signed in across reloads. | Persists until sign-out, explicit account deletion, or manual browser clear. Rejected and removed if structurally invalid. |
 | Session metadata | `taskdeck_session` | Holds the signed-in user's ID, username, and email, displayed in the UI shell. | Same lifetime as the auth token. |
+| Session-break marker | `taskdeck_session_break` | Holds a random marker so another tab can detect sign-out or an account switch before trusting an old request result. Contains no account identity. | Replaced on sign-out, account switch, or invalid-token removal; persists until browser storage is cleared. |
 | Workspace mode | `taskdeck_workspace_mode` | Remembers whether the user opted into a particular workspace mode (guided / advanced). | Persists until the user changes mode or clears browser storage. |
 | Workspace help dismissals | `taskdeck_workspace_help_dismissals` | Remembers which in-product help/tips the user has dismissed, so they don't reappear. | Persists until the user clears the dismissals or browser storage. |
 | Feature flag overrides | `taskdeck_feature_flags` | Stores local feature-flag overrides set via DevTools / QA flows. Not expected in normal user sessions. | Persists until cleared. |
@@ -104,9 +105,11 @@ operators should enumerate any such cookies here before publishing.
 
 ## 6. Your choices
 
-- You can clear Taskdeck's essential storage by signing out or by clearing
-  site data in your browser. Doing so will sign you out; your server-side
-  account data is not affected.
+- Signing out removes the auth token and session metadata. The random
+  session-break marker remains so other tabs can recognize the sign-out or a
+  later account switch.
+  Clearing site data removes the marker and other stored preferences too.
+  Neither action deletes your server-side account data.
 - You can revoke analytics consent (if you ever granted it) via the
   in-product controls. Revocation clears buffered events, stops the flush
   timer, rotates the anonymous session ID, invalidates retries owned by the

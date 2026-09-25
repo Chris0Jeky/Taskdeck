@@ -12,6 +12,90 @@ function observedGeneration(): number {
 describe('credential generation', () => {
   beforeEach(() => storage.clearAll())
 
+  it('keeps session continuity across a same-user token refresh', () => {
+    storage.setToken(first)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    storage.setToken(second, 'user-a')
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(true)
+  })
+
+  it('rejects a torn cross-tab identity replacement before session metadata changes', () => {
+    storage.setToken(first, 'user-a')
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    const previousMarker = localStorage.getItem('taskdeck_session_break')
+
+    storage.setToken(second, 'user-b')
+    expect(storage.getSession()?.userId).toBe('user-a')
+    expect(localStorage.getItem('taskdeck_session_break')).not.toBe(previousMarker)
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+
+    storage.setSession({ userId: 'user-b', username: 'bo', email: 'b@example.test' })
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+  })
+
+  it('keeps continuity when another tab replaces a same-user token without logout', () => {
+    storage.setToken(first)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    localStorage.setItem('taskdeck_token', second)
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(true)
+  })
+
+  it('detects another tab logging out and back in before the next token read', () => {
+    storage.setToken(first)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    localStorage.removeItem('taskdeck_token')
+    const priorBreak = localStorage.getItem('taskdeck_session_break')
+    localStorage.setItem('taskdeck_session_break', `${priorBreak ?? ''}:other-tab-logout`)
+    localStorage.setItem('taskdeck_token', second)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 'user-a', username: 'ann', email: 'a@example.test',
+    }))
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+  })
+
+  it('rejects a token replacement when session identity is unavailable', () => {
+    storage.setToken(first)
+    const snapshot = storage.captureSessionContinuity()
+    storage.setToken(second)
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+  })
+
+  it('breaks continuity on logout even when the same user signs back in', () => {
+    storage.setToken(first)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    storage.clearAll()
+    storage.setToken(second)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+  })
+
+  it('breaks continuity when a different user replaces the session', () => {
+    storage.setToken(first)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    storage.setToken(second)
+    storage.setSession({ userId: 'user-b', username: 'bo', email: 'b@example.test' })
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+  })
+
+  it('does not advance the session break on a direct token replacement', () => {
+    storage.setToken(first)
+    storage.getToken()
+    const before = storage.getObservedSessionBreakGeneration()
+    storage.setToken(second)
+    storage.getToken()
+    expect(storage.getObservedSessionBreakGeneration()).toBe(before)
+    storage.removeToken()
+    storage.getToken()
+    expect(storage.getObservedSessionBreakGeneration()).toBeGreaterThan(before)
+  })
+
   it('keeps repeated reads in the same generation', () => {
     storage.setToken(first)
     const before = observedGeneration()
