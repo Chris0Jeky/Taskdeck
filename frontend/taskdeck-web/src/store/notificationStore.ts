@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { notificationsApi } from '../api/notificationsApi'
 import { useToastStore } from './toastStore'
+import { useSessionStore } from './sessionStore'
 import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import type {
@@ -13,11 +14,175 @@ import type {
 
 export const useNotificationStore = defineStore('notifications', () => {
   const toast = useToastStore()
+  const session = useSessionStore()
 
   const notifications = ref<NotificationItem[]>([])
   const preferences = ref<NotificationPreference | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  type ReadLane = 'notifications' | 'preferences'
+  type ReadRetry = () => Promise<unknown>
+
+  interface OperationOwner {
+    epoch: number
+    token: symbol
+    ownsLoading: boolean
+  }
+
+  interface ReadOwner extends OperationOwner {
+    observedMutationGeneration: number
+  }
+
+  let sessionEpoch = 0
+  let notificationMutationGeneration = 0
+  let preferenceMutationGeneration = 0
+  const activeLoadingOperations = new Set<symbol>()
+  const readOwners = new Map<ReadLane, ReadOwner>()
+  const readRetries = new Map<ReadLane, ReadRetry>()
+
+  function syncLoading(): void {
+    loading.value = activeLoadingOperations.size > 0
+  }
+
+  function clearError(): void {
+    error.value = null
+  }
+
+  function beginOperation(
+    label: string,
+    options: { ownsLoading?: boolean; clearExistingError?: boolean } = {},
+  ): OperationOwner {
+    const owner = {
+      epoch: sessionEpoch,
+      token: Symbol(label),
+      ownsLoading: options.ownsLoading ?? false,
+    }
+    if (owner.ownsLoading) activeLoadingOperations.add(owner.token)
+    if (options.clearExistingError ?? false) clearError()
+    syncLoading()
+    return owner
+  }
+
+  function ownsSession(owner: OperationOwner): boolean {
+    return owner.epoch === sessionEpoch
+  }
+
+  function finishOperation(owner: OperationOwner): void {
+    if (!ownsSession(owner)) return
+    if (owner.ownsLoading) activeLoadingOperations.delete(owner.token)
+    syncLoading()
+  }
+
+  function mutationGeneration(lane: ReadLane): number {
+    return lane === 'notifications'
+      ? notificationMutationGeneration
+      : preferenceMutationGeneration
+  }
+
+  function beginRead(lane: ReadLane, retry: ReadRetry): ReadOwner {
+    const previous = readOwners.get(lane)
+    if (previous?.epoch === sessionEpoch && previous.ownsLoading) {
+      activeLoadingOperations.delete(previous.token)
+    }
+
+    const operation = beginOperation(`read:${lane}`, {
+      ownsLoading: true,
+      clearExistingError: true,
+    })
+    const owner = {
+      ...operation,
+      observedMutationGeneration: mutationGeneration(lane),
+    }
+    readOwners.set(lane, owner)
+    readRetries.set(lane, retry)
+    return owner
+  }
+
+  function ownsRead(lane: ReadLane, owner: ReadOwner): boolean {
+    const current = readOwners.get(lane)
+    return ownsSession(owner)
+      && current?.token === owner.token
+      && owner.observedMutationGeneration === mutationGeneration(lane)
+  }
+
+  function finishRead(lane: ReadLane, owner: ReadOwner): void {
+    if (readOwners.get(lane)?.token === owner.token) {
+      readOwners.delete(lane)
+      readRetries.delete(lane)
+    }
+    finishOperation(owner)
+  }
+
+  function invalidateRead(lane: ReadLane): void {
+    const owner = readOwners.get(lane)
+    if (owner?.epoch === sessionEpoch && owner.ownsLoading) {
+      activeLoadingOperations.delete(owner.token)
+    }
+    readOwners.delete(lane)
+    readRetries.delete(lane)
+    syncLoading()
+  }
+
+  function recordNotificationMutation(): void {
+    notificationMutationGeneration += 1
+    invalidateRead('notifications')
+  }
+
+  function recordPreferenceMutation(): void {
+    preferenceMutationGeneration += 1
+    invalidateRead('preferences')
+  }
+
+  function invalidateOperations(): void {
+    sessionEpoch += 1
+    notificationMutationGeneration = 0
+    preferenceMutationGeneration = 0
+    activeLoadingOperations.clear()
+    readOwners.clear()
+    readRetries.clear()
+    loading.value = false
+    clearError()
+  }
+
+  function retryEmptyActiveReads(): void {
+    const notificationRetry = readOwners.has('notifications') && notifications.value.length === 0
+      ? readRetries.get('notifications')
+      : undefined
+    const preferenceRetry = readOwners.has('preferences') && preferences.value === null
+      ? readRetries.get('preferences')
+      : undefined
+
+    invalidateOperations()
+    if (notificationRetry) {
+      void notificationRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
+    if (preferenceRetry) {
+      void preferenceRetry().catch(() => {
+        // The retried store action owns current error/toast state.
+      })
+    }
+  }
+
+  function resetForSession(): void {
+    invalidateOperations()
+    notifications.value = []
+    preferences.value = null
+  }
+
+  watch(
+    () => [session.userId, session.isAuthenticated, session.isDemo],
+    resetForSession,
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => session.token,
+    retryEmptyActiveReads,
+    { flush: 'sync' },
+  )
 
   function guardDemoMutation(): never | void {
     if (isDemoMode) {
@@ -28,46 +193,59 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   async function fetchNotifications(query?: NotificationQuery) {
     if (isDemoMode) {
-      loading.value = true
-      error.value = null
+      invalidateRead('notifications')
+      clearError()
       notifications.value = []
-      loading.value = false
       return
     }
+
+    const owner = beginRead('notifications', () => fetchNotifications(query))
     try {
-      loading.value = true
-      error.value = null
-      notifications.value = await notificationsApi.getNotifications(query)
+      const result = await notificationsApi.getNotifications(query)
+      if (!ownsRead('notifications', owner)) return
+      notifications.value = result
     } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to load notifications').message
-      error.value = msg
-      toast.error(msg)
+      if (ownsRead('notifications', owner)) {
+        const msg = getErrorDisplay(e, 'Failed to load notifications').message
+        error.value = msg
+        toast.error(msg)
+      }
       throw e
     } finally {
-      loading.value = false
+      finishRead('notifications', owner)
     }
   }
 
   async function markAsRead(notificationId: string) {
     guardDemoMutation()
+    const owner = beginOperation(`mark-read:${notificationId}`)
     try {
       const updated = await notificationsApi.markAsRead(notificationId)
+      if (!ownsSession(owner)) return updated
+
+      recordNotificationMutation()
       notifications.value = notifications.value.map((item) => (
         item.id === notificationId ? updated : item
       ))
       return updated
     } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to mark notification as read').message
-      error.value = msg
-      toast.error(msg)
+      if (ownsSession(owner)) {
+        const msg = getErrorDisplay(e, 'Failed to mark notification as read').message
+        error.value = msg
+        toast.error(msg)
+      }
       throw e
     }
   }
 
   async function markAllRead(boardId?: string) {
     guardDemoMutation()
+    const owner = beginOperation(`mark-all-read:${boardId ?? 'all'}`)
     try {
       const result = await notificationsApi.markAllRead(boardId)
+      if (!ownsSession(owner)) return result
+
+      recordNotificationMutation()
       notifications.value = notifications.value.map((item) => {
         if (boardId && item.boardId !== boardId) return item
         return {
@@ -78,51 +256,63 @@ export const useNotificationStore = defineStore('notifications', () => {
       })
       return result
     } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to mark all notifications as read').message
-      error.value = msg
-      toast.error(msg)
+      if (ownsSession(owner)) {
+        const msg = getErrorDisplay(e, 'Failed to mark all notifications as read').message
+        error.value = msg
+        toast.error(msg)
+      }
       throw e
     }
   }
 
   async function fetchPreferences() {
     if (isDemoMode) {
-      loading.value = true
-      error.value = null
+      invalidateRead('preferences')
+      clearError()
       preferences.value = null
-      loading.value = false
       return preferences.value
     }
+
+    const owner = beginRead('preferences', fetchPreferences)
     try {
-      loading.value = true
-      error.value = null
-      preferences.value = await notificationsApi.getPreferences()
-      return preferences.value
+      const result = await notificationsApi.getPreferences()
+      if (ownsRead('preferences', owner)) preferences.value = result
+      return result
     } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to load notification preferences').message
-      error.value = msg
-      toast.error(msg)
+      if (ownsRead('preferences', owner)) {
+        const msg = getErrorDisplay(e, 'Failed to load notification preferences').message
+        error.value = msg
+        toast.error(msg)
+      }
       throw e
     } finally {
-      loading.value = false
+      finishRead('preferences', owner)
     }
   }
 
   async function updatePreferences(dto: UpdateNotificationPreferenceRequest) {
     guardDemoMutation()
+    const owner = beginOperation('update-preferences', {
+      ownsLoading: true,
+      clearExistingError: true,
+    })
     try {
-      loading.value = true
-      error.value = null
-      preferences.value = await notificationsApi.updatePreferences(dto)
+      const updated = await notificationsApi.updatePreferences(dto)
+      if (!ownsSession(owner)) return updated
+
+      recordPreferenceMutation()
+      preferences.value = updated
       toast.success('Notification preferences saved')
-      return preferences.value
+      return updated
     } catch (e: unknown) {
-      const msg = getErrorDisplay(e, 'Failed to save notification preferences').message
-      error.value = msg
-      toast.error(msg)
+      if (ownsSession(owner)) {
+        const msg = getErrorDisplay(e, 'Failed to save notification preferences').message
+        error.value = msg
+        toast.error(msg)
+      }
       throw e
     } finally {
-      loading.value = false
+      finishOperation(owner)
     }
   }
 
