@@ -105,9 +105,10 @@ operators should enumerate any such cookies here before publishing.
 
 ## 6. Your choices
 
-- You can clear Taskdeck's essential storage by signing out or by clearing
-  site data in your browser. Doing so will sign you out; your server-side
-  account data is not affected.
+- Signing out removes the auth token and session metadata. The random
+  session-break marker remains so other tabs can recognize the sign-out.
+  Clearing site data removes the marker and other stored preferences too.
+  Neither action deletes your server-side account data.
 - You can revoke analytics consent (if you ever granted it) via the
   in-product controls. Revocation clears buffered events, stops the flush
   timer, rotates the anonymous session ID, invalidates retries owned by the
