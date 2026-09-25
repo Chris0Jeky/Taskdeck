@@ -25,6 +25,7 @@ const componentId = `td-input-assist-${Math.random().toString(36).slice(2, 10)}`
 const inputRef = ref<HTMLInputElement | null>(null)
 const panelOpen = ref(false)
 const activeIndex = ref(0)
+let inputFocused = false
 let blurCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 const filteredOptions = computed(() => filterInputAssistOptions(props.options, props.modelValue))
@@ -48,6 +49,22 @@ watch(filteredOptions, (options) => {
   }
 })
 
+watch(
+  () => props.options,
+  (options, previousOptions) => {
+    // The blur grace period keeps pointer selection available, not async ownership.
+    if (!inputFocused || !panelOpen.value) {
+      return
+    }
+
+    const exactMatch = findLateOptionMatch(props.modelValue, options)
+    const previousExactMatch = findLateOptionMatch(props.modelValue, previousOptions)
+    if (exactMatch && !previousExactMatch) {
+      selectOption(exactMatch)
+    }
+  },
+)
+
 function openPanel() {
   if (props.disabled) {
     return
@@ -65,24 +82,43 @@ function setModelValue(value: string) {
   emit('update:modelValue', value)
 }
 
-function findExactMatch(value: string): InputAssistOption | null {
+function findExactMatch(value: string, options: InputAssistOption[] = props.options): InputAssistOption | null {
   const normalizedInput = value.trim().toLowerCase()
   if (!normalizedInput) {
     return null
   }
 
-  const byValue = props.options.find((option) => option.value.trim().toLowerCase() === normalizedInput)
+  const byValue = options.find((option) => option.value.trim().toLowerCase() === normalizedInput)
   if (byValue) {
     return byValue
   }
 
-  return props.options.find((option) => {
+  return options.find((option) => {
     return option.label.trim().toLowerCase() === normalizedInput
   })
   ?? null
 }
 
+function findLateOptionMatch(value: string, options: InputAssistOption[]): InputAssistOption | null {
+  const normalizedInput = value.trim().toLowerCase()
+  if (!normalizedInput) {
+    return null
+  }
+
+  const byValue = options.find((option) => option.value.trim().toLowerCase() === normalizedInput)
+  if (byValue) {
+    return byValue
+  }
+
+  const byLabel = options.filter((option) => option.label.trim().toLowerCase() === normalizedInput)
+  return byLabel.length === 1 ? byLabel[0] : null
+}
+
 function selectOption(option: InputAssistOption) {
+  if (props.disabled) {
+    return
+  }
+
   setModelValue(option.value)
   emit('select', option)
   closePanel()
@@ -110,6 +146,7 @@ function onInput(event: Event) {
 }
 
 function onBlur() {
+  inputFocused = false
   blurCloseTimer = setTimeout(() => {
     closePanel()
     blurCloseTimer = null
@@ -117,6 +154,7 @@ function onBlur() {
 }
 
 function onFocus() {
+  inputFocused = true
   if (blurCloseTimer) {
     clearTimeout(blurCloseTimer)
     blurCloseTimer = null

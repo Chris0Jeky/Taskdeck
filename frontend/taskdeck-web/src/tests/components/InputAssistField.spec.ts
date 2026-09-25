@@ -113,4 +113,61 @@ describe('InputAssistField', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
     expect(wrapper.emitted('select')?.at(-1)?.[0]).toMatchObject({ value: 'health.check', label: 'Health Check' })
   })
+
+  it('selects an exact value when matching options arrive after input', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options: [],
+      },
+    })
+
+    const input = wrapper.get('input')
+    await input.trigger('focus')
+    await input.setValue('health.check')
+    await wrapper.setProps({ modelValue: 'health.check' })
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(0)
+
+    await wrapper.setProps({ options })
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
+    expect(wrapper.emitted('select')?.at(-1)?.[0]).toMatchObject({ value: 'health.check', label: 'Health Check' })
+  })
+
+  it('does not synthesize selection when only the controlled value changes', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options,
+      },
+    })
+
+    await wrapper.get('input').trigger('focus')
+    await wrapper.setProps({ modelValue: 'health.check' })
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
+  it('does not synthesize selection when matching options arrive while disabled', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options: [],
+      },
+    })
+
+    await wrapper.get('input').trigger('focus')
+    await wrapper.setProps({ modelValue: 'health.check' })
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+
+    await wrapper.setProps({ options, disabled: true })
+
+    expect(wrapper.get('input').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
 })
