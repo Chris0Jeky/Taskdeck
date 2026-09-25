@@ -3,6 +3,7 @@ import { ref, nextTick, defineComponent, reactive } from 'vue'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { useCardModal, type UseCardModalOptions } from '../../composables/useCardModal'
+import { useToastStore } from '../../store/toastStore'
 import { cardsApi } from '../../api/cardsApi'
 import type { Card, CardDetachPreview, Label, UpdateCardDto } from '../../types/board'
 import type { CardComment } from '../../types/comments'
@@ -1283,6 +1284,52 @@ describe('useCardModal', () => {
         'card-1',
         expect.objectContaining({ expectedChildrenFingerprint: 'v2:fresh' }),
       )
+    })
+  })
+
+  describe('retired queued delete', () => {
+    function staleVisitError(): Error {
+      const error = new Error('The board visit that queued this card change has ended.')
+      error.name = 'StaleBoardVisitError'
+      return error
+    }
+
+    it('stays silent when a queued delete retires with its board visit', async () => {
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      ctx.result.detachPreview.value = makePreview('current')
+      ctx.result.showDeleteConfirm.value = true
+      mockBoardStore.deleteCard.mockRejectedValueOnce(staleVisitError())
+
+      await ctx.result.handleDeleteConfirm()
+
+      // No request was sent and the originating route is gone: no error
+      // text, no toast, and no success side effects. The dialog stays open
+      // so confirming again captures a fresh visit and transports normally.
+      expect(ctx.result.deletePreviewError.value).toBeNull()
+      expect(ctx.result.isDeleting.value).toBe(false)
+      expect(ctx.result.showDeleteConfirm.value).toBe(true)
+      expect(useToastStore().toasts).toHaveLength(0)
+      expect(ctx.onUpdated).not.toHaveBeenCalled()
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      ctx.wrapper.unmount()
+    })
+
+    it('still reports a real delete failure with error text and a toast', async () => {
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      ctx.result.detachPreview.value = makePreview('current')
+      mockBoardStore.deleteCard.mockRejectedValueOnce(new Error('boom'))
+
+      await ctx.result.handleDeleteConfirm()
+
+      expect(ctx.result.deletePreviewError.value).toContain('could not be confirmed')
+      expect(ctx.result.isDeleting.value).toBe(false)
+      expect(useToastStore().toasts).toHaveLength(1)
+      expect(ctx.onClose).not.toHaveBeenCalled()
+      ctx.wrapper.unmount()
     })
   })
 
