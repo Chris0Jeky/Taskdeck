@@ -40,6 +40,14 @@ internal sealed class ApiKeysCommandHandler
                 "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
         }
 
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--name", "--scopes", "--expires");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
+        }
+
         var scopesText = ArgParser.GetOption(args, "--scopes");
         var scopeNames = scopesText?.Split(',', StringSplitOptions.None);
         if (!ApiKeyScopeRules.TryParseNames(scopeNames, out var scopes))
@@ -122,6 +130,14 @@ internal sealed class ApiKeysCommandHandler
     {
         var name = ArgParser.GetOption(args, "--name");
         var idText = ArgParser.GetOption(args, "--id");
+
+        var duplicateRevokeOption = ArgParser.FindDuplicateOption(args, "--name", "--id");
+        if (duplicateRevokeOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateRevokeOption}'. Each option may be supplied at most once.",
+                "taskdeck api-key revoke --name <name> | --id <key-id>");
+        }
 
         if (ArgParser.HasFlag(args, "--name") && name is null)
         {
