@@ -181,10 +181,10 @@ export function getToken(): string | null {
   if (token && !isValidJwtStructure(token)) {
     // Corrupted or malicious value — remove it
     localStorage.removeItem(TOKEN_KEY)
-    if (observedToken !== null) {
-      advanceCredentialGeneration(null)
-      advanceSessionBreak(true)
-    }
+    // Removal ends the shared session even when this tab has never observed
+    // a valid token. Other tabs must reject owners from before the cleanup.
+    advanceCredentialGeneration(null)
+    advanceSessionBreak(true)
     return null
   }
   if (token !== observedToken) {
