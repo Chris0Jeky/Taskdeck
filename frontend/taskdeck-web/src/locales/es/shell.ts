@@ -46,4 +46,25 @@ export default {
       signOut: 'Cerrar sesión',
     },
   },
+  sidebar: {
+    // Nombres hablados de los controles de PaperSidebar (#3389). Glifos e
+    // insignia `· N` son decorativos: cada enlace/botón lleva un `aria-label`
+    // explícito. `{label}` es la etiqueta visible del elemento — aún en inglés
+    // hasta que se extraiga la superficie sidebar — así que aquí se localiza
+    // el marco, no el sustantivo.
+    badge: {
+      withCount: '{label}: {count} en espera',
+    },
+    advanced: {
+      label: 'Avanzado',
+      show: 'Mostrar',
+      hide: 'Ocultar',
+    },
+    more: 'Más',
+    useAdvancedWorkspace: 'Usar el espacio de trabajo avanzado',
+    theme: {
+      switchToLight: 'Cambiar al tema Paper claro',
+      switchToDark: 'Cambiar al tema Paper oscuro',
+    },
+  },
 }
