@@ -70,6 +70,10 @@ public class CardCommentService
         try
         {
             var comment = new CardComment(cardId, boardId, actorUserId, dto.Content, dto.ParentCommentId);
+            var boardResult = await EnsureBoardWritableAsync(boardId, cancellationToken);
+            if (!boardResult.IsSuccess)
+                return Result.Failure<CardCommentDto>(boardResult.ErrorCode, boardResult.ErrorMessage);
+
             await RefreshMentionsAsync(comment, dto.Content, actorUserId, boardId, cancellationToken);
 
             await _unitOfWork.CardComments.AddAsync(comment, cancellationToken);
@@ -140,6 +144,11 @@ public class CardCommentService
 
         try
         {
+            comment.ValidateContentUpdate(dto.Content);
+            var boardResult = await EnsureBoardWritableAsync(boardId, cancellationToken);
+            if (!boardResult.IsSuccess)
+                return Result.Failure<CardCommentDto>(boardResult.ErrorCode, boardResult.ErrorMessage);
+
             var existingMentionUserIds = comment.Mentions
                 .Select(mention => mention.MentionedUserId)
                 .ToHashSet();
@@ -205,6 +214,10 @@ public class CardCommentService
         if (!moderatorCheck.Value)
             return Result.Failure(ErrorCodes.Forbidden, "You do not have access to delete this comment");
 
+        var boardResult = await EnsureBoardWritableAsync(boardId, cancellationToken);
+        if (!boardResult.IsSuccess)
+            return Result.Failure(boardResult.ErrorCode, boardResult.ErrorMessage);
+
         comment.SoftDelete();
         await _unitOfWork.AuditLogs.AddAsync(
             new AuditLog(
@@ -216,6 +229,25 @@ public class CardCommentService
             cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    private async Task<Result> EnsureBoardWritableAsync(
+        Guid boardId,
+        CancellationToken cancellationToken)
+    {
+        var board = await _unitOfWork.Boards.GetByIdAsync(boardId, cancellationToken);
+        if (board is null)
+            return Result.Failure(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+
+        // Board archive freezes discussion mutations; an archived card on an active board does not.
+        if (board.IsArchived)
+        {
+            return Result.Failure(
+                ErrorCodes.InvalidOperation,
+                "Cannot modify comments on an archived board. Restore the board before editing.");
+        }
+
         return Result.Success();
     }
 
