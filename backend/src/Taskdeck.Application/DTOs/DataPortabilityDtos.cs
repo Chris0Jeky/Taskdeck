@@ -249,4 +249,6 @@ public record AccountDeletionResultDto(
     int WorkspaceMemoriesDeleted = 0,
     int WorkspaceMemoryRevisionsDeleted = 0,
     int QuietInsightsDeleted = 0,
-    int CardAssignmentsRemoved = 0);
+    int CardAssignmentsRemoved = 0,
+    int MfaCredentialsDeleted = 0,
+    int ApiKeysDeleted = 0);

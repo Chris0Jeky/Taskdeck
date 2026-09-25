@@ -10,13 +10,16 @@ test('re-exposing a snoozed retained proposal restores its refresh warning', asy
   await page.clock.install({ time: now })
   await page.clock.pauseAt(now)
   const collectionPath = apiRoutePath(API_BASE_URL, 'automation/proposals')
+  let startedReads = 0
   let reads = 0
+  let completedRefusals = 0
   await page.route(url => url.origin === API_ORIGIN && url.pathname === collectionPath, async route => {
-    reads += 1
+    const readNumber = ++startedReads
+    const status = readNumber === 1 ? 200 : 400
     await route.fulfill({
-      status: reads === 1 ? 200 : 400,
+      status,
       contentType: 'application/json',
-      body: reads === 1 ? JSON.stringify([{
+      body: status === 200 ? JSON.stringify([{
         id: proposalId, boardId, status: 'PendingReview', sourceType: 'Manual',
         sourceReferenceId: null, requestedByUserId: 'synthetic-owner', riskLevel: 'Low',
         summary: 'Retained snoozed proposal', diffPreview: null, validationIssues: null,
@@ -26,6 +29,8 @@ test('re-exposing a snoozed retained proposal restores its refresh warning', asy
         correlationId: 'retained-health', operations: [], approvedRevisionId: null, latestRevisionId: null,
       }]) : JSON.stringify({ title: 'Synthetic refresh refusal' }),
     })
+    reads += 1
+    if (status === 400) completedRefusals += 1
   })
 
   await page.goto(`/workspace/review?boardId=${boardId}`)
@@ -35,6 +40,7 @@ test('re-exposing a snoozed retained proposal restores its refresh warning', asy
     await expect.poll(() => reads).toBe(tick + 2)
   }
   const warning = page.getByTestId('paper-review-queue-refused')
+  expect(completedRefusals).toBe(3)
   await expect(warning).not.toBeEmpty()
 
   await page.evaluate(() => {
@@ -74,14 +80,19 @@ test('a same-count hash swap restores only the landed proposal refresh warning (
   }
   const fresh = { ...retained, id: freshId, boardId: freshBoardId, summary: 'Fresh deferred board C' }
   const collectionPath = apiRoutePath(API_BASE_URL, 'automation/proposals')
+  let startedReads = 0
   let reads = 0
+  let completedRefusals = 0
   await page.route(url => url.origin === API_ORIGIN && url.pathname === collectionPath, async route => {
-    reads += 1
+    const readNumber = ++startedReads
+    const status = readNumber === 1 ? 200 : 400
     await route.fulfill({
-      status: reads === 1 ? 200 : 400,
+      status,
       contentType: 'application/json',
-      body: reads === 1 ? JSON.stringify([retained]) : JSON.stringify({ title: 'Synthetic refresh refusal' }),
+      body: status === 200 ? JSON.stringify([retained]) : JSON.stringify({ title: 'Synthetic refresh refusal' }),
     })
+    reads += 1
+    if (status === 400) completedRefusals += 1
   })
   const detailReads: string[] = []
   await page.route(url => url.origin === API_ORIGIN &&
@@ -102,6 +113,7 @@ test('a same-count hash swap restores only the landed proposal refresh warning (
   }
   const warning = page.getByTestId('paper-review-queue-refused')
   const rows = page.locator('.paper-review-rail__queue-row')
+  expect(completedRefusals).toBe(3)
   await expect(warning).not.toBeEmpty()
   await page.evaluate(() => {
     window.history.pushState({}, '', '/workspace/review')

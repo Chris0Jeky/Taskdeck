@@ -27,6 +27,14 @@ internal sealed class InvitesCommandHandler
 
     private async Task<int> CreateAsync(string[] args)
     {
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--expires");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck invite create [--expires <days>]");
+        }
+
         var expirationDays = DefaultExpirationDays;
         var hasExpiresOption = ArgParser.HasFlag(args, "--expires");
         var expiresText = ArgParser.GetOption(args, "--expires");

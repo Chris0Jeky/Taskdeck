@@ -7,6 +7,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Mcp;
 
@@ -239,6 +240,14 @@ public class WriteTools
         if (!Guid.TryParse(target_column_id, out var targetColumnGuid))
             return Error("Invalid target_column_id format");
 
+        var canWriteMove = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+        if (!canWriteMove.IsSuccess &&
+            canWriteMove.ErrorCode != ErrorCodes.NotFound &&
+            canWriteMove.ErrorCode != ErrorCodes.Forbidden)
+            return Error(canWriteMove);
+        if (!canWriteMove.IsSuccess || !canWriteMove.Value)
+            return Error("Not authorized to move cards on this board");
+
         var parameters = new Dictionary<string, object>
         {
             ["boardId"] = boardGuid,
@@ -323,6 +332,14 @@ public class WriteTools
         if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date && work_item_type == null && parent_card_id == null && !clear_parent && estimated_effort_minutes == null && !clear_estimated_effort)
             return Error("At least one card field or explicit clear action must be provided");
 
+        var canWriteUpdate = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+        if (!canWriteUpdate.IsSuccess &&
+            canWriteUpdate.ErrorCode != ErrorCodes.NotFound &&
+            canWriteUpdate.ErrorCode != ErrorCodes.Forbidden)
+            return Error(canWriteUpdate);
+        if (!canWriteUpdate.IsSuccess || !canWriteUpdate.Value)
+            return Error("Not authorized to update cards on this board");
+
         var parameters = new Dictionary<string, object?>
         {
             ["boardId"] = boardGuid,
@@ -331,9 +348,6 @@ public class WriteTools
 
         if (work_item_type is not null || parent_card_id is not null || clear_parent || estimated_effort_minutes.HasValue || clear_estimated_effort)
         {
-            var access = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
-            if (!access.IsSuccess) return Error(access);
-            if (!access.Value) return Error("Not authorized to update cards on this board");
             if (work_item_type is not null && work_item_type is not ("Task" or "Epic" or "Spike")) return Error("work_item_type must be Task, Epic, or Spike");
             if (!DateTimeOffset.TryParse(expected_updated_at, System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.RoundtripKind, out var expected))
@@ -427,6 +441,14 @@ public class WriteTools
             return Error("Invalid board_id format");
         if (!Guid.TryParse(card_id, out var cardGuid))
             return Error("Invalid card_id format");
+
+        var canWriteArchive = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+        if (!canWriteArchive.IsSuccess &&
+            canWriteArchive.ErrorCode != ErrorCodes.NotFound &&
+            canWriteArchive.ErrorCode != ErrorCodes.Forbidden)
+            return Error(canWriteArchive);
+        if (!canWriteArchive.IsSuccess || !canWriteArchive.Value)
+            return Error("Not authorized to archive cards on this board");
 
         var parameters = new Dictionary<string, object>
         {

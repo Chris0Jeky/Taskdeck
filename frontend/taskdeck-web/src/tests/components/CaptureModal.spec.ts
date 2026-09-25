@@ -34,6 +34,15 @@ async function waitForUi() {
 }
 
 describe('CaptureModal', () => {
+  it('keeps the draft surface mounted but disables submit when board write access is lost', () => {
+    const wrapper = mount(CaptureModal, {
+      props: { boardId: 'board-1', canSubmit: false },
+    })
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('draft is preserved')
+    expect(wrapper.get('button.td-btn--primary').attributes('disabled')).toBeDefined()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     escapeHandlers.splice(0, escapeHandlers.length)

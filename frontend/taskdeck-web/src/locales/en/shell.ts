@@ -36,6 +36,9 @@ export default {
       copyFailed: 'Copy failed',
       dismissNotification: 'Dismiss notification',
       errorDetails: 'Error details for {message}',
+      olderErrors: '{count} older error receipt | {count} older error receipts',
+      hideOlderErrors: 'Hide older error receipts',
+      earlierErrors: '{count} earlier error receipt rolled off | {count} earlier error receipts rolled off',
     },
   },
   topbar: {
@@ -48,6 +51,29 @@ export default {
       profile: 'Profile',
       appearance: 'Appearance',
       signOut: 'Sign out',
+    },
+  },
+  sidebar: {
+    // Spoken names for PaperSidebar controls (#3389). Glyphs (`H`, `I`, …)
+    // and the `· N` badge are decorative, so every nav link/button carries an
+    // explicit `aria-label` instead of concatenating them (`HHome`,
+    // `IInbox· 3`). `badge.withCount` keeps useful counts in the name.
+    // `{label}` is the item's own visible label — still English until the
+    // sidebar surface is extracted — so this key localizes the frame, and a
+    // future label extraction flows through without touching the component.
+    badge: {
+      withCount: '{label}: {count} pending',
+    },
+    advanced: {
+      label: 'Advanced',
+      show: 'Show',
+      hide: 'Hide',
+    },
+    more: 'More',
+    useAdvancedWorkspace: 'Use advanced workspace',
+    theme: {
+      switchToLight: 'Switch to light Paper theme',
+      switchToDark: 'Switch to dark Paper theme',
     },
   },
 }

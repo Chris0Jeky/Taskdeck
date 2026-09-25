@@ -57,6 +57,34 @@ public class NotificationService : INotificationService
             query.BoardId,
             cancellationToken);
 
+        if (!query.BoardId.HasValue && _authorizationService is not null)
+        {
+            // The unfiltered list must not leak board-scoped notifications for
+            // boards the user can no longer read (#3421). Board-less
+            // notifications (e.g. system) are unaffected. Filtering applies after
+            // the repository limit, so a page may hold fewer than Limit items.
+            var scopedBoardIds = notifications
+                .Select(n => n.BoardId)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+
+            if (scopedBoardIds.Count > 0)
+            {
+                var readableBoards = await _authorizationService.GetReadableBoardIdsAsync(
+                    userId, scopedBoardIds, cancellationToken);
+                if (!readableBoards.IsSuccess)
+                    return Result.Failure<IEnumerable<NotificationDto>>(
+                        readableBoards.ErrorCode, readableBoards.ErrorMessage);
+
+                var readable = readableBoards.Value;
+                notifications = notifications
+                    .Where(n => !n.BoardId.HasValue || readable.Contains(n.BoardId.Value))
+                    .ToList();
+            }
+        }
+
         return Result.Success(notifications.Select(MapToDto));
     }
 
@@ -103,20 +131,11 @@ public class NotificationService : INotificationService
             }
         }
 
-        var unreadNotifications = await _unitOfWork.Notifications.GetUnreadByUserIdAsync(
+        // Set-based bulk update: the old load-all-unread + per-row MarkAsRead loop
+        // materialized every unread notification into the change tracker. The repository
+        // replicates MarkAsRead semantics in a single UPDATE and returns the exact count.
+        var count = await _unitOfWork.Notifications.MarkAllAsReadAsync(
             userId, boardId, cancellationToken);
-
-        var count = 0;
-        foreach (var notification in unreadNotifications)
-        {
-            notification.MarkAsRead();
-            count++;
-        }
-
-        if (count > 0)
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
 
         return Result.Success(count);
     }

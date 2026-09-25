@@ -54,6 +54,8 @@ const props = withDefaults(
     composerOpen?: boolean
     composerBusy?: boolean
     composerError?: string | null
+    /** Hide board-scoped capture when the current viewer cannot write. */
+    canCapture?: boolean
   }>(),
   {
     cardVariant: 'index',
@@ -68,6 +70,7 @@ const props = withDefaults(
     composerOpen: false,
     composerBusy: false,
     composerError: null,
+    canCapture: true,
   },
 )
 
@@ -318,6 +321,7 @@ const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
         />
 
         <button
+          v-if="canCapture"
           type="button"
           class="paper-board-column__capture"
           :aria-label="t('boardDetail.card.captureAria')"

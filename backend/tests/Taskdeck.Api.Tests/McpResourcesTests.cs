@@ -314,7 +314,11 @@ public class McpResourcesTests : IDisposable
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var access = await uow.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);
         access.Should().NotBeNull();
-        await uow.BoardAccesses.DeleteAsync(access!);
+        // The authorization query is intentionally no-tracking so repeated reads observe
+        // membership changes. Reload the entity through the tracked identity before mutating it.
+        var trackedAccess = await uow.BoardAccesses.GetByIdAsync(access!.Id);
+        trackedAccess.Should().NotBeNull();
+        await uow.BoardAccesses.DeleteAsync(trackedAccess!);
         await uow.SaveChangesAsync();
     }
 
@@ -328,8 +332,12 @@ public class McpResourcesTests : IDisposable
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var access = await uow.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);
         access.Should().NotBeNull();
-        access!.UpdateRole(UserRole.Viewer, access.GrantedBy);
-        await uow.BoardAccesses.UpdateAsync(access);
+        // The authorization query is intentionally no-tracking so repeated reads observe
+        // membership changes. Reload the entity through the tracked identity before mutating it.
+        var trackedAccess = await uow.BoardAccesses.GetByIdAsync(access!.Id);
+        trackedAccess.Should().NotBeNull();
+        trackedAccess!.UpdateRole(UserRole.Viewer, trackedAccess.GrantedBy);
+        await uow.BoardAccesses.UpdateAsync(trackedAccess);
         await uow.SaveChangesAsync();
     }
 

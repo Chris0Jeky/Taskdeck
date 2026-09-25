@@ -1,5 +1,6 @@
 import { boardsApi } from '../api/boardsApi'
 import { columnsApi } from '../api/columnsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import type { Proposal, ProposalOperation, ProposalAffectedEntity } from '../types/automation'
 import type { Board } from '../types/board'
 import { formatRecordedOperationActionLabel } from '../utils/recordedOperationPresentation'
@@ -86,7 +87,7 @@ export function createProposalDisplayNameResolver() {
     if (!boardRequest) {
       const requestGeneration = generation
       boardRequest = boardsApi
-        .getBoards(undefined, true)
+        .getBoards(undefined, true, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
         .then((boards) => {
           if (requestGeneration === generation) applyBoards(boards)
         })

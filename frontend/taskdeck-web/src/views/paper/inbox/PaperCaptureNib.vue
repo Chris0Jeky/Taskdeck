@@ -19,7 +19,7 @@ import { formatShortcut } from '../../../utils/keyboardShortcuts'
  * render a static ember placeholder at the same position so the intended
  * structure is reviewable.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /**
    * When true, suppress the textarea and render the static ember placeholder
    * for ~1.4s.  The parent owns the timer so it can also reset state.
@@ -39,7 +39,13 @@ const props = defineProps<{
   activeBoardId?: string | null
   /** Human-readable active board name, when the scoped route has one. */
   activeBoardName?: string | null
-}>()
+  /** Server-confirmed write capability for the active Inbox board. */
+  canSubmit?: boolean
+}>(), {
+  // Preserve the pre-capability prop contract for direct callers: only an
+  // explicit `false` disables submission.
+  canSubmit: true,
+})
 
 const emit = defineEmits<{
   (event: 'submit', text: string): void
@@ -48,7 +54,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const text = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
-const canSubmit = computed(() => text.value.trim().length > 0 && !props.submitting)
+const canSubmit = computed(
+  () => text.value.trim().length > 0 && !props.submitting && props.canSubmit !== false,
+)
 const variantShortcut = computed(() => formatShortcut('mod+;'))
 const destination = computed(() => {
   if (!props.activeBoardId) {

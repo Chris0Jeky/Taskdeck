@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -9,28 +11,51 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
     private const int SqliteHeaderLength = 16;
     private static readonly byte[] SqliteHeader = "SQLite format 3\0"u8.ToArray();
 
+    /// <summary>
+    /// Well-known audit entity ID for whole-database export/import operations,
+    /// which address the singleton database rather than a row. The trail is
+    /// reachable via user history; the "Database" entity type is not accepted
+    /// by the entity-history endpoint, which only serves Board/Column/Card/Label.
+    /// </summary>
+    internal static readonly Guid AuditedDatabaseId = Guid.Parse("b7e4a2c1-8f3d-4a5e-9c1b-6d2f8a0e4c7a");
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
     private readonly DatabaseExportImportSettings _databaseSettings;
+    private readonly string _environmentName;
+    private readonly IHistoryService? _historyService;
+    private readonly ILogger<DatabaseFileExportImportService>? _logger;
 
     public DatabaseFileExportImportService(
         IUnitOfWork unitOfWork,
+        string environmentName,
         DevelopmentSandboxSettings? sandboxSettings = null,
-        DatabaseExportImportSettings? databaseSettings = null)
+        DatabaseExportImportSettings? databaseSettings = null,
+        IHistoryService? historyService = null,
+        ILogger<DatabaseFileExportImportService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
         _databaseSettings = databaseSettings ?? new DatabaseExportImportSettings();
+        _environmentName = environmentName;
+        _historyService = historyService;
+        _logger = logger;
     }
 
     public async Task<Result<byte[]>> ExportDatabaseAsync(Guid userId)
     {
+        if (IsProductionEnvironment())
+            return Result.Failure<byte[]>(ErrorCodes.Forbidden, "Database export is not allowed in Production");
+
         var user = await _unitOfWork.Users.GetByIdAsync(userId);
         if (user == null)
             return Result.Failure<byte[]>(ErrorCodes.NotFound, $"User with ID {userId} not found");
 
         if (!_sandboxSettings.Enabled)
             return Result.Failure<byte[]>(ErrorCodes.Forbidden, "Database export is only allowed when DevelopmentSandbox is enabled");
+
+        if (user.DefaultRole is not (UserRole.Owner or UserRole.Admin))
+            return Result.Failure<byte[]>(ErrorCodes.Forbidden, "Database export requires the Owner or Admin role");
 
         var databasePathResult = ResolveDatabasePath();
         if (!databasePathResult.IsSuccess)
@@ -51,6 +76,7 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             if (bytes.Length == 0)
                 return Result.Failure<byte[]>(ErrorCodes.ValidationError, "Database export produced an empty file");
 
+            await AuditDatabaseActionAsync(AuditAction.DataExported, userId, "Full database export");
             return Result.Success(bytes);
         }
         catch (Exception ex)
@@ -61,12 +87,18 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
     public async Task<Result> ImportDatabaseAsync(byte[] dbFile, Guid userId)
     {
+        if (IsProductionEnvironment())
+            return Result.Failure(ErrorCodes.Forbidden, "Database import is not allowed in Production");
+
         var user = await _unitOfWork.Users.GetByIdAsync(userId);
         if (user == null)
             return Result.Failure(ErrorCodes.NotFound, $"User with ID {userId} not found");
 
         if (!_sandboxSettings.Enabled)
             return Result.Failure(ErrorCodes.Forbidden, "Database import is only allowed when DevelopmentSandbox is enabled");
+
+        if (user.DefaultRole is not (UserRole.Owner or UserRole.Admin))
+            return Result.Failure(ErrorCodes.Forbidden, "Database import requires the Owner or Admin role");
 
         if (dbFile == null || dbFile.Length == 0)
             return Result.Failure(ErrorCodes.ValidationError, "Database import payload cannot be empty");
@@ -138,6 +170,7 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             DeleteDatabaseSideFile(databasePath + "-wal");
             DeleteDatabaseSideFile(databasePath + "-shm");
 
+            await AuditDatabaseActionAsync(AuditAction.DataImported, userId, "Full database import");
             return Result.Success();
         }
         catch (IOException ex)
@@ -165,6 +198,13 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             TryDeleteFile(backupPath);
         }
     }
+
+    private bool IsProductionEnvironment() =>
+        string.Equals(_environmentName, "Production", StringComparison.OrdinalIgnoreCase);
+
+    private Task AuditDatabaseActionAsync(AuditAction action, Guid userId, string details) =>
+        AuditLogWriter.SafeLogAsync(
+            _historyService, _logger, "Database", AuditedDatabaseId, action, userId, changes: details);
 
     internal Result<string> ResolveDatabasePath()
     {

@@ -575,6 +575,39 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<LlmRequest>> GetOldestPendingByUserAsync(Guid userId, int limit, CancellationToken cancellationToken = default)
+    {
+        if (limit < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "Limit must be at least 1.");
+        }
+
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite's EF provider cannot translate ORDER BY on a DateTimeOffset column, so the
+            // order + LIMIT live in raw SQL (mirrors GetOldestByStatusAndLaneAsync). No Include:
+            // the only consumer (InboxTriageAssistant) reads scalar Id/Payload, never navigations.
+            // Re-sort defensively: the inner LIMIT selects the correct oldest-N rows, and the
+            // re-sort makes oldest-first a contract even if EF reshapes the composed query.
+            // CreatedAt is always UTC (Entity constructor), so TEXT ordering is chronological.
+            // At a CreatedAt-tie LIMIT boundary the kept rows are deterministic per provider
+            // (SQLite compares Guids as TEXT); the old in-memory order had no tie-break at all.
+            var rows = await _context.LlmRequests
+                .FromSqlInterpolated($"SELECT * FROM LlmRequests WHERE UserId = {userId} AND Status = {(int)RequestStatus.Pending} ORDER BY CreatedAt ASC, Id LIMIT {limit}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            return rows.OrderBy(lr => lr.CreatedAt).ThenBy(lr => lr.Id).ToList();
+        }
+
+        return await _context.LlmRequests
+            .AsNoTracking()
+            .Where(lr => lr.UserId == userId && lr.Status == RequestStatus.Pending)
+            .OrderBy(lr => lr.CreatedAt)
+            .ThenBy(lr => lr.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await _context.LlmRequests

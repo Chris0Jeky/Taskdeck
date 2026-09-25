@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
+using System.Data;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -29,12 +32,61 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
         if (settings.MaximumUploadBytes <= 0 || settings.OwnerQuotaBytes <= 0 || settings.ModalityQuotaBytes <= 0 || settings.MaximumReferencesPerOwner <= 0)
             throw new InvalidOperationException("Byte-store quotas must be positive.");
         var total = await db.StoredBlobs.Where(x => x.OwnerUserId == owner).SumAsync(x => x.ByteSize, ct);
+        var now = DateTime.UtcNow;
+        var reservedTotal = await db.StoredBlobReservations
+            .Where(x => x.OwnerUserId == owner && x.ExpiresAtUtc > now)
+            .SumAsync(x => x.ByteSize, ct);
         var modalityIds = db.StoredBlobReferences.Where(x => x.OwnerUserId == owner && x.Modality == modality).Select(x => x.BlobId);
         var modalityTotal = await db.StoredBlobs.Where(x => x.OwnerUserId == owner && modalityIds.Contains(x.Id)).SumAsync(x => x.ByteSize, ct);
+        var reservedModality = await db.StoredBlobReservations
+            .Where(x => x.OwnerUserId == owner && x.Modality == modality && x.ExpiresAtUtc > now)
+            .SumAsync(x => x.ByteSize, ct);
         var references = await db.StoredBlobReferences.CountAsync(x => x.OwnerUserId == owner, ct);
-        if (size > settings.MaximumUploadBytes || total > settings.OwnerQuotaBytes - size || modalityTotal > settings.ModalityQuotaBytes - size
-            || references >= settings.MaximumReferencesPerOwner)
+        var reservedReferences = await db.StoredBlobReservations
+            .CountAsync(x => x.OwnerUserId == owner && x.ExpiresAtUtc > now, ct);
+        if (size > settings.MaximumUploadBytes ||
+            size > settings.OwnerQuotaBytes || total > settings.OwnerQuotaBytes - size ||
+            reservedTotal > settings.OwnerQuotaBytes - size - total ||
+            size > settings.ModalityQuotaBytes || modalityTotal > settings.ModalityQuotaBytes - size ||
+            reservedModality > settings.ModalityQuotaBytes - size - modalityTotal ||
+            references >= settings.MaximumReferencesPerOwner ||
+            reservedReferences >= settings.MaximumReferencesPerOwner - references)
             throw new DomainException(ErrorCodes.PayloadTooLarge, "The audio/source storage quota would be exceeded.");
+    }
+
+    public async Task<Guid> ReserveAsync(
+        BlobAcquisition acquisition,
+        DateTime expiresAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireTransaction();
+        if (acquisition.ExpectedByteSize <= 0)
+            throw new DomainException(ErrorCodes.ValidationError, "A positive declared size is required.");
+        var now = DateTime.UtcNow;
+        await db.StoredBlobReservations.Where(x => x.ExpiresAtUtc <= now)
+            .ExecuteDeleteAsync(cancellationToken);
+        await CheckQuota(acquisition.OwnerUserId, acquisition.AssetModality,
+            acquisition.ExpectedByteSize, cancellationToken);
+        var reservation = new StoredBlobReservation(
+            acquisition.OwnerUserId, acquisition.AssetModality, acquisition.ExpectedByteSize,
+            acquisition.ReferrerKind, acquisition.ReferrerId, expiresAtUtc);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO StoredBlobReservations (Id, OwnerUserId, Modality, ByteSize, ReferrerKind, ReferrerId, ExpiresAtUtc) VALUES ({reservation.Id}, {reservation.OwnerUserId}, {(int)reservation.Modality}, {reservation.ByteSize}, {reservation.ReferrerKind}, {reservation.ReferrerId}, {reservation.ExpiresAtUtc})",
+            cancellationToken);
+        return reservation.Id;
+    }
+
+    public async Task<bool> ReleaseReservationAsync(
+        Guid reservationId,
+        Guid ownerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireTransaction();
+        if (reservationId == Guid.Empty || ownerUserId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "A valid reservation and owner are required.");
+        return await db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM StoredBlobReservations WHERE Id = {reservationId} AND OwnerUserId = {ownerUserId}",
+            cancellationToken) == 1;
     }
 
     public async Task<BlobReference> AcquireAsync(BlobAcquisition acquisition, Stream content, CancellationToken cancellationToken = default)
@@ -118,7 +170,13 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
         {
             var ids = db.StoredBlobReferences.Where(x => x.OwnerUserId == ownerUserId && x.Modality == assetModality).Select(x => x.BlobId);
             var size = await db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId && ids.Contains(x.Id)).SumAsync(x => x.ByteSize, cancellationToken);
-            if (size > settings.ModalityQuotaBytes - blob.ByteSize)
+            var now = DateTime.UtcNow;
+            var reserved = await db.StoredBlobReservations
+                .Where(x => x.OwnerUserId == ownerUserId && x.Modality == assetModality && x.ExpiresAtUtc > now)
+                .SumAsync(x => x.ByteSize, cancellationToken);
+            if (blob.ByteSize > settings.ModalityQuotaBytes ||
+                size > settings.ModalityQuotaBytes - blob.ByteSize ||
+                reserved > settings.ModalityQuotaBytes - blob.ByteSize - size)
                 throw new DomainException(ErrorCodes.PayloadTooLarge, "The source modality storage quota would be exceeded.");
         }
         return await AddReference(blob, assetModality, referrerKind, referrerId, cancellationToken);
@@ -138,14 +196,75 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
 
     public async Task<Stream?> OpenReadAsync(Guid blobObjectId, Guid ownerUserId, CancellationToken cancellationToken = default)
     {
-        var blob = await db.StoredBlobs.AsNoTracking().SingleOrDefaultAsync(x => x.Id == blobObjectId && x.OwnerUserId == ownerUserId && x.ContentHash != null, cancellationToken);
-        return blob is null ? null : new ChunkStream(db, blob.Id, blob.OwnerUserId, blob.ByteSize);
+        return await OpenChunkReaderAsync(
+            """
+            SELECT blobs.ByteSize, chunks.Content
+            FROM StoredBlobs AS blobs
+            INNER JOIN StoredBlobChunks AS chunks ON chunks.BlobId = blobs.Id
+            WHERE blobs.Id = $blobId AND blobs.OwnerUserId = $ownerUserId AND blobs.ContentHash IS NOT NULL
+            ORDER BY chunks.Ordinal
+            """,
+            [("$blobId", blobObjectId), ("$ownerUserId", ownerUserId)],
+            cancellationToken);
     }
 
     public async Task<Stream?> OpenReferenceReadAsync(Guid referenceId, Guid ownerUserId, CancellationToken cancellationToken = default)
     {
-        var id = await db.StoredBlobReferences.Where(x => x.Id == referenceId && x.OwnerUserId == ownerUserId).Select(x => (Guid?)x.BlobId).SingleOrDefaultAsync(cancellationToken);
-        return id is null ? null : await OpenReadAsync(id.Value, ownerUserId, cancellationToken);
+        return await OpenChunkReaderAsync(
+            """
+            SELECT blobs.ByteSize, chunks.Content
+            FROM StoredBlobReferences AS refs
+            INNER JOIN StoredBlobs AS blobs ON blobs.Id = refs.BlobId
+            INNER JOIN StoredBlobChunks AS chunks ON chunks.BlobId = blobs.Id
+            WHERE refs.Id = $referenceId AND refs.OwnerUserId = $ownerUserId
+                AND blobs.OwnerUserId = $ownerUserId AND blobs.ContentHash IS NOT NULL
+            ORDER BY chunks.Ordinal
+            """,
+            [("$referenceId", referenceId), ("$ownerUserId", ownerUserId)],
+            cancellationToken);
+    }
+
+    private async Task<Stream?> OpenChunkReaderAsync(string commandText, (string Name, object Value)[] parameters,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        var ownsConnection = connection.State != ConnectionState.Open;
+        if (ownsConnection)
+            await db.Database.OpenConnectionAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        if (db.Database.CurrentTransaction is { } transaction)
+            command.Transaction = transaction.GetDbTransaction();
+        foreach (var (name, value) in parameters)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+
+        DbDataReader? reader = null;
+        try
+        {
+            reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await reader.DisposeAsync();
+                await command.DisposeAsync();
+                if (ownsConnection) await db.Database.CloseConnectionAsync();
+                return null;
+            }
+
+            return new ChunkStream(db, command, reader, ownsConnection, reader.GetInt64(0));
+        }
+        catch
+        {
+            if (reader is not null) await reader.DisposeAsync();
+            await command.DisposeAsync();
+            if (ownsConnection) await db.Database.CloseConnectionAsync();
+            throw;
+        }
     }
 
     public async Task<BlobObjectDescriptor?> FindByHashAsync(Guid ownerUserId, string contentHash, CancellationToken cancellationToken = default)
@@ -168,20 +287,22 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             await db.StoredBlobReferences.CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken));
     }
 
-    public Task<int> DeleteOwnerAsync(Guid ownerUserId, CancellationToken cancellationToken = default)
+    public async Task<int> DeleteOwnerAsync(Guid ownerUserId, CancellationToken cancellationToken = default)
     {
         RequireTransaction();
         if (ownerUserId == Guid.Empty) throw new DomainException(ErrorCodes.ValidationError, "An owner is required.");
-        return db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId).ExecuteDeleteAsync(cancellationToken);
+        await db.StoredBlobReservations.Where(x => x.OwnerUserId == ownerUserId)
+            .ExecuteDeleteAsync(cancellationToken);
+        return await db.StoredBlobs.Where(x => x.OwnerUserId == ownerUserId).ExecuteDeleteAsync(cancellationToken);
     }
 
-    private sealed class ChunkStream(TaskdeckDbContext context, Guid id, Guid owner, long length) : Stream
+    private sealed class ChunkStream(TaskdeckDbContext context, DbCommand command, DbDataReader reader, bool ownsConnection, long length) : Stream
     {
         private byte[] buffer = [];
         private int offset;
-        private int ordinal;
         private long position;
         private bool disposed;
+        private bool currentRow = true;
         public override bool CanRead => !disposed;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
@@ -194,18 +315,49 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             if (destination.IsEmpty || position == length) return 0;
             if (offset == buffer.Length)
             {
-                buffer = await context.StoredBlobChunks.Where(x => x.BlobId == id && x.Ordinal == ordinal
-                    && context.StoredBlobs.Any(blob => blob.Id == id && blob.OwnerUserId == owner))
-                    .Select(x => x.Content).SingleOrDefaultAsync(cancellationToken)
-                    ?? throw new IOException("The stored source is no longer available.");
-                offset = 0; ordinal++;
+                if (!currentRow && !await reader.ReadAsync(cancellationToken))
+                    throw new IOException("The stored source is no longer available.");
+                currentRow = false;
+                buffer = await reader.GetFieldValueAsync<byte[]>(1, cancellationToken);
+                offset = 0;
             }
             var count = Math.Min(destination.Length, buffer.Length - offset);
             buffer.AsMemory(offset, count).CopyTo(destination);
             offset += count; position += count;
             return count;
         }
-        protected override void Dispose(bool disposing) { disposed = true; buffer = []; base.Dispose(disposing); }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !disposed)
+            {
+                disposed = true;
+                buffer = [];
+                try { reader.Dispose(); }
+                finally
+                {
+                    try { command.Dispose(); }
+                    finally { if (ownsConnection) context.Database.CloseConnection(); }
+                }
+            }
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (!disposed)
+            {
+                disposed = true;
+                buffer = [];
+                try { await reader.DisposeAsync(); }
+                finally
+                {
+                    try { await command.DisposeAsync(); }
+                    finally { if (ownsConnection) await context.Database.CloseConnectionAsync(); }
+                }
+            }
+            await base.DisposeAsync();
+            GC.SuppressFinalize(this);
+        }
         public override void Flush() { }
         public override long Seek(long value, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();

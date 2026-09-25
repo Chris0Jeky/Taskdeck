@@ -58,6 +58,7 @@ defineEmits<{
     v-if="showCaptureModal && board"
     :board-id="boardId"
     :board-name="board.name"
+    :can-submit="board.canWrite !== false"
     @close="$emit('update:showCaptureModal', false)"
     @created="$emit('update:showCaptureModal', false)"
   />

@@ -2,6 +2,7 @@ import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import { i18n } from '../i18n'
 import type { ReviewSummaryCard } from '../components/review/ReviewSummaryCards.vue'
 import { useToastStore } from '../store/toastStore'
@@ -30,9 +31,10 @@ export const STALE_PROPOSAL_MS = 24 * 60 * 60 * 1000
  * is visible (#2194).
  *
  * There is nothing to subscribe to: the only SignalR hub is `BoardsHub`
- * (`/hubs/boards`), its groups are strictly per-board, and it emits exactly
+ * (`/hubs/boards`), its groups are strictly per-board, and it emits
  * `boardMutation` / `boardPresence` / `toolStatus` over board/card/column/label
- * entities. `AutomationProposalService` never touches `IBoardRealtimeNotifier`,
+ * entities (plus direct `accessRevoked` notices to evicted connections, #3420).
+ * `AutomationProposalService` never touches `IBoardRealtimeNotifier`,
  * so proposal creation is silent on the wire and the all-boards review queue has
  * no board group to join in the first place. A bounded poll is therefore the
  * whole available mechanism until a proposal event exists server-side.
@@ -1701,7 +1703,7 @@ export function useReviewProposals() {
   async function loadBoardOptions() {
     try {
       loadingBoards.value = true
-      availableBoards.value = await boardsApi.getBoards(undefined, true)
+      availableBoards.value = await boardsApi.getBoards(undefined, true, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
     } catch {
       // Board options are non-critical
     } finally {

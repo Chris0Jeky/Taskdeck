@@ -82,6 +82,21 @@ public interface IBlobStore
         Stream content,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Claims owner and modality quota in a short caller transaction before a network stream is read.
+    /// The claim expires after the supplied UTC time if the process crashes.
+    /// </summary>
+    Task<Guid> ReserveAsync(
+        BlobAcquisition acquisition,
+        DateTime expiresAtUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a reservation in the caller transaction; finalization does this before AcquireAsync.</summary>
+    Task<bool> ReleaseReservationAsync(
+        Guid reservationId,
+        Guid ownerUserId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Adds a reference to an object the owner already holds (a second asset over the same bytes) without re-streaming.</summary>
     Task<BlobReference?> AcquireExistingAsync(
         Guid ownerUserId,

@@ -105,6 +105,14 @@ internal sealed class BoardsCommandHandler
 
     private async Task<int> UpdateAsync(string[] args, bool outputJson)
     {
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board", "--name", "--description");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+        }
+
         var boardIdText = ArgParser.GetOption(args, "--board");
         if (!ArgParser.TryParseGuid(boardIdText, out var boardId))
         {
@@ -115,7 +123,22 @@ internal sealed class BoardsCommandHandler
 
         var name = ArgParser.GetOption(args, "--name");
         var description = ArgParser.GetOption(args, "--description");
+
+        if (ArgParser.HasFlag(args, "--name") && name is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --name <name>.",
+                "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+        }
+
+        if (ArgParser.HasFlag(args, "--description") && description is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --description <description>.",
+                "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+        }
         var archiveFlag = ArgParser.HasFlag(args, "--archive");
+
         var unarchiveFlag = ArgParser.HasFlag(args, "--unarchive");
 
         if (archiveFlag && unarchiveFlag)

@@ -115,6 +115,14 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     /// <param name="limit">Maximum rows to return; must be at least 1.</param>
     Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default);
     Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Returns at most <paramref name="limit"/> pending requests for a user, oldest-first,
+    /// bounded at the database. Unlike <see cref="GetByUserAsync"/>, this never materializes
+    /// the user's full queue history to select a small prefix. No navigation properties are
+    /// loaded; consumers read scalar fields only.
+    /// </summary>
+    /// <param name="limit">Maximum rows to return; must be at least 1.</param>
+    Task<IEnumerable<LlmRequest>> GetOldestPendingByUserAsync(Guid userId, int limit, CancellationToken cancellationToken = default);
     Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default);
 

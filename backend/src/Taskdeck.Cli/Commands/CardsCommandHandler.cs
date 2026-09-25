@@ -35,6 +35,13 @@ internal sealed class CardsCommandHandler
         var title = ArgParser.GetOption(args, "--title");
         var description = ArgParser.GetOption(args, "--description");
 
+        if (ArgParser.HasFlag(args, "--description") && description is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --description <description>.",
+                "taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]");
+        }
+
         if (!ArgParser.TryParseGuid(boardIdText, out var boardId))
         {
             return ConsoleOutput.PrintUsageError(
@@ -64,6 +71,14 @@ internal sealed class CardsCommandHandler
             DueDate: null,
             LabelIds: null);
 
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board", "--column", "--title", "--description");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]");
+        }
+
         var result = await _cardService.CreateCardAsync(createRequest);
         if (!result.IsSuccess)
         {
@@ -85,7 +100,15 @@ internal sealed class CardsCommandHandler
     {
         var cardIdText = ArgParser.GetOption(args, "--card");
         var targetColumnIdText = ArgParser.GetOption(args, "--target-column");
-        var positionText = ArgParser.GetOption(args, "--position") ?? "0";
+        var positionOption = ArgParser.GetOption(args, "--position");
+        if (ArgParser.HasFlag(args, "--position") && positionOption is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --position <position>.",
+                "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
+        }
+
+        var positionText = positionOption ?? "0";
 
         if (!ArgParser.TryParseGuid(cardIdText, out var cardId))
         {
@@ -105,6 +128,14 @@ internal sealed class CardsCommandHandler
         {
             return ConsoleOutput.PrintUsageError(
                 "Invalid --position value. Position must be a non-negative integer.",
+                "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
+        }
+
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--card", "--target-column", "--position");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
                 "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
         }
 
@@ -163,6 +194,14 @@ internal sealed class CardsCommandHandler
             }
 
             labelId = parsedLabelId;
+        }
+
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board", "--search", "--column", "--label");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
         }
 
         var result = await _cardService.SearchCardsAsync(boardId, search, labelId, columnId);

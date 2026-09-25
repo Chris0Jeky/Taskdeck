@@ -124,6 +124,7 @@
         </button>
       </div>
     </TransitionGroup>
+    <ToastReceiptOverflow />
   </div>
 </template>
 
@@ -131,6 +132,7 @@
 import { nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { copyToastReceipt, useToastStore, type Toast } from '../../store/toastStore'
+import ToastReceiptOverflow from './ToastReceiptOverflow.vue'
 
 const toastStore = useToastStore()
 const { t } = useI18n()

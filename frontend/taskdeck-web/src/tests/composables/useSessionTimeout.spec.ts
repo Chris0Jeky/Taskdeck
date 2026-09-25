@@ -4,6 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '../../store/sessionStore'
 import { useSessionTimeout, WARNING_BEFORE_EXPIRY_MS } from '../../composables/useSessionTimeout'
 import type { SessionTimeoutState } from '../../composables/useSessionTimeout'
+import { useToastStore } from '../../store/toastStore'
+import { SessionOperationSupersededError } from '../../utils/sessionOperation'
 
 // Mock authApi to prevent real HTTP calls
 vi.mock('../../api/authApi', () => ({
@@ -73,6 +75,14 @@ describe('useSessionTimeout', () => {
 
   it('exports WARNING_BEFORE_EXPIRY_MS as 5 minutes', () => {
     expect(WARNING_BEFORE_EXPIRY_MS).toBe(5 * 60 * 1000)
+  })
+
+  it('does not show a refresh warning for a superseded identity operation', async () => {
+    state = useSessionTimeout({ nowFn })
+    vi.spyOn(session, 'refreshSession').mockRejectedValue(new SessionOperationSupersededError())
+    await state.extend()
+    expect(useToastStore().toasts).toHaveLength(0)
+    expect(state.extending.value).toBe(false)
   })
 
   it('does not show warning when unauthenticated', () => {

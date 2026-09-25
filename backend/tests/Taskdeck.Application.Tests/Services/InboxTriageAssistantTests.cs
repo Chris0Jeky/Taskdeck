@@ -70,7 +70,7 @@ public class InboxTriageAssistantTests
             .Select(_ => new LlmRequest(_userId, "capture", "Task item text"))
             .ToList();
 
-        _llmQueueRepoMock.Setup(r => r.GetByUserAsync(_userId, It.IsAny<CancellationToken>()))
+        _llmQueueRepoMock.Setup(r => r.GetOldestPendingByUserAsync(_userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(items);
     }
 
@@ -147,6 +147,25 @@ public class InboxTriageAssistantTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         result.ErrorMessage.Should().Contain("not in allowlist");
+    }
+
+    [Fact]
+    public async Task RunTriage_ShouldFetchBoundedOldestPending_WithoutLoadingFullQueue()
+    {
+        SetupPolicyAllow();
+        SetupInboxItems(2);
+        SetupBoardWithColumn();
+        SetupProposalCreationSuccess();
+
+        var result = await _assistant.RunTriageAsync(_agentProfileId, _userId, _boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        _llmQueueRepoMock.Verify(
+            r => r.GetOldestPendingByUserAsync(_userId, 20, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _llmQueueRepoMock.Verify(
+            r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

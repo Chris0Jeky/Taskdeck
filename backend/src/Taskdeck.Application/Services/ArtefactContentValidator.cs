@@ -14,6 +14,8 @@ public sealed record ValidatedArtefactContent(
     byte[] Bytes,
     string Sha256);
 
+public sealed record ValidatedArtefactMetadata(ArtefactKind Kind, string MimeType, string FileName);
+
 /// <summary>
 /// Binary-aware validation lane for source artefacts. This deliberately does not
 /// use the text-import FileContentValidator.
@@ -77,37 +79,12 @@ public static class ArtefactContentValidator
     {
         if (maxBytes <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxBytes));
-        if (string.IsNullOrWhiteSpace(fileName))
-            return Result.Failure<ValidatedArtefactContent>(ErrorCodes.ValidationError, "Artefact file name is required");
+        var metadata = ValidateMetadata(fileName, declaredMimeType);
+        if (!metadata.IsSuccess)
+            return Result.Failure<ValidatedArtefactContent>(metadata.ErrorCode, metadata.ErrorMessage);
 
-        var normalizedFileName = fileName.Trim();
-        if (normalizedFileName.Length > Domain.Entities.SourceArtefact.MaxFileNameLength ||
-            Path.GetFileName(normalizedFileName) != normalizedFileName ||
-            normalizedFileName.Contains('\\') ||
-            normalizedFileName.Any(char.IsControl) ||
-            normalizedFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
-            normalizedFileName.IndexOfAny(ReservedFileNameChars) >= 0 ||
-            // Reject Unicode format characters (e.g. U+202E right-to-left override) that can
-            // spoof the displayed file name even though the stored bytes stay verified.
-            normalizedFileName.Any(c => char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format))
-        {
-            return Result.Failure<ValidatedArtefactContent>(ErrorCodes.ValidationError, "Artefact file name is invalid");
-        }
-
-        var normalizedMimeType = declaredMimeType.Split(';', 2)[0].Trim();
-        if (!AllowedTypes.TryGetValue(normalizedMimeType, out var allowedType))
-        {
-            return Result.Failure<ValidatedArtefactContent>(
-                ErrorCodes.ValidationError,
-                "Artefact content type is not allowed");
-        }
-
-        if (!allowedType.Extensions.Contains(Path.GetExtension(normalizedFileName)))
-        {
-            return Result.Failure<ValidatedArtefactContent>(
-                ErrorCodes.ValidationError,
-                "Artefact file extension does not match its content type");
-        }
+        var normalizedFileName = metadata.Value.FileName;
+        var allowedType = AllowedTypes[metadata.Value.MimeType];
 
         using var output = new MemoryStream(capacity: (int)Math.Min(maxBytes, 1024 * 1024));
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -148,6 +125,115 @@ public static class ArtefactContentValidator
             normalizedFileName,
             bytes,
             Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()));
+    }
+
+    public static Result<ValidatedArtefactMetadata> ValidateMetadata(string fileName, string declaredMimeType)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return Result.Failure<ValidatedArtefactMetadata>(ErrorCodes.ValidationError, "Artefact file name is required");
+
+        var normalizedFileName = fileName.Trim();
+        if (normalizedFileName.Length > Domain.Entities.SourceArtefact.MaxFileNameLength ||
+            Path.GetFileName(normalizedFileName) != normalizedFileName ||
+            normalizedFileName.Contains('\\') ||
+            normalizedFileName.Any(char.IsControl) ||
+            normalizedFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            normalizedFileName.IndexOfAny(ReservedFileNameChars) >= 0 ||
+            // Reject Unicode format characters (e.g. U+202E right-to-left override) that can
+            // spoof the displayed file name even though the stored bytes stay verified.
+            normalizedFileName.Any(c => char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format))
+        {
+            return Result.Failure<ValidatedArtefactMetadata>(ErrorCodes.ValidationError, "Artefact file name is invalid");
+        }
+
+        var normalizedMimeType = declaredMimeType.Split(';', 2)[0].Trim();
+        if (!AllowedTypes.TryGetValue(normalizedMimeType, out var allowedType))
+        {
+            return Result.Failure<ValidatedArtefactMetadata>(
+                ErrorCodes.ValidationError,
+                "Artefact content type is not allowed");
+        }
+
+        if (!allowedType.Extensions.Contains(Path.GetExtension(normalizedFileName)))
+        {
+            return Result.Failure<ValidatedArtefactMetadata>(
+                ErrorCodes.ValidationError,
+                "Artefact file extension does not match its content type");
+        }
+
+        return Result.Success(new ValidatedArtefactMetadata(
+            allowedType.Kind, allowedType.MimeType, normalizedFileName));
+    }
+
+    public static Stream ValidateWhileReading(Stream source, ValidatedArtefactMetadata metadata)
+        => new ValidatingReadStream(source, metadata);
+
+    private sealed class ValidatingReadStream(Stream source, ValidatedArtefactMetadata metadata) : Stream
+    {
+        private readonly byte[] _signature = new byte[12];
+        private readonly Decoder? _decoder = metadata.Kind == ArtefactKind.TextFile
+            ? new UTF8Encoding(false, true).GetDecoder() : null;
+        private int _signatureCount;
+        private bool _completed;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count)
+            => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (buffer.IsEmpty) return 0;
+            var read = await source.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+            {
+                if (!_completed)
+                {
+                    _completed = true;
+                    ValidateBytes(ReadOnlySpan<byte>.Empty, flush: true);
+                    if (metadata.Kind != ArtefactKind.TextFile &&
+                        !AllowedTypes[metadata.MimeType].HasExpectedSignature(_signature.AsMemory(0, _signatureCount)))
+                        throw new DomainException(ErrorCodes.ValidationError, "Artefact bytes do not match the declared content type");
+                }
+                return 0;
+            }
+            ObserveBytes(buffer[..read]);
+            return read;
+        }
+
+        private void ObserveBytes(ReadOnlyMemory<byte> content)
+        {
+            var bytes = content.Span;
+            var prefixLength = Math.Min(_signature.Length - _signatureCount, bytes.Length);
+            bytes[..prefixLength].CopyTo(_signature.AsSpan(_signatureCount));
+            _signatureCount += prefixLength;
+            ValidateBytes(bytes, flush: false);
+        }
+
+        private void ValidateBytes(ReadOnlySpan<byte> bytes, bool flush)
+        {
+            if (_decoder is null) return;
+            var chars = new char[bytes.Length + 1];
+            try
+            {
+                var count = _decoder.GetChars(bytes, chars, flush);
+                for (var index = 0; index < count; index++)
+                    if (char.IsControl(chars[index]) && chars[index] is not '\r' and not '\n' and not '\t')
+                        throw new DomainException(ErrorCodes.ValidationError, "Artefact bytes do not match the declared content type");
+            }
+            catch (DecoderFallbackException)
+            {
+                throw new DomainException(ErrorCodes.ValidationError, "Artefact bytes do not match the declared content type");
+            }
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static bool HasValidUtf8Text(ReadOnlyMemory<byte> bytes)

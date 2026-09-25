@@ -2,8 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -116,6 +120,45 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
             new CreateLlmRequestDto("summarize", "cross-user payload", board.Id));
 
         await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task AddToQueue_ShouldReturnForbidden_WhenViewerSubmitsCaptureForReadableBoard()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var viewerClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "llm-capture-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "llm-capture-viewer");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "llm-capture-protected-board");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.BoardAccesses.Add(new BoardAccess(
+                board.Id,
+                viewer.UserId,
+                UserRole.Viewer,
+                owner.UserId));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await viewerClient.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto(
+                CaptureRequestContract.RequestTypeV1,
+                "A Viewer must not attach a capture through the queue",
+                board.Id));
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.Forbidden,
+            "Forbidden");
+
+        var requests = await viewerClient.GetFromJsonAsync<List<LlmRequestDto>>(
+            "/api/llm-queue/user");
+        requests.Should().BeEmpty(
+            "a refused capture attachment must not persist a queue request");
     }
 
     [Fact]

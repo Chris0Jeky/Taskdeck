@@ -1147,7 +1147,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         Exception broadcastFailure;
         if (operation == "JoinBoard")
         {
-            committedSnapshot = tracker.Join(boardId, subjectConnection, subjectUserId, "Subject");
+            committedSnapshot = tracker.Join(boardId, subjectConnection, subjectUserId, "Subject").Snapshot;
             subjectCommittedPresent = true;
             broadcastFailure = new HubException("broadcast failed after tracker mutation");
         }

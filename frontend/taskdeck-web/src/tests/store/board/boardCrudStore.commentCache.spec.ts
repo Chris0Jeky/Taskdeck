@@ -1,3 +1,4 @@
+import { createBoardState } from '../../../store/board/boardState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -60,6 +61,7 @@ function deferred<T>() {
 
 function createState() {
   return {
+    ...createBoardState(),
     boards: ref([{ id: 'board-1', name: 'Board' }]),
     activeBoardId: ref<string | null>('board-1'),
     currentBoard: ref<BoardFixture | null>(board('Old')),

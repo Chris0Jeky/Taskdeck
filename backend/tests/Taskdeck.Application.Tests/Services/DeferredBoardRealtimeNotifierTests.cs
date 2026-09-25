@@ -74,6 +74,49 @@ public class DeferredBoardRealtimeNotifierTests
     }
 
     [Fact]
+    public async Task Flush_ShouldAttemptEveryEvent_WhenOneEventFails()
+    {
+        var inner = new ThrowOnOperationNotifier("updated");
+        var deferred = new DeferredBoardRealtimeNotifier(inner);
+
+        await deferred.NotifyBoardMutationAsync(Event("archived"));
+        await deferred.NotifyBoardMutationAsync(Event("updated"));
+        await deferred.NotifyBoardMutationAsync(Event("deleted"));
+
+        var flush = () => deferred.FlushAsync();
+
+        // A lone failure keeps its original type (single-failure contract).
+        await flush.Should().ThrowAsync<InvalidOperationException>().WithMessage("channel down for updated");
+        inner.Attempts.Should().Be(3);
+        inner.Published.Select(e => e.Operation).Should().Equal("archived", "deleted");
+        deferred.PendingCount.Should().Be(0);
+
+        await deferred.FlushAsync();
+        inner.Attempts.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Flush_ShouldThrowAggregate_WhenMultipleEventsFail()
+    {
+        var inner = new ThrowingNotifier();
+        var deferred = new DeferredBoardRealtimeNotifier(inner);
+
+        await deferred.NotifyBoardMutationAsync(Event("archived"));
+        await deferred.NotifyBoardMutationAsync(Event("updated"));
+        await deferred.NotifyBoardMutationAsync(Event("deleted"));
+
+        var flush = () => deferred.FlushAsync();
+
+        var aggregate = await flush.Should().ThrowAsync<AggregateException>();
+        aggregate.Which.InnerExceptions.Should().HaveCount(3);
+        inner.Attempts.Should().Be(3);
+        deferred.PendingCount.Should().Be(0);
+
+        await deferred.FlushAsync();
+        inner.Attempts.Should().Be(3);
+    }
+
+    [Fact]
     public async Task Notify_ShouldNotThrow_WhenNoDownstreamNotifierIsConfigured()
     {
         var deferred = new DeferredBoardRealtimeNotifier(null);
@@ -149,6 +192,29 @@ public class DeferredBoardRealtimeNotifierTests
         {
             Attempts++;
             throw new InvalidOperationException("channel down");
+        }
+    }
+
+    private sealed class ThrowOnOperationNotifier : IBoardRealtimeNotifier
+    {
+        private readonly string _failingOperation;
+
+        public ThrowOnOperationNotifier(string failingOperation)
+        {
+            _failingOperation = failingOperation;
+        }
+
+        public int Attempts { get; private set; }
+        public List<BoardRealtimeEvent> Published { get; } = new();
+
+        public Task NotifyBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            Attempts++;
+            if (string.Equals(mutation.Operation, _failingOperation, StringComparison.Ordinal))
+                throw new InvalidOperationException($"channel down for {_failingOperation}");
+
+            Published.Add(mutation);
+            return Task.CompletedTask;
         }
     }
 

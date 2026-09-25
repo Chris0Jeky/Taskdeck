@@ -6,7 +6,7 @@
  * created lazily via `useBoardState()` which must be called inside
  * a Pinia store setup function (i.e. after `setActivePinia`).
  */
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import type { Board, BoardDetail, Card, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
 import type { BoardPresenceMember } from '../../types/realtime'
@@ -16,6 +16,10 @@ export interface CardFilters {
   labelIds: string[]
   dueDateFilter: 'all' | 'overdue' | 'due-today' | 'due-week' | 'no-date'
   showBlockedOnly: boolean
+}
+
+export interface BoardViewVisit {
+  readonly boardId: string | null
 }
 
 /**
@@ -42,6 +46,11 @@ export function createBoardState() {
   const boards = ref<Board[]>([])
   const activeBoardId = ref<string | null>(null)
   const currentBoard = ref<BoardDetail | null>(null)
+  // Undefined preserves programmatic store use before a route owns the store.
+  // Once bound, a fresh object identifies each visit; null boardId retires it
+  // without discarding cached detail. Detail refreshes do not change ownership.
+  const boardViewVisit = shallowRef<BoardViewVisit | undefined>(undefined)
+  const boardMutationSessionGeneration = ref(0)
   // These two monotonic values retain the source of the current detail payload
   // without extending the Board DTO. A consumer can distinguish a committed
   // server response from a local patch, and reject a response whose request
@@ -62,6 +71,8 @@ export function createBoardState() {
     boards,
     activeBoardId,
     currentBoard,
+    boardViewVisit,
+    boardMutationSessionGeneration,
     currentBoardRequestGeneration,
     currentBoardPayloadGeneration,
     currentBoardCards,

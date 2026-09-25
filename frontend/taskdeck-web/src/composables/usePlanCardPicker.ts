@@ -1,5 +1,6 @@
 import { onUnmounted, ref, watch } from 'vue'
 import { boardsApi } from '../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import { cardsApi } from '../api/cardsApi'
 import { useSessionStore } from '../store/sessionStore'
 import { getErrorDisplay } from './useErrorMapper'
@@ -27,7 +28,7 @@ export function usePlanCardPicker() {
       const result: Board[] = []
       let offset = 0
       while (true) {
-        const page = await boardsApi.getBoardsPaginated(undefined, false, offset, 200)
+        const page = await boardsApi.getBoardsPaginated(undefined, false, offset, 200, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
         if (current !== boardsGeneration) return
         result.push(...page.items.filter(board => !board.isArchived))
         if (!page.hasMore || page.items.length === 0) break

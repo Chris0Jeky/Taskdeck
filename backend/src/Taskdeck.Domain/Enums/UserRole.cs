@@ -11,7 +11,9 @@ public enum UserRole
     Owner = 0,
 
     /// <summary>
-    /// Admin can manage board content and grant permissions to others (except ownership transfer).
+    /// Admin can manage board content and grant permissions up to Admin.
+    /// Only an effective board owner (the board's OwnerId holder or an Owner-row
+    /// holder) may assign the Owner role or modify/revoke owner rows.
     /// </summary>
     Admin = 1,
 

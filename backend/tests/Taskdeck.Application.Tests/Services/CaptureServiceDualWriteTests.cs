@@ -176,7 +176,7 @@ public sealed class CaptureServiceDualWriteTests
         var boardId = Guid.NewGuid();
         Capture? mirrored = null;
         _authorizationServiceMock
-            .Setup(s => s.CanReadBoardAsync(_userId, boardId))
+            .Setup(s => s.CanWriteBoardAsync(_userId, boardId))
             .ReturnsAsync(Result.Success(true));
         _captureStoreMock
             .Setup(s => s.AddAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()))

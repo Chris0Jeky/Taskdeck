@@ -528,8 +528,13 @@ describe('PaperCaptureComposer', () => {
   it('blocks capture while a read-only board is the active scope', async () => {
     // defaultBoardId can preselect a board the user only reads; capturing into it
     // would produce an item that 403s the moment it is accepted for triage.
-    mockBoardStore.boards = [{ id: 'board-readonly', name: 'Archive', canWrite: false }]
-    const wrapper = mount(PaperCaptureComposer, { props: { defaultBoardId: 'board-readonly' } })
+    mockBoardStore.boards = [
+      { id: 'board-readonly', name: 'Archive', canWrite: false },
+      { id: 'board-writable', name: 'Working', canWrite: true },
+    ]
+    const wrapper = mount(PaperCaptureComposer, {
+      props: { defaultBoardId: 'board-readonly', canSubmit: false },
+    })
 
     await wrapper.find('textarea').setValue('a thought that has nowhere to land')
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
@@ -538,10 +543,31 @@ describe('PaperCaptureComposer', () => {
     const captureButton = wrapper.findAll('button').find((button) => button.text().includes('Capture'))
     expect(captureButton?.attributes('disabled')).toBeDefined()
 
-    // Switching to "no board" unblocks it — the escape hatch is one click away.
-    await wrapper.setProps({ defaultBoardId: null })
+    // Switching to "no board" unblocks it — the escape hatch is one click away,
+    // even while the parent continues to report the original scoped board as
+    // read-only.
+    await wrapper.get('[data-testid="paper-composer-board"]').setValue('')
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
     expect(wrapper.emitted('submit')).toHaveLength(1)
+    expect((wrapper.emitted('submit')?.[0]?.[0] as { boardId: string | null }).boardId).toBeNull()
+  })
+
+  it('unblocks a read-only scoped gate when a writable board is selected', async () => {
+    mockBoardStore.boards = [
+      { id: 'board-readonly', name: 'Archive', canWrite: false },
+      { id: 'board-writable', name: 'Working', canWrite: true },
+    ]
+    const wrapper = mount(PaperCaptureComposer, {
+      props: { defaultBoardId: 'board-readonly', canSubmit: false },
+    })
+
+    await wrapper.find('textarea').setValue('file this on the working board')
+    await wrapper.get('[data-testid="paper-composer-board"]').setValue('board-writable')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+    expect(wrapper.emitted('submit')).toHaveLength(1)
+    expect((wrapper.emitted('submit')?.[0]?.[0] as { boardId: string | null }).boardId)
+      .toBe('board-writable')
   })
 
   it('keeps the draft after submit until the parent confirms success', async () => {

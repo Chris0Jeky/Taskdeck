@@ -13,7 +13,6 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class UnitOfWork : IUnitOfWork
 {
-    private const int MaxSqliteWriteLockRetries = 5;
     private const int MaxWalCheckpointAttempts = 3;
 
     private readonly TaskdeckDbContext _context;
@@ -234,9 +233,9 @@ public class UnitOfWork : IUnitOfWork
             {
                 resolvedRecoverableUniqueConflict = true;
             }
-            catch (DbUpdateException ex) when (IsTransientSqliteWriteLock(ex) && attempt < MaxSqliteWriteLockRetries)
+            catch (DbUpdateException ex) when (SqliteWriteResilience.IsTransientWriteLock(ex) && attempt < SqliteWriteResilience.MaxWriteLockRetries)
             {
-                await Task.Delay(GetSqliteWriteLockRetryDelay(attempt), cancellationToken);
+                await Task.Delay(SqliteWriteResilience.GetWriteLockRetryDelay(attempt), cancellationToken);
             }
         }
     }
@@ -260,6 +259,15 @@ public class UnitOfWork : IUnitOfWork
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
         _transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+    }
+
+    public async Task BeginTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken = default)
+    {
+        _transaction = await _context.Database.BeginTransactionAsync(
+            isolationLevel,
+            cancellationToken);
     }
 
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
@@ -534,29 +542,4 @@ public class UnitOfWork : IUnitOfWork
                 StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsTransientSqliteWriteLock(DbUpdateException exception)
-    {
-        for (var current = exception.InnerException; current is not null; current = current.InnerException)
-        {
-            if (current is SqliteException sqliteException
-                && (sqliteException.SqliteErrorCode == 5 || sqliteException.SqliteErrorCode == 6))
-            {
-                return true;
-            }
-
-            if (current.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
-                || current.Message.Contains("database table is locked", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static TimeSpan GetSqliteWriteLockRetryDelay(int attempt)
-    {
-        var multiplier = attempt + 1;
-        return TimeSpan.FromMilliseconds(25 * multiplier * multiplier);
-    }
 }

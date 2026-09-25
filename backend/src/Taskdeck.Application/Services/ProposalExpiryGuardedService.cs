@@ -43,6 +43,11 @@ public sealed class ProposalExpiryGuardedService(
         CancellationToken cancellationToken = default) =>
         inner.GetProposalByIdAsync(id, cancellationToken);
 
+    public Task<IReadOnlyDictionary<Guid, ProposalHeaderDto>> GetProposalHeadersByIdsAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default) =>
+        inner.GetProposalHeadersByIdsAsync(ids, cancellationToken);
+
     public Task<Result<IEnumerable<ProposalDto>>> GetProposalsAsync(
         ProposalFilterDto? filter = null,
         CancellationToken cancellationToken = default) =>

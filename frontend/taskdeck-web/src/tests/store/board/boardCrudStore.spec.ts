@@ -1,8 +1,10 @@
+import { createBoardState } from '../../../store/board/boardState'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
 import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS } from '../../../api/http'
 import { getErrorMessage } from '../../../utils/errorMessage'
+import { removeToken } from '../../../utils/tokenStorage'
 
 const { mockBoardsApi } = vi.hoisted(() => ({
   mockBoardsApi: {
@@ -59,6 +61,7 @@ import { initialCardFilters, type CardFilters } from '../../../store/board/board
 
 function createMockState() {
   return {
+    ...createBoardState(),
     boards: ref([
       { id: 'board-1', name: 'My Board' },
       { id: 'board-2', name: 'Other' },
@@ -897,8 +900,9 @@ describe('boardCrudStore', () => {
       state.error.value = 'Previous board load failed'
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const onBackgroundForbidden = vi.fn()
       const explicit = fetchBoard('board-1')
-      const queued = fetchBoard('board-1', { intent: 'background' })
+      const queued = fetchBoard('board-1', { intent: 'background', onBackgroundForbidden })
 
       explicitBoard.resolve({ id: 'board-1', name: 'Recovered board', columns: [] })
       explicitCards.resolve([{ id: 'card-recovered', columnId: 'column-1' }])
@@ -912,6 +916,7 @@ describe('boardCrudStore', () => {
       ])
       expect(state.error.value).toBeNull()
       expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(onBackgroundForbidden).not.toHaveBeenCalled()
     })
 
     it('surfaces a current background 403 without replacing cached board state', async () => {
@@ -933,13 +938,15 @@ describe('boardCrudStore', () => {
       })
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
-      await expect(fetchBoard('board-1', { intent: 'background' })).resolves.toBe(false)
+      const onBackgroundForbidden = vi.fn()
+      await expect(fetchBoard('board-1', { intent: 'background', onBackgroundForbidden })).resolves.toBe(false)
 
       expect(helpers.handleApiError).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'You no longer have access to this board' }),
         'You no longer have access to this board',
       )
       expect(state.error.value).toBe('You no longer have access to this board')
+      expect(onBackgroundForbidden).toHaveBeenCalledExactlyOnceWith('board-1')
       expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Cached board' })
       expect(state.currentBoardCards.value).toEqual([{ id: 'cached-card' }])
       expect(state.currentBoardLabels.value).toEqual([{ id: 'cached-label' }])
@@ -961,7 +968,8 @@ describe('boardCrudStore', () => {
       mockLabelsApi.getLabels.mockResolvedValue([])
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
-      const stale = fetchBoard('board-1', { intent: 'background' })
+      const onBackgroundForbidden = vi.fn()
+      const stale = fetchBoard('board-1', { intent: 'background', onBackgroundForbidden })
       const current = fetchBoard('board-1')
 
       await expect(current).resolves.toBe(true)
@@ -969,7 +977,41 @@ describe('boardCrudStore', () => {
       await expect(stale).resolves.toBe(false)
 
       expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(onBackgroundForbidden).not.toHaveBeenCalled()
       expect(state.currentBoard.value).toMatchObject({ name: 'Current board' })
+    })
+
+    it('does not notify a new session about an old session background 403', async () => {
+      const oldRead = createDeferred<{ id: string; name: string; columns: [] }>()
+      mockBoardsApi.getBoard.mockReturnValueOnce(oldRead.promise)
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
+      const onBackgroundForbidden = vi.fn()
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const pending = fetchBoard('board-1', { intent: 'background', onBackgroundForbidden })
+
+      removeToken()
+      oldRead.reject({ response: { status: 403 } })
+      await expect(pending).resolves.toBe(false)
+      expect(onBackgroundForbidden).not.toHaveBeenCalled()
+    })
+
+    it('notifies when a queued current background read returns 403', async () => {
+      const initialBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(initialBoard.promise)
+        .mockRejectedValueOnce({ response: { status: 403 } })
+      mockCardsApi.getCards.mockResolvedValue([])
+      mockLabelsApi.getLabels.mockResolvedValue([])
+      const onBackgroundForbidden = vi.fn()
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const explicit = fetchBoard('board-1')
+      const queued = fetchBoard('board-1', { intent: 'background', onBackgroundForbidden })
+
+      initialBoard.resolve({ id: 'board-1', name: 'Current board', columns: [] })
+      await expect(explicit).resolves.toBe(true)
+      await expect(queued).resolves.toBe(false)
+      expect(onBackgroundForbidden).toHaveBeenCalledExactlyOnceWith('board-1')
     })
 
     it('discards a queued background refresh when an explicit route load changes boards', async () => {

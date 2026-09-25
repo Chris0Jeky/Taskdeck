@@ -86,6 +86,7 @@ public class ExportController : AuthenticatedControllerBase
     }
 
     [HttpGet("export/database")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> ExportDatabase()
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -100,6 +101,7 @@ public class ExportController : AuthenticatedControllerBase
     }
 
     [HttpPost("import/database")]
+    [Authorize(Policy = "AdminOnly")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> ImportDatabase([FromForm] DatabaseImportRequest request)
     {

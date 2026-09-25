@@ -23,6 +23,12 @@ public interface IAutomationProposalService
     Task<Result<ProposalDto>> GetProposalByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads ownership/board headers for a batch pre-check in one query. Callers iterate the
+    /// request order against the returned map to preserve fail-fast error semantics.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, ProposalHeaderDto>> GetProposalHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets proposals with optional filters.
     /// </summary>
     Task<Result<IEnumerable<ProposalDto>>> GetProposalsAsync(ProposalFilterDto? filter = null, CancellationToken cancellationToken = default);

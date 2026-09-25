@@ -9,6 +9,7 @@ using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -640,6 +641,18 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         approvedProposal.DecidedByUserName.Should().StartWith("automation-approve_");
         approvedProposal.DecidedByUserName.Should().NotBe(approvedProposal.DecidedByUserId.ToString());
         approvedProposal.DecidedAt.Should().NotBeNull();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var outcome = await db.ProposalOutcomes.SingleAsync(record => record.ProposalId == proposal.Id);
+        outcome.Decision.Should().Be(OutcomeDecision.Approved);
+        outcome.DecidedByUserId.Should().Be(userId);
+
+        var cohort = await _client.GetFromJsonAsync<InsightCohort>("/api/insights/cohort");
+        cohort.Should().NotBeNull();
+        cohort!.AcceptedCount.Should().Be(1);
+        using var metrics = JsonDocument.Parse(await _client.GetStringAsync("/api/insights/metrics"));
+        metrics.RootElement.GetProperty("metrics").GetArrayLength().Should().Be(4);
     }
 
     [Fact]
@@ -676,6 +689,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         persisted.Should().HaveCount(2);
         persisted.Should().OnlyContain(proposal => proposal.Status == ProposalStatus.Approved);
         persisted.Should().OnlyContain(proposal => proposal.AppliedAt == null);
+        var outcomes = await db.ProposalOutcomes
+            .Where(outcome => receipt.ApprovedIds.Contains(outcome.ProposalId))
+            .ToListAsync();
+        outcomes.Should().HaveCount(2);
+        outcomes.Should().OnlyContain(outcome => outcome.Decision == OutcomeDecision.Approved);
+        outcomes.Should().OnlyContain(outcome => outcome.DecidedByUserId == user.UserId);
+        var cohort = await client.GetFromJsonAsync<InsightCohort>("/api/insights/cohort");
+        cohort.Should().NotBeNull();
+        cohort!.AcceptedCount.Should().Be(2);
         (await db.Notifications.CountAsync(notification =>
                 notification.Type == NotificationType.ProposalOutcome &&
                 (notification.SourceEntityId == first.Id || notification.SourceEntityId == second.Id)))
@@ -759,7 +781,114 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var persisted = await verifyDb.AutomationProposals.SingleAsync(proposal => proposal.Id == original.Id);
         persisted.Status.Should().Be(ProposalStatus.Approved);
         persisted.ApprovedRevisionId.Should().Be(revision.Id);
+        var outcome = await verifyDb.ProposalOutcomes.SingleAsync(record => record.ProposalId == original.Id);
+        outcome.Decision.Should().Be(OutcomeDecision.EditedThenApproved);
+        outcome.FieldCount.Should().Be(5);
+        outcome.EditedFieldCount.Should().Be(1, "the reviewed card parameters changed");
         (await verifyDb.Cards.CountAsync(card => card.BoardId == boardId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_IdentityOnlyRevisionKeepsUneditedOutcome()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-identity-revision");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-identity-revision");
+        var original = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+        var operation = original.Operations.Single();
+        var revisedPayload = JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = operation.Sequence,
+                    actionType = operation.ActionType.ToUpperInvariant(),
+                    targetType = operation.TargetType.ToUpperInvariant(),
+                    targetId = operation.TargetId,
+                    parameters = $"  {operation.Parameters}  ",
+                    idempotencyKey = Guid.NewGuid().ToString("N"),
+                    expectedVersion = operation.ExpectedVersion
+                }
+            }
+        });
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{original.Id}/revisions",
+            new CreateRevisionRequest { RevisedPayload = revisedPayload, Reason = "No content change" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await revisionResponse.Content.ReadAsStringAsync());
+
+        var current = await client.GetFromJsonAsync<ProposalDto>($"/api/automation/proposals/{original.Id}");
+        current.Should().NotBeNull();
+        var approveResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest { Proposals = [Select(current!)] });
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK, await approveResponse.Content.ReadAsStringAsync());
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var outcome = await db.ProposalOutcomes.SingleAsync(record => record.ProposalId == original.Id);
+        outcome.Decision.Should().Be(OutcomeDecision.Approved);
+        outcome.EditedFieldCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_DuplicateOriginalSequenceWithValidRevision_RecordsEditedOutcome()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-duplicate-original");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-duplicate-original");
+        var original = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+        var operation = original.Operations.Single();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var tracked = await db.AutomationProposals
+                .Include(proposal => proposal.Operations)
+                .SingleAsync(proposal => proposal.Id == original.Id);
+            tracked.AddOperation(new AutomationProposalOperation(
+                tracked.Id, operation.Sequence, operation.ActionType, operation.TargetType,
+                operation.Parameters, Guid.NewGuid().ToString("N"),
+                operation.TargetId, operation.ExpectedVersion));
+            await db.SaveChangesAsync();
+        }
+
+        var revisedPayload = JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = operation.Sequence,
+                    actionType = operation.ActionType,
+                    targetType = operation.TargetType,
+                    targetId = operation.TargetId,
+                    parameters = operation.Parameters,
+                    idempotencyKey = Guid.NewGuid().ToString("N"),
+                    expectedVersion = operation.ExpectedVersion
+                }
+            }
+        });
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{original.Id}/revisions",
+            new CreateRevisionRequest { RevisedPayload = revisedPayload, Reason = "Remove duplicate sequence" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await revisionResponse.Content.ReadAsStringAsync());
+
+        var current = await client.GetFromJsonAsync<ProposalDto>($"/api/automation/proposals/{original.Id}");
+        current.Should().NotBeNull();
+        var approveResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest { Proposals = [Select(current!)] });
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK, await approveResponse.Content.ReadAsStringAsync());
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await verifyDb.AutomationProposals.SingleAsync(proposal => proposal.Id == original.Id);
+        persisted.Status.Should().Be(ProposalStatus.Approved);
+        var outcome = await verifyDb.ProposalOutcomes.SingleAsync(record => record.ProposalId == original.Id);
+        outcome.Decision.Should().Be(OutcomeDecision.EditedThenApproved);
+        outcome.FieldCount.Should().Be(5);
+        outcome.EditedFieldCount.Should().Be(5);
     }
 
     [Fact]
@@ -786,6 +915,9 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             .Select(proposal => proposal.Status)
             .ToListAsync();
         statuses.Should().Equal(ProposalStatus.PendingReview, ProposalStatus.PendingReview);
+        (await db.ProposalOutcomes.CountAsync(outcome =>
+                outcome.ProposalId == valid.Id || outcome.ProposalId == medium.Id))
+            .Should().Be(0, "failed batch preflight must not record a decision");
     }
 
     [Fact]
@@ -815,6 +947,89 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             .Select(proposal => proposal.Status)
             .ToListAsync();
         statuses.Should().OnlyContain(status => status == ProposalStatus.PendingReview);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_UnknownId_ReturnsNotFoundWithExactMessage()
+    {
+        var client = _factory.CreateClient();
+        var caller = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-unknown");
+        var board = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-unknown");
+        var own = await CreateBatchApprovalProposalAsync(client, caller.UserId, board);
+        var unknown = Guid.NewGuid();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(own), new ApproveProposalSelectionRequest { Id = unknown, ExpectedProposalUpdatedAt = DateTimeOffset.UtcNow }]
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
+    public async Task ApproveProposals_FailFast_ReturnsFirstMissingBeforeLaterForbidden()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+        var caller = await ApiTestHarness.AuthenticateAsync(callerClient, "automation-batch-order");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-batch-order-other");
+        var callerBoard = await ApiTestHarness.CreateBoardWithColumnAsync(callerClient, "batch-order");
+        var otherBoard = await ApiTestHarness.CreateBoardWithColumnAsync(otherClient, "batch-order-other");
+        var foreign = await CreateBatchApprovalProposalAsync(otherClient, other.UserId, otherBoard);
+        var unknown = Guid.NewGuid();
+
+        var response = await callerClient.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [new ApproveProposalSelectionRequest { Id = unknown, ExpectedProposalUpdatedAt = DateTimeOffset.UtcNow }, Select(foreign)]
+            });
+
+        // Request order wins: the missing id (first) 404s before the foreign id (second) 403s.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
+    public async Task DismissProposals_UnknownId_ReturnsNotFoundWithExactMessage()
+    {
+        var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "automation-dismiss-unknown");
+        var unknown = Guid.NewGuid();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/dismiss",
+            new DismissProposalsRequest { Ids = [unknown] });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
+    }
+
+    [Fact]
+    public async Task DismissProposals_FailFast_ReturnsFirstMissingBeforeLaterForbidden()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(callerClient, "automation-dismiss-order");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-dismiss-order-other");
+        var otherBoard = await ApiTestHarness.CreateBoardWithColumnAsync(otherClient, "dismiss-order-other");
+        var foreign = await CreateBatchApprovalProposalAsync(otherClient, other.UserId, otherBoard);
+        var unknown = Guid.NewGuid();
+
+        var response = await callerClient.PostAsJsonAsync(
+            "/api/automation/proposals/dismiss",
+            new DismissProposalsRequest { Ids = [unknown, foreign.Id] });
+
+        // Request order wins: the missing id (first) 404s before the foreign id (second) 403s.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var failFastDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        failFastDocument.RootElement.GetProperty("message").GetString().Should().Be($"Proposal with ID {unknown} not found");
     }
 
     [Fact]
@@ -942,6 +1157,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         rejectedProposal.Should().NotBeNull();
         rejectedProposal!.Status.Should().Be(ProposalStatus.Rejected);
         rejectedProposal.DecidedByUserId.Should().Be(userId);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var outcome = await db.ProposalOutcomes.SingleAsync(record => record.ProposalId == proposal.Id);
+        outcome.Decision.Should().Be(OutcomeDecision.Rejected);
+        outcome.DecidedByUserId.Should().Be(userId);
+        var cohort = await _client.GetFromJsonAsync<InsightCohort>("/api/insights/cohort");
+        cohort.Should().NotBeNull();
+        cohort!.RejectedCount.Should().Be(1);
     }
 
     [Fact]
