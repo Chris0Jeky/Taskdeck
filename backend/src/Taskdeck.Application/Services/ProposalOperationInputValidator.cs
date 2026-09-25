@@ -23,6 +23,8 @@ namespace Taskdeck.Application.Services;
 ///   planner / chat / capture / MCP operation.</description></item>
 ///   <item><description><c>parameters</c> must be valid JSON, within a bounded size and
 ///   nesting depth.</description></item>
+///   <item><description>at most <c>MaxOperationsPerProposal</c> operations per proposal
+///   (issue #3429), checked before per-operation parsing.</description></item>
 /// </list>
 /// Returns <see cref="ErrorCodes.ValidationError"/> (HTTP 400) on the first violation.
 /// </summary>
@@ -36,6 +38,10 @@ public static class ProposalOperationInputValidator
 
     /// <summary>Maximum nesting depth of an operation's <c>parameters</c> JSON.</summary>
     public const int MaxParametersDepth = 32;
+
+    /// <summary>Maximum number of operations accepted on a single proposal (issue #3429).</summary>
+    // Match the apply-time structure gate so a newly accepted proposal can be executed.
+    public const int MaxOperationsPerProposal = 50;
 
     // Identifier-like token: starts with a letter, then letters/digits and the '. _ -'
     // separators (covers plain verbs like "create" and namespaced ones like "card.create").
@@ -51,6 +57,13 @@ public static class ProposalOperationInputValidator
     {
         if (operations is null || operations.Count == 0)
             return Result.Success();
+
+        // Bound the batch before per-operation parsing so a thousands-strong proposal is
+        // rejected cheaply with 400 and never persists (issue #3429).
+        if (operations.Count > MaxOperationsPerProposal)
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Too many operations: {operations.Count} were supplied but a proposal accepts at most {MaxOperationsPerProposal} operations.");
 
         for (var i = 0; i < operations.Count; i++)
         {

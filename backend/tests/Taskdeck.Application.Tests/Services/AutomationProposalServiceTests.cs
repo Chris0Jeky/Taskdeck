@@ -449,6 +449,37 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task CreateProposalAsync_ShouldRejectOverLimitOperations_BeforePersistence()
+    {
+        // Arrange (#3429): one operation more than the shared create-time cap.
+        var operations = new List<CreateProposalOperationDto>();
+        for (var i = 0; i < ProposalOperationInputValidator.MaxOperationsPerProposal + 1; i++)
+            operations.Add(new CreateProposalOperationDto(i, "create", "card", "{\"title\":\"Test\"}", $"key{i}"));
+
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Over-limit proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations: operations);
+
+        // Act
+        var result = await _service.CreateProposalAsync(dto);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(ProposalOperationInputValidator.MaxOperationsPerProposal.ToString());
+        _proposalRepoMock.Verify(
+            repository => repository.AddAsync(It.IsAny<AutomationProposal>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.Verify(
+            unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task CreateProposalAsync_ShouldReturnValidationError_WhenSummaryIsEmpty()
     {
         // Arrange

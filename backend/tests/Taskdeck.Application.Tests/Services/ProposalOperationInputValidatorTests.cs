@@ -177,6 +177,53 @@ public class ProposalOperationInputValidatorTests
         result.ErrorMessage.Should().Contain("Operation 1");
     }
 
+    [Fact]
+    public void Validate_AtMaxOperations_Succeeds()
+    {
+        // #3429: the count boundary itself is accepted when every operation is otherwise valid.
+        var ops = Many(ProposalOperationInputValidator.MaxOperationsPerProposal);
+
+        var result = ProposalOperationInputValidator.Validate(ops);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Fact]
+    public void Validate_OverMaxOperations_Fails()
+    {
+        var ops = Many(ProposalOperationInputValidator.MaxOperationsPerProposal + 1);
+
+        var result = ProposalOperationInputValidator.Validate(ops);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(ProposalOperationInputValidator.MaxOperationsPerProposal.ToString());
+    }
+
+    [Fact]
+    public void Validate_OverMaxOperations_RejectedBeforePerOperationParsing()
+    {
+        // The count cap is checked before per-operation parsing: even with a malformed first
+        // operation, the over-limit failure (naming the cap) wins.
+        var ops = Many(ProposalOperationInputValidator.MaxOperationsPerProposal + 1);
+        ops[0] = new CreateProposalOperationDto(0, "<bad>", "card", "{}", "key0");
+
+        var result = ProposalOperationInputValidator.Validate(ops);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(ProposalOperationInputValidator.MaxOperationsPerProposal.ToString());
+        result.ErrorMessage.Should().NotContain("actionType");
+    }
+
+    private static List<CreateProposalOperationDto> Many(int count)
+    {
+        var ops = new List<CreateProposalOperationDto>(count);
+        for (var i = 0; i < count; i++)
+            ops.Add(new CreateProposalOperationDto(i, "create", "card", "{}", $"key{i}"));
+        return ops;
+    }
+
     private static string BuildNested(int depth)
     {
         var sb = new StringBuilder();
