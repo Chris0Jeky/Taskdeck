@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, computed, watch, provide, readonly } from 'vue'
+import { onBeforeUnmount, onMounted, nextTick, ref, computed, watch, provide, readonly } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
@@ -56,11 +56,12 @@ const showBoardCaptureModal = ref(false)
 // the already-submitted assignment-save state up to the route boundary so shell
 // navigation cannot unmount the only surface that can report its settlement.
 const legacyCardEditorSaving = ref(false)
+const boardAccessRevoked = ref(false)
 const legacySavePendingNotice = ref(false)
 const {
   leaveRequested: legacyLeaveRequested,
   decide: decideLegacyLeave,
-} = useUnsavedWorkspaceNavigation(() => !paperOn.value && legacyCardEditorSaving.value)
+} = useUnsavedWorkspaceNavigation(() => !boardAccessRevoked.value && !paperOn.value && legacyCardEditorSaving.value)
 
 watch(legacyLeaveRequested, (requested) => {
   if (!requested) return
@@ -128,7 +129,7 @@ function closeProposalPreview() {
 }
 const boardLoadRetryInFlight = ref(false)
 const boardLoadError = ref<string | null>(null)
-const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
+const routedBoard = computed(() => !boardAccessRevoked.value && boardStore.currentBoard?.id === boardId.value
   ? boardStore.currentBoard
   : null)
 let viewUnmounted = false
@@ -173,11 +174,13 @@ const realtime = createBoardRealtimeController({
       return
     }
 
-    // Persistent error toast (duration 0): the redirect below unmounts this
-    // view, so a timed toast could expire before the user reads why the board
-    // is gone. replace (not push) keeps the revoked board out of history.
+    // Hide cached board content immediately and retire the unsaved-editor guard.
+    // Wait one render tick so Paper's child route guard unmounts before replace.
+    boardAccessRevoked.value = true
     toast.error(t('boardDetail.accessRevoked'))
-    void router.replace('/workspace/boards')
+    void nextTick()
+      .then(() => router.replace('/workspace/boards'))
+      .catch((error) => logError('Failed to leave revoked board:', error))
   },
 })
 
@@ -362,6 +365,7 @@ watch(
 
     boardViewVisit = boardStore.beginBoardViewVisit(nextBoardId)
     boardId.value = nextBoardId
+    boardAccessRevoked.value = false
     boardLoadError.value = null
     resetSelection()
     // Seed with current user on board switch for the same reason as onMounted.
@@ -608,7 +612,7 @@ useKeyboardShortcuts([
     @close="closeProposalPreview"
   />
   <PaperBoardView
-    v-if="paperOn"
+    v-if="paperOn && !boardAccessRevoked"
     :selected-card-id="selectedCardId"
     :selected-column-id="selectedColumnId"
     :board-load-error="boardLoadError"
@@ -618,7 +622,7 @@ useKeyboardShortcuts([
     @dialog-open-change="paperDialogOpen = $event"
     @retry-board-load="retryBoardLoad"
   />
-  <div v-else class="min-h-screen bg-surface">
+  <div v-else-if="!boardAccessRevoked" class="min-h-screen bg-surface">
     <!-- Header -->
     <div class="bg-surface-container border-b border-outline-variant/15">
       <div class="max-w-full px-4 sm:px-6 lg:px-8 py-4">
@@ -822,6 +826,9 @@ useKeyboardShortcuts([
       @update:show-starter-pack-catalog="showStarterPackCatalog = $event"
       @update:show-capture-modal="showBoardCaptureModal = $event"
     />
+  </div>
+  <div v-else class="min-h-screen bg-surface p-6" role="status">
+    {{ t('boardDetail.accessRevoked') }}
   </div>
 </template>
 

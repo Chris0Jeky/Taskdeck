@@ -71,6 +71,7 @@ const realtimeMock = {
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
 let capturedOnAccessRevoked: ((boardId: string) => void) | undefined
+let routeLeaveGuard: (() => boolean | Promise<boolean>) | undefined
 let capturedRealtimeFetchBoard:
   | ((boardId: string, options: { intent: 'background'; afterActive?: boolean }) => Promise<boolean>)
   | undefined
@@ -125,7 +126,9 @@ const mockBoardStore = reactive({
 vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
   useRouter: () => routerMock,
-  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteLeave: vi.fn((guard: () => boolean | Promise<boolean>) => {
+    routeLeaveGuard = guard
+  }),
   onBeforeRouteUpdate: vi.fn(),
 }))
 
@@ -201,6 +204,7 @@ describe('BoardView', () => {
     vi.clearAllMocks()
     capturedOnPresenceChanged = undefined
     capturedOnAccessRevoked = undefined
+    routeLeaveGuard = undefined
     capturedRealtimeFetchBoard = undefined
     localStorage.clear()
     routeMock.params.id = 'board-1'
@@ -1091,6 +1095,39 @@ describe('BoardView', () => {
       message: 'Your access to this board was removed.',
     })
     expect(routerMock.replace).toHaveBeenCalledTimes(1)
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+  })
+
+  it('hides revoked content and bypasses a pending legacy editor navigation guard', async () => {
+    const wrapper = mountView()
+    await waitForUi()
+    const canvas = wrapper.findComponent({ name: 'BoardCanvas' })
+    expect(canvas.exists()).toBe(true)
+    canvas.vm.$emit('card-editor-saving-change', true)
+
+    expect(routeLeaveGuard).toBeDefined()
+    await expect(routeLeaveGuard!()).resolves.toBe(false)
+
+    capturedOnAccessRevoked!('board-1')
+    expect(routeLeaveGuard!()).toBe(true)
+    await nextTick()
+
+    expect(wrapper.findComponent({ name: 'BoardCanvas' }).exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('Your access to this board was removed.')
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+  })
+
+  it('unmounts Paper before redirecting away from a revoked board', async () => {
+    usePaperThemeStore().enable()
+    const wrapper = mountView()
+    await waitForUi()
+    expect(wrapper.findComponent({ name: 'PaperBoardView' }).exists()).toBe(true)
+
+    capturedOnAccessRevoked!('board-1')
+    await nextTick()
+
+    expect(wrapper.findComponent({ name: 'PaperBoardView' }).exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('Your access to this board was removed.')
     expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
   })
 
