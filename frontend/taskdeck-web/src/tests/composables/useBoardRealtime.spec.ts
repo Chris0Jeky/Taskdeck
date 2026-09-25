@@ -552,6 +552,24 @@ describe('createBoardRealtimeController', () => {
     await controller.stop()
   })
 
+  it('accepts an out-of-band revocation only for the currently requested board', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+
+    controller.notifyAccessRevoked('board-2')
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    await controller.switchBoard('board-2')
+    controller.notifyAccessRevoked('board-1')
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    controller.notifyAccessRevoked('board-2')
+    controller.notifyAccessRevoked('board-2')
+
+    expect(onAccessRevoked).toHaveBeenCalledExactlyOnceWith('board-2')
+    await controller.stop()
+  })
+
   it('retires the current board after an authoritative Forbidden rejoin', async () => {
     vi.useFakeTimers()
     const fetchBoard = vi.fn(async () => true)
