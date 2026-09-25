@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Proposal } from '../../types/automation'
 import type { Board } from '../../types/board'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../../api/http'
 import {
   createProposalDisplayNameResolver,
   PROPOSAL_COLUMN_LOAD_CONCURRENCY,
@@ -149,6 +150,22 @@ describe('useProposalDisplayNames cache lifecycle', () => {
 
     await resolver.ensure([makeProposal('board-1', 'column-1')])
     expect(mocks.getBoards).toHaveBeenCalledTimes(2)
+    expect(resolver.boardLabel('board-1')).toBe('Roadmap')
+  })
+
+  it('bounds board metadata reads and keeps failures retryable', async () => {
+    mocks.getBoards
+      .mockRejectedValueOnce(new Error('temporary board metadata failure'))
+      .mockResolvedValueOnce([makeBoard('board-1', 'Roadmap')])
+
+    const resolver = createProposalDisplayNameResolver()
+    await resolver.ensure([makeProposal('board-1', 'column-1')])
+    expect(mocks.getBoards).toHaveBeenCalledWith(undefined, true, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
+    expect(resolver.boardLabel('board-1')).toBe('Unavailable board')
+
+    await resolver.ensure([makeProposal('board-1', 'column-1')])
+    expect(mocks.getBoards).toHaveBeenCalledTimes(2)
+    expect(mocks.getBoards).toHaveBeenNthCalledWith(2, undefined, true, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
     expect(resolver.boardLabel('board-1')).toBe('Roadmap')
   })
 

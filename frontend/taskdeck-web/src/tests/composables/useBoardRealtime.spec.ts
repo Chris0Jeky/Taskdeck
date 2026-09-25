@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBoardRealtimeController } from '../../composables/useBoardRealtime'
 import { HttpTransportType } from '@microsoft/signalr'
+import { removeToken } from '../../utils/tokenStorage'
 
 const callbacks: {
+  accessRevoked?: (event: { boardId: string }) => void
   boardMutation?: (event: { boardId: string }) => Promise<void> | void
   boardPresence?: (event: { boardId: string; members: Array<{ userId: string }> }) => void
   reconnecting?: () => Promise<void> | void
@@ -20,6 +22,11 @@ const mockConnection = {
   }),
   invoke: vi.fn(async () => undefined),
   on: vi.fn((eventName: string, handler: (event: { boardId: string }) => Promise<void> | void) => {
+    if (eventName === 'accessRevoked') {
+      callbacks.accessRevoked = handler
+      return
+    }
+
     if (eventName === 'boardMutation') {
       callbacks.boardMutation = handler
       return
@@ -75,6 +82,7 @@ describe('createBoardRealtimeController', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.removeItem('taskdeck_token')
+    callbacks.accessRevoked = undefined
     callbacks.boardMutation = undefined
     callbacks.boardPresence = undefined
     callbacks.reconnecting = undefined
@@ -419,6 +427,103 @@ describe('createBoardRealtimeController', () => {
     expect(mockConnection.invoke).toHaveBeenCalledWith('SetEditingCard', 'board-1', 'card-1')
   })
 
+  it('notifies onAccessRevoked exactly once for a matching revocation and stops the connection', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    const leavePending = createDeferred<void>()
+
+    await controller.start('board-1')
+    mockConnection.invoke.mockImplementationOnce(() => leavePending.promise)
+    callbacks.accessRevoked?.({ boardId: 'board-1' })
+    // The notice must not wait for best-effort LeaveBoard to settle.
+    expect(onAccessRevoked).toHaveBeenCalledOnce()
+    expect(onAccessRevoked).toHaveBeenCalledWith('board-1')
+    expect(mockConnection.stop).not.toHaveBeenCalled()
+    // A duplicate delivery finds no live subscription, so it must not notify again.
+    callbacks.accessRevoked?.({ boardId: 'board-1' })
+    await controller.stop()
+    expect(mockConnection.invoke.mock.calls.filter(([method]) => method === 'LeaveBoard')).toHaveLength(1)
+    leavePending.resolve()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(onAccessRevoked).toHaveBeenCalledTimes(1)
+    expect(mockConnection.stop).toHaveBeenCalledOnce()
+  })
+
+  it('ignores revocation events for other boards', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+
+    await controller.start('board-1')
+    callbacks.accessRevoked?.({ boardId: 'board-2' })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    expect(mockConnection.stop).not.toHaveBeenCalled()
+
+    await controller.stop()
+  })
+
+  it('ignores a stale revocation for the previous board after a switch', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+
+    await controller.start('board-1')
+    await controller.switchBoard('board-2')
+    callbacks.accessRevoked?.({ boardId: 'board-1' })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    expect(mockConnection.stop).not.toHaveBeenCalled()
+
+    // The live subscription still revokes.
+    callbacks.accessRevoked?.({ boardId: 'board-2' })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(onAccessRevoked).toHaveBeenCalledTimes(1)
+    expect(onAccessRevoked).toHaveBeenCalledWith('board-2')
+  })
+
+  it('ignores revocation after stop', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+
+    await controller.start('board-1')
+    await controller.stop()
+    mockConnection.stop.mockClear()
+    callbacks.accessRevoked?.({ boardId: 'board-1' })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    expect(mockConnection.stop).not.toHaveBeenCalled()
+  })
+
+  it('retires pending debounce and fallback polling when access is revoked', async () => {
+    vi.useFakeTimers()
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+
+    await controller.start('board-1')
+    // A debounced mutation refresh is pending...
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    // ...and the connection is degraded, so fallback polling is armed.
+    await callbacks.reconnecting?.()
+
+    callbacks.accessRevoked?.({ boardId: 'board-1' })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(fetchBoard).not.toHaveBeenCalled()
+    expect(onAccessRevoked).toHaveBeenCalledTimes(1)
+
+    await controller.stop()
+  })
+
   it('starts polling on reconnecting and re-joins board when reconnected', async () => {
     vi.useFakeTimers()
     const fetchBoard = vi.fn(async () => true)
@@ -444,6 +549,96 @@ describe('createBoardRealtimeController', () => {
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
 
+    await controller.stop()
+  })
+
+  it('accepts an out-of-band revocation only for the currently requested board', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+
+    controller.notifyAccessRevoked('board-2')
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    await controller.switchBoard('board-2')
+    controller.notifyAccessRevoked('board-1')
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    controller.notifyAccessRevoked('board-2')
+    controller.notifyAccessRevoked('board-2')
+
+    expect(onAccessRevoked).toHaveBeenCalledExactlyOnceWith('board-2')
+    await controller.stop()
+  })
+
+  it('retires the current board after an authoritative Forbidden rejoin', async () => {
+    vi.useFakeTimers()
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+    await callbacks.reconnecting?.()
+    mockConnection.invoke.mockRejectedValueOnce(
+      new Error('An unexpected error occurred invoking JoinBoard. HubException: Forbidden:You do not have access to this board'),
+    )
+
+    await callbacks.reconnected?.()
+    expect(onAccessRevoked).toHaveBeenCalledExactlyOnceWith('board-1')
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetchBoard).not.toHaveBeenCalled()
+    expect(mockConnection.stop).toHaveBeenCalledOnce()
+  })
+
+  it('keeps polling after a transient rejoin failure', async () => {
+    vi.useFakeTimers()
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+    await callbacks.reconnecting?.()
+    mockConnection.invoke.mockRejectedValueOnce(new Error('connection interrupted'))
+
+    await callbacks.reconnected?.()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
+    await controller.stop()
+  })
+
+  it('ignores a Forbidden rejoin that settles after a board switch', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+    const pendingJoin = createDeferred<void>()
+    mockConnection.invoke.mockImplementationOnce(() => pendingJoin.promise)
+    const rejoin = callbacks.reconnected?.()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(mockConnection.invoke.mock.calls.filter(([method]) => method === 'JoinBoard')).toHaveLength(2)
+    const switchBoard = controller.switchBoard('board-2')
+
+    pendingJoin.reject(new Error('Forbidden:You do not have access to this board'))
+    await rejoin
+    await switchBoard
+    expect(onAccessRevoked).not.toHaveBeenCalled()
+    expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-2')
+    await controller.stop()
+  })
+
+  it('ignores a Forbidden rejoin from a replaced session', async () => {
+    const fetchBoard = vi.fn(async () => true)
+    const onAccessRevoked = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onAccessRevoked })
+    await controller.start('board-1')
+    const pendingJoin = createDeferred<void>()
+    mockConnection.invoke.mockImplementationOnce(() => pendingJoin.promise)
+    const rejoin = callbacks.reconnected?.()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(mockConnection.invoke.mock.calls.filter(([method]) => method === 'JoinBoard')).toHaveLength(2)
+    removeToken()
+
+    pendingJoin.reject(new Error('Forbidden:You do not have access to this board'))
+    await rejoin
+    expect(onAccessRevoked).not.toHaveBeenCalled()
     await controller.stop()
   })
 })

@@ -166,12 +166,19 @@ for (const theme of ['legacy', 'paper'] as const) {
     await page.screenshot({ path: testInfo.outputPath(`${theme}-estimate-totals-desktop.png`), fullPage: true, animations: 'disabled' })
 
     async function refreshStaleTotals() {
-      await expect(estimates.getByText('Board state changed. Refresh estimates to see the latest totals.', { exact: true })).toBeVisible()
-      const refreshed = page.waitForResponse(response => response.url() === `${boardUrl}/estimate-rollups` && response.request().method() === 'GET')
-      await estimates.getByRole('button', { name: 'Refresh estimates', exact: true }).click()
-      expect((await refreshed).ok()).toBe(true)
-      await expect(estimates.getByText('Loading estimates', { exact: false })).toHaveCount(0)
-      await expect(estimates.getByText('Board state changed.', { exact: false })).toHaveCount(0)
+      const staleNotice = estimates.getByText('Board state changed. Refresh estimates to see the latest totals.', { exact: true })
+      await expect(staleNotice).toBeVisible()
+      // A board refresh triggered by the same mutation can finish after the
+      // estimates response. That correctly invalidates the first snapshot;
+      // one more manual refresh must clear the notice once the board settles.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const refreshed = page.waitForResponse(response => response.url() === `${boardUrl}/estimate-rollups` && response.request().method() === 'GET')
+        await estimates.getByRole('button', { name: 'Refresh estimates', exact: true }).click()
+        expect((await refreshed).ok()).toBe(true)
+        await expect(estimates.getByText('Loading estimates', { exact: false })).toHaveCount(0)
+        if (await staleNotice.count() === 0) return
+      }
+      await expect(staleNotice).toHaveCount(0)
     }
 
     await cardOpener(page, theme, ownerOnly).click()

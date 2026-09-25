@@ -2,6 +2,26 @@
 
 Last Updated: 2026-09-25
 
+## Disconnected board revocation recovery (#3511)
+
+A current board rejoin refused with `Forbidden`, or a current background board read returning 403,
+now retires the board subscription and uses the existing access-removed notice and route exit.
+Board, request-generation, and credential-generation checks reject stale results from another
+board or session; transient failures keep polling. This removes the retry and navigation burden of
+a cached board the user can no longer read, without changing capture or review-first write gates.
+Focused client tests cover rejoin, fallback, stale results, and transient recovery. A live
+server-driven disconnected revocation was not exercised locally.
+
+## Board access revocation exits the active board (#3455)
+
+The board realtime client now handles the server's `accessRevoked` event for its confirmed,
+currently requested board. It retires pending refresh and fallback polling, shows a persistent
+translated notice, hides cached board content, and replaces the revoked board route with the boards
+list even when an editor had blocked ordinary navigation. Events for another
+board, an old subscription during a switch, or an unmounted view do not redirect. Focused
+composable and route-view tests cover the event, cleanup, notice, and navigation; a live
+server-driven revocation was not exercised locally.
+
 ## Proposal decisions populate insight cohorts (#3415)
 
 Single approve, single reject and batch approve now stage one content-free
@@ -1655,7 +1675,7 @@ Direction guardrails (explicit):
   - `StarterPackManifestValidator` decomposed into `StarterPackSchemaValidator`, `StarterPackSemanticValidator`, `StarterPackConflictDetector`, `StarterPackIdempotencyChecker`
   - `AbuseDetectionService` with `AbuseActor`/`AbuseEvent` domain entities and a 4-state containment model (Observe → Suspicious → Restricted → Blocked); operator kill-switch API groundwork for SEC-18
   - agent tool registry substrate (AGT-02): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces with `ToolScope`/`ToolRiskLevel` classification, `PolicyDecision` value object, `AgentPolicyEvaluator` (allowlist + risk-level gating, review-first default), `InboxTriageAssistant` bounded template (proposal-only, never direct board mutation), singleton registry with scoped evaluation
-  - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; **`OpenAI` is the supported live provider per ADR-0055**, with `OpenAICompatible`/`Ollama` selectors still present in `LlmProviderSettings` behind explicit gates and config-validation fallback; a retired `Gemini` selector or any `Llm:Gemini` section **fails startup with migration guidance** instead of falling back - `#1879`); `ToolCallingChatOrchestrator` wraps `ChatService` for board-scoped sessions with multi-turn tool-calling loop (11 tools: 5 read + 6 write, max 5 rounds, 60s timeout, Mock pattern-based dispatch); write tools produce proposals via `propose_*` prefix (GP-06 compliant); `ChatService` reuses orchestrator text when no tools called to avoid double LLM invocation; streaming responses now persist assistant `ChatMessage` records with token usage and record quota via `ILlmQuotaService` (`#763`/`#768`); multi-turn replay preserves original tool arguments in provider-specific wire format (`#673`/`#770`); **conversational refinement loop** (`#576`/`#791`): `ClarificationDetector` with strong/weak signal pattern split detects ambiguous requests and asks clarifying questions (max 2 rounds, then best-effort); skip-phrase detection supports "just do your best"; Mock provider simulates clarification for deterministic testing
+  - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; **`OpenAI` is the supported live provider per ADR-0055**, with `OpenAICompatible`/`Ollama` selectors still present in `LlmProviderSettings` behind explicit gates and config-validation fallback; a retired `Gemini` selector or any `Llm:Gemini` section **fails startup with migration guidance** instead of falling back - `#1879`); `ToolCallingChatOrchestrator` wraps `ChatService` for board-scoped sessions with multi-turn tool-calling loop (11 tools: 5 read + 6 write, max 5 rounds, 60s timeout, Mock pattern-based dispatch); write tools produce proposals via `propose_*` prefix (GP-06 compliant); `ChatService` reuses orchestrator text when no tools called to avoid double LLM invocation; streaming responses now persist assistant `ChatMessage` records with token usage and record quota via `ILlmQuotaService` (`#763`/`#768`); multi-turn replay preserves original tool arguments in provider-specific wire format (`#673`/`#770`); **conversational refinement loop** (`#576`/`#791`): `ClarificationDetector` with strong/weak signal pattern split detects ambiguous requests and asks clarifying questions (max 2 rounds, then best-effort); skip-phrase detection supports "just do your best"; Mock provider simulates clarification for deterministic testing; `LlmToolCalling:MaxHistoryMessages` (default `50`, validated range 1-1000) bounds how many of the latest session messages reach LLM completion calls — a message count, not a token/byte bound, leaving stored history unchanged (`#3470`)
   - `DataExportService` (versioned JSON export of all user-scoped data, including Transcript metadata/text/segments; streaming export via new `GET /api/account/export/stream` endpoint using `Utf8JsonWriter` for memory-constant large-dataset exports — `#670`/`#774`; exception logging via `ILogger` with `OperationCanceledException` filter, `#759`/`#766`) + `AccountDeletionService` (password re-auth, confirmation phrase, Transcript deletion, PII anonymization, sole-owner guard, transactional rollback with `CancellationToken.None` for rollback reliability) + `DataPortabilityController` with audit logging
   - `BoardMetricsService` (throughput, cycle time, WIP, blocked — audit-log-based completion tracking, done column name heuristic, SQL-level filtering via dedicated repository methods) + `MetricsController` with date/board/label filters + `MetricsExportService` for schema-versioned CSV export with CSV injection protection (`#78`/`#787`)
   - `ForecastingService` (heuristic completion forecasting using rolling-average throughput from audit log card-move events, standard-deviation confidence bands, cycle time tracking) + `ForecastController` with `GET /api/forecast/board/{boardId}` endpoint (`#79`/`#790`)
