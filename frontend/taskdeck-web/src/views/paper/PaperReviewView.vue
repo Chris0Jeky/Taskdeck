@@ -2896,7 +2896,7 @@ async function onClearBoardScope() {
       </p>
       <router-link
         v-if="activeProposal.boardId && !isArchivedHistory && ['PendingReview', 'Approved'].includes(normalizeProposalStatus(activeProposal.status))"
-        class="tk-meta"
+        class="tk-meta paper-review-deep__board-preview"
         :to="{ path: `/workspace/boards/${activeProposal.boardId}`, query: { proposalId: activeProposal.id } }"
       >Preview on board</router-link>
       <ReviewMain
@@ -3297,6 +3297,12 @@ async function onClearBoardScope() {
   background: var(--paper);
   padding-bottom: 4px;
   border-bottom: 1px solid var(--line);
+}
+.paper-review-deep__board-preview {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 24px;
 }
 .paper-review-deep__revision-badge {
   padding: 4px 12px;
