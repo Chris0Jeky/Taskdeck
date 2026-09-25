@@ -1928,7 +1928,7 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 
 Mutation testing workflow: `.github/workflows/mutation-testing.yml`
 
-- Weekly schedule (Sunday 04:00 UTC) + manual dispatch
+- Manual dispatch only (`workflow_dispatch`)
 - Backend Stryker.NET (Domain) + Frontend Stryker JS (captureStore/boardStore)
 - Non-blocking; HTML/JSON reports uploaded as 30-day artifacts
 
