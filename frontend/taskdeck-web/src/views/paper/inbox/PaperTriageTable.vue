@@ -1343,6 +1343,8 @@ function recordedOr(value: string | null | undefined): string {
 .paper-triage__open {
   display: grid;
   grid-template-columns: 60px 1fr;
+  min-height: 24px;
+  align-content: center;
   gap: 12px;
   align-items: baseline;
   text-align: left;
@@ -1565,6 +1567,9 @@ function recordedOr(value: string | null | undefined): string {
 }
 
 @media (max-width: 640px) {
+  .paper-triage__open {
+    min-height: 44px;
+  }
   .paper-triage__row {
     grid-template-columns: minmax(0, 1fr);
   }
