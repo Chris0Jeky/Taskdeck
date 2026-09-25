@@ -968,8 +968,14 @@ public class AutomationProposalService : IAutomationProposalService
         AutomationProposal proposal,
         IReadOnlyCollection<ProposalOperationDto> effectiveOperations)
     {
-        var originalBySequence = proposal.Operations.ToDictionary(operation => operation.Sequence);
-        var effectiveBySequence = effectiveOperations.ToDictionary(operation => operation.Sequence);
+        // Original operations may share a sequence even when the approved revision
+        // is valid. Outcome telemetry must still allow that decision to be saved.
+        var originalBySequence = proposal.Operations
+            .GroupBy(operation => operation.Sequence)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var effectiveBySequence = effectiveOperations
+            .GroupBy(operation => operation.Sequence)
+            .ToDictionary(group => group.Key, group => group.ToArray());
         var sequences = originalBySequence.Keys.Union(effectiveBySequence.Keys);
         var fieldCount = 0;
         var editedFieldCount = 0;
@@ -977,12 +983,16 @@ public class AutomationProposalService : IAutomationProposalService
         foreach (var sequence in sequences)
         {
             fieldCount += OutcomeFieldsPerOperation;
-            if (!originalBySequence.TryGetValue(sequence, out var original) ||
-                !effectiveBySequence.TryGetValue(sequence, out var effective))
+            if (!originalBySequence.TryGetValue(sequence, out var originals) ||
+                !effectiveBySequence.TryGetValue(sequence, out var effectives) ||
+                originals.Length != 1 || effectives.Length != 1)
             {
                 editedFieldCount += OutcomeFieldsPerOperation;
                 continue;
             }
+
+            var original = originals[0];
+            var effective = effectives[0];
 
             if (!string.Equals(original.ActionType, effective.ActionType, StringComparison.OrdinalIgnoreCase)) editedFieldCount++;
             if (!string.Equals(original.TargetType, effective.TargetType, StringComparison.OrdinalIgnoreCase)) editedFieldCount++;

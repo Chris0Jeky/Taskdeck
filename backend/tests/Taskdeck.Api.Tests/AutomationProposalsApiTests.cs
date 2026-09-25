@@ -832,6 +832,66 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task ApproveProposals_DuplicateOriginalSequenceWithValidRevision_RecordsEditedOutcome()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-duplicate-original");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-duplicate-original");
+        var original = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+        var operation = original.Operations.Single();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var tracked = await db.AutomationProposals
+                .Include(proposal => proposal.Operations)
+                .SingleAsync(proposal => proposal.Id == original.Id);
+            tracked.AddOperation(new AutomationProposalOperation(
+                tracked.Id, operation.Sequence, operation.ActionType, operation.TargetType,
+                operation.Parameters, Guid.NewGuid().ToString("N"),
+                operation.TargetId, operation.ExpectedVersion));
+            await db.SaveChangesAsync();
+        }
+
+        var revisedPayload = JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = operation.Sequence,
+                    actionType = operation.ActionType,
+                    targetType = operation.TargetType,
+                    targetId = operation.TargetId,
+                    parameters = operation.Parameters,
+                    idempotencyKey = Guid.NewGuid().ToString("N"),
+                    expectedVersion = operation.ExpectedVersion
+                }
+            }
+        });
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{original.Id}/revisions",
+            new CreateRevisionRequest { RevisedPayload = revisedPayload, Reason = "Remove duplicate sequence" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await revisionResponse.Content.ReadAsStringAsync());
+
+        var current = await client.GetFromJsonAsync<ProposalDto>($"/api/automation/proposals/{original.Id}");
+        current.Should().NotBeNull();
+        var approveResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest { Proposals = [Select(current!)] });
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK, await approveResponse.Content.ReadAsStringAsync());
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await verifyDb.AutomationProposals.SingleAsync(proposal => proposal.Id == original.Id);
+        persisted.Status.Should().Be(ProposalStatus.Approved);
+        var outcome = await verifyDb.ProposalOutcomes.SingleAsync(record => record.ProposalId == original.Id);
+        outcome.Decision.Should().Be(OutcomeDecision.EditedThenApproved);
+        outcome.FieldCount.Should().Be(5);
+        outcome.EditedFieldCount.Should().Be(5);
+    }
+
+    [Fact]
     public async Task ApproveProposals_RejectsMixedEligibilityWithoutApprovingTheValidProposal()
     {
         var client = _factory.CreateClient();
