@@ -68,17 +68,14 @@ async function measureInLayoutViewportSpace(locator: Locator) {
     sentinel.style.visibility = 'hidden'
     sentinel.style.pointerEvents = 'none'
     document.body.appendChild(sentinel)
-    const sentinelRect = sentinel.getBoundingClientRect()
+    const fixedOrigin = sentinel.getBoundingClientRect().top
     sentinel.remove()
 
     const rect = element.getBoundingClientRect()
     return {
-      layoutTop: rect.top - sentinelRect.top,
-      layoutBottom: rect.bottom - sentinelRect.top,
+      layoutTop: rect.top - fixedOrigin,
+      layoutBottom: rect.bottom - fixedOrigin,
       height: rect.height,
-      fixedLeft: rect.left - sentinelRect.left,
-      width: rect.width,
-      visibleWidth: window.visualViewport?.width ?? window.innerWidth,
     }
   })
 }
@@ -123,11 +120,14 @@ test('@mobile CardModal follows a contracted visual viewport above the desktop b
     return { top: Math.round(box.layoutTop), height: Math.round(box.height) }
   }).toEqual({ top: contractedTop, height: contractedHeight })
 
-  // WebKit can shift the fixed-position origin and narrow the native visual
-  // viewport; Playwright's configured width is then the wrong reference (#3479).
-  const horizontalBounds = await measureInLayoutViewportSpace(editModal)
+  // Compare visual coordinates with the native visible width. WebKit can
+  // offset and narrow that viewport independently of Playwright's width (#3479).
+  const horizontalBounds = await editModal.evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    return { left: rect.left, width: rect.width, visibleWidth: window.visualViewport?.width ?? window.innerWidth }
+  })
   expect(Math.abs(
-    horizontalBounds.fixedLeft * 2 + horizontalBounds.width - horizontalBounds.visibleWidth,
+    horizontalBounds.left * 2 + horizontalBounds.width - horizontalBounds.visibleWidth,
   )).toBeLessThanOrEqual(2)
 
   await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')

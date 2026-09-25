@@ -897,6 +897,9 @@ useEscapeToClose(
   }
 
   .card-modal-viewport--visual-constrained {
+    left: var(--card-modal-visual-viewport-offset-left);
+    right: auto;
+    width: var(--card-modal-visual-viewport-width);
     justify-content: center;
   }
 
