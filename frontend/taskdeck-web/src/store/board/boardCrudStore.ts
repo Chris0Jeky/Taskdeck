@@ -11,6 +11,7 @@ import { applyBoardCardCounts } from '../../utils/boardCardCounts'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import { initialCardFilters, type BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
+import { getObservedCredentialGeneration, getToken } from '../../utils/tokenStorage'
 
 // Minimum gap between board-list fetches.  Multiple views (BoardsListView,
 // ActivityView, ReviewView, etc.) can call fetchBoards on mount in quick
@@ -22,8 +23,16 @@ export type BoardFetchIntent = 'explicit' | 'background'
 
 export interface BoardFetchOptions {
   intent?: BoardFetchIntent
+  /**
+   * Queue this background refresh behind any active detail read, including
+   * another background read. Recovery uses it when the read must begin after
+   * an acknowledged realtime rejoin rather than joining a stale promise.
+   */
+  afterActive?: boolean
   /** Report a failed refresh of an already committed mutation only while this read owns the context. */
   backgroundFailureMessage?: string
+  /** Notify the current board view when an authoritative background read is forbidden. */
+  onBackgroundForbidden?: (boardId: string) => void
   /**
    * Retain the current board's loaded comment cache while replacing
    * board/card/label detail. Honoured only for same-board background
@@ -68,6 +77,7 @@ interface ActiveBoardFetch {
   intent: BoardFetchIntent
   generation: number
   backgroundFailureMessage?: string
+  onBackgroundForbidden?: (boardId: string) => void
   preserveCardComments: boolean
   controller: AbortController
   promise: Promise<boolean>
@@ -76,6 +86,7 @@ interface ActiveBoardFetch {
 interface QueuedBackgroundBoardFetch {
   boardId: string
   backgroundFailureMessage?: string
+  onBackgroundForbidden?: (boardId: string) => void
   preserveCardComments: boolean
   promise: Promise<boolean>
   resolve: (committed: boolean) => void
@@ -304,10 +315,12 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     id: string,
     backgroundFailureMessage?: string,
     preserveCardComments = false,
+    onBackgroundForbidden?: (boardId: string) => void,
   ): Promise<boolean> {
     if (queuedBackgroundBoardFetch?.boardId === id) {
       if (backgroundFailureMessage) queuedBackgroundBoardFetch.backgroundFailureMessage = backgroundFailureMessage
       if (preserveCardComments) queuedBackgroundBoardFetch.preserveCardComments = true
+      if (onBackgroundForbidden) queuedBackgroundBoardFetch.onBackgroundForbidden = onBackgroundForbidden
       return queuedBackgroundBoardFetch.promise
     }
 
@@ -321,6 +334,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       promise,
       resolve,
       backgroundFailureMessage,
+      onBackgroundForbidden,
       preserveCardComments,
     }
     return promise
@@ -342,6 +356,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       'background',
       queued.backgroundFailureMessage,
       queued.preserveCardComments,
+      queued.onBackgroundForbidden,
     ).then(queued.resolve, () => {
       queued.resolve(false)
     })
@@ -382,15 +397,17 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       // before it can clear the cache, then retain the flag on the successor.
       if (preserveCardComments) activeBoardFetch.preserveCardComments = true
 
-      if (activeBoardFetch.intent === 'explicit') {
+      if (activeBoardFetch.intent === 'explicit' || options.afterActive) {
         return queueBackgroundBoardFetch(
           id,
           options.backgroundFailureMessage,
           preserveCardComments,
+          options.onBackgroundForbidden,
         )
       }
 
       if (options.backgroundFailureMessage) activeBoardFetch.backgroundFailureMessage = options.backgroundFailureMessage
+      if (options.onBackgroundForbidden) activeBoardFetch.onBackgroundForbidden = options.onBackgroundForbidden
       return activeBoardFetch.promise
     }
 
@@ -405,6 +422,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       intent,
       options.backgroundFailureMessage,
       preserveCardComments,
+      options.onBackgroundForbidden,
     )
   }
 
@@ -413,8 +431,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     intent: BoardFetchIntent,
     backgroundFailureMessage?: string,
     preserveCardComments = false,
+    onBackgroundForbidden?: (boardId: string) => void,
   ): Promise<boolean> {
     const requestGeneration = ++boardFetchGeneration
+    getToken()
+    const requestCredentialGeneration = getObservedCredentialGeneration()
     // Record the request boundary before any response can commit. Permission
     // recovery uses it to reject a server response that was already in flight
     // when the write was refused.
@@ -427,6 +448,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       intent,
       generation: requestGeneration,
       backgroundFailureMessage,
+      onBackgroundForbidden,
       preserveCardComments,
       controller,
       promise: Promise.resolve(false),
@@ -457,6 +479,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         id,
         request.backgroundFailureMessage,
         request.preserveCardComments,
+        request.onBackgroundForbidden,
       )
     }
 
@@ -549,6 +572,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
               new Error(BOARD_ACCESS_REVOKED_MESSAGE),
               BOARD_ACCESS_REVOKED_MESSAGE,
             )
+            getToken()
+            if (getObservedCredentialGeneration() === requestCredentialGeneration) {
+              request.onBackgroundForbidden?.(id)
+            }
           } else if (request.backgroundFailureMessage) {
             helpers.toast.warning(request.backgroundFailureMessage)
           }
@@ -701,6 +728,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
    * lifecycles are aborted: every open list read and the active detail read.
    */
   function resetForLogout() {
+    state.boardMutationSessionGeneration.value++
+    state.boardViewVisit.value = { boardId: null }
     boardListGeneration++
     // The bump comes first so the rejection each abort produces lands on a
     // stale generation: the catch returns before handleApiError, so no toast

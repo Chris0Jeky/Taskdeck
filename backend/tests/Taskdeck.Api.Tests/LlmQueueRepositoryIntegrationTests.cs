@@ -100,6 +100,85 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task GetOldestPendingByUserAsync_ShouldReturnOldestN_ExcludingOtherStatusesAndUsers()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-oldest-user", "llm-oldest@example.com", "hash");
+        var other = new User("llm-oldest-other", "llm-oldest-other@example.com", "hash");
+        db.Users.AddRange(user, other);
+
+        var baseTime = new DateTimeOffset(2024, 2, 1, 0, 0, 0, TimeSpan.Zero);
+        var pendings = Enumerable.Range(0, 5)
+            .Select(i => new LlmRequest(user.Id, "inbox.capture.text", "{\"i\":" + i + "}"))
+            .ToList();
+        var processing = new LlmRequest(user.Id, "inbox.capture.text", "{\"i\":\"processing\"}");
+        processing.MarkAsProcessing();
+        var otherPending = new LlmRequest(other.Id, "inbox.capture.text", "{\"i\":\"other\"}");
+        db.LlmRequests.AddRange(pendings);
+        db.LlmRequests.AddRange(processing, otherPending);
+        await db.SaveChangesAsync();
+
+        for (var i = 0; i < pendings.Count; i++)
+        {
+            db.Entry(pendings[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddMinutes(i);
+        }
+        db.Entry(otherPending).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddMinutes(-1);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = (await repo.GetOldestPendingByUserAsync(user.Id, limit: 3)).ToList();
+
+        result.Should().HaveCount(3, "the bound caps the prefix even though 5 pending exist");
+        result.Select(r => r.Id).Should().ContainInOrder(pendings[0].Id, pendings[1].Id, pendings[2].Id);
+        result.Should().NotContain(r => r.Id == processing.Id);
+        result.Should().NotContain(r => r.Id == otherPending.Id, "other users are excluded even when older");
+    }
+
+    [Fact]
+    public async Task GetOldestPendingByUserAsync_WithInvalidLimit_ShouldThrow()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        await FluentActions.Awaiting(() => repo.GetOldestPendingByUserAsync(Guid.NewGuid(), limit: 0))
+            .Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task GetOldestPendingByUserAsync_WithCreatedAtTies_ShouldReturnIdOrderedPrefix()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-tie-user", "llm-tie@example.com", "hash");
+        db.Users.Add(user);
+
+        // Shared CreatedAt: the contract is (CreatedAt, Id) order in the returned list,
+        // regardless of which tied rows a provider's LIMIT keeps at the boundary.
+        var stamp = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero);
+        var rows = Enumerable.Range(0, 4)
+            .Select(_ => new LlmRequest(user.Id, "inbox.capture.text", "{\"t\":\"tie\"}"))
+            .ToList();
+        db.LlmRequests.AddRange(rows);
+        await db.SaveChangesAsync();
+        foreach (var row in rows)
+        {
+            db.Entry(row).Property(nameof(Entity.CreatedAt)).CurrentValue = stamp;
+        }
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = (await repo.GetOldestPendingByUserAsync(user.Id, limit: 3)).ToList();
+
+        result.Should().HaveCount(3);
+        result.Select(r => r.Id).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
     public async Task GetByStatusForDisplayAsync_BoundsAtSql_NewestFirst_IncludesAllTypes()
     {
         // The display read (#1237) is for the ops queue listing: bounded at the database, newest-first,

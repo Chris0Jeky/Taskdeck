@@ -166,9 +166,11 @@ public class WriteToolsErrorSafetyTests
     [Fact]
     public async Task MoveCard_UnexpectedProposalFailure_ReturnsGenericError()
     {
+        var boardId = Guid.NewGuid();
         var json = await CreateTools(
-                proposalService: FailingProposalService(ErrorCodes.UnexpectedError, HostileError).Object)
-            .MoveCard(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+                proposalService: FailingProposalService(ErrorCodes.UnexpectedError, HostileError).Object,
+                authorization: AllowingAuthorization(boardId).Object)
+            .MoveCard(boardId.ToString(), Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
 
         AssertGenericError(json);
     }
@@ -176,11 +178,13 @@ public class WriteToolsErrorSafetyTests
     [Fact]
     public async Task MoveCard_KnownProposalFailure_PreservesStableMessage()
     {
+        var boardId = Guid.NewGuid();
         const string stableMessage = "Card not found.";
 
         var json = await CreateTools(
-                proposalService: FailingProposalService(ErrorCodes.NotFound, stableMessage).Object)
-            .MoveCard(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+                proposalService: FailingProposalService(ErrorCodes.NotFound, stableMessage).Object,
+                authorization: AllowingAuthorization(boardId).Object)
+            .MoveCard(boardId.ToString(), Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
 
         ReadError(json).Should().Be(stableMessage);
     }
@@ -188,9 +192,11 @@ public class WriteToolsErrorSafetyTests
     [Fact]
     public async Task UpdateCard_UnexpectedProposalFailure_ReturnsGenericError()
     {
+        var boardId = Guid.NewGuid();
         var json = await CreateTools(
-                proposalService: FailingProposalService(ErrorCodes.UnexpectedError, HostileError).Object)
-            .UpdateCard(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), title: "New title");
+                proposalService: FailingProposalService(ErrorCodes.UnexpectedError, HostileError).Object,
+                authorization: AllowingAuthorization(boardId).Object)
+            .UpdateCard(boardId.ToString(), Guid.NewGuid().ToString(), title: "New title");
 
         AssertGenericError(json);
     }
@@ -198,9 +204,11 @@ public class WriteToolsErrorSafetyTests
     [Fact]
     public async Task ArchiveCard_UnexpectedProposalFailure_ReturnsGenericError()
     {
+        var boardId = Guid.NewGuid();
         var json = await CreateTools(
-                proposalService: FailingProposalService(ErrorCodes.UnexpectedError, HostileError).Object)
-            .ArchiveCard(Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+                proposalService: FailingProposalService(ErrorCodes.UnexpectedError, HostileError).Object,
+                authorization: AllowingAuthorization(boardId).Object)
+            .ArchiveCard(boardId.ToString(), Guid.NewGuid().ToString());
 
         AssertGenericError(json);
     }
@@ -208,11 +216,13 @@ public class WriteToolsErrorSafetyTests
     [Fact]
     public async Task ArchiveCard_ForbiddenProposalFailure_PreservesStableMessage()
     {
+        var boardId = Guid.NewGuid();
         const string stableMessage = "You do not have access to this board.";
 
         var json = await CreateTools(
-                proposalService: FailingProposalService(ErrorCodes.Forbidden, stableMessage).Object)
-            .ArchiveCard(Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+                proposalService: FailingProposalService(ErrorCodes.Forbidden, stableMessage).Object,
+                authorization: AllowingAuthorization(boardId).Object)
+            .ArchiveCard(boardId.ToString(), Guid.NewGuid().ToString());
 
         ReadError(json).Should().Be(stableMessage);
     }

@@ -5,8 +5,9 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Domain.Entities;
 
 /// <summary>
-/// Immutable metadata for a user-owned source artefact. Binary content is kept in
-/// <see cref="ArtefactBlob"/> so metadata reads never materialize the blob column.
+/// Immutable metadata for a user-owned source artefact. New content is held by a
+/// byte-store reference; legacy rows retain <see cref="ArtefactBlob"/>. Metadata reads
+/// never materialize content bytes.
 /// </summary>
 public sealed class SourceArtefact : Entity
 {
@@ -23,6 +24,8 @@ public sealed class SourceArtefact : Entity
     public long ByteSize { get; private set; }
     public string Sha256 { get; private set; } = string.Empty;
     public CaptureSource CaptureSource { get; private set; }
+    /// <summary>New uploads hold an owner-scoped byte-store reference; null identifies legacy ArtefactBlob rows.</summary>
+    public Guid? BlobReferenceId { get; private set; }
 
     /// <summary>
     /// Optional content-free source locator supplied by a trusted intake adapter.
@@ -51,8 +54,27 @@ public sealed class SourceArtefact : Entity
         Guid? boardId = null,
         string? originReference = null,
         Guid? createdFromCaptureId = null)
-        : base()
+        : this(Guid.NewGuid(), userId, kind, mimeType, fileName, byteSize, sha256,
+            captureSource, boardId, originReference, createdFromCaptureId)
     {
+    }
+
+    public SourceArtefact(
+        Guid id,
+        Guid userId,
+        ArtefactKind kind,
+        string mimeType,
+        string fileName,
+        long byteSize,
+        string sha256,
+        CaptureSource captureSource,
+        Guid? boardId = null,
+        string? originReference = null,
+        Guid? createdFromCaptureId = null)
+        : base(id)
+    {
+        if (id == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Artefact ID cannot be empty");
         if (userId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "User ID cannot be empty");
         if (boardId == Guid.Empty)
@@ -84,5 +106,12 @@ public sealed class SourceArtefact : Entity
         CaptureSource = captureSource;
         OriginReference = string.IsNullOrWhiteSpace(originReference) ? null : originReference;
         CreatedFromCaptureId = createdFromCaptureId;
+    }
+
+    public void AttachBlobReference(Guid referenceId)
+    {
+        if (referenceId == Guid.Empty || BlobReferenceId.HasValue)
+            throw new DomainException(ErrorCodes.ValidationError, "A valid, unassigned blob reference is required");
+        BlobReferenceId = referenceId;
     }
 }

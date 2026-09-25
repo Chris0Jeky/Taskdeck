@@ -234,6 +234,123 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
         return map;
     }
 
+    public IAsyncEnumerable<ArtefactExtraction> StreamByArtefactsForUserAsync(
+        IReadOnlyCollection<Guid> sourceArtefactIds,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceArtefactIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (sourceArtefactIds.Count > MaxBatchIdCount)
+            throw new ArgumentException(
+                $"Cannot stream more than {MaxBatchIdCount} artefact ids per window; page the ids.",
+                nameof(sourceArtefactIds));
+
+        // Snapshot before returning a deferred iterator. Bound enumeration too: Count can come
+        // from a mutable/custom collection and is not sufficient to constrain allocation alone.
+        var rawIds = sourceArtefactIds.Take(MaxBatchIdCount + 1).ToArray();
+        if (rawIds.Length > MaxBatchIdCount)
+            throw new ArgumentException(
+                $"Cannot stream more than {MaxBatchIdCount} artefact ids per window; page the ids.",
+                nameof(sourceArtefactIds));
+        var seen = new HashSet<Guid>();
+        var ids = rawIds.Where(id => seen.Add(id)).ToArray();
+        return StreamHistoryCoreAsync(ids, userId, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<ArtefactExtraction> StreamHistoryCoreAsync(
+        Guid[] ids,
+        Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ids.Length == 0)
+            yield break;
+
+        if (!_context.Database.IsSqlite())
+        {
+            // Preserve the established provider-native ordering and bounded page reads. The
+            // batched query-count improvement below is intentionally SQLite-specific.
+            foreach (var id in ids)
+            {
+                var offset = 0;
+                while (true)
+                {
+                    var rows = await GetByArtefactForUserAsync(id, userId, MaxPageSize, offset, cancellationToken);
+                    foreach (var row in rows)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        yield return row;
+                    }
+                    if (rows.Count < MaxPageSize)
+                        break;
+                    offset = checked(offset + rows.Count);
+                }
+            }
+            yield break;
+        }
+
+        // Only internally generated ordinals/placeholders are interpolated; all data is bound.
+        // At most 900 ids + user + three cursor values = 904 parameters.
+        var requested = string.Join(", ", ids.Select((_, ordinal) => $"(@id{ordinal}, {ordinal})"));
+        var sql = $"""
+            WITH requested(SourceArtefactId, Ordinal) AS (VALUES {requested}),
+            selected AS MATERIALIZED (
+                SELECT extraction.Id, extraction.CreatedAt, requested.Ordinal
+                FROM requested
+                INNER JOIN SourceArtefacts AS artefact
+                    ON artefact.Id = requested.SourceArtefactId
+                INNER JOIN ArtefactExtractions AS extraction
+                    ON extraction.SourceArtefactId = artefact.Id
+                WHERE artefact.UserId = @userId
+                    AND (requested.Ordinal > @afterOrdinal
+                        OR (requested.Ordinal = @afterOrdinal
+                            AND (extraction.CreatedAt > @afterCreatedAt
+                                OR (extraction.CreatedAt = @afterCreatedAt AND extraction.Id > @afterId))))
+                ORDER BY requested.Ordinal, extraction.CreatedAt, extraction.Id
+                LIMIT {MaxPageSize}
+            )
+            SELECT extraction.*
+            FROM selected
+            INNER JOIN ArtefactExtractions AS extraction ON extraction.Id = selected.Id
+            ORDER BY selected.Ordinal, selected.CreatedAt, selected.Id
+            """;
+
+        var afterOrdinal = -1;
+        var afterCreatedAt = DateTimeOffset.MinValue;
+        var afterId = Guid.Empty;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var parameters = new List<object>(ids.Length + 4);
+            for (var i = 0; i < ids.Length; i++)
+                parameters.Add(new SqliteParameter($"@id{i}", ids[i]));
+            parameters.Add(new SqliteParameter("@userId", userId));
+            parameters.Add(new SqliteParameter("@afterOrdinal", afterOrdinal));
+            parameters.Add(new SqliteParameter("@afterCreatedAt", afterCreatedAt));
+            parameters.Add(new SqliteParameter("@afterId", afterId));
+
+            // MATERIALIZED fences a narrow, 50-key selection before the large text payload join.
+            // The page completes before yielding: no live reader/transaction across backpressure.
+            var page = await _context.ArtefactExtractions.FromSqlRaw(sql, parameters.ToArray())
+                .AsNoTracking().ToListAsync(cancellationToken);
+            foreach (var row in page)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return row;
+            }
+            if (page.Count < MaxPageSize)
+                yield break;
+
+            afterOrdinal = Array.IndexOf(ids, page[^1].SourceArtefactId);
+            // Preserve the provider's exact stored TEXT ordering, including timestamp offsets;
+            // UTC normalisation or .NET Guid sorting here would change the continuation order.
+            afterCreatedAt = page[^1].CreatedAt;
+            afterId = page[^1].Id;
+            page.Clear();
+        }
+    }
+
     public async Task<long> GetTotalTextLengthByUserAsync(
         Guid userId,
         CancellationToken cancellationToken = default)

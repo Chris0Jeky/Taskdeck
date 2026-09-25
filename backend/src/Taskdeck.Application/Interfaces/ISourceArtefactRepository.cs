@@ -1,4 +1,5 @@
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.Interfaces;
 
@@ -9,6 +10,19 @@ public enum ArtefactStoreResult
     BoardAccessDenied,
     QuotaExceeded
 }
+
+public sealed record StreamingArtefactWrite(
+    Guid ArtefactId,
+    Guid UserId,
+    ArtefactKind Kind,
+    string MimeType,
+    string FileName,
+    long ExpectedByteSize,
+    Guid? BoardId,
+    Guid? CreatedFromCaptureId,
+    Stream Content);
+
+public sealed record StreamingArtefactStoreOutcome(ArtefactStoreResult Result, SourceArtefact? Artefact);
 
 public interface ISourceArtefactRepository : IRepository<SourceArtefact>
 {
@@ -29,7 +43,8 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
 
     /// <summary>
     /// Atomically rechecks the active user, board write authority, and byte quota,
-    /// then persists metadata, blob, and the content-free audit entries.
+    /// then acquires an owner-scoped byte-store reference and persists metadata and
+    /// content-free audit entries in the same transaction.
     /// </summary>
     Task<ArtefactStoreResult> TryAddWithinQuotaAsync(
         SourceArtefact artefact,
@@ -39,14 +54,21 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
         AuditLog? boardAuditLog,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Checks authorization and both quotas under the write lock before reading Content.</summary>
+    Task<StreamingArtefactStoreOutcome> TryAddStreamWithinQuotaAsync(
+        StreamingArtefactWrite write,
+        long quotaBytes,
+        CancellationToken cancellationToken = default);
+
     Task<byte[]?> GetContentForUserAsync(
         Guid id,
         Guid userId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Batch-loads blob content for the requested artefacts owned by <paramref name="userId"/>,
-    /// keyed by artefact id, in a single query. Artefacts that do not exist, are not owned by the
+    /// Batch-loads content for the requested artefacts owned by <paramref name="userId"/>,
+    /// keyed by artefact id. Legacy rows use one blob query; new references use the byte store.
+    /// Artefacts that do not exist, are not owned by the
     /// user, or have no blob are simply absent from the result (never surfaced across users).
     /// Callers must bound <paramref name="ids"/> so the IN-clause stays within SQLite's parameter
     /// limit (SQLITE_MAX_VARIABLE_NUMBER = 999); the buffered export path pages ids in chunks of 500.

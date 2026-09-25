@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+
 namespace Taskdeck.Application.Services;
 
 /// <summary>
@@ -62,7 +64,9 @@ public sealed class DeferredBoardRealtimeNotifier : IBoardRealtimeNotifier
     /// <summary>
     /// Publishes every staged event downstream, in staging order, and empties the buffer.
     /// The buffer is emptied before the first publish, so a downstream failure can never
-    /// republish the batch on a later flush.
+    /// republish the batch on a later flush. A failing event does not abort the batch tail:
+    /// every event is attempted, then a lone failure is rethrown as-is (preserving its type
+    /// and stack) while multiple failures surface as an <see cref="AggregateException"/>.
     /// </summary>
     public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
@@ -73,13 +77,27 @@ public sealed class DeferredBoardRealtimeNotifier : IBoardRealtimeNotifier
         var preparedCount = _preparedCount;
         _pending.Clear();
         _preparedCount = 0;
+        List<Exception>? failures = null;
         for (var index = 0; index < batch.Length; index++)
         {
-            if (index < preparedCount && _inner is ITransactionalBoardMutationNotifier transactional)
-                await transactional.NotifyCommittedBoardMutationAsync(batch[index], cancellationToken);
-            else
-                await _inner.NotifyBoardMutationAsync(batch[index], cancellationToken);
+            try
+            {
+                if (index < preparedCount && _inner is ITransactionalBoardMutationNotifier transactional)
+                    await transactional.NotifyCommittedBoardMutationAsync(batch[index], cancellationToken);
+                else
+                    await _inner.NotifyBoardMutationAsync(batch[index], cancellationToken);
+            }
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+            {
+                (failures ??= new List<Exception>()).Add(ex);
+            }
         }
+
+        if (failures is null)
+            return;
+        if (failures.Count == 1)
+            ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        throw new AggregateException("One or more deferred board notifications failed to publish.", failures);
     }
 
     /// <summary>Drops every staged event — the write they describe did not survive.</summary>

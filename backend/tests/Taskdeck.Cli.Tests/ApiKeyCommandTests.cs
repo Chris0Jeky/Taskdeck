@@ -175,6 +175,35 @@ public class ApiKeyCommandTests
         result.StdErr.Should().Contain("--name");
     }
 
+    [Fact]
+    public async Task ApiKeyRevoke_WithBothNameAndId_ReturnsUsageErrorAndRevokesNeither()
+    {
+        await using var harness = new CliTestHarness("cli-apikey");
+
+        var firstResult = await harness.RunAsync("api-key create --name MixedSelectorA --scopes read");
+        firstResult.ExitCode.Should().Be(0, firstResult.StdErr);
+
+        var secondResult = await harness.RunAsync("api-key create --name MixedSelectorB --scopes read");
+        secondResult.ExitCode.Should().Be(0, secondResult.StdErr);
+        using var secondDoc = JsonDocument.Parse(secondResult.StdOut);
+        var secondId = secondDoc.RootElement.GetProperty("id").GetGuid();
+
+        var revokeResult = await harness.RunAsync($"api-key revoke --name MixedSelectorA --id {secondId}");
+        revokeResult.ExitCode.Should().Be(2, revokeResult.StdErr);
+        revokeResult.StdErr.Should().Contain("--name").And.Contain("--id");
+
+        var blankNameResult = await harness.RunAsync($"api-key revoke --name \"\" --id {secondId}");
+        blankNameResult.ExitCode.Should().Be(2, blankNameResult.StdErr);
+
+        var listResult = await harness.RunAsync("api-key list");
+        listResult.ExitCode.Should().Be(0, listResult.StdErr);
+        using var listDoc = JsonDocument.Parse(listResult.StdOut);
+        var entries = listDoc.RootElement.EnumerateArray().ToList();
+        entries.Select(e => e.GetProperty("name").GetString())
+            .Should().BeEquivalentTo("MixedSelectorA", "MixedSelectorB");
+        entries.Should().OnlyContain(e => e.GetProperty("isActive").GetBoolean());
+    }
+
     [Theory]
     [InlineData("api-key create --name \"Missing Scopes\"")]
     [InlineData("api-key create --name \"Empty Scopes\" --scopes \"\"")]

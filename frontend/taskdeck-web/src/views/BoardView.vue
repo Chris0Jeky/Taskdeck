@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, computed, watch, provide, readonly } from 'vue'
+import { onBeforeUnmount, onMounted, nextTick, ref, computed, watch, provide, readonly } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
 import { usePaperThemeStore } from '../store/paperThemeStore'
+import { useToastStore } from '../store/toastStore'
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
@@ -31,12 +33,15 @@ import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 import { isDemoMode } from '../utils/demoMode'
 import { getErrorMessage } from '../utils/errorMessage'
 import { logError } from '../utils/errorReporting'
+import { getObservedCredentialGeneration, getToken } from '../utils/tokenStorage'
 
 const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
 const sessionStore = useSessionStore()
 const paperTheme = usePaperThemeStore()
+const toast = useToastStore()
+const { t } = useI18n()
 const paperOn = computed(() => paperTheme.isOn)
 const shellKeyboardHelp = useShellKeyboardHelp()
 
@@ -52,11 +57,12 @@ const showBoardCaptureModal = ref(false)
 // the already-submitted assignment-save state up to the route boundary so shell
 // navigation cannot unmount the only surface that can report its settlement.
 const legacyCardEditorSaving = ref(false)
+const boardAccessRevoked = ref(false)
 const legacySavePendingNotice = ref(false)
 const {
   leaveRequested: legacyLeaveRequested,
   decide: decideLegacyLeave,
-} = useUnsavedWorkspaceNavigation(() => !paperOn.value && legacyCardEditorSaving.value)
+} = useUnsavedWorkspaceNavigation(() => !boardAccessRevoked.value && !paperOn.value && legacyCardEditorSaving.value)
 
 watch(legacyLeaveRequested, (requested) => {
   if (!requested) return
@@ -111,6 +117,7 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 }
 
 const boardId = ref(route.params.id as string)
+let boardViewVisit = boardStore.beginBoardViewVisit(boardId.value)
 const previewProposalId = computed(() => typeof route.query?.proposalId === 'string' ? route.query.proposalId : null)
 const proposalMarkers = ref<BoardProposalMarkers>({})
 provide(BOARD_PROPOSAL_MARKERS, readonly(proposalMarkers))
@@ -123,20 +130,33 @@ function closeProposalPreview() {
 }
 const boardLoadRetryInFlight = ref(false)
 const boardLoadError = ref<string | null>(null)
-const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
+const routedBoard = computed(() => !boardAccessRevoked.value && boardStore.currentBoard?.id === boardId.value
   ? boardStore.currentBoard
   : null)
 let viewUnmounted = false
 let realtimeStarted = false
 const realtime = createBoardRealtimeController({
-  fetchBoard: async (id: string, options: { intent: 'background' }) => {
+  fetchBoard: async (
+    id: string,
+    options: { intent: 'background'; afterActive?: boolean },
+  ) => {
     if (viewUnmounted || id !== boardId.value) {
-      return
+      return false
     }
 
     const boardLoadErrorAtStart = boardLoadError.value
     const storeErrorAtStart = boardStore.error
-    const committed = await boardStore.fetchBoard(id, options)
+    getToken()
+    const credentialGeneration = getObservedCredentialGeneration()
+    const committed = await boardStore.fetchBoard(id, {
+      ...options,
+      onBackgroundForbidden: (forbiddenBoardId) => {
+        if (viewUnmounted || forbiddenBoardId !== id || forbiddenBoardId !== boardId.value) return
+        getToken()
+        if (getObservedCredentialGeneration() !== credentialGeneration) return
+        realtime.notifyAccessRevoked(forbiddenBoardId)
+      },
+    })
     if (
       options.intent === 'background' &&
       committed &&
@@ -149,6 +169,7 @@ const realtime = createBoardRealtimeController({
         boardStore.error = null
       }
     }
+    return committed
   },
   onPresenceChanged: (snapshot) => {
     if (snapshot.boardId !== boardId.value) {
@@ -158,6 +179,19 @@ const realtime = createBoardRealtimeController({
     const normalized = normalizePresenceMembers(snapshot.members)
     presenceMembers.value = normalized
     boardStore.setBoardPresenceMembers(normalized)
+  },
+  onAccessRevoked: (revokedBoardId) => {
+    if (viewUnmounted || revokedBoardId !== boardId.value) {
+      return
+    }
+
+    // Hide cached board content immediately and retire the unsaved-editor guard.
+    // Wait one render tick so Paper's child route guard unmounts before replace.
+    boardAccessRevoked.value = true
+    toast.error(t('boardDetail.accessRevoked'))
+    void nextTick()
+      .then(() => router.replace('/workspace/boards'))
+      .catch((error) => logError('Failed to leave revoked board:', error))
   },
 })
 
@@ -340,7 +374,9 @@ watch(
       return
     }
 
+    boardViewVisit = boardStore.beginBoardViewVisit(nextBoardId)
     boardId.value = nextBoardId
+    boardAccessRevoked.value = false
     boardLoadError.value = null
     resetSelection()
     // Seed with current user on board switch for the same reason as onMounted.
@@ -362,7 +398,8 @@ watch(
       recordBoardLoadFailure(nextBoardId, error)
       logError('Failed to switch board:', error)
     }
-  }
+  },
+  { flush: 'sync' },
 )
 
 watch(
@@ -374,6 +411,7 @@ watch(
 
 onBeforeUnmount(() => {
   viewUnmounted = true
+  boardStore.endBoardViewVisit(boardViewVisit)
   boardStore.cancelBackgroundBoardFetch?.(boardId.value)
   presenceMembers.value = []
   boardStore.setBoardPresenceMembers([])
@@ -585,7 +623,7 @@ useKeyboardShortcuts([
     @close="closeProposalPreview"
   />
   <PaperBoardView
-    v-if="paperOn"
+    v-if="paperOn && !boardAccessRevoked"
     :selected-card-id="selectedCardId"
     :selected-column-id="selectedColumnId"
     :board-load-error="boardLoadError"
@@ -595,7 +633,7 @@ useKeyboardShortcuts([
     @dialog-open-change="paperDialogOpen = $event"
     @retry-board-load="retryBoardLoad"
   />
-  <div v-else class="min-h-screen bg-surface">
+  <div v-else-if="!boardAccessRevoked" class="min-h-screen bg-surface">
     <!-- Header -->
     <div class="bg-surface-container border-b border-outline-variant/15">
       <div class="max-w-full px-4 sm:px-6 lg:px-8 py-4">
@@ -619,6 +657,7 @@ useKeyboardShortcuts([
 
         <BoardActionRail
           v-if="routedBoard"
+          :can-capture="routedBoard.canWrite !== false"
           @capture="openBoardCaptureModal"
           @chat="openBoardChat"
           @review="openBoardReview"
@@ -634,7 +673,11 @@ useKeyboardShortcuts([
           description="Boards are where approved work appears. Capture new input, review the proposed changes, then come back here to manage the result."
         >
           <template #actions>
-            <button class="td-btn td-btn--secondary td-btn--sm" @click="openBoardCaptureModal">Capture here</button>
+            <button
+              v-if="routedBoard.canWrite !== false"
+              class="td-btn td-btn--secondary td-btn--sm"
+              @click="openBoardCaptureModal"
+            >Capture here</button>
             <button class="td-btn td-btn--secondary td-btn--sm" @click="openBoardReview">Review proposals</button>
           </template>
         </WorkspaceHelpCallout>
@@ -794,6 +837,9 @@ useKeyboardShortcuts([
       @update:show-starter-pack-catalog="showStarterPackCatalog = $event"
       @update:show-capture-modal="showBoardCaptureModal = $event"
     />
+  </div>
+  <div v-else class="min-h-screen bg-surface p-6" role="status">
+    {{ t('boardDetail.accessRevoked') }}
   </div>
 </template>
 

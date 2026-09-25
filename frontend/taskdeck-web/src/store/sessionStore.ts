@@ -12,6 +12,7 @@ import { logWarn } from '../utils/errorReporting'
 import { proposalDisplayNames } from '../composables/useProposalDisplayNames'
 import { purgeLegacyApiCaches } from '../pwa/legacyApiCache'
 import { getErrorDetails } from '../composables/useErrorMapper'
+import { SessionOperationSupersededError } from '../utils/sessionOperation'
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -25,6 +26,36 @@ export const useSessionStore = defineStore('session', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   let loginFailureToastId: string | null = null
+  // Intent ownership is independent of token equality: logout and a same-token
+  // login must still retire every older asynchronous identity operation.
+  let identityGeneration = 0
+  let activityGeneration = 0
+
+  function beginIdentityOperation(showLoading = false): number {
+    identityGeneration++
+    activityGeneration++
+    loading.value = showLoading
+    error.value = null
+    return identityGeneration
+  }
+
+  function ownsIdentity(owner: number): boolean {
+    return owner === identityGeneration
+  }
+
+  function requireIdentityOwner(owner: number): void {
+    if (!ownsIdentity(owner)) throw new SessionOperationSupersededError()
+  }
+
+  function ownsActivity(owner: number, activity: number): boolean {
+    return ownsIdentity(owner) && activity === activityGeneration
+  }
+
+  function rethrowIfSuperseded(owner: number, cause: unknown): void {
+    if (!ownsIdentity(owner)) {
+      throw cause instanceof SessionOperationSupersededError ? cause : new SessionOperationSupersededError()
+    }
+  }
 
   const isDemo = ref(false)
 
@@ -58,9 +89,10 @@ export const useSessionStore = defineStore('session', () => {
    * unusable token and a browser that could not clear the retired offline cache
    * have different recoveries.
    */
-  type SetSessionOutcome = 'established' | 'invalid-token' | 'cache-boundary'
+  type SetSessionOutcome = 'established' | 'invalid-token' | 'cache-boundary' | 'superseded'
 
-  async function setSession(data: AuthResponse): Promise<SetSessionOutcome> {
+  async function setSession(data: AuthResponse, owner: number): Promise<SetSessionOutcome> {
+    if (!ownsIdentity(owner)) return 'superseded'
     if (!tokenStorage.isValidJwtStructure(data.token)) {
       logWarn('Received token with invalid JWT structure — session not persisted.')
       return 'invalid-token'
@@ -68,11 +100,15 @@ export const useSessionStore = defineStore('session', () => {
 
     // A replacement token is usable only after the legacy cache namespace is
     // gone, including a refresh for the same user.
-    if (!(await purgeLegacyApiCaches())) {
+    const purged = await purgeLegacyApiCaches()
+    if (!ownsIdentity(owner)) return 'superseded'
+    if (!purged) {
       return 'cache-boundary'
     }
 
     if (userId.value !== data.user.id) proposalDisplayNames.reset()
+    isDemo.value = false
+    clearDemoSession()
     token.value = data.token
     userId.value = data.user.id
     username.value = data.user.username
@@ -91,6 +127,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function clearSession() {
+    beginIdentityOperation()
     proposalDisplayNames.reset()
     isDemo.value = false
     token.value = null
@@ -120,19 +157,26 @@ export const useSessionStore = defineStore('session', () => {
 
   function requireEstablished(outcome: SetSessionOutcome, afterCommitMessage: string): void {
     if (outcome === 'established') return
+    if (outcome === 'superseded') {
+      // The response already succeeded on the server. Do not invite replay of
+      // registration or a consumed exchange code just because local intent moved.
+      throw new SessionOperationSupersededError(true)
+    }
     throw new Error(outcome === 'cache-boundary' ? afterCommitMessage : SESSION_NOT_ESTABLISHED)
   }
 
-  async function requireLegacyApiCachePurge(): Promise<void> {
-    if (!await purgeLegacyApiCaches()) {
+  async function requireLegacyApiCachePurge(owner: number): Promise<void> {
+    const purged = await purgeLegacyApiCaches()
+    requireIdentityOwner(owner)
+    if (!purged) {
       throw new Error(SESSION_NOT_ESTABLISHED)
     }
   }
 
-  async function hydrateDefaultRoleFromProfile(restoredUserId: string, restoredToken: string) {
+  async function hydrateDefaultRoleFromProfile(restoredUserId: string, restoredToken: string, owner: number) {
     try {
       const user = await usersApi.getUser(restoredUserId)
-      if (token.value !== restoredToken || userId.value !== restoredUserId) {
+      if (!ownsIdentity(owner) || token.value !== restoredToken || userId.value !== restoredUserId) {
         return
       }
 
@@ -149,7 +193,7 @@ export const useSessionStore = defineStore('session', () => {
         defaultRole: user.defaultRole,
       })
     } catch (e) {
-      logWarn('Session restore role hydration failed.', e)
+      if (ownsIdentity(owner)) logWarn('Session restore role hydration failed.', e)
     }
   }
 
@@ -167,11 +211,13 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function loginAsDemo() {
+    beginIdentityOperation()
     setDemoSession()
     toast.success('Welcome to the Taskdeck demo')
   }
 
   async function restoreSession() {
+    const owner = beginIdentityOperation()
     if (isDemoMode && isDemoSessionActive()) {
       setDemoSession()
       return
@@ -185,19 +231,23 @@ export const useSessionStore = defineStore('session', () => {
         return
       }
 
-      if (!await purgeLegacyApiCaches()) {
+      const purged = await purgeLegacyApiCaches()
+      if (!ownsIdentity(owner)) return
+      if (!purged) {
         clearSession()
         return
       }
 
       if (userId.value !== session.userId) proposalDisplayNames.reset()
+      isDemo.value = false
+      clearDemoSession()
       token.value = savedToken
       userId.value = session.userId
       username.value = session.username
       email.value = session.email
       defaultRole.value = typeof session.defaultRole === 'number' ? session.defaultRole : null
       expiresAt.value = getTokenExpiryIso(savedToken)
-      void hydrateDefaultRoleFromProfile(session.userId, savedToken)
+      void hydrateDefaultRoleFromProfile(session.userId, savedToken, owner)
     } else if (savedToken && !session) {
       // Token exists but session metadata is missing or corrupt — clean up
       tokenStorage.clearAll()
@@ -220,95 +270,115 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function login(credentials: LoginRequest) {
+    const owner = beginIdentityOperation(true)
+    const activity = activityGeneration
     try {
-      loading.value = true
-      error.value = null
-      await requireLegacyApiCachePurge()
+      await requireLegacyApiCachePurge(owner)
+      requireIdentityOwner(owner)
       const response = await authApi.login(credentials)
-      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_COMMIT)
+      requireEstablished(await setSession(response, owner), CACHE_BOUNDARY_AFTER_COMMIT)
+      requireIdentityOwner(owner)
       clearLoginFailureReceipt()
       toast.success('Logged in successfully')
       return response
     } catch (e: unknown) {
+      rethrowIfSuperseded(owner, e)
+      if (!ownsActivity(owner, activity)) throw e
       const msg = getErrorMessage(e, 'Login failed')
       error.value = msg
       replaceLoginFailureReceipt(msg, e)
       throw e
     } finally {
-      loading.value = false
+      if (ownsActivity(owner, activity)) loading.value = false
     }
   }
 
   async function register(request: RegisterRequest) {
+    const owner = beginIdentityOperation(true)
+    const activity = activityGeneration
     try {
-      loading.value = true
-      error.value = null
-      await requireLegacyApiCachePurge()
+      await requireLegacyApiCachePurge(owner)
+      requireIdentityOwner(owner)
       const response = await authApi.register(request)
-      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_REGISTER)
+      requireEstablished(await setSession(response, owner), CACHE_BOUNDARY_AFTER_REGISTER)
+      requireIdentityOwner(owner)
       toast.success('Registration successful')
       return response
     } catch (e: unknown) {
+      rethrowIfSuperseded(owner, e)
+      if (!ownsActivity(owner, activity)) throw e
       const msg = getErrorMessage(e, 'Registration failed')
       error.value = msg
       toast.error(msg)
       throw e
     } finally {
-      loading.value = false
+      if (ownsActivity(owner, activity)) loading.value = false
     }
   }
 
   async function changePassword(request: ChangePasswordRequest) {
+    const owner = identityGeneration
+    const activity = ++activityGeneration
     try {
       loading.value = true
       error.value = null
       await authApi.changePassword(request)
-      toast.success('Password changed successfully')
+      if (ownsActivity(owner, activity)) toast.success('Password changed successfully')
     } catch (e: unknown) {
+      rethrowIfSuperseded(owner, e)
+      if (!ownsActivity(owner, activity)) throw e
       const msg = getErrorMessage(e, 'Failed to change password')
       error.value = msg
       toast.error(msg)
       throw e
     } finally {
-      loading.value = false
+      if (ownsActivity(owner, activity)) loading.value = false
     }
   }
 
   async function exchangeOAuthCode(code: string) {
+    const owner = beginIdentityOperation(true)
+    const activity = activityGeneration
     try {
-      loading.value = true
-      error.value = null
-      await requireLegacyApiCachePurge()
+      await requireLegacyApiCachePurge(owner)
+      requireIdentityOwner(owner)
       const response = await authApi.exchangeOAuthCode(code)
-      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_COMMIT)
+      requireEstablished(await setSession(response, owner), CACHE_BOUNDARY_AFTER_COMMIT)
+      requireIdentityOwner(owner)
       toast.success('Signed in with GitHub')
       return response
     } catch (e: unknown) {
+      rethrowIfSuperseded(owner, e)
+      if (!ownsActivity(owner, activity)) throw e
       const msg = getErrorMessage(e, 'GitHub sign-in failed')
       error.value = msg
       toast.error(msg)
       throw e
     } finally {
-      loading.value = false
+      if (ownsActivity(owner, activity)) loading.value = false
     }
   }
 
   async function exchangeOidcCode(code: string) {
+    const owner = beginIdentityOperation(true)
+    const activity = activityGeneration
     try {
-      loading.value = true
-      error.value = null
-      await requireLegacyApiCachePurge()
+      await requireLegacyApiCachePurge(owner)
+      requireIdentityOwner(owner)
       const response = await authApi.exchangeOidcCode(code)
-      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_COMMIT)
+      requireEstablished(await setSession(response, owner), CACHE_BOUNDARY_AFTER_COMMIT)
+      requireIdentityOwner(owner)
       toast.success('Signed in successfully')
       return response
     } catch (e: unknown) {
+      rethrowIfSuperseded(owner, e)
+      if (!ownsActivity(owner, activity)) throw e
       const msg = getErrorMessage(e, 'SSO sign-in failed')
       error.value = msg
       toast.error(msg)
       throw e
     } finally {
-      loading.value = false
+      if (ownsActivity(owner, activity)) loading.value = false
     }
   }
 
@@ -318,11 +388,18 @@ export const useSessionStore = defineStore('session', () => {
    * Throws on failure so callers can handle the error (e.g. show a warning toast).
    */
   async function refreshSession(): Promise<void> {
-    const response = await authApi.refreshToken()
-    requireEstablished(
-      await setSession(response),
-      'Refreshed on the server, but this browser could not clear a retired offline cache. Reload the page and sign in again.',
-    )
+    const owner = beginIdentityOperation()
+    try {
+      const response = await authApi.refreshToken()
+      requireEstablished(
+        await setSession(response, owner),
+        'Refreshed on the server, but this browser could not clear a retired offline cache. Reload the page and sign in again.',
+      )
+      requireIdentityOwner(owner)
+    } catch (e: unknown) {
+      rethrowIfSuperseded(owner, e)
+      throw e
+    }
   }
 
   function logout() {

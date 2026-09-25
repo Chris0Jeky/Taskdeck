@@ -934,6 +934,44 @@ public class McpToolsTests : IDisposable
         (await service.GetCardAsync(boardId, card.Id)).Value.IsArchived.Should().Be(!archive);
     }
 
+    [Fact]
+    public async Task CardLifecycleTools_ArchiveForwardsChildrenFingerprint_WhenSupplied()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var parent = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Parent", null, null, null))).Value;
+        var child = await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Child", null, null, null, ParentCardId: parent.Id));
+        child.IsSuccess.Should().BeTrue(child.ErrorMessage);
+        var preview = await service.PreviewDetachAsync(boardId, parent.Id);
+        preview.IsSuccess.Should().BeTrue(preview.ErrorMessage);
+        var tools = CreateWriteTools(scope, user.Id);
+        var json = await tools.ArchiveCardLifecycle(boardId.ToString(), parent.Id.ToString(), parent.UpdatedAt.ToString("O"), expected_children_fingerprint: preview.Value.ExpectedChildrenFingerprint);
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        proposal.Operations.Should().ContainSingle().Which.ActionType.Should().Be("archive-lifecycle");
+        using var parameters = JsonDocument.Parse(proposal.Operations.Single().Parameters);
+        parameters.RootElement.GetProperty("expectedChildrenFingerprint").GetString().Should().Be(preview.Value.ExpectedChildrenFingerprint);
+    }
+
+    [Fact]
+    public async Task CardLifecycleTools_ArchiveOmitsChildrenFingerprint_WhenAbsent()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Lifecycle", null, null, null))).Value;
+        var tools = CreateWriteTools(scope, user.Id);
+        var json = await tools.ArchiveCardLifecycle(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"));
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        proposal.Operations.Should().ContainSingle().Which.ActionType.Should().Be("archive-lifecycle");
+        using var parameters = JsonDocument.Parse(proposal.Operations.Single().Parameters);
+        parameters.RootElement.TryGetProperty("expectedChildrenFingerprint", out _).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, false)]
@@ -961,6 +999,80 @@ public class McpToolsTests : IDisposable
         document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
         document.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse();
         (await service.GetCardAsync(boardId, card.Id)).Value.Should().BeEquivalentTo(card);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MoveCard_NonMemberOrViewer_CannotCreateProposal(bool viewer)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, colId) = await SetupBoardAsync(scope);
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var caller = new User($"mover-reader-{Guid.NewGuid():N}", $"mover-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unit.Users.AddAsync(caller);
+        if (viewer)
+            await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Viewer, owner.Id));
+        await unit.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Private card", null, null, null))).Value;
+        var target = (await scope.ServiceProvider.GetRequiredService<ColumnService>()
+            .CreateColumnAsync(new CreateColumnDto(boardId, "Target", null, null))).Value;
+        var tools = CreateWriteTools(scope, caller.Id);
+        var json = await tools.MoveCard(boardId.ToString(), card.Id.ToString(), target.Id.ToString());
+        (await unit.AutomationProposals.GetByBoardIdAsync(boardId)).Should().BeEmpty("board write access is required before any proposal is persisted");
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        document.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse();
+        (await unit.Cards.GetByIdAsync(card.Id))!.ColumnId.Should().Be(colId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ArchiveCard_NonMemberOrViewer_CannotCreateProposal(bool viewer)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, colId) = await SetupBoardAsync(scope);
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var caller = new User($"archiver-reader-{Guid.NewGuid():N}", $"archiver-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unit.Users.AddAsync(caller);
+        if (viewer)
+            await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Viewer, owner.Id));
+        await unit.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Private card", null, null, null))).Value;
+        var tools = CreateWriteTools(scope, caller.Id);
+        var json = await tools.ArchiveCard(boardId.ToString(), card.Id.ToString());
+        (await unit.AutomationProposals.GetByBoardIdAsync(boardId)).Should().BeEmpty("board write access is required before any proposal is persisted");
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        document.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse();
+        (await unit.Cards.GetByIdAsync(card.Id))!.IsArchived.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UpdateCard_TitleOnly_NonMemberOrViewer_CannotCreateProposal(bool viewer)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, colId) = await SetupBoardAsync(scope);
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var caller = new User($"updater-reader-{Guid.NewGuid():N}", $"updater-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unit.Users.AddAsync(caller);
+        if (viewer)
+            await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Viewer, owner.Id));
+        await unit.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Private card", null, null, null))).Value;
+        var tools = CreateWriteTools(scope, caller.Id);
+        var json = await tools.UpdateCard(boardId.ToString(), card.Id.ToString(), title: "Hijacked");
+        (await unit.AutomationProposals.GetByBoardIdAsync(boardId)).Should().BeEmpty("board write access is required before any proposal is persisted");
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        document.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse();
+        (await unit.Cards.GetByIdAsync(card.Id))!.Title.Should().Be("Private card");
     }
 
     [Fact]

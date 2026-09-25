@@ -1085,16 +1085,25 @@ Per-request token usage tracking for quota and cost visibility.
 
 `Status`/`ExpiresAt` back the quota-reservation flow: a `Reserved` row holds one request slot
 and an estimated token count, and only counts toward quota while `ExpiresAt > now`, so a crashed
-process's stale reservation is ignored and swept on the next attempt. `Commit` overwrites the
-estimate with actual counts and clears `ExpiresAt`.
+process's stale reservation is ignored and swept on the next attempt. `Commit` stores the
+caller's settlement count (authoritative provider usage when available, otherwise an estimate)
+and clears `ExpiresAt`.
 
-**Not atomic.** Reserving is a check-then-insert, and concurrent reservations can over-admit past
-the quota: the race was proven not closeable in-process (it survives even a global full-span lock,
-because of cold-start WAL `-shm` read-visibility), so the redesign is deferred to `#1435` and the
-four guarantee tests in `backend/tests/Taskdeck.Api.Tests/LlmQuotaReservationConcurrencyTests.cs`
-are `Skip`-marked pending it. Treat these columns as a best-effort budget signal, not an enforced
-ceiling. What `#1427` *did* close is settlement, not admission: a client that aborts mid-stream can
-no longer discard its own billed usage record.
+**Atomic admission in the tested SQLite configuration.** SQLite reservations use one conditional
+`INSERT ... SELECT` statement whose limit subqueries run under the SQLite writer lock, so concurrent
+same-process connections against one initialized database admit at most one request at a single-slot
+boundary. The four boundary tests in
+`backend/tests/Taskdeck.Api.Tests/LlmQuotaReservationConcurrencyTests.cs` now execute, and the
+independent fresh-file tests verify the same behavior after setup connections close. The
+[cold-start evidence note](../analysis/2026-09-20-quota-cold-start-evidence.md) records why the
+fixture initializes one host before the race: competing first accesses to `WebApplicationFactory`
+can otherwise create separate test databases, which is a test-harness artifact rather than a
+production startup fix.
+
+This evidence is limited to same-process, independent-connection SQLite tests; it is not a
+cross-process stress qualification or a universal guarantee for other providers/configurations.
+What `#1427` *did* close is settlement: a client that aborts mid-stream can no longer discard its
+own billed usage record.
 
 ### CommandRun
 

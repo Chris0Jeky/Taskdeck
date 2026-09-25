@@ -68,7 +68,8 @@ public sealed class McpAuthenticationRateLimitingMiddleware
         }
         finally
         {
-            // Spend exactly one permit only when authentication failed. ApiKeyMiddleware is the
+            // Spend exactly one permit only when authentication failed (or an unauthenticated request
+            // aborted before its outcome was known; see below). ApiKeyMiddleware is the
             // sole source of 401 on /mcp (a valid key sets an authenticated principal and the
             // pipeline then returns non-401), so a 401 unambiguously marks a failed attempt.
             // Successful requests leave the failure budget untouched — the per-key limiter is the
@@ -82,8 +83,20 @@ public sealed class McpAuthenticationRateLimitingMiddleware
             // lookup count). ApiKeyMiddleware sets AuthenticationFailedItemKey BEFORE writing the
             // response, so the failed attempt is visible here regardless of how far the aborted
             // write got; the 401 status check is kept as a defensive secondary signal.
+            //
+            // An abort before the auth outcome is known is charged too: ApiKeyMiddleware runs the
+            // key lookup with the request abort token and only marks failure afterwards, so a
+            // client that disconnects mid-lookup unwinds with no failed-item key and no 401.
+            // An aborted-but-unauthenticated request therefore counts as a failed attempt, while
+            // an authenticated request that aborts is never charged. A key already confirmed valid
+            // (ApiKeyIdItemKey is set before the per-key limiter, before User is assigned) is never
+            // charged either, so a valid key that disconnects on its per-key 429 cannot drain the
+            // shared address budget (review of #3460).
             if (context.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey)
-                || context.Response.StatusCode == StatusCodes.Status401Unauthorized)
+                || context.Response.StatusCode == StatusCodes.Status401Unauthorized
+                || (context.RequestAborted.IsCancellationRequested
+                    && context.User?.Identity?.IsAuthenticated != true
+                    && !context.Items.ContainsKey(ApiKeyMiddleware.ApiKeyIdItemKey)))
             {
                 limiter.RecordFailedAttempt(context);
             }

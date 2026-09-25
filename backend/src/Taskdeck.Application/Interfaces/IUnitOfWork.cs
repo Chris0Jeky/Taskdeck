@@ -1,3 +1,5 @@
+using System.Data;
+
 namespace Taskdeck.Application.Interfaces;
 
 public interface IUnitOfWork
@@ -58,6 +60,17 @@ public interface IUnitOfWork
     Task BeginReadTransactionAsync(CancellationToken cancellationToken = default);
 
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Begins a transaction at an explicit isolation level. The default implementation keeps
+    /// lightweight test doubles source-compatible; the production unit of work overrides it so
+    /// authorization reads that guard a write can share a serializable snapshot.
+    /// </summary>
+    Task BeginTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken = default)
+        => BeginTransactionAsync(cancellationToken);
+
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
 }

@@ -6,7 +6,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
     private readonly Dictionary<Guid, Dictionary<string, ConnectionPresence>> _connectionsByBoard = new();
     private readonly Dictionary<string, Guid> _boardByConnection = new();
 
-    public BoardPresenceSnapshot Join(
+    public BoardPresenceJoinResult Join(
         Guid boardId,
         string connectionId,
         Guid userId,
@@ -14,13 +14,25 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
     {
         lock (_gate)
         {
+            BoardPresenceSnapshot? previousSnapshot = null;
             if (_boardByConnection.TryGetValue(connectionId, out var previousBoardId) && previousBoardId != boardId)
             {
                 if (_connectionsByBoard.TryGetValue(previousBoardId, out var previousBoardConnections))
                 {
                     previousBoardConnections.Remove(connectionId);
                     if (previousBoardConnections.Count == 0)
+                    {
                         _connectionsByBoard.Remove(previousBoardId);
+                        previousSnapshot = EmptySnapshot(previousBoardId);
+                    }
+                    else
+                    {
+                        previousSnapshot = CreateSnapshot(previousBoardId, previousBoardConnections);
+                    }
+                }
+                else
+                {
+                    previousSnapshot = EmptySnapshot(previousBoardId);
                 }
             }
 
@@ -33,7 +45,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
             boardConnections[connectionId] = new ConnectionPresence(userId, displayName, EditingCardId: null);
             _boardByConnection[connectionId] = boardId;
 
-            return CreateSnapshot(boardId, boardConnections);
+            return new BoardPresenceJoinResult(CreateSnapshot(boardId, boardConnections), previousSnapshot);
         }
     }
 
@@ -43,7 +55,7 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
         {
             if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
             {
-                return new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow);
+                return EmptySnapshot(boardId);
             }
 
             if (boardConnections.Remove(connectionId))
@@ -52,12 +64,49 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
             if (boardConnections.Count == 0)
             {
                 _connectionsByBoard.Remove(boardId);
-                return new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow);
+                return EmptySnapshot(boardId);
             }
 
             return CreateSnapshot(boardId, boardConnections);
         }
     }
+
+    public BoardPresenceEviction EvictUser(Guid boardId, Guid userId)
+    {
+        lock (_gate)
+        {
+            if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
+            {
+                return new BoardPresenceEviction(
+                    EmptySnapshot(boardId),
+                    []);
+            }
+
+            var evicted = boardConnections
+                .Where(pair => pair.Value.UserId == userId)
+                .Select(pair => pair.Key)
+                .ToList();
+
+            foreach (var connectionId in evicted)
+            {
+                boardConnections.Remove(connectionId);
+                _boardByConnection.Remove(connectionId);
+            }
+
+            if (boardConnections.Count == 0)
+            {
+                _connectionsByBoard.Remove(boardId);
+                return new BoardPresenceEviction(
+                    EmptySnapshot(boardId),
+                    evicted);
+            }
+
+            return new BoardPresenceEviction(CreateSnapshot(boardId, boardConnections), evicted);
+        }
+    }
+
+    private static BoardPresenceSnapshot EmptySnapshot(Guid boardId) =>
+        new(boardId, [], DateTimeOffset.UtcNow);
 
     public BoardPresenceSnapshot? LeaveConnection(string connectionId)
     {

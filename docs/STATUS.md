@@ -1,6 +1,151 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-20
+Last Updated: 2026-09-25
+
+## Disconnected board revocation recovery (#3511)
+
+A current board rejoin refused with `Forbidden`, or a current background board read returning 403,
+now retires the board subscription and uses the existing access-removed notice and route exit.
+Board, request-generation, and credential-generation checks reject stale results from another
+board or session; transient failures keep polling. This removes the retry and navigation burden of
+a cached board the user can no longer read, without changing capture or review-first write gates.
+Focused client tests cover rejoin, fallback, stale results, and transient recovery. A live
+server-driven disconnected revocation was not exercised locally.
+
+## Board access revocation exits the active board (#3455)
+
+The board realtime client now handles the server's `accessRevoked` event for its confirmed,
+currently requested board. It retires pending refresh and fallback polling, shows a persistent
+translated notice, hides cached board content, and replaces the revoked board route with the boards
+list even when an editor had blocked ordinary navigation. Events for another
+board, an old subscription during a switch, or an unmounted view do not redirect. Focused
+composable and route-view tests cover the event, cleanup, notice, and navigation; a live
+server-driven revocation was not exercised locally.
+
+## Proposal decisions populate insight cohorts (#3415)
+
+Single approve, single reject and batch approve now stage one content-free
+`ProposalOutcome` per successful decision before the decision's existing save.
+New decisions therefore reach the cohort and bucketed metrics endpoints; older
+decisions are not backfilled. An approved revision is counted as edited only
+when its effective operations differ from the original reviewed operations.
+The comparison ignores operation IDs and idempotency keys, treats action and
+target names case-insensitively, compares target GUIDs by value and compares
+JSON parameters by value. `FieldCount` and `EditedFieldCount` count five comparable
+operation contract fields per sequence: action, target type, target ID,
+parameters and expected version. They do not count nested parameter keys.
+The existing single-decision notification remains a separate post-save write;
+batch notifications remain inside the batch transaction.
+
+SQLite API regressions cover single and batch outcome rows, edited and
+identity-only revisions, rejected and failed-batch non-writes, and cohort
+read-back. These writes do not change approval or Apply authorization, and
+Apply remains a separate explicit action.
+
+## Swarm wave-2B correctness fixes ship (PRs #3372-#3374, #3384)
+
+Four review-swarm fixes merged without behavior changes to the review flow itself. Board
+detail and board list now agree on the CanWrite stamp when no authorization service is
+composed (CLI/unauthenticated composition means no enforcement, so the caller can write).
+The contact-card YAML front matter parser caps nesting depth and input size, enforces
+strict ISO dates, validates field lengths, and canaries delimiter corruption on
+serialize. Deferred realtime flushes attempt every staged event instead of dropping the
+batch tail on a mid-batch failure (a lone failure rethrows as-is; multiple failures
+surface as AggregateException). The MCP API-key prefix check is an exact ordinal match.
+Each fix carries targeted regression tests; open swarm follow-ups are PRs #3375, #3383,
+#3385 and issues #3377-#3382.
+
+## Board-access reads retain session and mutation ownership (#3328)
+
+Board-access reads now retain per-board ownership, so an older response cannot overwrite a
+newer read or a confirmed grant, update or revoke. Independent boards remain concurrent and
+operation tokens keep loading visible until their current work settles. Account replacement
+retires pending publication and clears cached permissions. Same-user token rotation retains
+settled caches, restarts active explicit refreshes and unresolved first reads, and reconciles
+successful old-token mutations with an authoritative read under the replacement credential.
+Mutation transport is never replayed. This avoids manual permission refresh and stale access
+presentation while retaining server authorization and the existing review-first board flow.
+
+Real-Pinia store tests cover session, token, read and mutation races; the source evidence note
+is [board-access ownership](analysis/2026-09-21-permission-read-ownership.md). Human decisions in
+OUTSTANDING_TASKS.md remain open.
+
+## Board-access mutations preserve same-row intent order (#3333)
+
+Updates and revokes for one board-access entry now run in submission order. A queued operation
+waits through a predecessor failure, holds its loading ownership while waiting, and checks the
+initiating session again before transport. A new session's same-entry intent also waits for an
+older in-flight write to settle. Other entries remain concurrent. A queued update after
+a successful revoke cannot restore the removed row from an older response; a failed update reports
+its own error. Starting a queued operation does not erase an unrelated entry's error receipt.
+
+This protects access changes during rapid board maintenance while keeping server authorization
+and review-first board actions intact. Ordering is local to one client; the API has no revision
+precondition for cross-device conflicts. Deferred Pinia tests cover the mutation schedules and
+token rotation; [the evidence note](analysis/2026-09-21-permission-mutation-order.md) records
+the contract and qualification limits.
+
+## Column writes follow their board visit (#3314)
+
+Create, update, delete and reorder share one mutation lane per board, preserving intent order
+without blocking unrelated boards. BoardView now binds an explicit visit before loading and
+replaces it when route parameters change; unmount retires only that component's visit. Cached
+detail and Paper/Legacy layout changes do not define a new visit. Queued writes from a retired
+visit stop before transport, and late success/failure cannot patch or notify another screen.
+Logout also retires the mutation session, so an old account's response cannot reconcile a new
+login's board. An already-started successful write can refresh an actively reopened same-board
+visit once, with the column list and delete cascade guarded together. A later queued write waits
+for that recovery and keeps its later result.
+
+This reduces navigation-induced board maintenance while preserving existing review-first
+proposal behavior. It does not cancel a write already accepted by the server. Shared ownership
+for card, comment, label and board mutations remains tracked in #3306; shared loading arbitration
+remains tracked in #3305. Deferred-response store tests and BoardView lifecycle tests cover the
+route/session boundary, and the existing three ordering assertions now compare actual reactive
+array identities as well as full contents.
+
+## Assignment saves retain navigation ownership after a lane disappears (#3311)
+
+Legacy board navigation tracks submitted assignment PUTs with individual operation tokens in
+BoardCanvas. Removing a card field or column lane no longer clears an unanswered save or strands
+the route guard: the request's settlement releases its own token, and overlapping saves remain
+aggregated until the last one settles. Board replacement and canvas unmount retire the registry
+generation, so stale releases cannot clear a newer owner's guard. Existing logout clears board
+state and unmounts that canvas. Paper's local editor behavior and assignment transport timeout
+remain unchanged. Registry, field, canvas and Legacy navigation tests cover these boundaries;
+the independent column visit token does not reset or take over assignment-save ownership.
+
+## Session establishment follows the latest identity intent (#3324)
+
+Login, registration, OAuth/OIDC exchange, refresh and restore now own their asynchronous
+settlement. A newer identity operation, demo entry, logout or explicit session clear retires
+older operations before credential transport and after cache-purge or response awaits.
+Retired work cannot restore credentials, replace profile defaults, reset display-name caches,
+or overwrite current loading, error and toast state, including after a same-token login.
+Auth views and the session-expiry warning recognize supersession without suggesting a retry
+of an already completed registration or consumed exchange code. This is local intent
+ownership; it does not undo server requests, revoke tokens, or synchronize browser tabs.
+Deferred store and caller regressions are in `sessionStoreOwnership.spec.ts`, `LoginView.spec.ts`
+and `useSessionTimeout.spec.ts`; existing cache-boundary recovery messages remain covered.
+
+## MCP proposals require board write access (#3275, #3286)
+
+Move, archive and plain-field card-update tools check the authenticated caller's board write
+access before creating a proposal. Missing boards, inaccessible boards and explicit forbidden
+results share the same tool-specific denial; unexpected failures retain sanitized errors.
+Allowed calls retain their actor attribution and the separate review/approve/execute gates.
+The change prevents unauthorized proposal creation and probing, not a previously possible
+unauthorized board mutation. Paired visibility and error-safety tests cover that distinction.
+
+## Quota concurrency tests share one physical database (#1435)
+
+The restored request/token boundary tests capture one application service provider before
+concurrent reservation scopes start. The former cold-start diagnostic could instead create
+separate application hosts and SQLite files; it did not establish the reported single-database
+WAL failure. Fresh-file tests use real migrations and independent connections to one database,
+with setup connections closed before contention. Production reservation SQL, startup and schema
+are unchanged. This is same-process SQLite coverage, not cross-process qualification; see the
+[quota evidence note](analysis/2026-09-20-quota-cold-start-evidence.md).
 
 GitHub Pages (`https://chris0jeky.github.io/Taskdeck/`) now runs as a static demo: empty `VITE_API_BASE_URL` plus `VITE_DEMO_MODE=true`, runtime Pages+loopback detection, and an axios demo adapter so review, chat, and card parent/assignee reads never call `localhost:5000`. Home and Review share the same one pending demo proposal. Local Vite with `.env` still uses the real local API. This is not a hosted backend; that remains later work. Detection: `frontend/taskdeck-web/src/utils/apiBaseUrl.ts`. Operator notes: `docs/product/DEMO_PLAYBOOK.md`.
 
@@ -460,6 +605,12 @@ Contextual companion continuation (#2808, delivered):
 Private memory source continuation (#2808, delivered):
 - New private answers preserve original question evidence and answer text as native Context Fabric source assets, with immutable supersession on correction. The source and memory write share a transaction; a stale question or competing correction rolls both back. Existing saved history is admitted on the next explicit memory write.
 - The private originals viewer and version-2 memory download expose the retained text and source links across all experiences. Both account export formats include native originals even after board deletion; account erasure removes them. Archiving excludes active context without erasing sources. Audio, source representations, explicit SourceAsset selection and bulk historical admission remain open.
+
+Context Fabric byte-store bridge (#2276, current implementation):
+- New source artefacts hold an owner-scoped `IBlobStore` reference. Repeated uploads of the same bytes by one owner share one stored object; another owner receives a separate object. Downloads and both account-export paths resolve the reference; single deletion releases it in the metadata/audit transaction, while account erasure removes owner bytes. Existing `ArtefactBlob` rows remain readable and deletable through the legacy path after the nullable-reference migration.
+- `POST /api/v2/artefacts` accepts a raw file body with an exact positive `Content-Length`, its media type in `Content-Type`, and `fileName` plus optional `boardId`/`createdFromCaptureId` query parameters. It validates metadata and reserves user and modality quota in a short SQLite transaction before reading any body bytes. It stages the bounded body in a private temporary file outside SQLite, checks content signatures and UTF-8 text incrementally, and finalizes the blob, reference, and artefact in a second transaction. Failed or mismatched streams release the reservation and delete the staging file; stale reservations expire after five minutes. The route caps a stalled upload at two minutes. The original `POST /api/artefacts` remains buffered multipart for existing clients, including file-first and length-omitting forms. #2276 remains open for full legacy-byte migration. The migration refuses a downgrade while any new artefact holds a blob reference, since the old schema cannot read those bytes.
+- Buffered account export now checks a conservative combined 25 MiB estimate for source storage and retained artefact representations before loading large artefact content. Both legacy and owner-scoped 7 MiB artefacts return 413 from the buffered route while the streaming route still exports the original bytes (#3366).
+- Chunked blob reads hold one owner-scoped SQLite read snapshot for the stream lifetime (#3367). A concurrent release of the final reference cannot make an already-open download end short; the reader and any connection opened by the store close when the stream is disposed.
 
 Transcript prompt identity (#2211, current implementation):
 
@@ -1524,7 +1675,7 @@ Direction guardrails (explicit):
   - `StarterPackManifestValidator` decomposed into `StarterPackSchemaValidator`, `StarterPackSemanticValidator`, `StarterPackConflictDetector`, `StarterPackIdempotencyChecker`
   - `AbuseDetectionService` with `AbuseActor`/`AbuseEvent` domain entities and a 4-state containment model (Observe → Suspicious → Restricted → Blocked); operator kill-switch API groundwork for SEC-18
   - agent tool registry substrate (AGT-02): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces with `ToolScope`/`ToolRiskLevel` classification, `PolicyDecision` value object, `AgentPolicyEvaluator` (allowlist + risk-level gating, review-first default), `InboxTriageAssistant` bounded template (proposal-only, never direct board mutation), singleton registry with scoped evaluation
-  - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; **`OpenAI` is the supported live provider per ADR-0055**, with `OpenAICompatible`/`Ollama` selectors still present in `LlmProviderSettings` behind explicit gates and config-validation fallback; a retired `Gemini` selector or any `Llm:Gemini` section **fails startup with migration guidance** instead of falling back - `#1879`); `ToolCallingChatOrchestrator` wraps `ChatService` for board-scoped sessions with multi-turn tool-calling loop (11 tools: 5 read + 6 write, max 5 rounds, 60s timeout, Mock pattern-based dispatch); write tools produce proposals via `propose_*` prefix (GP-06 compliant); `ChatService` reuses orchestrator text when no tools called to avoid double LLM invocation; streaming responses now persist assistant `ChatMessage` records with token usage and record quota via `ILlmQuotaService` (`#763`/`#768`); multi-turn replay preserves original tool arguments in provider-specific wire format (`#673`/`#770`); **conversational refinement loop** (`#576`/`#791`): `ClarificationDetector` with strong/weak signal pattern split detects ambiguous requests and asks clarifying questions (max 2 rounds, then best-effort); skip-phrase detection supports "just do your best"; Mock provider simulates clarification for deterministic testing
+  - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; **`OpenAI` is the supported live provider per ADR-0055**, with `OpenAICompatible`/`Ollama` selectors still present in `LlmProviderSettings` behind explicit gates and config-validation fallback; a retired `Gemini` selector or any `Llm:Gemini` section **fails startup with migration guidance** instead of falling back - `#1879`); `ToolCallingChatOrchestrator` wraps `ChatService` for board-scoped sessions with multi-turn tool-calling loop (11 tools: 5 read + 6 write, max 5 rounds, 60s timeout, Mock pattern-based dispatch); write tools produce proposals via `propose_*` prefix (GP-06 compliant); `ChatService` reuses orchestrator text when no tools called to avoid double LLM invocation; streaming responses now persist assistant `ChatMessage` records with token usage and record quota via `ILlmQuotaService` (`#763`/`#768`); multi-turn replay preserves original tool arguments in provider-specific wire format (`#673`/`#770`); **conversational refinement loop** (`#576`/`#791`): `ClarificationDetector` with strong/weak signal pattern split detects ambiguous requests and asks clarifying questions (max 2 rounds, then best-effort); skip-phrase detection supports "just do your best"; Mock provider simulates clarification for deterministic testing; `LlmToolCalling:MaxHistoryMessages` (default `50`, validated range 1-1000) bounds how many of the latest session messages reach LLM completion calls — a message count, not a token/byte bound, leaving stored history unchanged (`#3470`)
   - `DataExportService` (versioned JSON export of all user-scoped data, including Transcript metadata/text/segments; streaming export via new `GET /api/account/export/stream` endpoint using `Utf8JsonWriter` for memory-constant large-dataset exports — `#670`/`#774`; exception logging via `ILogger` with `OperationCanceledException` filter, `#759`/`#766`) + `AccountDeletionService` (password re-auth, confirmation phrase, Transcript deletion, PII anonymization, sole-owner guard, transactional rollback with `CancellationToken.None` for rollback reliability) + `DataPortabilityController` with audit logging
   - `BoardMetricsService` (throughput, cycle time, WIP, blocked — audit-log-based completion tracking, done column name heuristic, SQL-level filtering via dedicated repository methods) + `MetricsController` with date/board/label filters + `MetricsExportService` for schema-versioned CSV export with CSV injection protection (`#78`/`#787`)
   - `ForecastingService` (heuristic completion forecasting using rolling-average throughput from audit log card-move events, standard-deviation confidence bands, cycle time tracking) + `ForecastController` with `GET /api/forecast/board/{boardId}` endpoint (`#79`/`#790`)
@@ -1540,7 +1691,7 @@ Direction guardrails (explicit):
   - security logging redaction baseline for capture/auth-sensitive flows: sanitized exception summaries in middleware/workers/providers, generic invalid-source errors, redacted persisted queue/webhook failure messages, and disabled automatic ASP.NET Core trace exception recording
 - Auth posture today:
   - JWT middleware is wired
-  - `ActiveUserValidationMiddleware` checks user active status on every authenticated request (30-second in-memory cache, invalidated on deletion/deactivation); tokens issued before account deletion/deactivation are rejected even if JWT is unexpired
+  - `TokenValidationMiddleware` checks user active status plus token `iat` against `TokenInvalidatedAt` on every authenticated request (no cache delay); tokens issued before account deletion/deactivation are rejected even if JWT is unexpired. (The never-wired `ActiveUserValidationMiddleware`/active-user cache were removed as dead code; see the removal PR.)
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, notifications, automation-proposals, archive, ops-cli, and logs controllers
   - GitHub OAuth login (`CLD-03`): environment-gated OAuth middleware activates only when `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` are configured; `ExternalLogin` entity links GitHub accounts to users without auto-linking by email (prevents account takeover); OAuth callback uses short-lived single-use authorization codes (now DB-backed with atomic consumption, replacing in-memory `ConcurrentDictionary`); PKCE enabled via `UsePkce = true`; account linking endpoints allow existing users to link/unlink GitHub identity from settings; frontend LoginView conditionally shows "Sign in with GitHub" button based on `/api/auth/providers` response; `OAuthScopeValidator` validates required vs expected scopes with case-sensitive comparison and configurable policy (`RequiredScopes`, `ExpectedScopes` on `GitHubOAuthSettings`); full test coverage in Domain, Application, and frontend layers
   - OIDC/SSO integration (`SEC-07`): config-gated pluggable OIDC provider support (Microsoft Entra ID, Google, generic OIDC) via `IOidcProviderFactory`; OIDC login/callback/exchange with open-redirect protection; cross-provider identity isolation (`provider + providerUserId` unique key); no auto-linking by email; disabled by default
@@ -1817,7 +1968,7 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 
 Mutation testing workflow: `.github/workflows/mutation-testing.yml`
 
-- Weekly schedule (Sunday 04:00 UTC) + manual dispatch
+- Manual dispatch only (`workflow_dispatch`)
 - Backend Stryker.NET (Domain) + Frontend Stryker JS (captureStore/boardStore)
 - Non-blocking; HTML/JSON reports uploaded as 30-day artifacts
 

@@ -15,7 +15,7 @@ namespace Taskdeck.Infrastructure.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.31");
 
             modelBuilder.Entity("Taskdeck.Domain.Agents.McpToolHash", b =>
                 {
@@ -2631,6 +2631,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("BlobReferenceId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("BoardId")
                         .HasColumnType("TEXT");
 
@@ -2843,6 +2846,42 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasIndex("OwnerUserId", "Modality");
 
                     b.ToTable("StoredBlobReferences");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.StoredBlobReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ByteSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Modality")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReferrerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReferrerKind")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("OwnerUserId", "ExpiresAtUtc");
+
+                    b.HasIndex("OwnerUserId", "Modality", "ExpiresAtUtc");
+
+                    b.ToTable("StoredBlobReservations", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ThinkingAudioAnswer", b =>
@@ -3893,6 +3932,15 @@ namespace Taskdeck.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("BlobId", "OwnerUserId")
                         .HasPrincipalKey("Id", "OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.StoredBlobReservation", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

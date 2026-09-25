@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import LoginView from '../../views/LoginView.vue'
+import { SessionOperationSupersededError } from '../../utils/sessionOperation'
 
 // Hoist route/router mocks so they're available to vi.mock factories
 const routerMocks = vi.hoisted(() => ({
@@ -66,6 +67,17 @@ async function waitForUi() {
 }
 
 describe('LoginView', () => {
+  it('does not turn a superseded OAuth callback into a retry message or navigation', async () => {
+    routeMock.query = { oauth_code: 'retired-code' }
+    sessionMock.exchangeOAuthCode.mockRejectedValueOnce(new SessionOperationSupersededError(true))
+    const wrapper = mount(LoginView)
+    await waitForUi()
+    await waitForUi()
+    expect(sessionMock.exchangeOAuthCode).toHaveBeenCalledWith('retired-code')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(routerMocks.push).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     routeMock.query = {}

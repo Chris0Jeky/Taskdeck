@@ -20,9 +20,11 @@ import { logWarn } from '../utils/errorReporting'
  * current visual-viewport geometry; lifecycle and scroll reads stay frozen.
  * Returning to scale 1 resumes trusted geometry.
  *
- * Two custom properties are emitted, namespaced by `prefix`:
+ * Four custom properties are emitted, namespaced by `prefix`:
  *   `${prefix}-visual-viewport-height`
  *   `${prefix}-visual-viewport-offset-top`
+ *   `${prefix}-visual-viewport-width`
+ *   `${prefix}-visual-viewport-offset-left`
  *
  * Fallback behaviour when `window.visualViewport` is unavailable is explicit
  * because the two current call sites need different things:
@@ -51,6 +53,10 @@ export interface UseVisualViewportResult {
   height: Ref<number>
   /** Current visual viewport top offset in CSS pixels (0 before trusted geometry exists). */
   offsetTop: Ref<number>
+  /** Current visual viewport width in CSS pixels. */
+  width: Ref<number>
+  /** Current visual viewport left offset in CSS pixels. */
+  offsetLeft: Ref<number>
   /** Bind to an element's `:style`. Empty object under the `'unset'` fallback. */
   style: ComputedRef<Record<string, string>>
   /** Re-read the viewport. Exposed for tests and for imperative refreshes. */
@@ -67,13 +73,15 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
   const supported = ref(false)
   const height = ref(0)
   const offsetTop = ref(0)
+  const width = ref(0)
+  const offsetLeft = ref(0)
 
   let observed: VisualViewport | null = null
   let observingLayoutViewport = false
   let observedResizeHandler: EventListener | null = null
   let observedScrollHandler: EventListener | null = null
   let layoutResizeHandler: EventListener | null = null
-  let lastTrustedGeometry: { height: number; offsetTop: number } | null = null
+  let lastTrustedGeometry: { height: number; offsetTop: number; width: number; offsetLeft: number } | null = null
   let lastObservedScale: number | null = null
 
   type RefreshSource = 'initial' | 'lifecycle' | 'resize' | 'scroll' | 'manual'
@@ -91,9 +99,15 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
       supported.value = false
       height.value = window.innerHeight
       offsetTop.value = 0
+      width.value = window.innerWidth
+      offsetLeft.value = 0
       return
     }
 
+    const visualWidth = Number.isFinite(visualViewport.width) && visualViewport.width > 0
+      ? visualViewport.width : window.innerWidth
+    const visualOffsetLeft = Number.isFinite(visualViewport.offsetLeft)
+      ? visualViewport.offsetLeft : 0
     const scale = visualViewport.scale ?? 1
     const scaleChanged = lastObservedScale !== scale
     lastObservedScale = scale
@@ -101,10 +115,14 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
       lastTrustedGeometry = {
         height: visualViewport.height,
         offsetTop: visualViewport.offsetTop,
+        width: visualWidth,
+        offsetLeft: visualOffsetLeft,
       }
       supported.value = true
       height.value = lastTrustedGeometry.height
       offsetTop.value = lastTrustedGeometry.offsetTop
+      width.value = lastTrustedGeometry.width
+      offsetLeft.value = lastTrustedGeometry.offsetLeft
       return
     }
 
@@ -113,12 +131,16 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
         supported.value = true
         height.value = lastTrustedGeometry.height
         offsetTop.value = lastTrustedGeometry.offsetTop
+        width.value = lastTrustedGeometry.width
+        offsetLeft.value = lastTrustedGeometry.offsetLeft
         return
       }
 
       supported.value = false
       height.value = window.innerHeight
       offsetTop.value = 0
+      width.value = window.innerWidth
+      offsetLeft.value = 0
       return
     }
 
@@ -126,6 +148,8 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
       supported.value = true
       height.value = visualViewport.height
       offsetTop.value = visualViewport.offsetTop
+      width.value = visualWidth
+      offsetLeft.value = visualOffsetLeft
       return
     }
 
@@ -133,12 +157,16 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
       supported.value = true
       height.value = lastTrustedGeometry.height
       offsetTop.value = lastTrustedGeometry.offsetTop
+      width.value = lastTrustedGeometry.width
+      offsetLeft.value = lastTrustedGeometry.offsetLeft
       return
     }
 
     supported.value = false
     height.value = window.innerHeight
     offsetTop.value = 0
+    width.value = window.innerWidth
+    offsetLeft.value = 0
   }
 
   // Read eagerly so the very first render is already bound to the visual
@@ -153,6 +181,8 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
     return {
       [`${prefix}-visual-viewport-height`]: `${height.value}px`,
       [`${prefix}-visual-viewport-offset-top`]: `${offsetTop.value}px`,
+      [`${prefix}-visual-viewport-width`]: `${width.value}px`,
+      [`${prefix}-visual-viewport-offset-left`]: `${offsetLeft.value}px`,
     }
   })
 
@@ -188,5 +218,5 @@ export function useVisualViewport(options: UseVisualViewportOptions): UseVisualV
     layoutResizeHandler = null
   })
 
-  return { supported, height, offsetTop, style, refresh }
+  return { supported, height, offsetTop, width, offsetLeft, style, refresh }
 }

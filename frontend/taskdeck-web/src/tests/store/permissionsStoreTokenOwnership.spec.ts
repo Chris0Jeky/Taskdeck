@@ -1,0 +1,334 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { boardAccessApi } from '../../api/boardAccessApi'
+import { usePermissionsStore } from '../../store/permissionsStore'
+import { useSessionStore } from '../../store/sessionStore'
+import type { BoardAccess } from '../../types/access'
+
+const toastMocks = vi.hoisted(() => ({
+  error: vi.fn(),
+  success: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+}))
+
+vi.mock('../../api/boardAccessApi', () => ({
+  boardAccessApi: {
+    getAccess: vi.fn(),
+    grantAccess: vi.fn(),
+    updateAccess: vi.fn(),
+    revokeAccess: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/authApi', () => ({
+  authApi: {
+    login: vi.fn(),
+    register: vi.fn(),
+    changePassword: vi.fn(),
+    refreshToken: vi.fn(),
+  },
+}))
+
+vi.mock('../../store/toastStore', () => ({
+  useToastStore: () => toastMocks,
+}))
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes
+    reject = no
+  })
+  return { promise, resolve, reject }
+}
+
+function token(suffix: string): string {
+  const body = btoa(JSON.stringify({ exp: 1893456000 }))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `header.${body}.${suffix}`
+}
+
+function access(id: string): BoardAccess {
+  return {
+    id,
+    boardId: 'board-1',
+    userId: 'viewer-1',
+    role: 'Viewer',
+    grantedBy: 'owner-1',
+    grantedAt: '2026-09-21T00:00:00Z',
+  }
+}
+
+describe('permissionsStore token ownership', () => {
+  let session: ReturnType<typeof useSessionStore>
+  let store: ReturnType<typeof usePermissionsStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    session = useSessionStore()
+    session.userId = 'owner-1'
+    session.token = token('old')
+    store = usePermissionsStore()
+    vi.clearAllMocks()
+  })
+
+  it('reconciles a started update after token rotation without sending its queued revoke', async () => {
+    const row = access('access-1')
+    const updated = { ...row, role: 'Editor' as const }
+    store.boardAccess.set('board-1', [row])
+    const write = deferred<BoardAccess>()
+    const read = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.updateAccess).mockReturnValueOnce(write.promise)
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(read.promise)
+
+    const first = store.updateAccess('board-1', row.id, { role: 'Editor' })
+    const queued = store.revokeAccess('board-1', row.id)
+    expect(boardAccessApi.revokeAccess).not.toHaveBeenCalled()
+    session.token = token('replacement')
+    write.resolve(updated)
+
+    await vi.waitFor(() => expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1'))
+    expect(store.loading).toBe(true)
+    read.resolve([updated])
+    await expect(first).resolves.toEqual(updated)
+    await expect(queued).resolves.toBeUndefined()
+    expect(boardAccessApi.revokeAccess).not.toHaveBeenCalled()
+    expect(store.boardAccess.get('board-1')).toEqual([updated])
+    expect(store.loading).toBe(false)
+  })
+
+  it('reconciles a started revoke after token rotation without sending its queued update', async () => {
+    const row = access('access-1')
+    store.boardAccess.set('board-1', [row])
+    const write = deferred<void>()
+    const read = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.revokeAccess).mockReturnValueOnce(write.promise)
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(read.promise)
+
+    const first = store.revokeAccess('board-1', row.id)
+    const queued = store.updateAccess('board-1', row.id, { role: 'Editor' })
+    expect(boardAccessApi.updateAccess).not.toHaveBeenCalled()
+    session.token = token('replacement')
+    write.resolve()
+
+    await vi.waitFor(() => expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1'))
+    expect(store.loading).toBe(true)
+    read.resolve([])
+    await expect(first).resolves.toBeUndefined()
+    await expect(queued).resolves.toBeUndefined()
+    expect(boardAccessApi.updateAccess).not.toHaveBeenCalled()
+    expect(store.boardAccess.get('board-1')).toEqual([])
+    expect(store.loading).toBe(false)
+  })
+
+  it('waits for an old-token update before starting a new same-entry update', async () => {
+    const row = access('access-1')
+    const oldResult = { ...row, role: 'Editor' as const }
+    const newResult = { ...row, role: 'Admin' as const }
+    store.boardAccess.set('board-1', [row])
+    const oldWrite = deferred<BoardAccess>()
+    const oldReconciliation = deferred<BoardAccess[]>()
+    const newWrite = deferred<BoardAccess>()
+    vi.mocked(boardAccessApi.updateAccess)
+      .mockReturnValueOnce(oldWrite.promise)
+      .mockReturnValueOnce(newWrite.promise)
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(oldReconciliation.promise)
+
+    const first = store.updateAccess('board-1', row.id, { role: 'Editor' })
+    session.token = token('replacement')
+    const second = store.updateAccess('board-1', row.id, { role: 'Admin' })
+    expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(1)
+
+    oldWrite.resolve(oldResult)
+    await vi.waitFor(() => expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1'))
+    expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(1)
+    oldReconciliation.resolve([oldResult])
+    await first
+    await vi.waitFor(() => expect(boardAccessApi.updateAccess).toHaveBeenCalledTimes(2))
+
+    newWrite.resolve(newResult)
+    await second
+    expect(store.boardAccess.get('board-1')).toEqual([newResult])
+    expect(store.loading).toBe(false)
+  })
+
+  it('preserves loaded access while invalidating an old read after same-user token rotation', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
+    const pending = deferred<BoardAccess[]>()
+    const freshRead = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.getAccess).mockReturnValueOnce(pending.promise).mockReturnValueOnce(freshRead.promise)
+    const request = store.fetchBoardAccess('board-1')
+
+    session.token = token('new')
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
+    expect(store.loading).toBe(true)
+    expect(store.error).toBeNull()
+
+    pending.resolve([access('old-token-read')])
+    await request
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
+    expect(store.loading).toBe(true)
+    expect(store.error).toBeNull()
+
+    freshRead.resolve([access('fresh-token-read')])
+    await vi.waitFor(() => {
+      expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-token-read'])
+      expect(store.loading).toBe(false)
+    })
+  })
+
+  it('preserves loaded access while suppressing an old-token mutation failure', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
+    const pending = deferred<BoardAccess>()
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pending.promise)
+    const request = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+
+    session.token = token('new')
+    pending.reject(new Error('old credential failure'))
+    await expect(request).rejects.toThrow('old credential failure')
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+    expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('reconciles a successful old-token grant after same-user token rotation', async () => {
+    const existing = access('existing')
+    const granted = access('fresh-grant')
+    store.boardAccess.set('board-1', [existing])
+    const pendingGrant = deferred<BoardAccess>()
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+    vi.mocked(boardAccessApi.getAccess).mockResolvedValue([existing, granted])
+
+    const request = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.token = token('new')
+    pendingGrant.resolve(granted)
+
+    await expect(request).resolves.toEqual(granted)
+    expect(boardAccessApi.getAccess).toHaveBeenCalledWith('board-1')
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['existing', 'fresh-grant'])
+  })
+
+  it('does not reconcile a stale mutation after logout and same-user re-login', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
+    const pendingGrant = deferred<BoardAccess>()
+    const granted = access('stale-grant')
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+
+    const request = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.clearSession()
+    session.token = token('new-login')
+    session.userId = 'owner-1'
+    pendingGrant.resolve(granted)
+
+    await expect(request).resolves.toEqual(granted)
+    expect(boardAccessApi.getAccess).not.toHaveBeenCalled()
+    expect(store.boardAccess.has('board-1')).toBe(false)
+    expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('supersedes an active replacement read after a stale mutation settles', async () => {
+    const oldRead = deferred<BoardAccess[]>()
+    const replacementRead = deferred<BoardAccess[]>()
+    const reconciledRead = deferred<BoardAccess[]>()
+    const pendingGrant = deferred<BoardAccess>()
+    const granted = access('fresh-grant')
+    vi.mocked(boardAccessApi.getAccess)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(replacementRead.promise)
+      .mockReturnValueOnce(reconciledRead.promise)
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+
+    const readRequest = store.fetchBoardAccess('board-1')
+    const mutationRequest = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.token = token('new')
+
+    expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(2)
+
+    pendingGrant.resolve(granted)
+    await vi.waitFor(() => {
+      expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(3)
+    })
+
+    reconciledRead.resolve([granted])
+    await expect(mutationRequest).resolves.toEqual(granted)
+
+    replacementRead.resolve([access('stale-replacement-read')])
+    oldRead.resolve([access('stale-old-read')])
+    await readRequest
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-grant'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+  })
+
+  it('retries an in-flight reconciliation read after another token rotation', async () => {
+    store.boardAccess.set('board-1', [access('existing')])
+    const pendingGrant = deferred<BoardAccess>()
+    const firstReconciliation = deferred<BoardAccess[]>()
+    const secondReconciliation = deferred<BoardAccess[]>()
+    const granted = access('fresh-grant')
+    vi.mocked(boardAccessApi.grantAccess).mockReturnValue(pendingGrant.promise)
+    vi.mocked(boardAccessApi.getAccess)
+      .mockReturnValueOnce(firstReconciliation.promise)
+      .mockReturnValueOnce(secondReconciliation.promise)
+
+    const mutationRequest = store.grantAccess('board-1', { userId: 'viewer-1', role: 'Viewer' })
+    session.token = token('new')
+    pendingGrant.resolve(granted)
+
+    await vi.waitFor(() => {
+      expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(1)
+    })
+
+    session.token = token('newer')
+    expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(2)
+
+    secondReconciliation.resolve([granted])
+    await vi.waitFor(() => {
+      expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-grant'])
+    })
+
+    firstReconciliation.resolve([access('stale-reconciliation')])
+    await expect(mutationRequest).resolves.toEqual(granted)
+
+    expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-grant'])
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
+  })
+
+  it('retries an unresolved board-access read after same-user token rotation', async () => {
+    const oldRead = deferred<BoardAccess[]>()
+    const freshRead = deferred<BoardAccess[]>()
+    vi.mocked(boardAccessApi.getAccess)
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(freshRead.promise)
+
+    const request = store.fetchBoardAccess('board-1')
+    session.token = token('new')
+
+    expect(boardAccessApi.getAccess).toHaveBeenCalledTimes(2)
+    expect(store.boardAccess.has('board-1')).toBe(false)
+    expect(store.loading).toBe(true)
+
+    oldRead.resolve([access('old-token-read')])
+    await request
+
+    expect(store.boardAccess.has('board-1')).toBe(false)
+    expect(store.loading).toBe(true)
+
+    freshRead.resolve([access('fresh-token-read')])
+    await vi.waitFor(() => {
+      expect(store.boardAccess.get('board-1')?.map(item => item.id)).toEqual(['fresh-token-read'])
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+    })
+  })
+})

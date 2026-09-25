@@ -76,11 +76,11 @@ public sealed class InboxTriageAssistant
             return Result.Failure<InboxTriageResultDto>(ErrorCodes.Forbidden, policyDecision.Reason);
         }
 
-        // Gather inbox context: recent pending items for this user
-        var pendingItems = (await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken))
-            .Where(r => r.Status == RequestStatus.Pending)
-            .OrderBy(r => r.CreatedAt)
-            .Take(MaxInboxItemsPerRun)
+        // Gather inbox context: oldest pending items for this user, bounded at the database.
+        // (The old code loaded the user's entire queue history, then filtered/sorted/capped
+        // the oldest 20 pending in memory.)
+        var pendingItems = (await _unitOfWork.LlmQueue.GetOldestPendingByUserAsync(
+                userId, MaxInboxItemsPerRun, cancellationToken))
             .ToList();
 
         if (pendingItems.Count == 0)

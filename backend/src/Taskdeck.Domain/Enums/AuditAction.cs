@@ -16,5 +16,6 @@ public enum AuditAction
     OwnershipTransferred = 8,
     DataExported = 9,
     AccountDeletionRequested = 10,
-    AccountAnonymized = 11
+    AccountAnonymized = 11,
+    DataImported = 12
 }

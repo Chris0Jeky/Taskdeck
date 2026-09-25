@@ -24,13 +24,7 @@ public class CardComment : Entity
         get => _content;
         private set
         {
-            if (string.IsNullOrWhiteSpace(value))
-                throw new DomainException(ErrorCodes.ValidationError, "Comment content cannot be empty");
-
-            if (value.Length > MaxContentLength)
-                throw new DomainException(
-                    ErrorCodes.ValidationError,
-                    $"Comment content cannot exceed {MaxContentLength} characters");
+            ValidateContent(value);
 
             _content = value;
         }
@@ -77,7 +71,8 @@ public class CardComment : Entity
         Content = content;
     }
 
-    public void UpdateContent(string content)
+    /// <summary>Validates an edit without changing content, mentions or timestamps.</summary>
+    public void ValidateContentUpdate(string content)
     {
         if (IsDeleted)
         {
@@ -86,7 +81,24 @@ public class CardComment : Entity
                 "Deleted comments cannot be edited");
         }
 
-        Content = content;
+        ValidateContent(content);
+    }
+
+    private static void ValidateContent(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            throw new DomainException(ErrorCodes.ValidationError, "Comment content cannot be empty");
+
+        if (content.Length > MaxContentLength)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"Comment content cannot exceed {MaxContentLength} characters");
+    }
+
+    public void UpdateContent(string content)
+    {
+        ValidateContentUpdate(content);
+        _content = content;
         EditedAt = DateTimeOffset.UtcNow;
         Touch();
     }

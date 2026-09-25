@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import PaperTagstamp from './PaperTagstamp.vue'
 import type { PaperTagstampTone } from './PaperTagstamp.vue'
 import { copyToastReceipt, useToastStore, type Toast, type ToastLabel } from '../../store/toastStore'
+import ToastReceiptOverflow from '../common/ToastReceiptOverflow.vue'
 
 /**
  * PaperToastContainer — bottom-right paper toast stack.  Mirrors
@@ -404,6 +405,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
         </div>
       </article>
     </TransitionGroup>
+    <ToastReceiptOverflow variant="paper" />
   </div>
 </template>
 

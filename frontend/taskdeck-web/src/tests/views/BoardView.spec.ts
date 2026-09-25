@@ -5,8 +5,10 @@ import BoardView from '../../views/BoardView.vue'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
 import { SHELL_KEYBOARD_HELP } from '../../composables/useShellKeyboardHelp'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
+import { useToastStore } from '../../store/toastStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
 import type { Card } from '../../types/board'
+import { removeToken } from '../../utils/tokenStorage'
 
 const demoModeFlag = vi.hoisted(() => ({ value: false }))
 
@@ -32,6 +34,7 @@ vi.mock('../../store/sessionStore', () => ({
 
 const routerMock = vi.hoisted(() => ({
   push: vi.fn(),
+  replace: vi.fn(),
 }))
 
 const routeMock = reactive({
@@ -63,13 +66,16 @@ const realtimeMock = {
   switchBoard: vi.fn(async () => {}),
   stop: vi.fn(async () => {}),
   setEditingCard: vi.fn(async () => {}),
+  notifyAccessRevoked: vi.fn((boardId: string) => capturedOnAccessRevoked?.(boardId)),
 }
 
 // Captures the onPresenceChanged callback passed by BoardView so tests can
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
+let capturedOnAccessRevoked: ((boardId: string) => void) | undefined
+let routeLeaveGuard: (() => boolean | Promise<boolean>) | undefined
 let capturedRealtimeFetchBoard:
-  | ((boardId: string, options: { intent: 'background' }) => Promise<void>)
+  | ((boardId: string, options: { intent: 'background'; afterActive?: boolean }) => Promise<boolean>)
   | undefined
 
 const mockBoardStore = reactive({
@@ -77,6 +83,7 @@ const mockBoardStore = reactive({
     id: 'board-1',
     name: 'Ops Board',
     description: 'Primary board',
+    canWrite: true,
     columns: [
       {
         id: 'column-1',
@@ -109,6 +116,8 @@ const mockBoardStore = reactive({
   totalCardCount: 0,
   fetchBoard: vi.fn(async () => true),
   cancelBackgroundBoardFetch: vi.fn(),
+  beginBoardViewVisit: vi.fn((boardId: string) => ({ boardId })),
+  endBoardViewVisit: vi.fn(),
   setBoardPresenceMembers: vi.fn(),
   setEditingCard: vi.fn(),
   createColumn: vi.fn(async () => {}),
@@ -119,7 +128,9 @@ const mockBoardStore = reactive({
 vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
   useRouter: () => routerMock,
-  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteLeave: vi.fn((guard: () => boolean | Promise<boolean>) => {
+    routeLeaveGuard = guard
+  }),
   onBeforeRouteUpdate: vi.fn(),
 }))
 
@@ -134,6 +145,7 @@ vi.mock('../../composables/useKeyboardShortcuts', () => ({
 vi.mock('../../composables/useBoardRealtime', () => ({
   createBoardRealtimeController: vi.fn((options) => {
     capturedOnPresenceChanged = options.onPresenceChanged
+    capturedOnAccessRevoked = options.onAccessRevoked
     capturedRealtimeFetchBoard = options.fetchBoard
     return realtimeMock
   }),
@@ -152,6 +164,14 @@ function createDeferred<T>() {
     reject = innerReject
   })
   return { promise, resolve, reject }
+}
+
+function lastBackgroundForbiddenCallback(): (boardId: string) => void {
+  const call = mockBoardStore.fetchBoard.mock.calls.at(-1) as unknown as [
+    string,
+    { onBackgroundForbidden: (boardId: string) => void },
+  ]
+  return call[1].onBackgroundForbidden
 }
 
 function mountView(provide: Record<symbol | string, unknown> = {}) {
@@ -193,6 +213,8 @@ describe('BoardView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     capturedOnPresenceChanged = undefined
+    capturedOnAccessRevoked = undefined
+    routeLeaveGuard = undefined
     capturedRealtimeFetchBoard = undefined
     localStorage.clear()
     routeMock.params.id = 'board-1'
@@ -204,6 +226,7 @@ describe('BoardView', () => {
       id: 'board-1',
       name: 'Ops Board',
       description: 'Primary board',
+      canWrite: true,
       columns: [
         {
           id: 'column-1',
@@ -511,6 +534,18 @@ describe('BoardView', () => {
     expect(wrapper.get('[data-testid="capture-modal"]').text()).toContain('Capture Ops Board board-1')
   })
 
+  it('does not expose board capture for a read-only board', async () => {
+    mockBoardStore.currentBoard = {
+      ...mockBoardStore.currentBoard,
+      canWrite: false,
+    }
+    const wrapper = mountView()
+    await waitForUi()
+
+    expect(wrapper.findAll('button').some((node) => node.text().trim() === 'Capture here')).toBe(false)
+    expect(wrapper.find('[data-testid="capture-modal"]').exists()).toBe(false)
+  })
+
   it('opens the column form when add card is triggered without columns', async () => {
     mockBoardStore.currentBoard = {
       ...mockBoardStore.currentBoard,
@@ -610,6 +645,36 @@ describe('BoardView', () => {
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
   })
 
+  it('binds visits before loading and retires only the mounted route on unmount', async () => {
+    const load = createDeferred<boolean>()
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => load.promise)
+    const wrapper = mountView()
+    const firstVisit = mockBoardStore.beginBoardViewVisit.mock.results[0]!.value
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenCalledWith('board-1')
+    expect(mockBoardStore.beginBoardViewVisit.mock.invocationCallOrder[0])
+      .toBeLessThan(mockBoardStore.fetchBoard.mock.invocationCallOrder[0]!)
+
+    // A layout change does not leave the BoardView route.
+    usePaperThemeStore().setMode('paper')
+    await nextTick()
+    usePaperThemeStore().disable()
+    await nextTick()
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenCalledTimes(1)
+    expect(mockBoardStore.endBoardViewVisit).not.toHaveBeenCalled()
+
+    routeMock.params.id = 'board-2'
+    // Ownership changes synchronously, before a stale payload can settle.
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenCalledTimes(2)
+    expect(mockBoardStore.beginBoardViewVisit).toHaveBeenLastCalledWith('board-2')
+    const nextVisit = mockBoardStore.beginBoardViewVisit.mock.results[1]!.value
+    expect(nextVisit).not.toBe(firstVisit)
+    expect(mockBoardStore.currentBoard.id).toBe('board-1')
+    wrapper.unmount()
+    expect(mockBoardStore.endBoardViewVisit).toHaveBeenCalledExactlyOnceWith(nextVisit)
+    load.resolve(true)
+    await flushPromises()
+  })
+
   it('keeps Retry authoritative while realtime refreshes queue as background work', async () => {
     const retryLoad = createDeferred<boolean>()
     mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
@@ -639,6 +704,7 @@ describe('BoardView', () => {
     await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
     expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(3, 'board-1', {
       intent: 'background',
+      onBackgroundForbidden: expect.any(Function),
     })
 
     wrapper.unmount()
@@ -971,7 +1037,7 @@ describe('BoardView', () => {
     expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(2, 'board-2')
 
     expect(capturedRealtimeFetchBoard).toBeDefined()
-    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await expect(capturedRealtimeFetchBoard!('board-1', { intent: 'background' })).resolves.toBe(false)
     expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
 
     boardBLoad.resolve(true)
@@ -1022,6 +1088,109 @@ describe('BoardView', () => {
       { userId: 'user-abc', displayName: 'alice', editingCardId: null },
       { userId: 'user-xyz', displayName: 'bob@taskdeck.local', editingCardId: null },
     ])
+  })
+
+  it('shows a persistent error toast and replaces the route when board access is revoked', async () => {
+    mountView()
+    await waitForUi()
+
+    expect(capturedOnAccessRevoked).toBeDefined()
+    capturedOnAccessRevoked!('board-1')
+    await waitForUi()
+
+    const toast = useToastStore()
+    expect(toast.toasts).toHaveLength(1)
+    expect(toast.toasts[0]).toMatchObject({
+      type: 'error',
+      duration: 0,
+      message: 'Your access to this board was removed.',
+    })
+    expect(routerMock.replace).toHaveBeenCalledTimes(1)
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+  })
+
+  it('routes a current background 403 through the same revocation notice', async () => {
+    const wrapper = mountView()
+    await waitForUi()
+    mockBoardStore.fetchBoard.mockResolvedValueOnce(false)
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    lastBackgroundForbiddenCallback()('board-1')
+    await nextTick()
+
+    expect(realtimeMock.notifyAccessRevoked).toHaveBeenCalledExactlyOnceWith('board-1')
+    expect(wrapper.findComponent({ name: 'BoardCanvas' }).exists()).toBe(false)
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+    expect(useToastStore().toasts[0]?.message).toBe('Your access to this board was removed.')
+  })
+
+  it('ignores a background 403 after board navigation or session replacement', async () => {
+    mountView()
+    await waitForUi()
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    const staleBoardCallback = lastBackgroundForbiddenCallback()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    staleBoardCallback('board-1')
+    expect(realtimeMock.notifyAccessRevoked).not.toHaveBeenCalled()
+
+    routeMock.params.id = 'board-1'
+    await nextTick()
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    const staleSessionCallback = lastBackgroundForbiddenCallback()
+    removeToken()
+    staleSessionCallback('board-1')
+    expect(realtimeMock.notifyAccessRevoked).not.toHaveBeenCalled()
+    expect(routerMock.replace).not.toHaveBeenCalled()
+  })
+
+  it('hides revoked content and bypasses a pending legacy editor navigation guard', async () => {
+    const wrapper = mountView()
+    await waitForUi()
+    const canvas = wrapper.findComponent({ name: 'BoardCanvas' })
+    expect(canvas.exists()).toBe(true)
+    canvas.vm.$emit('card-editor-saving-change', true)
+
+    expect(routeLeaveGuard).toBeDefined()
+    await expect(routeLeaveGuard!()).resolves.toBe(false)
+
+    capturedOnAccessRevoked!('board-1')
+    expect(routeLeaveGuard!()).toBe(true)
+    await nextTick()
+
+    expect(wrapper.findComponent({ name: 'BoardCanvas' }).exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('Your access to this board was removed.')
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+  })
+
+  it('unmounts Paper before redirecting away from a revoked board', async () => {
+    usePaperThemeStore().enable()
+    const wrapper = mountView()
+    await waitForUi()
+    expect(wrapper.findComponent({ name: 'PaperBoardView' }).exists()).toBe(true)
+
+    capturedOnAccessRevoked!('board-1')
+    await nextTick()
+
+    expect(wrapper.findComponent({ name: 'PaperBoardView' }).exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('Your access to this board was removed.')
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+  })
+
+  it('ignores access revocation for a board that is no longer routed', async () => {
+    mountView()
+    await waitForUi()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await waitForUi()
+
+    capturedOnAccessRevoked!('board-1')
+    await waitForUi()
+
+    expect(routerMock.replace).not.toHaveBeenCalled()
+    expect(useToastStore().toasts).toHaveLength(0)
   })
 
   it('ignores presence snapshots for other boards (#683)', async () => {

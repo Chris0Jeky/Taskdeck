@@ -47,6 +47,75 @@ describe('errorReporting utilities', () => {
       ;(globalThis as { Sentry?: unknown }).Sentry = { captureException: 'not-a-fn' }
       expect(reportToSentry(new Error('x'))).toBe(false)
     })
+
+    it('normalizes axios-shaped errors before forwarding (no headers, config, or bodies)', () => {
+      const captureException = vi.fn()
+      ;(globalThis as { Sentry?: unknown }).Sentry = { captureException }
+      const axiosErr = {
+        isAxiosError: true,
+        message: 'Request failed with status code 500',
+        config: {
+          method: 'post',
+          url: '/api/boards?token=secret',
+          headers: { Authorization: 'Bearer super-secret', 'X-Other': 'x' },
+          data: { password: 'hunter2' },
+        },
+        response: { status: 500, statusText: 'Server Error', data: { secret: true } },
+        request: {},
+      }
+
+      expect(reportToSentry(axiosErr)).toBe(true)
+      expect(captureException).toHaveBeenCalledTimes(1)
+      const forwarded = captureException.mock.calls[0][0] as Error & { sentryContext?: Record<string, unknown> }
+      expect(forwarded).toBeInstanceOf(Error)
+      expect(forwarded.message).toBe('Request failed (status 500 POST /api/boards)')
+      expect(forwarded.sentryContext).toEqual({ status: 500, method: 'POST', path: '/api/boards' })
+      expect(JSON.stringify(forwarded)).not.toContain('super-secret')
+      expect(JSON.stringify(forwarded)).not.toContain('hunter2')
+      expect(JSON.stringify(forwarded)).not.toContain('token=secret')
+      expect('config' in forwarded).toBe(false)
+      expect('response' in forwarded).toBe(false)
+    })
+
+    it('normalizes config/response-shaped rejections even without the axios flag', () => {
+      const captureException = vi.fn()
+      ;(globalThis as { Sentry?: unknown }).Sentry = { captureException }
+      const reason = {
+        message: 'Network Error',
+        config: {
+          method: 'get',
+          url: 'https://api.example.com/api/cards#frag',
+          headers: { Authorization: 'Bearer abc' },
+        },
+        response: { status: 401 },
+      }
+
+      expect(reportToSentry(reason)).toBe(true)
+      const forwarded = captureException.mock.calls[0][0] as Error
+      expect(forwarded).toBeInstanceOf(Error)
+      expect(forwarded.message).toBe('Request failed (status 401 GET https://api.example.com/api/cards)')
+      expect('headers' in forwarded).toBe(false)
+    })
+
+    it('never throws on malformed axios-shaped values', () => {
+      const captureException = vi.fn()
+      ;(globalThis as { Sentry?: unknown }).Sentry = { captureException }
+      const weird = { isAxiosError: true, config: null, response: null }
+
+      expect(() => reportToSentry(weird)).not.toThrow()
+      expect(reportToSentry(weird)).toBe(true)
+      const forwarded = captureException.mock.calls[0][0] as Error
+      expect(forwarded).toBeInstanceOf(Error)
+      expect(forwarded.message).toBe('Request failed')
+    })
+
+    it('passes non-object rejection reasons through untouched', () => {
+      const captureException = vi.fn()
+      ;(globalThis as { Sentry?: unknown }).Sentry = { captureException }
+
+      expect(reportToSentry('boom')).toBe(true)
+      expect(captureException).toHaveBeenCalledWith('boom', undefined)
+    })
   })
 
   describe('installVueErrorHandler', () => {
