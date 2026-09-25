@@ -9,6 +9,13 @@ namespace Taskdeck.Application.Services;
 
 public class BoardJsonExportImportService : IBoardJsonExportImportService
 {
+    // Bound one import transaction even when a compact payload fits the HTTP body limit.
+    internal const int MaxImportColumns = 100;
+    internal const int MaxImportCards = 5000;
+    internal const int MaxImportLabels = 500;
+    internal const int MaxImportRelations = CardRelationRules.MaximumRelations;
+    internal const int MaxImportNestedItems = 50000;
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
     private readonly IThinkingDeckRepository? _thinkingDecks;
@@ -165,9 +172,50 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
     private async Task<Result<ImportResultDto>> ImportBoardCoreAsync(ImportBoardDto dto, Guid userId, bool preview)
     {
+        var transactionStarted = false;
         try
         {
+            // Materialize at most one item beyond each cap so an IEnumerable supplied by a
+            // non-JSON caller cannot force unbounded work before the database transaction.
+            var labels = (dto.Labels ?? []).Take(MaxImportLabels + 1).ToArray();
+            if (labels.Length > MaxImportLabels)
+                throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportLabels} labels.");
+            var columns = (dto.Columns ?? []).Take(MaxImportColumns + 1).ToArray();
+            if (columns.Length > MaxImportColumns)
+                throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportColumns} columns.");
+            var cards = (dto.Cards ?? []).Take(MaxImportCards + 1).ToList();
+            if (cards.Count > MaxImportCards)
+                throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportCards} cards.");
+            long nestedItems = 0;
+            for (var index = 0; index < cards.Count; index++)
+            {
+                var card = cards[index];
+                var cardLabels = (card.Labels ?? []).Take(MaxImportNestedItems - (int)nestedItems + 1).ToArray();
+                nestedItems += cardLabels.Length + (card.SourceAssignees?.Count ?? 0);
+                if (nestedItems > MaxImportNestedItems)
+                    throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportNestedItems} nested items.");
+                cards[index] = card with { Labels = cardLabels };
+                var layers = card.Thinking?.Layers;
+                nestedItems += layers?.Count ?? 0;
+                if (nestedItems > MaxImportNestedItems)
+                    throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportNestedItems} nested items.");
+                if (layers is null) continue;
+                foreach (var layer in layers)
+                {
+                    nestedItems += layer?.Items?.Count ?? 0;
+                    if (nestedItems > MaxImportNestedItems)
+                        throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportNestedItems} nested items.");
+                }
+            }
+            if (dto.Relations?.Count > MaxImportRelations)
+                throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportRelations} relations.");
+            if (dto.Dependencies?.Count > MaxImportRelations)
+                throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportRelations} dependencies.");
+            if (dto.AssigneeMappings?.Count > MaxImportCards)
+                throw new DomainException(ErrorCodes.ValidationError, $"Board import exceeds the limit of {MaxImportCards} assignee mappings.");
+
             await _unitOfWork.BeginTransactionAsync();
+            transactionStarted = true;
             if (_assignments is not null)
                 await _assignments.RefreshAuthorityAsync(Guid.Empty, userId, default);
             var user = await _unitOfWork.Users.GetByIdAsync(userId);
@@ -176,9 +224,6 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             if (user is not { IsActive: true })
                 throw new DomainException(ErrorCodes.Forbidden, "An active account is required to import a board.");
 
-            var labels = dto.Labels ?? Enumerable.Empty<ImportLabelDto>();
-            var columns = dto.Columns ?? Enumerable.Empty<ImportColumnDto>();
-            var cards = (dto.Cards ?? Enumerable.Empty<ImportCardDto>()).ToList();
             // Validate the entire payload before any board or card is added, including preview.
             foreach (var card in cards)
                 if (card.EstimatedEffortMinutes is < 0 or > Card.MaxEstimatedEffortMinutes)
@@ -376,12 +421,12 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
         }
         catch (DomainException ex)
         {
-            await _unitOfWork.RollbackTransactionAsync();
+            if (transactionStarted) await _unitOfWork.RollbackTransactionAsync();
             return Result.Failure<ImportResultDto>(ex.ErrorCode, ex.Message);
         }
         catch (Exception ex)
         {
-            await _unitOfWork.RollbackTransactionAsync();
+            if (transactionStarted) await _unitOfWork.RollbackTransactionAsync();
             return Result.Failure<ImportResultDto>(ErrorCodes.UnexpectedError, $"Import failed: {ex.Message}");
         }
     }

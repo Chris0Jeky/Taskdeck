@@ -612,41 +612,6 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
-    public async Task DeleteAccountAsync_InvalidatesActiveUserCache()
-    {
-        // Arrange — create a service with a cache mock
-        var cacheMock = new Mock<IActiveUserCache>();
-        var serviceWithCache = new AccountDeletionService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(), cacheMock.Object);
-
-        SetupUserFound();
-        SetupEmptyRepositories();
-        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
-
-        // Act
-        var result = await serviceWithCache.DeleteAccountAsync(_userId, request);
-
-        // Assert
-        result.IsSuccess.Should().BeTrue();
-        cacheMock.Verify(c => c.Invalidate(_userId), Times.Once);
-    }
-
-    [Fact]
-    public async Task DeleteAccountAsync_SucceedsWithoutCache()
-    {
-        // Arrange — the default _service has no cache (null), should still work
-        SetupUserFound();
-        SetupEmptyRepositories();
-        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
-
-        // Act
-        var result = await _service.DeleteAccountAsync(_userId, request);
-
-        // Assert
-        result.IsSuccess.Should().BeTrue();
-    }
-
-    [Fact]
     public async Task DeleteAccountAsync_LogsException_WhenDeletionFails()
     {
         // Arrange
@@ -656,7 +621,7 @@ public class AccountDeletionServiceTests
         var loggerMock = new Mock<ILogger<AccountDeletionService>>();
         var serviceWithLogger = new AccountDeletionService(
             _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(),
-            activeUserCache: null, logger: loggerMock.Object);
+            logger: loggerMock.Object);
 
         var expectedException = new InvalidOperationException("DB error");
         _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default)).ThrowsAsync(expectedException);

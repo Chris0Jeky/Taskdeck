@@ -1,6 +1,59 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-22
+Last Updated: 2026-09-25
+
+## Disconnected board revocation recovery (#3511)
+
+A current board rejoin refused with `Forbidden`, or a current background board read returning 403,
+now retires the board subscription and uses the existing access-removed notice and route exit.
+Board, request-generation, and credential-generation checks reject stale results from another
+board or session; transient failures keep polling. This removes the retry and navigation burden of
+a cached board the user can no longer read, without changing capture or review-first write gates.
+Focused client tests cover rejoin, fallback, stale results, and transient recovery. A live
+server-driven disconnected revocation was not exercised locally.
+
+## Board access revocation exits the active board (#3455)
+
+The board realtime client now handles the server's `accessRevoked` event for its confirmed,
+currently requested board. It retires pending refresh and fallback polling, shows a persistent
+translated notice, hides cached board content, and replaces the revoked board route with the boards
+list even when an editor had blocked ordinary navigation. Events for another
+board, an old subscription during a switch, or an unmounted view do not redirect. Focused
+composable and route-view tests cover the event, cleanup, notice, and navigation; a live
+server-driven revocation was not exercised locally.
+
+## Proposal decisions populate insight cohorts (#3415)
+
+Single approve, single reject and batch approve now stage one content-free
+`ProposalOutcome` per successful decision before the decision's existing save.
+New decisions therefore reach the cohort and bucketed metrics endpoints; older
+decisions are not backfilled. An approved revision is counted as edited only
+when its effective operations differ from the original reviewed operations.
+The comparison ignores operation IDs and idempotency keys, treats action and
+target names case-insensitively, compares target GUIDs by value and compares
+JSON parameters by value. `FieldCount` and `EditedFieldCount` count five comparable
+operation contract fields per sequence: action, target type, target ID,
+parameters and expected version. They do not count nested parameter keys.
+The existing single-decision notification remains a separate post-save write;
+batch notifications remain inside the batch transaction.
+
+SQLite API regressions cover single and batch outcome rows, edited and
+identity-only revisions, rejected and failed-batch non-writes, and cohort
+read-back. These writes do not change approval or Apply authorization, and
+Apply remains a separate explicit action.
+
+## Swarm wave-2B correctness fixes ship (PRs #3372-#3374, #3384)
+
+Four review-swarm fixes merged without behavior changes to the review flow itself. Board
+detail and board list now agree on the CanWrite stamp when no authorization service is
+composed (CLI/unauthenticated composition means no enforcement, so the caller can write).
+The contact-card YAML front matter parser caps nesting depth and input size, enforces
+strict ISO dates, validates field lengths, and canaries delimiter corruption on
+serialize. Deferred realtime flushes attempt every staged event instead of dropping the
+batch tail on a mid-batch failure (a lone failure rethrows as-is; multiple failures
+surface as AggregateException). The MCP API-key prefix check is an exact ordinal match.
+Each fix carries targeted regression tests; open swarm follow-ups are PRs #3375, #3383,
+#3385 and issues #3377-#3382.
 
 ## Board-access reads retain session and mutation ownership (#3328)
 
@@ -1638,7 +1691,7 @@ Direction guardrails (explicit):
   - security logging redaction baseline for capture/auth-sensitive flows: sanitized exception summaries in middleware/workers/providers, generic invalid-source errors, redacted persisted queue/webhook failure messages, and disabled automatic ASP.NET Core trace exception recording
 - Auth posture today:
   - JWT middleware is wired
-  - `ActiveUserValidationMiddleware` checks user active status on every authenticated request (30-second in-memory cache, invalidated on deletion/deactivation); tokens issued before account deletion/deactivation are rejected even if JWT is unexpired
+  - `TokenValidationMiddleware` checks user active status plus token `iat` against `TokenInvalidatedAt` on every authenticated request (no cache delay); tokens issued before account deletion/deactivation are rejected even if JWT is unexpired. (The never-wired `ActiveUserValidationMiddleware`/active-user cache were removed as dead code; see the removal PR.)
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, notifications, automation-proposals, archive, ops-cli, and logs controllers
   - GitHub OAuth login (`CLD-03`): environment-gated OAuth middleware activates only when `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` are configured; `ExternalLogin` entity links GitHub accounts to users without auto-linking by email (prevents account takeover); OAuth callback uses short-lived single-use authorization codes (now DB-backed with atomic consumption, replacing in-memory `ConcurrentDictionary`); PKCE enabled via `UsePkce = true`; account linking endpoints allow existing users to link/unlink GitHub identity from settings; frontend LoginView conditionally shows "Sign in with GitHub" button based on `/api/auth/providers` response; `OAuthScopeValidator` validates required vs expected scopes with case-sensitive comparison and configurable policy (`RequiredScopes`, `ExpectedScopes` on `GitHubOAuthSettings`); full test coverage in Domain, Application, and frontend layers
   - OIDC/SSO integration (`SEC-07`): config-gated pluggable OIDC provider support (Microsoft Entra ID, Google, generic OIDC) via `IOidcProviderFactory`; OIDC login/callback/exchange with open-redirect protection; cross-provider identity isolation (`provider + providerUserId` unique key); no auto-linking by email; disabled by default
@@ -1915,7 +1968,7 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 
 Mutation testing workflow: `.github/workflows/mutation-testing.yml`
 
-- Weekly schedule (Sunday 04:00 UTC) + manual dispatch
+- Manual dispatch only (`workflow_dispatch`)
 - Backend Stryker.NET (Domain) + Frontend Stryker JS (captureStore/boardStore)
 - Non-blocking; HTML/JSON reports uploaded as 30-day artifacts
 

@@ -8,6 +8,7 @@
  * the board and is reversible, and the English says so too.
  */
 export default {
+  accessRevoked: 'Il tuo accesso a questa bacheca è stato rimosso.',
   actions: {
     settings: 'Impostazioni bacheca',
     // Presentazione delle schede della bacheca. La modalità nasconde l'estratto

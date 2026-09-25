@@ -138,6 +138,60 @@ public class ArgParserTests
     }
 
     [Fact]
+    public void FindDuplicateOption_WhenOptionUsedOnce_ReturnsNull()
+    {
+        var args = new[] { "--board", "abc-123", "--name", "Test" };
+
+        ArgParser.FindDuplicateOption(args, "--board", "--name").Should().BeNull();
+    }
+
+    [Fact]
+    public void FindDuplicateOption_WhenOptionRepeated_ReturnsOptionName()
+    {
+        var args = new[] { "--board", "abc-123", "--name", "First", "--name", "Second" };
+
+        ArgParser.FindDuplicateOption(args, "--board", "--name").Should().Be("--name");
+    }
+
+    [Fact]
+    public void FindDuplicateOption_WhenRepeatIsTrailingBareOption_ReturnsOptionName()
+    {
+        var args = new[] { "--board", "abc-123", "--name", "First", "--name" };
+
+        ArgParser.FindDuplicateOption(args, "--board", "--name").Should().Be("--name");
+    }
+
+    [Fact]
+    public void FindDuplicateOption_IsCaseInsensitive()
+    {
+        var args = new[] { "--name", "First", "--NAME", "Second" };
+
+        ArgParser.FindDuplicateOption(args, "--name").Should().Be("--name");
+    }
+
+    [Fact]
+    public void FindDuplicateOption_WhenDifferentOptionsUsedOnce_ReturnsNull()
+    {
+        var args = new[] { "--board", "abc-123", "--name", "Test" };
+
+        ArgParser.FindDuplicateOption(args, "--board", "--name", "--description").Should().BeNull();
+    }
+
+    [Fact]
+    public void FindDuplicateOption_WhenUnlistedOptionRepeated_ReturnsNull()
+    {
+        var args = new[] { "--json", "--json" };
+
+        ArgParser.FindDuplicateOption(args, "--board", "--name").Should().BeNull();
+    }
+
+    [Fact]
+    public void FindDuplicateOption_EmptyArgs_ReturnsNull()
+    {
+        ArgParser.FindDuplicateOption(Array.Empty<string>(), "--board").Should().BeNull();
+    }
+
+    [Fact]
     public void StripFlag_MultipleOccurrences_RemovesAll()
     {
         var args = new[] { "--json", "--board", "abc", "--json" };

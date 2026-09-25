@@ -38,6 +38,19 @@ describe('PaperToastContainer', () => {
     expect(messages).toContain('Second message')
   })
 
+  it('renders archived error receipts behind the overflow control', async () => {
+    const store = useToastStore()
+    store.error('Earlier failure', 0, { details: 'status: 503' })
+    for (let index = 0; index < 5; index += 1) store.info(`Toast ${index}`, 0)
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    expect(wrapper.get('[data-toast-overflow-toggle]').text()).toContain('1 older error receipt')
+    await wrapper.get('[data-toast-overflow-toggle]').trigger('click')
+    expect(wrapper.get('[data-toast-overflow-list]').text()).toContain('Earlier failure')
+  })
+
   it('keeps toasts present at mount and remount out of the polite announcement', async () => {
     const store = useToastStore()
     store.success('Already visible', 0)

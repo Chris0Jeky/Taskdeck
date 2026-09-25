@@ -461,6 +461,8 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingByUserAsync(Guid userId, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
@@ -588,6 +590,8 @@ public class WorkerResilienceTests
                 .Skip(offset).Take(limit).ToList());
         public Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).Where(i => i.UserId == userId && i.Status == status));
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingByUserAsync(Guid userId, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult(_pending.Concat(_processing).Where(i => i.UserId == userId && i.Status == RequestStatus.Pending).OrderBy(i => i.CreatedAt).ThenBy(i => i.Id).Take(limit));
         public Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(new Dictionary<RequestStatus, int>());
         public Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
@@ -716,6 +720,9 @@ public class WorkerResilienceTests
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AutomationProposal>>(
                 _proposals.Where(p => ids.Contains(p.Id)).ToList());
+        public Task<IReadOnlyList<ProposalHeaderDto>> GetHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ProposalHeaderDto>>(
+                _proposals.Where(p => ids.Contains(p.Id)).Select(p => new ProposalHeaderDto(p.Id, p.RequestedByUserId, p.BoardId)).ToList());
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(0);
         public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)

@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Realtime;
-using Taskdeck.Api.Services;
 using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -117,8 +116,6 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IArtefactService, ArtefactService>();
         services.AddScoped<IArtefactTextExtractor, PlainTextArtefactTextExtractor>();
         services.AddScoped<IArtefactExtractionService, ArtefactExtractionService>();
-        services.AddSingleton<InMemoryActiveUserCache>();
-        services.AddSingleton<IActiveUserCache>(sp => sp.GetRequiredService<InMemoryActiveUserCache>());
         services.AddScoped<IBoardMetricsService>(sp =>
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),

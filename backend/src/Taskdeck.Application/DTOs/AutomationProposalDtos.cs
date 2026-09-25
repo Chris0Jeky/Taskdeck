@@ -8,6 +8,12 @@ public record ProposalPreviewDto(Guid ProposalId, Guid? BoardId, ProposalStatus 
     Guid? EffectiveRevisionId, int? EffectiveRevisionNumber, DateTimeOffset ProposalUpdatedAt,
     DateTime ExpiresAt, DateTimeOffset CheckedAt, string Diff);
 
+/// <summary>
+/// Minimal ownership/board header for batch pre-checks: everything the controller needs
+/// to fail fast on missing/foreign proposals without loading operations or revisions.
+/// </summary>
+public record ProposalHeaderDto(Guid Id, Guid RequestedByUserId, Guid? BoardId);
+
 public record ProposalDto(
     Guid Id,
     ProposalSourceType SourceType,

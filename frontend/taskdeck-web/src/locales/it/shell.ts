@@ -29,6 +29,9 @@ export default {
       copyFailed: 'Copia non riuscita',
       dismissNotification: 'Chiudi la notifica',
       errorDetails: 'Dettagli dell’errore: {message}',
+      olderErrors: '{count} ricevuta di errore precedente | {count} ricevute di errore precedenti',
+      hideOlderErrors: 'Nascondi le ricevute di errore precedenti',
+      earlierErrors: '{count} ricevuta di errore ancora precedente è uscita dall’archivio | {count} ricevute di errore ancora precedenti sono uscite dall’archivio',
     },
   },
   topbar: {
@@ -41,6 +44,27 @@ export default {
       profile: 'Profilo',
       appearance: 'Aspetto',
       signOut: 'Esci',
+    },
+  },
+  sidebar: {
+    // Nomi parlati dei controlli di PaperSidebar (#3389). Glifi e badge
+    // `· N` sono decorativi: ogni link/pulsante ha un `aria-label` esplicito.
+    // `{label}` è l'etichetta visibile della voce — ancora inglese finché la
+    // superficie sidebar non sarà estratta — quindi qui si localizza la
+    // cornice, non il sostantivo.
+    badge: {
+      withCount: '{label}: {count} in attesa',
+    },
+    advanced: {
+      label: 'Avanzate',
+      show: 'Mostra',
+      hide: 'Nascondi',
+    },
+    more: 'Altro',
+    useAdvancedWorkspace: "Usa l'area di lavoro avanzata",
+    theme: {
+      switchToLight: 'Passa al tema Paper chiaro',
+      switchToDark: 'Passa al tema Paper scuro',
     },
   },
 }
