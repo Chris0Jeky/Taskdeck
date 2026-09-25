@@ -21,8 +21,8 @@ public interface IProposalOutcomeRepository : IRepository<ProposalOutcome>
     Task<IReadOnlyList<ProposalOutcome>> GetByDecisionAsync(OutcomeDecision decision, int limit = 100, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets outcomes for a user without server-side ordering (safe for SQLite).
-    /// Capped at 1000 rows as a safety bound for the local-first use case.
+    /// Gets the newest outcomes for a user, ordered before the 1000-row safety cap.
+    /// The SQLite implementation uses SQL ordering for its DateTimeOffset column.
     /// </summary>
     Task<IReadOnlyList<ProposalOutcome>> GetAllByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 }
