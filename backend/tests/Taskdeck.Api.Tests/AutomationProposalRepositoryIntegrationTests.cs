@@ -69,6 +69,38 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
     }
 
     [Fact]
+    public async Task GetHeadersByIdsAsync_ShouldReturnOnlyRequestedHeaders()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-headers-user", "ap-headers@example.com", "hash");
+        var other = new User("ap-headers-other", "ap-headers-other@example.com", "hash");
+        db.Users.AddRange(user, other);
+
+        var board = new Board("Headers board", ownerId: user.Id);
+        db.Boards.Add(board);
+
+        var wanted = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Wanted", RiskLevel.Low,
+            $"corr-headers-{Guid.NewGuid():N}", boardId: board.Id);
+        var unwanted = new AutomationProposal(
+            ProposalSourceType.Queue, other.Id, "Unwanted", RiskLevel.Low,
+            $"corr-headers-{Guid.NewGuid():N}");
+        db.AutomationProposals.AddRange(wanted, unwanted);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = (await repo.GetHeadersByIdsAsync([wanted.Id, Guid.NewGuid(), Guid.Empty])).ToList();
+
+        result.Should().ContainSingle();
+        result[0].Id.Should().Be(wanted.Id);
+        result[0].RequestedByUserId.Should().Be(user.Id);
+        result[0].BoardId.Should().Be(board.Id);
+    }
+
+    [Fact]
     public async Task GetExpiredAsync_ShouldReturnOnlyExpiredPendingReview()
     {
         using var scope = _factory.Services.CreateScope();

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -154,8 +155,10 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task AuthChangePassword_ShouldThrottleAfterBurst_ByClientIp()
     {
+        // Permits: register (AuthenticateAsync) + change-password + re-login = 3,
+        // so the final change-password is the request that observes the 429.
         using var factory = CreateFactoryWithRateLimits(
-            authPermitLimit: 2,
+            authPermitLimit: 3,
             authWindowSeconds: 60);
         using var client = factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rate-password");
@@ -164,6 +167,19 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
             .StatusCode
             .Should()
             .Be(HttpStatusCode.NoContent);
+
+        // A password change revokes outstanding JWTs (#3408): sign in again for a
+        // fresh token so the throttle probe is not rejected as unauthorized first.
+        // The stale bearer token is cleared because anonymous requests pass the
+        // token-validation middleware untouched.
+        client.DefaultRequestHeaders.Authorization = null;
+        var loginResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new LoginDto(user.Username, "RateLimitPass!456"));
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
+        loginPayload.Should().NotBeNull();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginPayload!.Token);
 
         var throttled = await SendChangePasswordRequestAsync(client, "RateLimitPass!456", "RateLimitPass!789");
         await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);

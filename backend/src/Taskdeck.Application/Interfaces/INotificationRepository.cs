@@ -23,6 +23,18 @@ public interface INotificationRepository : IRepository<Notification>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Marks all unread notifications for a user as read in a single set-based UPDATE,
+    /// replicating <see cref="Notification.MarkAsRead"/> semantics (IsRead, ReadAt, UpdatedAt)
+    /// without loading rows into the change tracker. Already-read rows keep their
+    /// original ReadAt and are excluded from the count.
+    /// </summary>
+    /// <returns>Number of notifications marked read.</returns>
+    Task<int> MarkAllAsReadAsync(
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes all notifications for a user in batched SQL DELETEs to avoid
     /// unbounded memory and N+1 single-row deletes.
     /// </summary>

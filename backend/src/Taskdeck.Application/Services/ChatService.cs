@@ -368,9 +368,7 @@ public class ChatService : IChatService
                 // (e.g. for cost control). When disabled, falls through to single-turn.
                 if (_toolCallingOrchestrator != null && _toolCallingSettings.Enabled && session.BoardId.HasValue)
                 {
-                    var toolChatMessages = session.Messages
-                        .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-                        .ToList();
+                    var toolChatMessages = BuildCompletionMessages(session.Messages);
 
                     var toolCompletionRequest = new ChatCompletionRequest(
                         toolChatMessages,
@@ -515,9 +513,7 @@ public class ChatService : IChatService
                     else
                     {
                         // No orchestrator response available — make a single-turn call.
-                        var chatMessages = session.Messages
-                            .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-                            .ToList();
+                        var chatMessages = BuildCompletionMessages(session.Messages);
 
                         // Build board context for board-scoped sessions
                         var boardContext = await BuildBoardContextForSessionAsync(session, ct);
@@ -938,9 +934,7 @@ public class ChatService : IChatService
         // causing false quota denials for a call that never reached the provider.
         try
         {
-            var chatMessages = session.Messages
-                .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-                .ToList();
+            var chatMessages = BuildCompletionMessages(session.Messages);
 
             // Build board context for board-scoped sessions
             var boardContext = await BuildBoardContextForSessionAsync(session, ct);
@@ -1230,6 +1224,22 @@ public class ChatService : IChatService
     }
 
     private static string? CombineContext(string? board, string? selected) => selected is null ? board : $"{board}\n\n{selected}";
+
+    /// <summary>
+    /// Builds the completion message list from session history, keeping only the
+    /// most recent <see cref="LlmToolCallingSettings.MaxHistoryMessages"/> messages.
+    /// History is chronologically ordered, so the latest user message is always
+    /// retained. At least one message is always sent even if the setting is
+    /// misconfigured (options validation normally enforces the 1..1000 range).
+    /// </summary>
+    private List<ChatCompletionMessage> BuildCompletionMessages(IReadOnlyList<ChatMessage> messages)
+    {
+        var window = Math.Max(1, _toolCallingSettings.MaxHistoryMessages);
+        return messages
+            .TakeLast(window)
+            .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
+            .ToList();
+    }
 
     private async Task<string?> BuildBoardContextForSessionAsync(ChatSession session, CancellationToken ct)
     {

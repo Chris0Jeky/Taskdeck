@@ -7,7 +7,10 @@ import { i18n, type SupportedLocale } from '../../i18n'
 
 const mockToastStore = reactive({
   toasts: [] as Toast[],
+  evictedErrors: [] as Toast[],
+  evictedErrorOverflowCount: 0,
   remove: vi.fn(),
+  dismissEvictedError: vi.fn(),
 })
 const copyToastReceipt = vi.hoisted(() => vi.fn().mockResolvedValue(true))
 
@@ -20,6 +23,8 @@ describe('ToastContainer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockToastStore.toasts = []
+    mockToastStore.evictedErrors = []
+    mockToastStore.evictedErrorOverflowCount = 0
   })
 
   it('renders nothing when there are no toasts', () => {
@@ -141,6 +146,17 @@ describe('ToastContainer', () => {
     const wrapper = mount(ToastContainer)
     const toastEl = wrapper.find('.bg-yellow-50')
     expect(toastEl.exists()).toBe(true)
+  })
+
+  it('renders archived error receipts behind the overflow control', async () => {
+    mockToastStore.evictedErrors = [
+      { id: 'old-error', message: 'Earlier failure', details: 'status: 503', type: 'error', duration: 0 },
+    ]
+    const wrapper = mount(ToastContainer)
+
+    expect(wrapper.get('[data-toast-overflow-toggle]').text()).toContain('1 older error receipt')
+    await wrapper.get('[data-toast-overflow-toggle]').trigger('click')
+    expect(wrapper.get('[data-toast-receipt-id="old-error"]').text()).toContain('Earlier failure')
   })
 
   it('associates an error disclosure only while its details are mounted', async () => {

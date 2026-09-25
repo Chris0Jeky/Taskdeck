@@ -53,16 +53,16 @@ public class ActiveUserValidationIntegrationTests : IClassFixture<TestWebApplica
     }
 
     [Fact]
-    public async Task DeletedUser_Gets401_Immediately_WithoutCacheDelay()
+    public async Task DeletedUser_Gets401_Immediately()
     {
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "immediate-invalidation");
 
-        // Access a protected endpoint to warm the cache
+        // Verify the user can access protected endpoints before deletion
         var warmupResponse = await client.GetAsync("/api/boards");
         warmupResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Delete the account (this should invalidate the cache)
+        // Delete the account (TokenValidationMiddleware rejects the stale JWT on the next request)
         var deleteResponse = await client.PostAsJsonAsync("/api/account/delete", new
         {
             currentPassword = "password123",
@@ -70,7 +70,7 @@ public class ActiveUserValidationIntegrationTests : IClassFixture<TestWebApplica
         });
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Immediately try again — should be rejected (cache was invalidated, not just expired)
+        // Immediately try again — should be rejected with no grace window
         var afterResponse = await client.GetAsync("/api/boards");
         afterResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

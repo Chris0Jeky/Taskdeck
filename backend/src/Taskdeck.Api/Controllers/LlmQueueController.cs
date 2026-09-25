@@ -71,7 +71,9 @@ public class LlmQueueController : AuthenticatedControllerBase
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 
+    // This endpoint claims globally, not from the requesting user's queue.
     [HttpPost("process-next")]
+    [Authorize(Policy = "AdminOnly")]
     [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
     public async Task<IActionResult> ProcessNext()
     {

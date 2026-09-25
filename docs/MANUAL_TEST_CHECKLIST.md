@@ -328,9 +328,9 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
    - Expected: login rejected — account is deactivated.
 8. Attempt to use the old JWT token (saved before deletion) on any authenticated endpoint.
    - Expected: `401` with `ApiErrorResponse` — token is invalidated even though it hasn't expired.
-   - Enhancement (`#671`/`#698`+`#728`): `TokenValidationMiddleware` checks `IsActive` and compares token `iat` against `TokenInvalidatedAt` on every authenticated request; `ActiveUserValidationMiddleware` provides runtime active-user enforcement with 30-second in-memory cache invalidated on deletion/deactivation; ADR-0021 documents the design decision.
+   - Enhancement (`#671`/`#698`+`#728`): `TokenValidationMiddleware` checks `IsActive` and compares token `iat` against `TokenInvalidatedAt` on every authenticated request (immediate, no cache delay); ADR-0021 documents the design decision. (The never-wired `ActiveUserValidationMiddleware` was removed as dead code.)
 9. Verify JWT invalidation latency after account deletion.
-   - Expected: within 30 seconds of account deletion, any request using the old JWT returns `401` (cache TTL is 30 seconds).
+   - Expected: immediately after account deletion, any request using the old JWT returns `401` (no cache delay).
 10. Verify audit trail contains `DataExported`, `AccountDeletionRequested`, `AccountAnonymized` actions.
 
 **Export streaming endpoint (PR #774):**

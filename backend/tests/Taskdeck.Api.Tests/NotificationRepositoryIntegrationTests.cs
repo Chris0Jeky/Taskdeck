@@ -515,6 +515,139 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         results.Should().ContainSingle().Which.Id.Should().Be(unreadOnTarget.Id);
     }
 
+    [Fact]
+    public async Task MarkAllAsReadAsync_ShouldMarkOnlyUserUnread_AndStampReadMetadata()
+    {
+        Guid userId, unread1Id, unread2Id, readId, otherId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var repo = scope.ServiceProvider.GetRequiredService<INotificationRepository>();
+
+            var user = new User("notif-markall-batch", "notif-markall-batch@example.com", "hash");
+            var other = new User("notif-markall-batch-other", "notif-markall-batch-other@example.com", "hash");
+            db.Users.AddRange(user, other);
+            userId = user.Id;
+
+            var unread1 = new Notification(user.Id, NotificationType.System, NotificationCadence.Immediate,
+                "Unread 1", "Batch me");
+            var unread2 = new Notification(user.Id, NotificationType.System, NotificationCadence.Immediate,
+                "Unread 2", "Batch me");
+            var alreadyRead = new Notification(user.Id, NotificationType.System, NotificationCadence.Immediate,
+                "Already read", "Keep stamp");
+            alreadyRead.MarkAsRead();
+            var otherUnread = new Notification(other.Id, NotificationType.System, NotificationCadence.Immediate,
+                "Other unread", "Not mine");
+            db.Notifications.AddRange(unread1, unread2, alreadyRead, otherUnread);
+            await db.SaveChangesAsync();
+            unread1Id = unread1.Id;
+            unread2Id = unread2.Id;
+            readId = alreadyRead.Id;
+            otherId = otherUnread.Id;
+
+            // Backdate stamps so the test proves what the batch writes: unread rows must
+            // advance to now (proving UpdatedAt is set, not just inherited from construction),
+            // while the already-read row must keep both original stamps.
+            var backdate = DateTimeOffset.UtcNow.AddHours(-1);
+            db.Entry(unread1).Property(n => n.UpdatedAt).CurrentValue = backdate;
+            db.Entry(unread2).Property(n => n.UpdatedAt).CurrentValue = backdate;
+            db.Entry(alreadyRead).Property(n => n.ReadAt).CurrentValue = backdate;
+            db.Entry(alreadyRead).Property(n => n.UpdatedAt).CurrentValue = backdate;
+            await db.SaveChangesAsync();
+
+            // ExecuteUpdate bypasses the tracker: clear so the batch runs against clean state.
+            db.ChangeTracker.Clear();
+
+            var count = await repo.MarkAllAsReadAsync(userId);
+
+            count.Should().Be(2, "exactly the two unread rows for this user");
+        }
+
+        // Fresh scope: ExecuteUpdate does not refresh tracked entities, so re-read.
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var rows = await db.Notifications
+                .Where(n => n.Id == unread1Id || n.Id == unread2Id || n.Id == readId || n.Id == otherId)
+                .ToListAsync();
+            var byId = rows.ToDictionary(n => n.Id);
+
+            foreach (var id in new[] { unread1Id, unread2Id })
+            {
+                byId[id].IsRead.Should().BeTrue();
+                byId[id].ReadAt.Should().NotBeNull();
+                byId[id].ReadAt!.Value.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-1));
+                byId[id].UpdatedAt.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-1));
+            }
+
+            byId[readId].IsRead.Should().BeTrue();
+            byId[readId].ReadAt.Should().NotBeNull();
+            byId[readId].ReadAt!.Value.Should().BeBefore(
+                DateTimeOffset.UtcNow.AddMinutes(-30), "already-read rows keep their original ReadAt");
+            byId[readId].UpdatedAt.Should().BeBefore(
+                DateTimeOffset.UtcNow.AddMinutes(-30), "already-read rows keep their original UpdatedAt");
+
+            byId[otherId].IsRead.Should().BeFalse("other users are unaffected");
+        }
+    }
+
+    [Fact]
+    public async Task MarkAllAsReadAsync_WithBoardId_ShouldOnlyMarkBoardNotifications()
+    {
+        Guid targetBoardId, onTargetId, onOtherId, noBoardId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var repo = scope.ServiceProvider.GetRequiredService<INotificationRepository>();
+
+            var user = new User("notif-markall-board", "notif-markall-board@example.com", "hash");
+            db.Users.Add(user);
+
+            var targetBoard = new Board("MarkAll target board", ownerId: user.Id);
+            var otherBoard = new Board("MarkAll other board", ownerId: user.Id);
+            db.Boards.AddRange(targetBoard, otherBoard);
+            targetBoardId = targetBoard.Id;
+
+            var onTarget = new Notification(user.Id, NotificationType.BoardChange, NotificationCadence.Immediate,
+                "On target", "Mark me", boardId: targetBoard.Id);
+            var onOther = new Notification(user.Id, NotificationType.BoardChange, NotificationCadence.Immediate,
+                "On other", "Keep unread", boardId: otherBoard.Id);
+            var noBoard = new Notification(user.Id, NotificationType.System, NotificationCadence.Immediate,
+                "No board", "Keep unread");
+            db.Notifications.AddRange(onTarget, onOther, noBoard);
+            await db.SaveChangesAsync();
+            onTargetId = onTarget.Id;
+            onOtherId = onOther.Id;
+            noBoardId = noBoard.Id;
+
+            db.Entry(onTarget).Property(n => n.UpdatedAt).CurrentValue = DateTimeOffset.UtcNow.AddHours(-1);
+            await db.SaveChangesAsync();
+
+            db.ChangeTracker.Clear();
+
+            var count = await repo.MarkAllAsReadAsync(user.Id, targetBoardId);
+
+            count.Should().Be(1);
+        }
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var rows = await db.Notifications
+                .Where(n => n.Id == onTargetId || n.Id == onOtherId || n.Id == noBoardId)
+                .ToListAsync();
+            var byId = rows.ToDictionary(n => n.Id);
+
+            byId[onTargetId].IsRead.Should().BeTrue();
+            byId[onTargetId].ReadAt.Should().NotBeNull();
+            byId[onTargetId].ReadAt!.Value.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-1));
+            byId[onTargetId].UpdatedAt.Should().BeAfter(
+                DateTimeOffset.UtcNow.AddMinutes(-1), "the batch stamps UpdatedAt under the board predicate too");
+            byId[onOtherId].IsRead.Should().BeFalse("other boards are unaffected by the board filter");
+            byId[noBoardId].IsRead.Should().BeFalse("unscoped rows are unaffected by the board filter");
+        }
+    }
+
     /// <summary>
     /// Test-only command interceptor that records the text of every reader command EF executes,
     /// so a test can assert what SQL actually reached SQLite (e.g. that paging carries LIMIT/OFFSET).

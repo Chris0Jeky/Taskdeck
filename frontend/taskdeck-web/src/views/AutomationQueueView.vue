@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQueueStore } from '../store/queueStore'
 import { useToastStore } from '../store/toastStore'
+import { useSessionStore } from '../store/sessionStore'
 import { boardsApi } from '../api/boardsApi'
 import { BOARD_REQUEST_TIMEOUT_MS } from '../api/http'
 import InputAssistField from '../components/common/InputAssistField.vue'
@@ -15,6 +16,11 @@ import type { QueueStatus } from '../types/queue'
 const router = useRouter()
 const queue = useQueueStore()
 const toast = useToastStore()
+const session = useSessionStore()
+// Match the API's global AdminOnly policy; owning a board is not an operator role.
+const canProcessNext = computed(() =>
+  session.isAuthenticated && (session.defaultRole === 0 || session.defaultRole === 1),
+)
 
 const statusFilter = ref('Pending')
 const newRequestType = ref('instruction')
@@ -134,6 +140,8 @@ async function handleCancel(requestId: string) {
 }
 
 async function handleProcessNext() {
+  // A stale button can still dispatch before Vue removes it after a session change.
+  if (!canProcessNext.value) return
   try {
     await queue.processNext()
     await queue.fetchByStatus(statusFilter.value)
@@ -256,7 +264,7 @@ onMounted(() => {
         </div>
 
         <div class="paper-queue__toolbar-actions">
-          <PaperHLBtn @click="handleProcessNext">Process Next</PaperHLBtn>
+          <PaperHLBtn v-if="canProcessNext" @click="handleProcessNext">Process Next</PaperHLBtn>
           <PaperHLBtn variant="ember" @click="showComposer = !showComposer">
             {{ showComposer ? 'Cancel' : '+ New Request' }}
           </PaperHLBtn>
