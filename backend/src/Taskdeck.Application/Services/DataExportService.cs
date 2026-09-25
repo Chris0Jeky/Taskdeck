@@ -1076,6 +1076,14 @@ public class DataExportService : IDataExportService
             if (page.Count == 0)
                 break;
 
+            // The repository finishes each bounded database page before yielding. One lookahead
+            // row preserves artefact order without buffering a whole history or retaining a live
+            // reader while incremental blob copying or destination backpressure uses this scope.
+            await using var history = _extractions.StreamByArtefactsForUserAsync(
+                page.Select(artefact => artefact.Id).ToArray(), userId, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+            var hasHistory = await history.MoveNextAsync();
+
             foreach (var artefact in page)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1133,14 +1141,21 @@ public class DataExportService : IDataExportService
                 }
 
                 await destination.WriteAsync(ArtefactExtractionsPrefix, cancellationToken);
-                await WriteExtractionHistoryAsync(
-                    artefact.Id,
-                    userId,
-                    destination,
-                    cancellationToken);
+                var firstExtraction = true;
+                while (hasHistory && history.Current.SourceArtefactId == artefact.Id)
+                {
+                    if (!firstExtraction)
+                        await destination.WriteAsync(ArtefactSeparator, cancellationToken);
+                    firstExtraction = false;
+                    await WriteExtractionAsync(history.Current, destination, cancellationToken);
+                    hasHistory = await history.MoveNextAsync();
+                }
                 await destination.WriteAsync(ArtefactObjectSuffix, cancellationToken);
                 await destination.FlushAsync(cancellationToken);
             }
+
+            if (hasHistory)
+                throw new InvalidOperationException("Artefact extraction history was not in the requested order.");
 
             offset += page.Count;
             if (page.Count < StreamPageSize)
@@ -1228,54 +1243,31 @@ public class DataExportService : IDataExportService
             transcript.SourceArtefactId,
             transcript.CreatedAt);
 
-    private async Task WriteExtractionHistoryAsync(
-        Guid artefactId,
-        Guid userId,
+    private static async Task WriteExtractionAsync(
+        Domain.Entities.ArtefactExtraction extraction,
         Stream destination,
         CancellationToken cancellationToken)
     {
-        var first = true;
-        var offset = 0;
-        while (true)
+        var buffer = new ArrayBufferWriter<byte>(
+            Math.Min(extraction.TextLength + 512, 64 * 1024));
+        using (var writer = new Utf8JsonWriter(buffer))
         {
-            var page = await _extractions.GetByArtefactForUserAsync(
-                artefactId,
-                userId,
-                limit: 50,
-                offset: offset,
-                cancellationToken: cancellationToken);
-            foreach (var extraction in page)
-            {
-                if (!first)
-                    await destination.WriteAsync(ArtefactSeparator, cancellationToken);
-                first = false;
-
-                var buffer = new ArrayBufferWriter<byte>(
-                    Math.Min(extraction.TextLength + 512, 64 * 1024));
-                using (var writer = new Utf8JsonWriter(buffer))
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("id", extraction.Id);
-                    writer.WriteString("extractorName", extraction.ExtractorName);
-                    writer.WriteString("extractorVersion", extraction.ExtractorVersion);
-                    writer.WriteStartArray("warnings");
-                    foreach (var warning in extraction.Warnings)
-                        writer.WriteStringValue(warning);
-                    writer.WriteEndArray();
-                    writer.WriteString("extractedText", extraction.ExtractedText);
-                    writer.WriteNumber("textLength", extraction.TextLength);
-                    writer.WriteString("createdAt", extraction.CreatedAt);
-                    writer.WriteEndObject();
-                    writer.Flush();
-                }
-
-                await destination.WriteAsync(buffer.WrittenMemory, cancellationToken);
-            }
-
-            offset += page.Count;
-            if (page.Count < 50)
-                return;
+            writer.WriteStartObject();
+            writer.WriteString("id", extraction.Id);
+            writer.WriteString("extractorName", extraction.ExtractorName);
+            writer.WriteString("extractorVersion", extraction.ExtractorVersion);
+            writer.WriteStartArray("warnings");
+            foreach (var warning in extraction.Warnings)
+                writer.WriteStringValue(warning);
+            writer.WriteEndArray();
+            writer.WriteString("extractedText", extraction.ExtractedText);
+            writer.WriteNumber("textLength", extraction.TextLength);
+            writer.WriteString("createdAt", extraction.CreatedAt);
+            writer.WriteEndObject();
+            writer.Flush();
         }
+
+        await destination.WriteAsync(buffer.WrittenMemory, cancellationToken);
     }
 
     private static UserDataExportArtefactExtractionDto MapExtractionForExport(
