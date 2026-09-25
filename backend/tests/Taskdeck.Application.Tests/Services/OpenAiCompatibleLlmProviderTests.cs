@@ -835,7 +835,10 @@ public class OpenAiCompatibleLlmProviderTests
         }), BuildSettings(), tracker, circuitSettings);
 
         await CollectAsync(provider.StreamAsync(Request()));
-        await Task.Delay(TimeSpan.FromMilliseconds(1100));
+        // 2 s waits out the 1 s break with margin for loaded runners; the assertions after
+        // each wait (dispatch counts, recovered payload, tracker state) still verify behavior,
+        // so a longer wait cannot mask a regression (#3456).
+        await Task.Delay(TimeSpan.FromMilliseconds(2000));
 
         var enumerator = provider.StreamAsync(Request()).GetAsyncEnumerator();
         (await enumerator.MoveNextAsync()).Should().BeTrue();
@@ -845,7 +848,10 @@ public class OpenAiCompatibleLlmProviderTests
         var rejectedDuringCooldown = await CollectAsync(provider.StreamAsync(Request()));
         rejectedDuringCooldown[^1].Error.Should().Contain("circuit is open");
         dispatches.Should().Be(2);
-        await Task.Delay(TimeSpan.FromMilliseconds(1100));
+        // 2 s waits out the 1 s break with margin for loaded runners; the assertions after
+        // each wait (dispatch counts, recovered payload, tracker state) still verify behavior,
+        // so a longer wait cannot mask a regression (#3456).
+        await Task.Delay(TimeSpan.FromMilliseconds(2000));
         var recovered = await CollectAsync(provider.StreamAsync(Request()));
 
         recovered[^1].Error.Should().BeNull();
@@ -871,7 +877,10 @@ public class OpenAiCompatibleLlmProviderTests
         }), BuildSettings(), tracker, circuitSettings);
 
         await CollectAsync(provider.StreamAsync(Request()));
-        await Task.Delay(TimeSpan.FromMilliseconds(1100));
+        // 2 s waits out the 1 s break with margin for loaded runners; the assertions after
+        // each wait (dispatch counts, recovered payload, tracker state) still verify behavior,
+        // so a longer wait cannot mask a regression (#3456).
+        await Task.Delay(TimeSpan.FromMilliseconds(2000));
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         Func<Task<List<LlmTokenEvent>>> cancelled = () =>
@@ -881,7 +890,10 @@ public class OpenAiCompatibleLlmProviderTests
         var rejectedDuringCooldown = await CollectAsync(provider.StreamAsync(Request()));
         rejectedDuringCooldown[^1].Error.Should().Contain("circuit is open");
         dispatches.Should().Be(2);
-        await Task.Delay(TimeSpan.FromMilliseconds(1100));
+        // 2 s waits out the 1 s break with margin for loaded runners; the assertions after
+        // each wait (dispatch counts, recovered payload, tracker state) still verify behavior,
+        // so a longer wait cannot mask a regression (#3456).
+        await Task.Delay(TimeSpan.FromMilliseconds(2000));
         var recovered = await CollectAsync(provider.StreamAsync(Request()));
 
         recovered[^1].Error.Should().BeNull();

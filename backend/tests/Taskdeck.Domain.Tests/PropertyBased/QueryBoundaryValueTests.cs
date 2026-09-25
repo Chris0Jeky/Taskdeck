@@ -343,15 +343,15 @@ public class QueryBoundaryValueTests
 
     // Verifies that entity mutations always set UpdatedAt.
     // Uses individual [Fact] tests instead of a property-based test to avoid
-    // Thread.Sleep(1) * 200 iterations performance cost and timestamp resolution issues.
+    // Thread.Sleep(1) * 200 iterations performance cost; per-test clock waits use
+    // SpinUntilClockAdvances so they adapt to timer resolution (#3456).
 
     [Fact]
     public void Board_Update_SetsUpdatedAt()
     {
         var board = new Board("Test");
         var initialUpdatedAt = board.UpdatedAt;
-        // Ensure clock advances past timer resolution
-        Thread.Sleep(16);
+        SpinUntilClockAdvances(initialUpdatedAt);
         board.Update(name: "Updated");
         board.UpdatedAt.Should().BeAfter(initialUpdatedAt);
     }
@@ -361,7 +361,7 @@ public class QueryBoundaryValueTests
     {
         var card = new Card(Guid.NewGuid(), Guid.NewGuid(), "Title");
         var initialUpdatedAt = card.UpdatedAt;
-        Thread.Sleep(16);
+        SpinUntilClockAdvances(initialUpdatedAt);
         card.Update(description: "Updated");
         card.UpdatedAt.Should().BeAfter(initialUpdatedAt);
     }
@@ -371,7 +371,7 @@ public class QueryBoundaryValueTests
     {
         var col = new Column(Guid.NewGuid(), "Col", 0);
         var initialUpdatedAt = col.UpdatedAt;
-        Thread.Sleep(16);
+        SpinUntilClockAdvances(initialUpdatedAt);
         col.SetPosition(1);
         col.UpdatedAt.Should().BeAfter(initialUpdatedAt);
     }
@@ -381,8 +381,18 @@ public class QueryBoundaryValueTests
     {
         var label = new Label(Guid.NewGuid(), "Label", "#FF0000");
         var initialUpdatedAt = label.UpdatedAt;
-        Thread.Sleep(16);
+        SpinUntilClockAdvances(initialUpdatedAt);
         label.Update(name: "Updated");
         label.UpdatedAt.Should().BeAfter(initialUpdatedAt);
+    }
+
+    private static void SpinUntilClockAdvances(DateTimeOffset baseline)
+    {
+        // Adapts to the runner's actual timer resolution instead of hoping a fixed
+        // sleep crosses a tick (#3456). Bounded: the strict BeAfter below fails
+        // honestly if the clock ever stalls past the deadline.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (DateTimeOffset.UtcNow <= baseline && DateTimeOffset.UtcNow < deadline)
+            Thread.Sleep(1);
     }
 }

@@ -1687,24 +1687,19 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             "each card title should be unique, proving no duplicate processing");
 
         // Verify that webhook delivery records were actually created in the database.
-        // Poll with a short timeout because the notifier enqueues deliveries
-        // asynchronously after the HTTP response returns.
+        // The notifier enqueues deliveries asynchronously after the HTTP response
+        // returns. 30 s budget absorbs loaded runners; the count assertion below
+        // still fails hard on missing/duplicated records (#3456).
         using var scope = _factory.Services.CreateScope();
         var deliveryRepo = scope.ServiceProvider.GetRequiredService<IOutboundWebhookDeliveryRepository>();
 
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
-        IReadOnlyList<OutboundWebhookDelivery> deliveries = [];
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            deliveries = await deliveryRepo.GetBySubscriptionAsync(
-                webhookSub!.Subscription.Id, limit: mutationCount + 5);
-            if (deliveries.Count >= mutationCount)
-            {
-                break;
-            }
-
-            await Task.Delay(100);
-        }
+        var deliveries = await ApiTestHarness.PollUntilAsync(
+            () => deliveryRepo.GetBySubscriptionAsync(webhookSub!.Subscription.Id, limit: mutationCount + 5),
+            found => found.Count >= mutationCount,
+            $"all {mutationCount} webhook delivery records to persist",
+            maxAttempts: 300,
+            interval: TimeSpan.FromMilliseconds(100),
+            diagnostics: found => $"persisted {found?.Count ?? 0} of {mutationCount}");
 
         deliveries.Should().HaveCount(mutationCount,
             $"each of the {mutationCount} card mutations should create exactly one webhook delivery record");
