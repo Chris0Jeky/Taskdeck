@@ -16,9 +16,24 @@ describe('credential generation', () => {
     storage.setToken(first)
     storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
     const snapshot = storage.captureSessionContinuity()
-    storage.setToken(second)
+    storage.setToken(second, 'user-a')
     storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
     expect(storage.isSameSessionContinuity(snapshot)).toBe(true)
+  })
+
+  it('rejects a torn cross-tab identity replacement before session metadata changes', () => {
+    storage.setToken(first, 'user-a')
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    const previousMarker = localStorage.getItem('taskdeck_session_break')
+
+    storage.setToken(second, 'user-b')
+    expect(storage.getSession()?.userId).toBe('user-a')
+    expect(localStorage.getItem('taskdeck_session_break')).not.toBe(previousMarker)
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+
+    storage.setSession({ userId: 'user-b', username: 'bo', email: 'b@example.test' })
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
   })
 
   it('keeps continuity when another tab replaces a same-user token without logout', () => {

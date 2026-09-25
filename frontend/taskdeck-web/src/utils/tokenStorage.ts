@@ -18,10 +18,10 @@ const SESSION_BREAK_KEY = 'taskdeck_session_break'
 // logout followed by same-token login cannot revive an old request owner.
 let credentialGeneration = 0
 let observedToken: string | null = null
-// Session-break generation: advances only on credential removal, never on a
-// direct token replacement. Paired with the persisted session userId it
-// distinguishes a same-user token refresh (break unchanged, user same) from a
-// logout (break advanced) or user replacement (user differs).
+// Session-break generation advances on credential removal or a change of
+// identity, but not on a same-user token refresh. Publishing the break before
+// an identity replacement's token prevents another tab from reading a new
+// token with the previous session metadata and accepting a stale verdict.
 let sessionBreakGeneration = 0
 let observedSessionBreakMarker: string | null = null
 
@@ -59,7 +59,7 @@ export function getObservedCredentialGeneration(): number {
 }
 
 /**
- * Generation of the last observed session break (credential removal). Read
+ * Generation of the last observed session break. Read
  * getToken() immediately before taking/checking a request snapshot, then
  * compare alongside getSession()?.userId: same break + same user means the
  * request still belongs to the current user, including across a same-user
@@ -93,7 +93,7 @@ export function captureSessionContinuity(): SessionContinuity {
 
 /**
  * Whether a continuity snapshot still belongs to the current session: same
- * break generation (no logout/credential removal since) and same user. If
+ * break generation (no logout or identity replacement since) and same user. If
  * either user identity is unavailable, require the credential to be unchanged.
  */
 export function isSameSessionContinuity(snapshot: SessionContinuity): boolean {
@@ -195,9 +195,14 @@ export function getToken(): string | null {
   return token
 }
 
-export function setToken(token: string): boolean {
+export function setToken(token: string, sessionUserId?: string): boolean {
   if (!isValidJwtStructure(token)) {
     return false
+  }
+  // setSession writes token and metadata separately. Publish the identity
+  // break first so another tab cannot accept a stale result between writes.
+  if (sessionUserId !== undefined && getSession()?.userId !== sessionUserId) {
+    advanceSessionBreak(true)
   }
   localStorage.setItem(TOKEN_KEY, token)
   advanceCredentialGeneration(token)
