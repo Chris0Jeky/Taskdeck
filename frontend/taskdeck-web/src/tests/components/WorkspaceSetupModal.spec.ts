@@ -4,6 +4,7 @@ import WorkspaceSetupModal from '../../components/workspace/WorkspaceSetupModal.
 
 const mocks = vi.hoisted(() => ({
   createBoard: vi.fn(),
+  captureSession: vi.fn(),
   clearHomeSummary: vi.fn(),
   clearTodaySummary: vi.fn(),
   getCatalog: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: () => ({
     createBoard: mocks.createBoard,
+    captureSession: mocks.captureSession,
   }),
 }))
 
@@ -52,8 +54,12 @@ async function waitForUi() {
 }
 
 describe('WorkspaceSetupModal', () => {
+  let sessionCurrent = true
+
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionCurrent = true
+    mocks.captureSession.mockImplementation(() => () => sessionCurrent)
     mocks.createBoard.mockResolvedValue({
       id: 'board-1',
       name: 'Product Sprint',
@@ -99,6 +105,68 @@ describe('WorkspaceSetupModal', () => {
     expect(mocks.clearTodaySummary).toHaveBeenCalled()
     expect(mocks.push).toHaveBeenCalledWith('/workspace/boards/board-1')
     expect(wrapper.emitted('created')?.[0]?.[0]).toEqual({ boardId: 'board-1', templateId: 'blank-board' })
+  })
+
+  it('skips starter APIs, cache clears, emits, and navigation after a retired create', async () => {
+    let resolveBoard: ((board: { id: string; name: string }) => void) | undefined
+    mocks.createBoard.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBoard = resolve
+      }),
+    )
+
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: true,
+      },
+    })
+
+    await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Retired Board')
+    await wrapper.get('input[value="engineering-sprint"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await waitForUi()
+
+    sessionCurrent = false
+    wrapper.unmount()
+    resolveBoard?.({ id: 'retired-board', name: 'Retired Board' })
+    await waitForUi()
+
+    expect(mocks.getCatalog).not.toHaveBeenCalled()
+    expect(mocks.applyStarterPack).not.toHaveBeenCalled()
+    expect(mocks.clearHomeSummary).not.toHaveBeenCalled()
+    expect(mocks.clearTodaySummary).not.toHaveBeenCalled()
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(wrapper.emitted('created')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+  })
+
+  it('does not surface a stale create rejection', async () => {
+    let rejectBoard: ((error: Error) => void) | undefined
+    mocks.createBoard.mockImplementation(
+      () => new Promise((_, reject) => {
+        rejectBoard = reject
+      }),
+    )
+
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: true,
+      },
+    })
+
+    await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Failed Retired Board')
+    await wrapper.get('form').trigger('submit')
+    await waitForUi()
+
+    sessionCurrent = false
+    rejectBoard?.(new Error('stale create failed'))
+    await waitForUi()
+
+    expect(wrapper.text()).not.toContain('stale create failed')
+    expect(mocks.clearHomeSummary).not.toHaveBeenCalled()
+    expect(mocks.clearTodaySummary).not.toHaveBeenCalled()
+    expect(mocks.push).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('submits from the board name Enter path and ignores duplicate form submits', async () => {
@@ -213,6 +281,79 @@ describe('WorkspaceSetupModal', () => {
       expect.objectContaining({ dryRun: false }),
     )
     expect(mocks.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('skips starter-pack apply when logout retires the catalog continuation', async () => {
+    let resolveCatalog: ((catalog: Array<{ id: string; title: string; manifest: object }>) => void) | undefined
+    mocks.getCatalog.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveCatalog = resolve
+      }),
+    )
+
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: true,
+      },
+    })
+
+    await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Catalog Retired Board')
+    await wrapper.get('input[value="engineering-sprint"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await waitForUi()
+
+    sessionCurrent = false
+    resolveCatalog?.([
+      {
+        id: 'board-blueprint-engineering-sprint',
+        title: 'Board Blueprint - Engineering Sprint',
+        manifest: { schemaVersion: '1.0', packId: 'board-blueprint-engineering-sprint' },
+      },
+    ])
+    await waitForUi()
+
+    expect(mocks.applyStarterPack).not.toHaveBeenCalled()
+    expect(mocks.toastWarning).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.clearHomeSummary).not.toHaveBeenCalled()
+    expect(mocks.clearTodaySummary).not.toHaveBeenCalled()
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(wrapper.emitted('created')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('suppresses template feedback and navigation when logout retires apply', async () => {
+    let resolveApply: ((result: { applied: boolean; hasConflicts: boolean; hasBlockingConflicts: boolean }) => void) | undefined
+    mocks.applyStarterPack.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveApply = resolve
+      }),
+    )
+
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: true,
+      },
+    })
+
+    await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Apply Retired Board')
+    await wrapper.get('input[value="engineering-sprint"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await waitForUi()
+
+    sessionCurrent = false
+    resolveApply?.({ applied: true, hasConflicts: true, hasBlockingConflicts: false })
+    await waitForUi()
+
+    expect(mocks.toastWarning).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.clearHomeSummary).not.toHaveBeenCalled()
+    expect(mocks.clearTodaySummary).not.toHaveBeenCalled()
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(wrapper.emitted('created')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('supports selecting the client onboarding setup shape', async () => {

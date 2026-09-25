@@ -48,8 +48,13 @@ function closeModal() {
   emit('close')
 }
 
-async function applyStarterPack(boardId: string, starterPackId: string): Promise<void> {
+async function applyStarterPack(
+  boardId: string,
+  starterPackId: string,
+  isCurrentSession: () => boolean,
+): Promise<void> {
   const catalog = await starterPacksApi.getCatalog(boardId)
+  if (!isCurrentSession()) return
   const selectedPack = catalog.find((entry) => entry.id === starterPackId)
   if (!selectedPack) {
     throw new Error('The selected starter pack is no longer available.')
@@ -59,6 +64,7 @@ async function applyStarterPack(boardId: string, starterPackId: string): Promise
     manifest: selectedPack.manifest,
     dryRun: false,
   })
+  if (!isCurrentSession()) return
 
   if (result.hasBlockingConflicts || !result.applied) {
     throw new Error('The starter pack could not be applied to the new board.')
@@ -88,21 +94,25 @@ async function submitSetup() {
     return
   }
 
+  const isCurrentSession = boardStore.captureSession()
   submitting.value = true
   setupError.value = null
   const nextBoardName = boardName.value.trim()
 
   try {
     const board = await boardStore.createBoard({ name: nextBoardName })
+    if (!isCurrentSession()) return
 
     if (selectedSetup.value.starterPackId) {
       try {
-        await applyStarterPack(board.id, selectedSetup.value.starterPackId)
+        await applyStarterPack(board.id, selectedSetup.value.starterPackId, isCurrentSession)
       } catch (error: unknown) {
+        if (!isCurrentSession()) return
         const message = getErrorMessage(error, 'Board created, but the starter pack could not be applied')
         toast.warning(`${message}. You can still finish setup from the board view.`)
       }
     }
+    if (!isCurrentSession()) return
 
     workspace.clearHomeSummary()
     workspace.clearTodaySummary()
@@ -111,9 +121,9 @@ async function submitSetup() {
     void router.push(`/workspace/boards/${board.id}`)
     resetState()
   } catch (error: unknown) {
-    setupError.value = getErrorMessage(error, 'Failed to create the board')
+    if (isCurrentSession()) setupError.value = getErrorMessage(error, 'Failed to create the board')
   } finally {
-    submitting.value = false
+    if (isCurrentSession()) submitting.value = false
   }
 }
 

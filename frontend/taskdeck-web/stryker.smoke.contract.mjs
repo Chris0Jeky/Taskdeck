@@ -19,8 +19,8 @@
 export const mutationSmokeContract = Object.freeze({
   schemaVersion: '1.0',
   file: 'src/store/board/boardCrudStore.ts',
-  start: Object.freeze({ line: 667, column: 28 }),
-  end: Object.freeze({ line: 667, column: 78 }),
+  start: Object.freeze({ line: 673, column: 28 }),
+  end: Object.freeze({ line: 673, column: 78 }),
   source: 'state.boards.value.filter((b) => b.id !== boardId)',
 })
 

@@ -1,6 +1,6 @@
 export { createBoardState } from './boardState'
 export type { CardFilters, BoardState } from './boardState'
-export { createBoardHelpers } from './boardStoreHelpers'
+export { captureBoardSession, createBoardHelpers } from './boardStoreHelpers'
 export type { BoardHelpers } from './boardStoreHelpers'
 export { createBoardCrudActions } from './boardCrudStore'
 export type {

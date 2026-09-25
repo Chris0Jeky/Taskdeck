@@ -25,9 +25,11 @@ vi.mock('../../../utils/errorMessage', () => ({
 }))
 
 import { createCardActions } from '../../../store/board/cardStore'
+import { createBoardState } from '../../../store/board/boardState'
 
 function createMockState() {
   return {
+    ...createBoardState(),
     currentBoard: ref<{
       id: string
       columns: Array<{ id: string; name: string; cardCount: number }>

@@ -4,7 +4,7 @@
 import { cardCommentsApi } from '../../api/cardCommentsApi'
 import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '../../types/comments'
 import type { BoardState } from './boardState'
-import type { BoardHelpers } from './boardStoreHelpers'
+import { captureBoardSession, type BoardHelpers } from './boardStoreHelpers'
 
 export function createCardCommentActions(state: BoardState, helpers: BoardHelpers) {
   function getCardComments(cardId: string): CardComment[] {
@@ -13,25 +13,29 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
 
   async function fetchCardComments(boardId: string, cardId: string) {
     if (helpers.isDemoMode) return []
+    const isCurrentSession = captureBoardSession(state)
     try {
       const comments = await cardCommentsApi.getComments(boardId, cardId)
+      if (!isCurrentSession()) return comments
       state.cardCommentsByCardId.value = {
         ...state.cardCommentsByCardId.value,
         [cardId]: comments,
       }
       return comments
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to fetch card comments')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to fetch card comments')
       throw e
     }
   }
 
   async function createCardComment(boardId: string, cardId: string, dto: CreateCardCommentDto) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
       const createdComment = await cardCommentsApi.createComment(boardId, cardId, dto)
+      if (!isCurrentSession()) return createdComment
       const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
       state.cardCommentsByCardId.value = {
         ...state.cardCommentsByCardId.value,
@@ -44,10 +48,10 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       helpers.toast.success('Comment added')
       return createdComment
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to create card comment')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to create card comment')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
@@ -58,10 +62,12 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
     dto: UpdateCardCommentDto,
   ) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
       const updatedComment = await cardCommentsApi.updateComment(boardId, cardId, commentId, dto)
+      if (!isCurrentSession()) return updatedComment
       const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
       state.cardCommentsByCardId.value = {
         ...state.cardCommentsByCardId.value,
@@ -73,19 +79,21 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       helpers.toast.success('Comment updated')
       return updatedComment
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to update card comment')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to update card comment')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 
   async function deleteCardComment(boardId: string, cardId: string, commentId: string) {
     helpers.guardDemoMutation()
+    const isCurrentSession = captureBoardSession(state)
     try {
       state.loading.value = true
       state.error.value = null
       await cardCommentsApi.deleteComment(boardId, cardId, commentId)
+      if (!isCurrentSession()) return
       const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
       state.cardCommentsByCardId.value = {
         ...state.cardCommentsByCardId.value,
@@ -93,10 +101,10 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       }
       helpers.toast.success('Comment deleted')
     } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to delete card comment')
+      if (isCurrentSession()) helpers.handleApiError(e, 'Failed to delete card comment')
       throw e
     } finally {
-      state.loading.value = false
+      if (isCurrentSession()) state.loading.value = false
     }
   }
 

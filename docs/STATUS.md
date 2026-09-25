@@ -45,6 +45,26 @@ precondition for cross-device conflicts. Deferred Pinia tests cover the mutation
 token rotation; [the evidence note](analysis/2026-09-21-permission-mutation-order.md) records
 the contract and qualification limits.
 
+## Logout retires board mutation settlements (#3306)
+
+Board, card (including archive/restore), label and comment operations capture the shared
+session generation before transport. Logout advances it before clearing state. Old responses
+still settle for their original callers but cannot repopulate caches, change counts or board
+selection, invalidate new-session detail reads, publish toasts/errors, or clear new loading.
+Queued label writes stop before transport across logout, including when no board detail was
+loaded, and stale writes cannot initiate recovery reads under the next session. Direct card,
+label, comment and provenance reads honor the same client boundary. Same-session programmatic
+writes before detail loads continue to work. Deferred real-store regressions cover these cases.
+Board creation callers also capture that session: board-list navigation and workspace setup
+stop on retirement, including between starter-pack catalog/apply awaits. Stale continuations
+cannot route the next account, start its template requests, clear its summaries or publish setup
+notifications. Store results and errors still settle for the original caller.
+
+This prevents old-account data from reappearing and reduces cleanup after account switching.
+It preserves review-first proposal behavior and does not undo server writes. Same-session
+loading arbitration remains #3305; card/comment ordering PRs #3312/#3304 require separate
+reconciliation with these guards before integration.
+
 ## Column writes follow their board visit (#3314)
 
 Create, update, delete and reorder share one mutation lane per board, preserving intent order
@@ -59,7 +79,7 @@ for that recovery and keeps its later result.
 
 This reduces navigation-induced board maintenance while preserving existing review-first
 proposal behavior. It does not cancel a write already accepted by the server. Shared ownership
-for card, comment, label and board mutations remains tracked in #3306; shared loading arbitration
+for card, comment, label and board mutations is covered by #3306 above; shared loading arbitration
 remains tracked in #3305. Deferred-response store tests and BoardView lifecycle tests cover the
 route/session boundary, and the existing three ordering assertions now compare actual reactive
 array identities as well as full contents.

@@ -14,6 +14,7 @@ const mockBoardStore = reactive({
   error: null as string | null,
   fetchBoards: vi.fn<() => Promise<void>>(),
   createBoard: vi.fn<(payload: { name: string }) => Promise<Board>>(),
+  captureSession: vi.fn<() => () => boolean>(),
 })
 
 vi.mock('vue-router', () => ({
@@ -44,13 +45,17 @@ async function waitForUi() {
 }
 
 describe('BoardsListView', () => {
+  let sessionCurrent = true
+
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionCurrent = true
     mockBoardStore.boards = []
     mockBoardStore.loading = false
     mockBoardStore.error = null
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
     mockBoardStore.createBoard.mockResolvedValue(makeBoard())
+    mockBoardStore.captureSession.mockImplementation(() => () => sessionCurrent)
   })
 
   it('fetches boards on mount', async () => {
@@ -449,6 +454,31 @@ describe('BoardsListView', () => {
 
       expect(mockBoardStore.createBoard).toHaveBeenCalledWith({ name: 'My New Board' })
       expect(routerMocks.push).toHaveBeenCalledWith('/boards/new-board-id')
+    })
+
+    it('does not navigate when an unmounted create settles after its session is retired', async () => {
+      let resolveBoard: ((board: Board) => void) | undefined
+      mockBoardStore.createBoard.mockImplementation(
+        () => new Promise<Board>((resolve) => {
+          resolveBoard = resolve
+        }),
+      )
+
+      const wrapper = mount(BoardsListView)
+      await waitForUi()
+
+      const newBoardBtn = wrapper.findAll('button').find((b) => b.text().includes('+ New Board'))
+      await newBoardBtn!.trigger('click')
+      await wrapper.find('input[placeholder="Board name"]').setValue('Retired Board')
+      await wrapper.find('form').trigger('submit')
+      await waitForUi()
+
+      sessionCurrent = false
+      wrapper.unmount()
+      resolveBoard?.(makeBoard({ id: 'retired-board', name: 'Retired Board' }))
+      await waitForUi()
+
+      expect(routerMocks.push).not.toHaveBeenCalledWith('/boards/retired-board')
     })
 
     it('hides the create form after successful board creation', async () => {

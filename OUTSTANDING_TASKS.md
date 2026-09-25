@@ -182,6 +182,13 @@ The maintainer directed (2026-08-30) that the repository goes **private for the 
 
 ### J.2. Additional control-plane review checkpoint (2026-09-08)
 
+PR [#3358](https://github.com/Chris0Jeky/Taskdeck/pull/3358) also needs maintainer review before
+merge: its logout fix moves the board-delete expression used by mutation smoke testing, requiring
+the source range and the companion assertion in `scripts/ci/smart-ci/mutation-smoke-contract.test.mjs`
+to move from line 667 to 673. The expression, column bounds and negative checks are unchanged.
+This small test-data change still touches a declared control path; independent review and passing
+CI do not supply the maintainer decision under ADR-0066.
+
 - [ ] **Review PR #2787 post hoc and review new CI-control candidates before merge.** The coordinator merged prompt-v3 PR #2787 at `0cebd938d79f045a20ce99bff495b986c25cf267` with hosted checks and independent Terra review, but without the maintainer review required by the ADR-0066 amendment. Its changed surface includes the Windows archive acceptance script and matching tests. The earlier SC-10 delegation covered twelve named PRs and did not include #2787. Please review that merged change; the coordinator has not inferred acknowledgement or reverted it. New nightly observation PR #2791 and the #2335 control-trust test PR must finish independent review and exact-head hosted qualification before the maintainer reviews their final heads. This checkpoint grants no release, repository-settings, or selective-execution approval.
 
 ### J.3. Twelve control-plane PRs merged outside the ADR-0066 per-PR review (2026-09-09 to 2026-09-10)

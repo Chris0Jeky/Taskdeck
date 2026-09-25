@@ -15,9 +15,11 @@ vi.mock('../../../api/cardCommentsApi', () => ({
 }))
 
 import { createCardCommentActions } from '../../../store/board/cardCommentStore'
+import { createBoardState } from '../../../store/board/boardState'
 
 function createMockState() {
   return {
+    ...createBoardState(),
     cardCommentsByCardId: ref<Record<string, Array<{ id: string; createdAt: string }>>>({
       'card-1': [
         { id: 'cmt-1', createdAt: '2026-01-01T00:00:00Z' },

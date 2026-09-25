@@ -13,6 +13,7 @@ const { mockLabelsApi } = vi.hoisted(() => ({
 vi.mock('../../../api/labelsApi', () => ({ labelsApi: mockLabelsApi }))
 
 import { createLabelActions } from '../../../store/board/labelStore'
+import { createBoardState } from '../../../store/board/boardState'
 
 const savedLabel = { id: 'label-1', boardId: 'board-1', name: 'Saved', colorHex: '#123456' }
 
@@ -28,6 +29,7 @@ function deferred<T>() {
 
 function createHarness() {
   const state = {
+    ...createBoardState(),
     currentBoard: ref<{ id: string } | null>({ id: 'board-1' }),
     currentBoardLabels: ref<Array<typeof savedLabel>>([]),
     loading: ref(false),
