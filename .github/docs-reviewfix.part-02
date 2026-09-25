@@ -1,0 +1,24 @@
+--- a/OUTSTANDING_TASKS.md
++++ b/OUTSTANDING_TASKS.md
+@@ -212,6 +212,9 @@ September 18-21 implementation wave. It does not replace the detailed evidence a
+ - [ ] Record the standing review/merge rule for **new** ADR-0066 control-plane PRs after the named
+   September directives. J.3(b) remains unanswered; do not infer a permanent waiver from a completed
+   wave.
++- [ ] Choose and record the v0.3 CodeQL posture for `#2335`: re-enable CodeQL in an approved hosted
++  lane, or retain the current scanners with an explicit reason and residual. The merged `#2838`
++  least-privilege patch does not decide this.
+ - [ ] Review the current landed-verifier and CI-17 stacks in dependency order: parent `#3295` before
+   stacked child `#3296`, and non-activating inventory `#3297` before the actual `#3170` rehearsal
+   control. Automated green evidence is not the human approval.
+diff --git a/docs/REVIVAL_PLAN.md b/docs/REVIVAL_PLAN.md
+index a6a80a8..6a464d3 100644
+--- a/docs/REVIVAL_PLAN.md
++++ b/docs/REVIVAL_PLAN.md
+@@ -82,10 +82,11 @@ Sequence:
+    integration and rebuild the observation evidence.
+ 3. **Finish CI-17.** Qualify the non-activating workflow inventory in `#3297`, then implement the
+    trusted, fail-closed Linux-only rehearsal owned by `#3170`.
+-4. **Close release prerequisites.** Reconcile post-merge Windows timeout evidence after `#3162`,
+-   finish the remaining `#2335`/CodeQL acceptance after merged `#2838`, and complete storage
+-   (`#2333`), nightly/exact-tag qualification (`#2334`), runner proof (`#2328`), and mirror/GHCR
+-   continuity (`#2439`).

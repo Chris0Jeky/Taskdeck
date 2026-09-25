@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-09-11
+Last Updated: 2026-09-21
 
 **Status:** Active execution plan (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot). Product identity, direction, and the release-theme ladder are owned by `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23); this plan owns wave sequencing, the issue map, and ship gates.
 **Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
@@ -47,7 +47,7 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 | **v0.1 "First Light"** | **SHIPPED 2026-08-19 (tag `v0.1.0`) + 2026-08-21 (`v0.1.1`, Windows).** Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate (delivered except (i) dogfooding days — running since 2026-08-22 and re-scoped 2026-08-27 to the #1271 standing tracker, no longer release-gating — and the §6 beta threat model + one-time ACL/TOCTOU re-triage, still outstanding on #1311) |
 | **v0.1.2** | **SHIPPED 2026-08-25 (tag at `9766edbb5`).** Honest-Windows-Beta correction: the `#1876` double-click/startup fix plus the Priority I tranche | q-3 gate satisfied: maintainer accepted the release deck in-session 2026-08-24 (`#1947`); milestone groomed to zero open and closed, residuals re-milestoned to v0.2 |
 | **v0.2 "Coherent Context-to-Action Loop"** | **SHIPPED 2026-08-29 (tag at `48c05e1dc`).** Milestone 0 open / 15 closed; the transcript loop acceptance is recorded in `docs/STATUS.md`; the maintainer accepted the release deck in-session (q-1 B, `#1947`) and the agent cut the tag under that ruling | a real 45-min transcript → reviewable, evidence-linked, typed action items; capture fields never silently dropped; release checks green |
-| **v0.3 "Accountable Agents + Downloadable Beta"** | **`v0.3.0-rc.1` SHIPPED 2026-08-30 (prerelease, tag at `9d2ea3c7c`)**; final **when ready — no dates** (maintainer ruling 2026-08-30, RC deck q-6). Phase 3 packages MCP with scoped keys, Review liveness, honest degradation, the double-click start, the trusted private-instance proof (#1772 Stage 1) and the maintainer-pulled fix queue; the **hosted, install-free open beta moved to v0.4** (deck note 3); **the repository goes private for the v0.3.0 release** on the personal GitHub Pro account (maintainer directive 2026-08-30 — ADR-0066 Smart CI Fabric, tracker CI-00 #2324) | RC checks green on the exact head; milestone closed or explicitly re-ruled; launch kit drafted (#2242); `main` green; **the CI-13 #2337 cutover performed by the maintainer** (private repository with `Smart CI / Required Gate` enforced). Standing per-clause state, and the split between blockers, human gates, trackers and milestone residuals, is `docs/releases/V0_3_0_READINESS.md` |
+| **v0.3 "Accountable Agents + Downloadable Beta"** | **`v0.3.0-rc.1` SHIPPED 2026-08-30 (prerelease, tag at `9d2ea3c7c`)**; final **when ready, no dates**. Phase 3 packages MCP with scoped keys, Review liveness, honest degradation, the double-click start, the trusted private-instance proof (#1772 Stage 1) and the retained fix queue; the hosted, install-free open beta stays in v0.4. The development repository becomes private for `v0.3.0` under ADR-0066, with public source/releases through `Chris0Jeky/taskdeck-release` and public GHCR (`#2439`), plus the CI-17 Linux-only rehearsal (`#3170`) before runner association. | Exact frozen-head checks; every milestone issue closed, moved or explicitly retained; storage/least-privilege/nightly/mirror/runner prerequisites complete; CI-13 `#2337` executed in the canonical order; the real tag qualified; private Release mirrored and anonymously verified before announcement. Current state: `docs/releases/V0_3_0_READINESS.md`. |
 | **v0.4 "Hosted Open Beta + Work Model + Fabric Foundation"** | The install-free hosted open beta (#2243: ADR-0061 stages → open registration under the beta threat model), the work-model slices #2087/#2089/#2092/#2093 (q-3 B), opt-in analytics (#1308 Option B), refactoring (#2236) and performance (#2237) passes, the behaviour-preserving Context Fabric foundation (Phase 5 slices 1–3 + storage seam: CF-01/02/03/05/06/07, CF-23), and the Worker Protocol host CF-04 (slice 5, not behaviour-preserving — it launches supervised sidecars) because the ADR-0048 worker #1429 is its first sidecar. The former "Every Artefact" content (GEN-03/04/06) moved into Phase 5; GEN-07/08/11 stay with (GEN-12 `#1326` closed 2026-09-03: stay one application) #1327 | a stranger registers and runs the loop; every legacy capture reads back byte-identically through `ICaptureStore`; the transcript golden path is unchanged behind the capability runner |
 | **v0.5 "Speak, Type, Paste, or Drop"** | Phase 5 payoff: candidates (CF-08), context resolver (CF-09), the voice vertical (CF-12/13/14/16), Universal Capture (CF-20), capture-centred review + presentation profiles (CF-21), GEN-03 #1317 as a registered vision processor | a voice note → time-anchored transcript → reviewable proposal → approve → apply → the audio range plays from Review; no board required to capture or understand |
 | **v0.6 "Under Your Rules"** | Phase 5 policy families: processing profiles + router v1 + receipts (CF-10), cache (CF-11), cloud STT + benchmark (CF-15), OCR sidecar (CF-18), meeting bundle (CF-17), runtime outcome metrics + dashboard (CF-24B; the corpus CF-24A lands in v0.5), first delegated-authority class (CF-22, own gate; stretch, not a release blocker) | a *Private* profile never egresses; a route receipt explains every processor choice; CF-22 ships only after its evidence bar |
@@ -64,6 +64,37 @@ The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogf
 - **Later:** full Workspace/Project/WorkItem migration, boards as views over canonical items, formulas, thresholds, time logs, capacity planning, recurrence, templates, and managed multi-tenant SaaS.
 
 ADR-0060 and ADR-0062 are Accepted and ADR-0061 is Accepted as direction only, evidence pending (maintainer rulings of 2026-08-29, recorded in each ADR). The shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged until the work-model slices (`#2087`, `#2092`, `#2093` — moved to v0.4 on 2026-08-30, q-3 B; `#2240` is the v0.3 sub-slice) land under those rulings; ADR-0060 stages 4–5 remain gated on an ADR amendment, and the private shared instance stays gated on the pending CL-1 values and the Stage 1 prerequisites tracked on `#1772` (`#1777` stays parked).
+
+### Current programme sequence (2026-09-21)
+
+The v0.3 lane is now a convergence and release-control programme. The detailed current map is the
+[2026-09-21 repository direction and v0.3 programme brief](analysis/2026-09-21-repository-direction-and-v0.3-programme.md),
+with the live gate view in [`releases/V0_3_0_READINESS.md`](releases/V0_3_0_READINESS.md).
+
+Sequence:
+
+1. **Finish exact-identity correctness work already admitted to v0.3.** Complete owned stacks around
+   request/session/credential generations, authoritative snapshots, durable commit boundaries,
+   honest unavailable states, and release receipts. Do not turn the theme into unlimited adjacent
+   refactoring.
+2. **Finish Smart CI proof.** Treat merged `#3156` and `#3167` as landed foundations; qualify
+   parent `#3295` before stacked child `#3296`, then add authoritative collection/workflow
+   integration and rebuild the observation evidence.
+3. **Finish CI-17.** Qualify the non-activating workflow inventory in `#3297`, then implement the
+   trusted, fail-closed Linux-only rehearsal owned by `#3170`.
+4. **Close release prerequisites.** Reconcile post-merge Windows timeout evidence after `#3162`,
+   finish the remaining `#2335`/CodeQL acceptance after merged `#2838`, and complete storage
+   (`#2333`), nightly/exact-tag qualification (`#2334`), runner proof (`#2328`), and mirror/GHCR
+   continuity (`#2439`).
+5. **Reconcile all open milestone issues.** Close on evidence, split real residuals, or record an
+   explicit maintainer ruling. Preserve `#2315`'s existing residual ruling unless changed.
+6. **Execute the human cutover.** Follow `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md`: public GHCR,
+   privacy, stable gate registration, CI-17 rehearsal, then runner association.
+7. **Freeze and release.** Rehearse the final head, prove the publication hold, create `v0.3.0`,
+   qualify the exact tag, publish privately, mirror publicly, verify anonymously, then announce.
+
+v0.4 and later work remains authorized by the ladder and accepted ADRs, but it is not the default
+admission source while release-critical v0.3 dependencies remain unfinished.
 
 ### Current work-model sequence (2026-09-12)
 

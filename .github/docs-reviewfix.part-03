@@ -1,0 +1,19 @@
++4. **Close pre-cutover release prerequisites.** Reconcile post-merge Windows timeout evidence
++   after `#3162`, finish the remaining `#2335`/CodeQL acceptance after merged `#2838`, and complete
++   storage (`#2333`), the nightly/release contract plus no-publish rehearsal (`#2334`), runner proof
++   (`#2328`), and mirror/GHCR continuity (`#2439`). Real-tag creation and exact-tag qualification
++   remain step 7, after privacy and the runner decision.
+ 5. **Reconcile all open milestone issues.** Close on evidence, split real residuals, or record an
+    explicit maintainer ruling. Preserve `#2315`'s existing residual ruling unless changed.
+ 6. **Execute the human cutover.** Follow `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md`: public GHCR,
+diff --git a/docs/analysis/2026-09-21-repository-direction-and-v0.3-programme.md b/docs/analysis/2026-09-21-repository-direction-and-v0.3-programme.md
+index a2b9a27..0930382 100644
+--- a/docs/analysis/2026-09-21-repository-direction-and-v0.3-programme.md
++++ b/docs/analysis/2026-09-21-repository-direction-and-v0.3-programme.md
+@@ -121,7 +121,8 @@ priority. The controlling release sequence is:
+ 1. finish admitted exact-identity correctness stacks without widening into adjacent refactoring;
+ 2. finish Smart CI proof and authoritative landed-evidence integration;
+ 3. implement and prove CI-17 after its non-activating inventory prerequisite;
+-4. close Windows, least-privilege, storage, nightly, runner, and mirror/GHCR prerequisites;
++4. close Windows, least-privilege, storage, pre-cutover nightly/release-contract, runner, and
++   mirror/GHCR prerequisites;

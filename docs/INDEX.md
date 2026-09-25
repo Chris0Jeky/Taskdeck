@@ -53,7 +53,7 @@ Stable reference material belongs in topical subfolders.
 - Regular product user:
   - `START_HERE.md` -> `manual/02_home_and_today.md` -> `manual/03_projects_and_cards.md` -> `manual/08_recipes.md`
 - Maintainer or planner:
-  - `strategy/PRODUCT_DIRECTION.md` -> `STATUS.md` -> `REVIVAL_PLAN.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
+  - `strategy/PRODUCT_DIRECTION.md` -> `STATUS.md` -> `analysis/2026-09-21-repository-direction-and-v0.3-programme.md` -> `REVIVAL_PLAN.md` -> `releases/V0_3_0_READINESS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
   - active execution order: the revival **phases** in `REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → checkpoint). *Historical:* the archive-pivot waves (2026-06-13→2026-07-10, superseded by ADR-0044 but retained as the checkpoint fallback), `PROJECT_TRAJECTORY.md`/`COURSE_CORRECTION.md` (2026-07-02 analysis pair), root `taskdeck-12-week-roadmap-v4.md`, tracker `#972`
 - Contributor or agent:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md` -> `../autodoc/AGENT_INDEX.md` -> `agentic/SKILL_REGISTRY.md`
@@ -80,8 +80,7 @@ Stable reference material belongs in topical subfolders.
 - `platform/`
   - Provider, import-adapter, and starter-pack platform or reference docs.
 - `releases/`
-  - Release-facing material: `releases/V0_3_0_READINESS.md` (the standing v0.3.0 gate view: clauses,
-    technical blockers, human gates, trackers, and the milestone residuals awaiting a re-ruling), the
+  - Release-facing material: `releases/V0_3_0_READINESS.md` (the current standing v0.3.0 gate view: live snapshot boundary, critical path, issue routing, human gates, and definition of done), the
     packaged Windows quick start, and per-tag notes under `releases/notes/`.
 - `security/`
   - Active security and abuse-protection policies or baselines.
@@ -95,6 +94,8 @@ Stable reference material belongs in topical subfolders.
   - Shared agent question, failure, guide-update, tool-parity, and skill-registry protocols. This is a contributor/agent operating layer, not product truth.
 - `analysis/`
   - Dated reconciliation notes, audits, and planning snapshots. Non-authoritative unless promoted.
+  - includes `analysis/2026-09-21-repository-direction-and-v0.3-programme.md` for the current repository-wide convergence thesis, release-control dependency map, admission rules, and human-decision boundary. It is a dated executive brief; live GitHub and the canonical strategy/readiness documents outrank its changing facts.
+  - includes `analysis/2026-09-17-v0.3-release-assessment.md` as the historical release-owner snapshot that established the safe cutover order.
   - includes `analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md` for ongoing promotion of `docs/InReview/MVP_EXPANSION/` into canonical docs and backlog guidance.
   - includes `analysis/2026-03-07_mvp-expansion-gap-map.md` for the dated doc and issue reconciliation baseline.
   - includes `analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` for the full file-by-file and snippet-by-snippet audit of what from `MVP_EXPANSION/` is promoted, deferred, or carried into later-wave issue scope.
@@ -120,6 +121,8 @@ Stable reference material belongs in topical subfolders.
 
 ## Working Notes
 
+- `analysis/2026-09-21-repository-direction-and-v0.3-programme.md`
+  - Current programme brief for v0.3 convergence, exact-identity correctness, release-control sequencing, and admission boundaries.
 - `analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`
   - Canonical continuity log for the MVP expansion reconciliation.
 - `analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`

@@ -1,11 +1,13 @@
 # Issue Execution Guide
 
-Last Updated: 2026-08-23
+Last Updated: 2026-09-21
 Scope: How agents execute the GitHub issue backlog safely, in dependency order, and with explicit
 priority, status, and milestone discipline.
 
 **Active sequence:** the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md` (direction:
-`docs/strategy/PRODUCT_DIRECTION.md`). ADR-0051 permits an authorized coordinator to admit an
+`docs/strategy/PRODUCT_DIRECTION.md`), with current repository and v0.3 routing in
+`docs/analysis/2026-09-21-repository-direction-and-v0.3-programme.md` and
+`docs/releases/V0_3_0_READINESS.md`. ADR-0051 permits an authorized coordinator to admit an
 acceptance-ready existing issue without a maintainer-request gate, within the caps below. New
 tables, endpoints, mutation paths, connector types, top-level views, security posture, and other
 architectural surprises still require `REVIVAL_PLAN.md` §7 or a later Accepted ADR/plan amendment.
@@ -49,6 +51,37 @@ labels mark issues agents must not convert into implementation or infer complete
 7. Use the project `No Status` view (`no:status`) and assign `Now` or `Next` before active work,
    respecting the four-`Now`/eight-`Next` caps.
 
+## Programme routing, ownership, and stacked work (Required)
+
+Before selecting or continuing an issue:
+
+1. Refresh live issue, milestone, PR, branch, checks, review threads, Project status and recent
+   commits. A dated document never proves live ownership or readiness.
+2. Search both lane-claim marker families, open PRs and remote branches. Do not duplicate a current
+   implementation because its claim format differs.
+3. Determine the primary acceptance owner. File location alone does not decide whether work belongs
+   to product trust, platform integrity, release control or documentation reconciliation.
+4. For a stacked PR, record the parent PR, actual base branch and required landing order. A child
+   based on an open parent is not independently mergeable to `main` even when GitHub reports it
+   conflict-free.
+5. Treat CI/review as exact-head evidence. Rebase, base merge, retarget, review repair, generated
+   file update or parent refresh invalidates the old qualification claim.
+6. Check canonical-document ownership before editing `STATUS`, the masterplan, readiness,
+   `OUTSTANDING_TASKS`, this guide, or the agent index. Agree an integration order with any open PR
+   already touching the file.
+7. For control-plane work, read ADR-0066 plus `OUTSTANDING_TASKS.md` section J. Green checks do not
+   grant merge authority.
+8. For v0.3 work, prefer the release critical path. Future-horizon work remains valid backlog but
+   does not displace an unfinished release dependency merely because it is easier.
+
+Current named dependency examples are deliberately pointers, not permanent inventory:
+
+- landed verification: merged foundations `#3156` and `#3167`, open parent `#3295`, stacked child
+  `#3296`, then collector and workflow integration;
+- private rehearsal: workflow inventory `#3297`, then CI-17 implementation `#3170`;
+- runner recovery: PR `#3261` is FIX-FIRST evidence and must be ported minimally rather than merged
+  wholesale.
+
 ## Project Status Workflow (Required)
 
 - Move issue to `Now` only when active implementation starts and all dependencies are complete.
@@ -71,11 +104,11 @@ labels mark issues agents must not convert into implementation or infer complete
 3. Add/update tests for behavior changes.
 4. Run required verification commands.
 5. Update docs (`STATUS`/`IMPLEMENTATION_MASTERPLAN`/test docs) if reality changed.
-6. Open PR with linked issue and risk notes.
+6. Open PR with linked issue, dependency/stack notes, exact base/head identity, and risk notes.
 7. Enter the canonical global laws and `review-and-ship` pipeline; this guide adds no local
    reviewer-count, severity, convergence, or merge rule.
 8. Move project item to `Review`.
-9. After merge, move item to `Done` and post final verification summary.
+9. After merge, move item to `Done` and post the merge SHA, exact-head verification, residuals, and final disposition.
 
 ## WIP Discipline
 
