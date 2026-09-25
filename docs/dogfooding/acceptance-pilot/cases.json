@@ -1,0 +1,95 @@
+{
+  "document_kind": "manual_synthetic_task_cards_not_import_or_execution_results",
+  "version": 0,
+  "execution_status": "NOT RUN",
+  "automated_runner": null,
+  "scope": "Existing capture-review-execute-resume loop; no product or provider qualification implied.",
+  "shared_preconditions": [
+    "Pinned build/configuration and browser recorded.",
+    "Disposable synthetic database identity verified; never use the real dogfood database.",
+    "Actual initial target state and IDs recorded locally; case setup completed before timing."
+  ],
+  "cases": [
+    {
+      "id": "P1",
+      "goal": "Capture a loose task and find it after reload.",
+      "preconditions": [
+        "Synthetic capture text is absent from Inbox.",
+        "Board and existing cards are recorded before capture."
+      ],
+      "actions": [
+        "Use the current Inbox capture flow to submit the supplied synthetic text once.",
+        "Reload and locate the saved capture."
+      ],
+      "expected_observations": [
+        "The intended capture survives reload with the supplied content.",
+        "No proposal approval or board mutation is caused merely by capture."
+      ],
+      "control": "The supported capture-save path is a known-good persistence control; a no-op save would not satisfy it.",
+      "reset": "Recreate the recorded initial state only in this disposable synthetic instance.",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "P2",
+      "goal": "Decline an unwanted prepared proposal without changing board work.",
+      "preconditions": [
+        "One supported, unexecuted proposal with recorded intended operations is available.",
+        "Record the proposed target card/column state before the decision."
+      ],
+      "actions": [
+        "Inspect the proposed operations through the actual review surface.",
+        "Use the existing decline/dismiss action without executing; reload the target board."
+      ],
+      "expected_observations": [
+        "The intended decline/dismiss disposition is visible under the current product contract.",
+        "The target board/card state is unchanged by the rejected operations; proposal metadata may change."
+      ],
+      "control": "Negative board-mutation control; service failure before review is BLOCKED, not a pass.",
+      "reset": "Recreate the same unexecuted proposal through a supported path in the disposable instance.",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "P3",
+      "goal": "Review and execute one intended single-card change.",
+      "preconditions": [
+        "A supported prepared proposal creates only Draft sample checklist in the recorded Backlog column.",
+        "The card is absent; initial target and neighboring card state is recorded.",
+        "Provider/preparation mode is recorded; preparation failures are not hidden."
+      ],
+      "actions": [
+        "Inspect the exact proposed operations.",
+        "Perform the existing explicit approval and execution flow.",
+        "Reload the board and inspect the intended card plus neighboring state."
+      ],
+      "expected_observations": [
+        "Before explicit execution, the proposed board change has not occurred.",
+        "After successful execution, exactly the intended card exists in the intended column and survives reload.",
+        "Neighboring state remains unchanged except for documented effects of the intended operation."
+      ],
+      "control": "Successful permitted-execution control paired with P2; counts alone do not prove correct identity or content.",
+      "reset": "Recreate equivalent initial state independently per revision without overwriting the baseline or real-use database.",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "P4",
+      "goal": "Resume work and explain what remains after an interruption.",
+      "preconditions": [
+        "P1 and P3 completed on this pinned instance, or equivalent supported synthetic state was prepared and recorded.",
+        "The interruption interval and starting route are declared."
+      ],
+      "actions": [
+        "Leave the task for the declared interval, then reopen the product.",
+        "Find the saved capture and intended card; explain their relationship and next action without applying the proposal again."
+      ],
+      "expected_observations": [
+        "The same recorded capture/card identities and intended durable state are found.",
+        "Merely reopening and navigating causes no duplicate application or new board mutation.",
+        "Record actual resumption time, help and the human explanation; do not invent a comprehension score."
+      ],
+      "control": "Read/resume no-mutation control; a short interruption is not evidence of next-day retention.",
+      "reset": "Retain or recreate the recorded post-P1/P3 synthetic state for the compared revision; do not silently mix run states.",
+      "status": "NOT RUN"
+    }
+  ],
+  "observed_results": []
+}
