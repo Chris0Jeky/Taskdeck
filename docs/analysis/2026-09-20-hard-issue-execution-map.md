@@ -25,7 +25,7 @@ The first two ranks combine difficult implementation with platform or maintainer
 ## Execution order
 
 1. **Quota experiment integrity (#1435).** Complete the corrected head's checks and review after the observed negative control. Restore the quarantined boundary contracts and retain independent fresh-file evidence. Keep this independent of CI-control and frontend PRs.
-2. **Bounded export cursor (#1399).** Establish the bounded persistence primitive before switching the streaming consumer. Keep the buffered export's full-history method and size guard unchanged. A primitive-only PR must explicitly leave the export N+1 open.
+2. **Bounded export cursor (#1399).** The bounded persistence primitive has landed via #3282 (merge `fc33245c`, 2026-09-22); the next step is the streaming-consumer switch described in `docs/analysis/2026-09-20-bounded-extraction-stream.md`, which must compare actual emitted export bytes and prove query reduction at the endpoint. Keep the buffered export's full-history method and size guard unchanged. #1399 stays open until the consumer switch lands.
 3. **Decision identity (#1453 + #1465), then bounded reads (#1467).** Review one schema/semantic decision before one query-translation decision. This avoids cementing the rejected timestamp heuristic into a new SQL selector.
 4. **Containment (#1429) and CI trust (#3170/#2327).** Proceed in independently reviewable protocol, host, platform-proof, and integration slices, respecting existing lane ownership. Do not collapse these into a single cross-platform/control-plane megacommit.
 
@@ -43,7 +43,7 @@ This is same-process independent-connection evidence, not cross-process qualific
 
 ## Export lane: bounded primitive before consumer integration
 
-[PR #3282](https://github.com/Chris0Jeky/Taskdeck/pull/3282) owns `IArtefactExtractionRepository`, `ArtefactExtractionRepository`, focused integration tests, and a design/evidence note. It begins with a test-only negative control: asynchronously yielding the existing full-history batch still materialises all 123 test rows before the first yield. The interceptor assertion must reject that implementation. Do not count a compiler error or an unobserved expected result as a passing negative-control experiment.
+[PR #3282](https://github.com/Chris0Jeky/Taskdeck/pull/3282) (merged 2026-09-22 as `fc33245c`) delivered `IArtefactExtractionRepository`, `ArtefactExtractionRepository`, focused integration tests, and a design/evidence note. It began with a test-only negative control: asynchronously yielding the existing full-history batch still materialises all 123 test rows before the first yield. The interceptor assertion must reject that implementation. Do not count a compiler error or an unobserved expected result as a passing negative-control experiment.
 
 The selected design snapshots and bounds the raw ID window before de-duplication, preserves first-occurrence caller order, and uses SQLite keyset continuation. A materialized metadata selection limits each page to 50 keys before joining large text payloads. Ownership is checked in SQL. Each page completes before yielding, so output backpressure cannot retain a live reader. Non-SQLite providers retain existing bounded per-artefact pages and native ordering.
 
@@ -57,7 +57,7 @@ Keep one semantic authority. `AutomationProposalService` now delegates effective
 
 The reject-pin design must explicitly distinguish a new rejection of original operations from legacy rejected rows whose decision-time payload can only be approximated. Prefer an additive, versioned representation with documented backfill rather than silently changing the meaning of `ApprovedRevisionId`. The same decided identity must survive dismissal. A later bounded query may narrow candidates only when parity fixtures prove it returns the resolver's winner, including intentionally original decisions, missing legacy pins, rejected cutoffs, dismissed states, and long histories.
 
-Approval/application safety and rejected-display consistency are distinct claims. Do not describe a display-only fix as preventing demonstrated wrong execution when the approval pin already protects execution. No revision-family implementation is claimed by the two active engineering PRs.
+Approval/application safety and rejected-display consistency are distinct claims. Do not describe a display-only fix as preventing demonstrated wrong execution when the approval pin already protects execution. No revision-family implementation was claimed by the two engineering PRs active at the time of writing (#3280 and #3282, both merged 2026-09-22).
 
 ## Verification and continuation
 
