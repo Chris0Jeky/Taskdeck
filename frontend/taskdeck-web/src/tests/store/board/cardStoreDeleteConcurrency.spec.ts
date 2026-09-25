@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import { createBoardState } from '../../../store/board/boardState'
 
 const { mockCardsApi } = vi.hoisted(() => ({
   mockCardsApi: {
@@ -22,6 +23,7 @@ import { createCardActions } from '../../../store/board/cardStore'
 
 function createState() {
   return {
+    ...createBoardState(),
     currentBoard: ref<{
       id: string
       columns: Array<{ id: string; name: string; cardCount: number }>

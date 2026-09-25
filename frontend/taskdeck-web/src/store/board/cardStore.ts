@@ -5,13 +5,15 @@ import { watch } from 'vue'
 import { cardsApi } from '../../api/cardsApi'
 import { getErrorMessage } from '../../utils/errorMessage'
 import type { CardDetachPreview, CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
-import type { BoardState } from './boardState'
+import type { BoardState, BoardViewVisit } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 import type { BoardFetchOptions } from './boardCrudStore'
 
 interface CardMutationVisit {
   boardId: string
   generation: number
+  viewVisit: BoardViewVisit | undefined
+  sessionGeneration: number
 }
 
 class StaleBoardVisitError extends Error {
@@ -43,14 +45,22 @@ export function createCardActions(
   )
 
   function captureCardMutationVisit(boardId: string): CardMutationVisit {
-    return { boardId, generation: boardVisitGeneration }
+    return {
+      boardId,
+      generation: boardVisitGeneration,
+      viewVisit: state.boardViewVisit.value,
+      sessionGeneration: state.boardMutationSessionGeneration.value,
+    }
   }
 
   function isCurrentCardMutationVisit(visit: CardMutationVisit) {
     const currentBoard = state.currentBoard.value
     return (
       (currentBoard === null || currentBoard.id === visit.boardId) &&
-      boardVisitGeneration === visit.generation
+      boardVisitGeneration === visit.generation &&
+      state.boardMutationSessionGeneration.value === visit.sessionGeneration &&
+      state.boardViewVisit.value === visit.viewVisit &&
+      (visit.viewVisit === undefined || visit.viewVisit.boardId === visit.boardId)
     )
   }
 
@@ -89,12 +99,22 @@ export function createCardActions(
     }
   }
 
+  function parseCardTimestamp(value: string) {
+    // .NET emits up to seven fractional digits. Date.parse truncates them to
+    // milliseconds, so compare the offset-normalized second and fraction apart.
+    const parts = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?(Z|[+-]\d{2}:\d{2})$/.exec(value)
+    if (!parts) return null
+    const second = Date.parse(`${parts[1]}${parts[3]}`)
+    if (!Number.isFinite(second)) return null
+    return { second, fraction: (parts[2] ?? '').padEnd(7, '0') }
+  }
+
   function isOlderCardSnapshot(candidateUpdatedAt: string, currentUpdatedAt: string) {
-    const candidateTime = Date.parse(candidateUpdatedAt)
-    const currentTime = Date.parse(currentUpdatedAt)
-    return Number.isFinite(candidateTime) &&
-      Number.isFinite(currentTime) &&
-      candidateTime < currentTime
+    const candidate = parseCardTimestamp(candidateUpdatedAt)
+    const current = parseCardTimestamp(currentUpdatedAt)
+    if (!candidate || !current) return false
+    return candidate.second < current.second ||
+      (candidate.second === current.second && candidate.fraction < current.fraction)
   }
 
   async function refreshDetachedChildren(boardId: string) {
@@ -221,7 +241,9 @@ export function createCardActions(
         state.loading.value = true
         state.error.value = null
         await cardsApi.deleteCard(boardId, cardId, confirmation)
-        helpers.markBoardDetailMutation(boardId)
+        if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
+          helpers.markBoardDetailMutation(boardId)
+        }
 
         // A move, realtime refresh, or navigation can replace this state while
         // the DELETE is in flight. Commit only into the exact initiating board
@@ -244,10 +266,16 @@ export function createCardActions(
           helpers.toast.success('Card deleted successfully')
         }
       } catch (e: unknown) {
-        helpers.handleApiError(e, 'Failed to delete card')
+        if (isCurrentCardMutationVisit(visit)) {
+          helpers.handleApiError(e, 'Failed to delete card')
+        }
         throw e
       } finally {
-        state.loading.value = false
+        // Cross-operation loading ownership is handled separately by #3305.
+        // Never let this old session finish a replacement session's loading.
+        if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
+          state.loading.value = false
+        }
       }
       // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
       if (refreshChildren) await refreshDetachedChildren(boardId)
@@ -271,7 +299,9 @@ export function createCardActions(
           targetColumnId,
           targetPosition,
         })
-        helpers.markBoardDetailMutation(boardId)
+        if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
+          helpers.markBoardDetailMutation(boardId)
+        }
 
         if (!isCurrentCardMutationVisit(visit)) {
           return updatedCard
@@ -305,10 +335,16 @@ export function createCardActions(
         helpers.toast.success('Card moved successfully')
         return updatedCard
       } catch (e: unknown) {
-        helpers.handleApiError(e, 'Failed to move card')
+        if (isCurrentCardMutationVisit(visit)) {
+          helpers.handleApiError(e, 'Failed to move card')
+        }
         throw e
       } finally {
-        state.loading.value = false
+        // Cross-operation loading ownership is handled separately by #3305.
+        // Never let this old session finish a replacement session's loading.
+        if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
+          state.loading.value = false
+        }
       }
     })
   }
