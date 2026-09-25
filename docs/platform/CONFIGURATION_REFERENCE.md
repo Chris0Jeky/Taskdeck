@@ -384,6 +384,7 @@ Bound to `LlmToolCallingSettings`.
 | --- | --- | --- | --- | --- |
 | `LlmToolCalling:Enabled` | `bool` | `true` | Enables the multi-turn tool-calling orchestrator in `ChatService`. | No |
 | `LlmToolCalling:MaxToolResultBytes` | `int` | `8000` | Max byte length of a single tool result before truncation. `0` disables truncation (not recommended). | No |
+| `LlmToolCalling:MaxHistoryMessages` | `int` | `50` | Max number of session messages sent in an LLM completion request; long sessions send only the most recent messages (range 1-1000). Counts messages, not tokens or bytes; stored chat history is unchanged. | No |
 
 ### `LlmQuota`
 
