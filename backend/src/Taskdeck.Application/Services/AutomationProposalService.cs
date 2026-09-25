@@ -1003,8 +1003,11 @@ public class AutomationProposalService : IAutomationProposalService
         return string.Equals(original, effective, StringComparison.Ordinal);
     }
 
-    private static bool OutcomeParametersEqual(string original, string effective)
+    private static bool OutcomeParametersEqual(string? original, string? effective)
     {
+        if (original is null || effective is null)
+            return original is null && effective is null;
+
         try
         {
             return JsonNode.DeepEquals(JsonNode.Parse(original), JsonNode.Parse(effective));
