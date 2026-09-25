@@ -180,7 +180,7 @@ public sealed class ProposalConflictDetectorUnevaluableOperationTests
             CreateMoveOperation(
                 Guid.NewGuid(),
                 0,
-                JsonSerializer.Serialize(new { columnId = _targetColumnId })));
+                JsonSerializer.Serialize(new { cardId = _cardId, columnId = _targetColumnId })));
 
         var result = await _detector.DetectConflictsAsync(proposal, _userId);
 

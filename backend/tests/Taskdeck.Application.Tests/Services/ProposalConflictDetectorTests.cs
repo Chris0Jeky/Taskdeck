@@ -1144,10 +1144,12 @@ public class ProposalConflictDetectorTests
         var proposal = CreateProposal(_userId, _boardId, RiskLevel.High);
         proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 0,
             archive ? "archive-lifecycle" : "restore-lifecycle", "card",
-            System.Text.Json.JsonSerializer.Serialize(new { cardId = lifecycleCard.Id }),
+            System.Text.Json.JsonSerializer.Serialize(new { cardId = lifecycleCard.Id, expectedUpdatedAt = lifecycleCard.UpdatedAt }),
             Guid.NewGuid().ToString(), lifecycleCard.Id.ToString()));
         proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 1, create ? "create" : "move", "card",
-            System.Text.Json.JsonSerializer.Serialize(new { columnId = target.Id, cardId = mover.Id }),
+            create
+                ? System.Text.Json.JsonSerializer.Serialize(new { boardId = _boardId, columnId = target.Id, title = "New card" })
+                : System.Text.Json.JsonSerializer.Serialize(new { columnId = target.Id, cardId = mover.Id }),
             Guid.NewGuid().ToString(), create ? null : mover.Id.ToString()));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>())).ReturnsAsync(proposal);
         _cardRepoMock.Setup(r => r.GetByIdAsync(lifecycleCard.Id, It.IsAny<CancellationToken>())).ReturnsAsync(lifecycleCard);
@@ -1181,7 +1183,7 @@ public class ProposalConflictDetectorTests
             System.Text.Json.JsonSerializer.Serialize(new { cardId = archived.Id, columnId = other.Id }),
             Guid.NewGuid().ToString(), archived.Id.ToString()));
         proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 1, "create", "card",
-            System.Text.Json.JsonSerializer.Serialize(new { columnId = target.Id }), Guid.NewGuid().ToString()));
+            System.Text.Json.JsonSerializer.Serialize(new { boardId = _boardId, columnId = target.Id, title = "New card" }), Guid.NewGuid().ToString()));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>())).ReturnsAsync(proposal);
         _cardRepoMock.Setup(r => r.GetByIdAsync(archived.Id, It.IsAny<CancellationToken>())).ReturnsAsync(archived);
         _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
@@ -1203,10 +1205,10 @@ public class ProposalConflictDetectorTests
         var proposal = CreateProposal(_userId, _boardId, RiskLevel.High);
         // Store backwards deliberately; execution order is Sequence.
         proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 1, "archive-lifecycle", "card",
-            System.Text.Json.JsonSerializer.Serialize(new { cardId = occupant.Id }),
+            System.Text.Json.JsonSerializer.Serialize(new { cardId = occupant.Id, expectedUpdatedAt = occupant.UpdatedAt }),
             Guid.NewGuid().ToString(), occupant.Id.ToString()));
         proposal.AddOperation(new AutomationProposalOperation(proposal.Id, 0, "create", "card",
-            System.Text.Json.JsonSerializer.Serialize(new { columnId = target.Id }), Guid.NewGuid().ToString()));
+            System.Text.Json.JsonSerializer.Serialize(new { boardId = _boardId, columnId = target.Id, title = "New card" }), Guid.NewGuid().ToString()));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>())).ReturnsAsync(proposal);
         _cardRepoMock.Setup(r => r.GetByIdAsync(occupant.Id, It.IsAny<CancellationToken>())).ReturnsAsync(occupant);
         _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
@@ -1245,7 +1247,10 @@ public class ProposalConflictDetectorTests
     {
         var proposal = CreateProposal(userId, boardId, riskLevel);
         proposal.AddOperation(new AutomationProposalOperation(
-            proposal.Id, 0, actionType, "card", "{}", Guid.NewGuid().ToString(), cardId.ToString()));
+            proposal.Id, 0, actionType, "card",
+            System.Text.Json.JsonSerializer.Serialize(actionType == "update"
+                ? (object)new { cardId, title = "Proposed title" }
+                : new { cardId }), Guid.NewGuid().ToString(), cardId.ToString()));
         return proposal;
     }
 
@@ -1257,7 +1262,7 @@ public class ProposalConflictDetectorTests
         RiskLevel riskLevel = RiskLevel.Low)
     {
         var proposal = CreateProposal(userId, boardId, riskLevel);
-        var parameters = $"{{\"columnId\":\"{targetColumnId}\"}}";
+        var parameters = $"{{\"cardId\":\"{cardId}\",\"columnId\":\"{targetColumnId}\"}}";
         proposal.AddOperation(new AutomationProposalOperation(
             proposal.Id, 0, "move", "card", parameters, Guid.NewGuid().ToString(), cardId.ToString()));
         return proposal;
