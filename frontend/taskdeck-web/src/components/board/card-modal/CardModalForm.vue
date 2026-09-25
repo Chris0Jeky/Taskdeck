@@ -119,9 +119,9 @@ defineEmits<{
       <option value="Spike">{{ t('cardModal.workItemType.spike') }}</option>
     </select>
     <!--
-      The live region stays mounted so assistive technology can observe permission transitions.
-      The retry control remains mounted while its read is pending; when it owned focus and the
-      read succeeds, focus moves to the newly enabled selector before the recovery controls leave.
+      Type-level recovery outside host-owned recovery: a manual retry engages the host region,
+      which then owns announcements and retry while this block unmounts. When the read resolves
+      with edit access, focus owned by the retry moves to the enabled selector inside the dialog.
     -->
     <div
       v-if="!permissionRecovery"
