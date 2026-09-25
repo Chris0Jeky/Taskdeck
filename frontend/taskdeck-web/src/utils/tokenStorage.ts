@@ -16,10 +16,19 @@ const SESSION_KEY = 'taskdeck_session'
 // logout followed by same-token login cannot revive an old request owner.
 let credentialGeneration = 0
 let observedToken: string | null = null
+// Session-break generation: advances only on credential removal, never on a
+// direct token replacement. Paired with the persisted session userId it
+// distinguishes a same-user token refresh (break unchanged, user same) from a
+// logout (break advanced) or user replacement (user differs).
+let sessionBreakGeneration = 0
 
 function advanceCredentialGeneration(token: string | null): void {
   observedToken = token
   credentialGeneration++
+}
+
+function advanceSessionBreak(): void {
+  sessionBreakGeneration++
 }
 
 /**
@@ -29,6 +38,55 @@ function advanceCredentialGeneration(token: string | null): void {
  */
 export function getObservedCredentialGeneration(): number {
   return credentialGeneration
+}
+
+/**
+ * Generation of the last observed session break (credential removal). Read
+ * getToken() immediately before taking/checking a request snapshot, then
+ * compare alongside getSession()?.userId: same break + same user means the
+ * request still belongs to the current user, including across a same-user
+ * token refresh that advances the credential generation.
+ */
+export function getObservedSessionBreakGeneration(): number {
+  return sessionBreakGeneration
+}
+
+export interface SessionContinuity {
+  breakGeneration: number
+  userId: string | null
+  credentialGeneration: number
+}
+
+/**
+ * Snapshot the session continuity a revocation verdict must belong to. Call it
+ * when the request (or subscription intent) starts; compare with
+ * isSameSessionContinuity when the verdict settles. A same-user token refresh
+ * keeps break + user stable, so the verdict still applies; a logout advances
+ * the break and a user replacement changes the user, so stale verdicts fail.
+ */
+export function captureSessionContinuity(): SessionContinuity {
+  getToken()
+  return {
+    breakGeneration: getObservedSessionBreakGeneration(),
+    userId: getSession()?.userId ?? null,
+    credentialGeneration: getObservedCredentialGeneration(),
+  }
+}
+
+/**
+ * Whether a continuity snapshot still belongs to the current session: same
+ * break generation (no logout/credential removal since) and same user. If
+ * either user identity is unavailable, require the credential to be unchanged.
+ */
+export function isSameSessionContinuity(snapshot: SessionContinuity): boolean {
+  getToken()
+  const currentUserId = getSession()?.userId ?? null
+  return (
+    getObservedSessionBreakGeneration() === snapshot.breakGeneration &&
+    (snapshot.userId !== null && currentUserId !== null
+      ? currentUserId === snapshot.userId
+      : getObservedCredentialGeneration() === snapshot.credentialGeneration)
+  )
 }
 
 /** Maximum allowed length for a stored token string. */
@@ -104,10 +162,17 @@ export function getToken(): string | null {
   if (token && !isValidJwtStructure(token)) {
     // Corrupted or malicious value — remove it
     localStorage.removeItem(TOKEN_KEY)
-    if (observedToken !== null) advanceCredentialGeneration(null)
+    if (observedToken !== null) {
+      advanceCredentialGeneration(null)
+      advanceSessionBreak()
+    }
     return null
   }
-  if (token !== observedToken) advanceCredentialGeneration(token)
+  if (token !== observedToken) {
+    const removalObserved = token === null && observedToken !== null
+    advanceCredentialGeneration(token)
+    if (removalObserved) advanceSessionBreak()
+  }
   return token
 }
 
@@ -123,6 +188,7 @@ export function setToken(token: string): boolean {
 export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY)
   advanceCredentialGeneration(null)
+  advanceSessionBreak()
 }
 
 // --- Session metadata operations ---

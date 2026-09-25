@@ -6,7 +6,7 @@ import {
   LogLevel,
 } from '@microsoft/signalr'
 import type { BoardPresenceSnapshot, BoardRealtimeEvent } from '../types/realtime'
-import { getObservedCredentialGeneration, getToken } from '../utils/tokenStorage'
+import { captureSessionContinuity, getToken, isSameSessionContinuity, type SessionContinuity } from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
 import { apiRootFrom } from '../utils/apiRoot'
 import { isDemoMode } from '../utils/demoMode'
@@ -69,7 +69,7 @@ export function createBoardRealtimeController(
   let connection: HubConnection | null = null
   let subscribedBoardId: string | null = null
   let requestedBoardId: string | null = null
-  let requestedCredentialGeneration: number | null = null
+  let requestedSession: SessionContinuity | null = null
   let subscriptionGeneration = 0
   let subscriptionTransition: Promise<void> = Promise.resolve()
   let editingCardId: string | null = null
@@ -412,10 +412,10 @@ export function createBoardRealtimeController(
   const requestBoardSubscription = (boardId: string) => {
     requestedBoardId = boardId
     // Snapshot session ownership alongside board intent: a Forbidden that
-    // settles after a logout/login belongs to the previous session and must
-    // not retire the board the new session just requested.
+    // settles after a logout or user replacement belongs to the previous session and must
+    // not retire the board the new session just requested; a same-user token refresh still retires.
     getToken()
-    requestedCredentialGeneration = getObservedCredentialGeneration()
+    requestedSession = captureSessionContinuity()
     const generation = ++subscriptionGeneration
 
     // Cancel any debounced mutation fetch from the previous board as soon as
@@ -452,13 +452,13 @@ export function createBoardRealtimeController(
   }
 
   const isCurrentSessionForRequest = () => {
-    if (requestedCredentialGeneration === null) {
+    if (requestedSession === null) {
       return false
     }
 
-    // Observe cross-tab/storage changes before comparing, as api/http.ts does.
+    // Break + user continuity (#3515): refresh still retires; logout/replacement fails.
     getToken()
-    return getObservedCredentialGeneration() === requestedCredentialGeneration
+    return isSameSessionContinuity(requestedSession)
   }
 
   const retireForRevocation = (boardId: string) => {
@@ -484,7 +484,7 @@ export function createBoardRealtimeController(
 
   const stop = async () => {
     requestedBoardId = null
-    requestedCredentialGeneration = null
+    requestedSession = null
     subscriptionGeneration++
     recoveryGeneration += 1
     recoveryPending = false

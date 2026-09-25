@@ -11,7 +11,7 @@ import { applyBoardCardCounts } from '../../utils/boardCardCounts'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import { initialCardFilters, type BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
-import { getObservedCredentialGeneration, getToken } from '../../utils/tokenStorage'
+import { captureSessionContinuity, getToken, isSameSessionContinuity, type SessionContinuity } from '../../utils/tokenStorage'
 
 // Minimum gap between board-list fetches.  Multiple views (BoardsListView,
 // ActivityView, ReviewView, etc.) can call fetchBoards on mount in quick
@@ -84,6 +84,7 @@ interface ActiveBoardFetch {
 }
 
 interface QueuedBackgroundBoardFetch {
+  session: SessionContinuity
   boardId: string
   backgroundFailureMessage?: string
   onBackgroundForbidden?: (boardId: string) => void
@@ -321,6 +322,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       if (backgroundFailureMessage) queuedBackgroundBoardFetch.backgroundFailureMessage = backgroundFailureMessage
       if (preserveCardComments) queuedBackgroundBoardFetch.preserveCardComments = true
       if (onBackgroundForbidden) queuedBackgroundBoardFetch.onBackgroundForbidden = onBackgroundForbidden
+      // Latest queuer owns continuity: a post-break refresh re-arms the drain.
+      queuedBackgroundBoardFetch.session = captureSessionContinuity()
       return queuedBackgroundBoardFetch.promise
     }
 
@@ -329,7 +332,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const promise = new Promise<boolean>((innerResolve) => {
       resolve = innerResolve
     })
+    const session = captureSessionContinuity()
     queuedBackgroundBoardFetch = {
+      session,
       boardId: id,
       promise,
       resolve,
@@ -351,6 +356,14 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     }
 
     queuedBackgroundBoardFetch = null
+    // A queued refresh issued for a previous user or session must not run on
+    // the new session's credentials: discard it instead of draining. A
+    // same-user token refresh keeps continuity, so the queue still drains.
+    if (!isSameSessionContinuity(queued.session)) {
+      queued.resolve(false)
+      return
+    }
+
     void startBoardFetch(
       queued.boardId,
       'background',
@@ -435,7 +448,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
   ): Promise<boolean> {
     const requestGeneration = ++boardFetchGeneration
     getToken()
-    const requestCredentialGeneration = getObservedCredentialGeneration()
+    const requestSession = captureSessionContinuity()
     // Record the request boundary before any response can commit. Permission
     // recovery uses it to reject a server response that was already in flight
     // when the write was refused.
@@ -568,13 +581,17 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           // while it was in flight (#2435).
           const status = (e as { response?: { status?: number } } | null)?.response?.status
           if (status === 403) {
-            helpers.handleApiError(
-              new Error(BOARD_ACCESS_REVOKED_MESSAGE),
-              BOARD_ACCESS_REVOKED_MESSAGE,
-            )
-            getToken()
-            if (getObservedCredentialGeneration() === requestCredentialGeneration) {
-              request.onBackgroundForbidden?.(id)
+            // #3515: stale prior-user/session 403s report nothing: no redirect, no shared error.
+            if (!isSameSessionContinuity(requestSession)) {
+              return false
+            }
+            if (request.onBackgroundForbidden) {
+              request.onBackgroundForbidden(id)
+            } else {
+              helpers.handleApiError(
+                new Error(BOARD_ACCESS_REVOKED_MESSAGE),
+                BOARD_ACCESS_REVOKED_MESSAGE,
+              )
             }
           } else if (request.backgroundFailureMessage) {
             helpers.toast.warning(request.backgroundFailureMessage)
