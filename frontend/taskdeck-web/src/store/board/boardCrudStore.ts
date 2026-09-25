@@ -22,6 +22,12 @@ export type BoardFetchIntent = 'explicit' | 'background'
 
 export interface BoardFetchOptions {
   intent?: BoardFetchIntent
+  /**
+   * Queue this background refresh behind any active detail read, including
+   * another background read. Recovery uses it when the read must begin after
+   * an acknowledged realtime rejoin rather than joining a stale promise.
+   */
+  afterActive?: boolean
   /** Report a failed refresh of an already committed mutation only while this read owns the context. */
   backgroundFailureMessage?: string
   /**
@@ -382,7 +388,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       // before it can clear the cache, then retain the flag on the successor.
       if (preserveCardComments) activeBoardFetch.preserveCardComments = true
 
-      if (activeBoardFetch.intent === 'explicit') {
+      if (activeBoardFetch.intent === 'explicit' || options.afterActive) {
         return queueBackgroundBoardFetch(
           id,
           options.backgroundFailureMessage,

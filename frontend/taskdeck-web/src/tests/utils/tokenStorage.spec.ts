@@ -22,6 +22,12 @@ function createFakeJwt(payload: Record<string, unknown> = { sub: 'user-1' }): st
 }
 
 describe('isValidJwtStructure', () => {
+  it.each(['null', 'true', '42', '[]', '{"exp":"1893456000"}', '{"exp":1e100}'])(
+    'rejects unusable payload %s at the session admission boundary', (json) => {
+      expect(isValidJwtStructure(`header.${toBase64Url(json)}.signature`)).toBe(false)
+    },
+  )
+
   it('accepts a well-formed three-part JWT', () => {
     expect(isValidJwtStructure(createFakeJwt())).toBe(true)
   })
@@ -152,6 +158,17 @@ describe('token storage operations', () => {
 
   it('getToken removes a malformed three-segment token whose payload is not JSON', () => {
     localStorage.setItem('taskdeck_token', 'aaa.bbb.ccc')
+    expect(getToken()).toBeNull()
+    expect(localStorage.getItem('taskdeck_token')).toBeNull()
+  })
+
+  it('refuses to persist an expiry that cannot be formatted', () => {
+    expect(setToken(createFakeJwt({ exp: 1e100 }))).toBe(false)
+    expect(localStorage.getItem('taskdeck_token')).toBeNull()
+  })
+
+  it('removes a persisted token with an unusable expiry during restoration', () => {
+    localStorage.setItem('taskdeck_token', createFakeJwt({ exp: 1e100 }))
     expect(getToken()).toBeNull()
     expect(localStorage.getItem('taskdeck_token')).toBeNull()
   })

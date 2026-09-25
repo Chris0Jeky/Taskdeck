@@ -69,7 +69,7 @@ const realtimeMock = {
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
 let capturedRealtimeFetchBoard:
-  | ((boardId: string, options: { intent: 'background' }) => Promise<void>)
+  | ((boardId: string, options: { intent: 'background'; afterActive?: boolean }) => Promise<boolean>)
   | undefined
 
 const mockBoardStore = reactive({
@@ -971,7 +971,7 @@ describe('BoardView', () => {
     expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(2, 'board-2')
 
     expect(capturedRealtimeFetchBoard).toBeDefined()
-    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await expect(capturedRealtimeFetchBoard!('board-1', { intent: 'background' })).resolves.toBe(false)
     expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
 
     boardBLoad.resolve(true)

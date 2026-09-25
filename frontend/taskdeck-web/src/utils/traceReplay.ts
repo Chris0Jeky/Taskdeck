@@ -15,7 +15,7 @@ export interface TraceReplayEngine {
   getState: () => ReplayState
   /** Start or resume playback. */
   play: () => void
-  /** Pause playback. */
+  /** Pause after any already-running action settles, without starting a successor. */
   pause: () => void
   /** Stop playback and reset to the beginning. */
   stop: () => void
@@ -27,7 +27,7 @@ export interface TraceReplayEngine {
   onAction: (handler: ReplayActionHandler) => void
   /** Register a handler called when replay state changes. */
   onStateChange: (handler: (state: ReplayState) => void) => void
-  /** Clean up timers. */
+  /** Permanently dispose timers/handlers and invalidate pending settlements. */
   dispose: () => void
 }
 
@@ -36,6 +36,10 @@ export function createReplayEngine(trace: Trace): TraceReplayEngine {
   let currentIndex = 0
   let playbackSpeed = 1
   let timerId: ReturnType<typeof setTimeout> | null = null
+  let generation = 0
+  let stateRevision = 0
+  let activeExecution: object | null = null
+  let disposed = false
 
   const actionHandlers: ReplayActionHandler[] = []
   const stateHandlers: Array<(state: ReplayState) => void> = []
@@ -52,45 +56,70 @@ export function createReplayEngine(trace: Trace): TraceReplayEngine {
     }
   }
 
-  function emitStateChange(): void {
+  function emitStateChange(error?: string): void {
+    const revision = ++stateRevision
     const state = buildState()
+    if (error !== undefined) state.error = error
     for (const handler of stateHandlers) {
+      // Observers can synchronously stop, seek, pause, or dispose playback.
+      if (disposed || stateRevision !== revision) return
       handler(state)
     }
   }
 
-  async function executeAction(index: number): Promise<void> {
-    if (index >= trace.actions.length) {
-      status = 'completed'
-      emitStateChange()
-      return
-    }
+  function ownsPlayback(ownerGeneration: number): boolean {
+    return !disposed && generation === ownerGeneration
+  }
 
+  function clearTimer(): void {
+    if (timerId !== null) clearTimeout(timerId)
+    timerId = null
+  }
+
+  function invalidatePlayback(): void {
+    clearTimer()
+    generation += 1
+    activeExecution = null
+  }
+
+  function scheduleAction(index: number, delay: number, ownerGeneration: number): void {
+    if (!ownsPlayback(ownerGeneration) || status !== 'playing' || timerId !== null || activeExecution) return
+    timerId = setTimeout(() => {
+      if (!ownsPlayback(ownerGeneration)) return
+      timerId = null
+      void executeAction(index, ownerGeneration)
+    }, Math.max(0, delay))
+  }
+
+  async function executeAction(index: number, ownerGeneration: number): Promise<void> {
+    if (!ownsPlayback(ownerGeneration) || status !== 'playing') return
+    const owner = {}
+    activeExecution = owner
     const action = trace.actions[index]
     for (const handler of actionHandlers) {
       try {
         await handler(action, index)
       } catch (err) {
+        if (!ownsPlayback(ownerGeneration) || activeExecution !== owner) return
+        activeExecution = null
         status = 'error'
-        const state = buildState()
-        state.error = err instanceof Error ? err.message : String(err)
-        for (const h of stateHandlers) {
-          h(state)
-        }
+        emitStateChange(err instanceof Error ? err.message : String(err))
         return
       }
+      // Stop/seek/dispose cannot cancel the handler's external work, but they do
+      // revoke its authority to deliver more handlers or commit replay state.
+      if (!ownsPlayback(ownerGeneration) || activeExecution !== owner) return
     }
 
     currentIndex = index + 1
     emitStateChange()
-
+    if (!ownsPlayback(ownerGeneration) || activeExecution !== owner) return
+    activeExecution = null
     if (status !== 'playing') return
 
-    // Schedule next action based on timing delta
     if (currentIndex < trace.actions.length) {
-      const nextAction = trace.actions[currentIndex]
-      const delay = (nextAction.offsetMs - action.offsetMs) / playbackSpeed
-      timerId = setTimeout(() => executeAction(currentIndex), Math.max(0, delay))
+      const delay = (trace.actions[currentIndex].offsetMs - action.offsetMs) / playbackSpeed
+      scheduleAction(currentIndex, delay, ownerGeneration)
     } else {
       status = 'completed'
       emitStateChange()
@@ -98,79 +127,70 @@ export function createReplayEngine(trace: Trace): TraceReplayEngine {
   }
 
   function play(): void {
+    if (disposed || status === 'playing') return
     if (trace.actions.length === 0) {
       status = 'completed'
       emitStateChange()
       return
     }
+    if (status === 'completed') currentIndex = 0
 
-    if (status === 'completed') {
-      currentIndex = 0
-    }
-
+    const ownerGeneration = generation
     status = 'playing'
     emitStateChange()
+    if (!ownsPlayback(ownerGeneration) || status !== 'playing' || activeExecution) return
 
     if (currentIndex < trace.actions.length) {
-      const action = trace.actions[currentIndex]
-      const delay = currentIndex === 0
-        ? action.offsetMs / playbackSpeed
-        : 0
-      timerId = setTimeout(() => executeAction(currentIndex), Math.max(0, delay))
+      const delay = currentIndex === 0 ? trace.actions[currentIndex].offsetMs / playbackSpeed : 0
+      scheduleAction(currentIndex, delay, ownerGeneration)
+    } else {
+      status = 'completed'
+      emitStateChange()
     }
   }
 
   function pause(): void {
-    if (status !== 'playing') return
-    if (timerId !== null) {
-      clearTimeout(timerId)
-      timerId = null
-    }
+    if (disposed || status !== 'playing') return
+    clearTimer()
     status = 'paused'
     emitStateChange()
   }
 
   function stop(): void {
-    if (timerId !== null) {
-      clearTimeout(timerId)
-      timerId = null
-    }
+    if (disposed) return
+    invalidatePlayback()
     status = 'idle'
     currentIndex = 0
     emitStateChange()
   }
 
   function seekTo(index: number): void {
-    if (index < 0 || index >= trace.actions.length) return
-    const wasPlaying = status === 'playing'
-    if (timerId !== null) {
-      clearTimeout(timerId)
-      timerId = null
-    }
+    if (disposed || !Number.isInteger(index) || index < 0 || index >= trace.actions.length) return
+    invalidatePlayback()
     currentIndex = index
-    status = wasPlaying ? 'paused' : status
+    // A completed/error cursor must become resumable at the selected index.
+    if (status !== 'idle') status = 'paused'
     emitStateChange()
   }
 
   function setSpeed(speed: number): void {
-    if (speed <= 0) return
+    if (disposed || !Number.isFinite(speed) || speed <= 0) return
     playbackSpeed = speed
     emitStateChange()
   }
 
   function onAction(handler: ReplayActionHandler): void {
-    actionHandlers.push(handler)
+    if (!disposed) actionHandlers.push(handler)
   }
 
   function onStateChange(handler: (state: ReplayState) => void): void {
-    stateHandlers.push(handler)
+    if (!disposed) stateHandlers.push(handler)
   }
 
   function dispose(): void {
-    if (timerId !== null) {
-      clearTimeout(timerId)
-      timerId = null
-    }
+    if (disposed) return
+    disposed = true
+    invalidatePlayback()
     actionHandlers.length = 0
     stateHandlers.length = 0
   }

@@ -130,26 +130,35 @@ export function createCardActions(
 
   async function deleteCard(boardId: string, cardId: string, confirmation?: CardDetachPreview) {
     helpers.guardDemoMutation()
-    let refreshChildren: boolean
+    let refreshChildren = false
     try {
       state.loading.value = true
       state.error.value = null
-      const existingCard = state.currentBoardCards.value.find((card) => card.id === cardId)
       await cardsApi.deleteCard(boardId, cardId, confirmation)
       helpers.markBoardDetailMutation(boardId)
 
-      // Remove the card from the store
-      state.currentBoardCards.value = state.currentBoardCards.value.filter((c) => c.id !== cardId)
-      if (state.cardCommentsByCardId.value[cardId]) {
-        const { [cardId]: _, ...remainingComments } = state.cardCommentsByCardId.value
-        state.cardCommentsByCardId.value = remainingComments
-      }
+      // A move, realtime refresh, or navigation can replace this state while the
+      // DELETE is in flight. Commit only into the initiating board's current
+      // collection, and derive the count delta from the card that exists NOW.
+      // If an authoritative refresh already removed it, its count is already
+      // settled and must not be decremented again.
+      const ownsCurrentCards =
+        state.currentBoard.value === null || state.currentBoard.value.id === boardId
+      if (ownsCurrentCards) {
+        const committedCard = state.currentBoardCards.value.find((card) => card.id === cardId)
+        state.currentBoardCards.value = state.currentBoardCards.value.filter((card) => card.id !== cardId)
+        if (state.cardCommentsByCardId.value[cardId]) {
+          const { [cardId]: _, ...remainingComments } = state.cardCommentsByCardId.value
+          state.cardCommentsByCardId.value = remainingComments
+        }
 
-      if (existingCard) {
-        helpers.updateColumnCardCount(existingCard.columnId, -1)
-      }
+        if (committedCard) {
+          helpers.updateColumnCardCount(committedCard.columnId, -1)
+        }
 
-      refreshChildren = state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)
+        refreshChildren = state.currentBoard.value?.id === boardId &&
+          state.currentBoardCards.value.some(card => card.parentCardId === cardId)
+      }
       helpers.toast.success('Card deleted successfully')
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to delete card')
