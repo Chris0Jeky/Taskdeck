@@ -9,8 +9,9 @@ Single approve, single reject and batch approve now stage one content-free
 New decisions therefore reach the cohort and bucketed metrics endpoints; older
 decisions are not backfilled. An approved revision is counted as edited only
 when its effective operations differ from the original reviewed operations.
-The comparison ignores operation IDs and idempotency keys and compares JSON
-parameters by value. `FieldCount` and `EditedFieldCount` count five comparable
+The comparison ignores operation IDs and idempotency keys, treats action and
+target names case-insensitively, compares target GUIDs by value and compares
+JSON parameters by value. `FieldCount` and `EditedFieldCount` count five comparable
 operation contract fields per sequence: action, target type, target ID,
 parameters and expected version. They do not count nested parameter keys.
 The existing single-decision notification remains a separate post-save write;

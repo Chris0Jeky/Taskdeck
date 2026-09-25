@@ -803,8 +803,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
                 new
                 {
                     sequence = operation.Sequence,
-                    actionType = operation.ActionType,
-                    targetType = operation.TargetType,
+                    actionType = operation.ActionType.ToUpperInvariant(),
+                    targetType = operation.TargetType.ToUpperInvariant(),
                     targetId = operation.TargetId,
                     parameters = $"  {operation.Parameters}  ",
                     idempotencyKey = Guid.NewGuid().ToString("N"),

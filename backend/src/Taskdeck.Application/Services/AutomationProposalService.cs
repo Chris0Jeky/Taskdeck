@@ -959,9 +959,10 @@ public class AutomationProposalService : IAutomationProposalService
     /// Counts the five reviewer-visible contract fields of each operation:
     /// action, target type, target id, parameters, and expected version. Operation
     /// IDs and idempotency keys are execution identity, not edits to reviewed
-    /// content. Parameters are compared as JSON so formatting cannot create a
-    /// false EditedThenApproved outcome. A missing operation changes all five
-    /// fields at its sequence position.
+    /// content. Action and target names are case-insensitive, target GUIDs are
+    /// compared by value, and parameters are compared as JSON so formatting
+    /// cannot create a false EditedThenApproved outcome. A missing operation
+    /// changes all five fields at its sequence position.
     /// </summary>
     private static (int FieldCount, int EditedFieldCount) CountOutcomeFields(
         AutomationProposal proposal,
@@ -983,14 +984,23 @@ public class AutomationProposalService : IAutomationProposalService
                 continue;
             }
 
-            if (!string.Equals(original.ActionType, effective.ActionType, StringComparison.Ordinal)) editedFieldCount++;
-            if (!string.Equals(original.TargetType, effective.TargetType, StringComparison.Ordinal)) editedFieldCount++;
-            if (!string.Equals(original.TargetId, effective.TargetId, StringComparison.Ordinal)) editedFieldCount++;
+            if (!string.Equals(original.ActionType, effective.ActionType, StringComparison.OrdinalIgnoreCase)) editedFieldCount++;
+            if (!string.Equals(original.TargetType, effective.TargetType, StringComparison.OrdinalIgnoreCase)) editedFieldCount++;
+            if (!OutcomeTargetIdsEqual(original.TargetId, effective.TargetId)) editedFieldCount++;
             if (!OutcomeParametersEqual(original.Parameters, effective.Parameters)) editedFieldCount++;
             if (!string.Equals(original.ExpectedVersion, effective.ExpectedVersion, StringComparison.Ordinal)) editedFieldCount++;
         }
 
         return (fieldCount, editedFieldCount);
+    }
+
+    private static bool OutcomeTargetIdsEqual(string? original, string? effective)
+    {
+        if (string.IsNullOrWhiteSpace(original) || string.IsNullOrWhiteSpace(effective))
+            return string.IsNullOrWhiteSpace(original) && string.IsNullOrWhiteSpace(effective);
+        if (Guid.TryParse(original, out var originalId) && Guid.TryParse(effective, out var effectiveId))
+            return originalId == effectiveId;
+        return string.Equals(original, effective, StringComparison.Ordinal);
     }
 
     private static bool OutcomeParametersEqual(string original, string effective)
