@@ -37,6 +37,14 @@ internal sealed class ColumnsCommandHandler
                 "taskdeck columns list --board <board-id>");
         }
 
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck columns list --board <board-id>");
+        }
+
         var result = await _columnService.GetColumnsByBoardIdAsync(boardId);
         if (!result.IsSuccess)
         {
@@ -132,6 +140,14 @@ internal sealed class ColumnsCommandHandler
             }
 
             wipLimit = parsedWip;
+        }
+
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board", "--name", "--position", "--wip");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]");
         }
 
         var result = await _columnService.CreateColumnAsync(new CreateColumnDto(boardId, name, position, wipLimit));

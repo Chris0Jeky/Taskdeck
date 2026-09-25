@@ -105,6 +105,14 @@ internal sealed class BoardsCommandHandler
 
     private async Task<int> UpdateAsync(string[] args, bool outputJson)
     {
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board", "--name", "--description");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+        }
+
         var boardIdText = ArgParser.GetOption(args, "--board");
         if (!ArgParser.TryParseGuid(boardIdText, out var boardId))
         {
