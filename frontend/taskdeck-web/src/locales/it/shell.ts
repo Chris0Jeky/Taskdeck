@@ -29,8 +29,9 @@ export default {
       copyFailed: 'Copia non riuscita',
       dismissNotification: 'Chiudi la notifica',
       errorDetails: 'Dettagli dell’errore: {message}',
-      olderErrors: '{count} ricevute di errore precedenti',
+      olderErrors: '{count} ricevuta di errore precedente | {count} ricevute di errore precedenti',
       hideOlderErrors: 'Nascondi le ricevute di errore precedenti',
+      earlierErrors: '{count} ricevuta di errore ancora precedente è uscita dall’archivio | {count} ricevute di errore ancora precedenti sono uscite dall’archivio',
     },
   },
   topbar: {

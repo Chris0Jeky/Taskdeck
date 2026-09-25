@@ -30,9 +30,13 @@ describe('ToastReceiptOverflow', () => {
     wrapper = mount(ToastReceiptOverflow)
     const toggle = wrapper.get('[data-toast-overflow-toggle]')
     expect(toggle.text()).toContain('1 older error receipt')
+    expect(toggle.attributes('aria-controls')).toBeUndefined()
 
     await toggle.trigger('click')
+    expect(toggle.attributes('aria-controls')).toBe('toast-overflow-list')
     expect(wrapper.get('[data-toast-overflow-list]').text()).toContain('Request failed')
+    expect(wrapper.get('[data-toast-overflow-list]').classes()).toContain('overflow-y-auto')
+    expect((wrapper.get('[data-toast-overflow-list]').element as HTMLElement).style.maxHeight).toContain('60vh')
 
     const detailsButton = wrapper.get('button[aria-expanded="false"]')
     await detailsButton.trigger('click')
@@ -58,5 +62,15 @@ describe('ToastReceiptOverflow', () => {
 
     expect(store.evictedErrors).toHaveLength(0)
     expect(wrapper.find('[data-toast-overflow]').exists()).toBe(false)
+  })
+
+  it('keeps a cumulative count when older archived receipts roll off', () => {
+    const store = useToastStore()
+    store.evictedErrorOverflowCount = 3
+
+    wrapper = mount(ToastReceiptOverflow)
+
+    expect(wrapper.get('[data-toast-overflow-count]').text()).toContain('3 earlier error receipts rolled off')
+    expect(wrapper.find('[data-toast-overflow-toggle]').exists()).toBe(false)
   })
 })

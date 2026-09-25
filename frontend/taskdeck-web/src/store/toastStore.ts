@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 export const MAX_VISIBLE_TOASTS = 5
+export const MAX_EVICTED_ERROR_RECEIPTS = 50
 
 export interface ToastAction {
   /** Short label for the action (e.g. "undo", "open"). */
@@ -124,6 +125,8 @@ export const useToastStore = defineStore('toast', () => {
   const toasts = ref<Toast[]>([])
   /** Error receipts evicted from the live five-toast surface stay recoverable. */
   const evictedErrors = ref<Toast[]>([])
+  /** Count of older error receipts that rolled off the bounded archive. */
+  const evictedErrorOverflowCount = ref(0)
   const timers = new Map<string, ToastTimer>()
 
   function clearTimer(id: string) {
@@ -164,6 +167,11 @@ export const useToastStore = defineStore('toast', () => {
       evictedErrors.value.splice(duplicateIndex, 1)
     }
     evictedErrors.value.push(toast)
+    if (evictedErrors.value.length > MAX_EVICTED_ERROR_RECEIPTS) {
+      const rolledOff = evictedErrors.value.length - MAX_EVICTED_ERROR_RECEIPTS
+      evictedErrors.value.splice(0, rolledOff)
+      evictedErrorOverflowCount.value += rolledOff
+    }
   }
 
   function enforceVisibleLimit() {
@@ -192,7 +200,16 @@ export const useToastStore = defineStore('toast', () => {
           : undefined
 
       if (existing) {
-        Object.assign(existing, { duration, ...options })
+        Object.assign(existing, {
+          id: existing.id,
+          message,
+          type,
+          duration,
+          title: options.title,
+          details: options.details,
+          action: options.action,
+          label: options.label,
+        })
         toasts.value.push(existing)
         clearTimer(existing.id)
         scheduleRemoval(existing.id, duration)
@@ -233,6 +250,10 @@ export const useToastStore = defineStore('toast', () => {
     if (index !== -1) {
       toasts.value.splice(index, 1)
     }
+    const evictedIndex = evictedErrors.value.findIndex((toast) => toast.id === id)
+    if (evictedIndex !== -1) {
+      evictedErrors.value.splice(evictedIndex, 1)
+    }
     clearTimer(id)
   }
 
@@ -247,6 +268,7 @@ export const useToastStore = defineStore('toast', () => {
     }
     toasts.value = []
     evictedErrors.value = []
+    evictedErrorOverflowCount.value = 0
   }
 
   function pause(id: string) {
@@ -282,6 +304,7 @@ export const useToastStore = defineStore('toast', () => {
   return {
     toasts,
     evictedErrors,
+    evictedErrorOverflowCount,
     show,
     success,
     error,

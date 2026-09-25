@@ -36,22 +36,32 @@ function dismissReceipt(id: string) {
 
 <template>
   <section
-    v-if="toastStore.evictedErrors.length > 0"
+    v-if="toastStore.evictedErrors.length > 0 || toastStore.evictedErrorOverflowCount > 0"
     data-toast-overflow
     :class="['pointer-events-auto mt-2 max-w-md rounded-lg border px-4 py-3 text-sm shadow-lg', panelClass]"
   >
     <button
+      v-if="toastStore.evictedErrors.length > 0"
       type="button"
       data-toast-overflow-toggle
       class="font-medium underline underline-offset-2"
       :aria-expanded="open"
-      aria-controls="toast-overflow-list"
+      :aria-controls="open ? 'toast-overflow-list' : undefined"
       @click="open = !open"
     >
-      {{ open ? t('shell.toast.receipt.hideOlderErrors') : t('shell.toast.receipt.olderErrors', { count: toastStore.evictedErrors.length }) }}
+      {{ open ? t('shell.toast.receipt.hideOlderErrors') : t('shell.toast.receipt.olderErrors', { count: toastStore.evictedErrors.length }, toastStore.evictedErrors.length) }}
     </button>
+    <p v-if="toastStore.evictedErrorOverflowCount > 0" data-toast-overflow-count class="mt-2 text-xs font-normal">
+      {{ t('shell.toast.receipt.earlierErrors', { count: toastStore.evictedErrorOverflowCount }, toastStore.evictedErrorOverflowCount) }}
+    </p>
 
-    <ul v-if="open" id="toast-overflow-list" data-toast-overflow-list class="mt-3 space-y-3">
+    <ul
+      v-if="open && toastStore.evictedErrors.length > 0"
+      id="toast-overflow-list"
+      data-toast-overflow-list
+      class="mt-3 max-h-[calc(100vh-6rem)] space-y-3 overflow-y-auto"
+      :style="{ maxHeight: 'min(60vh, calc(100vh - 6rem))' }"
+    >
       <li
         v-for="receipt in toastStore.evictedErrors"
         :key="receipt.id"

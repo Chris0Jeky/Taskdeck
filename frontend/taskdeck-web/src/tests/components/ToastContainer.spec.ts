@@ -8,6 +8,7 @@ import { i18n, type SupportedLocale } from '../../i18n'
 const mockToastStore = reactive({
   toasts: [] as Toast[],
   evictedErrors: [] as Toast[],
+  evictedErrorOverflowCount: 0,
   remove: vi.fn(),
   dismissEvictedError: vi.fn(),
 })
@@ -23,6 +24,7 @@ describe('ToastContainer', () => {
     vi.clearAllMocks()
     mockToastStore.toasts = []
     mockToastStore.evictedErrors = []
+    mockToastStore.evictedErrorOverflowCount = 0
   })
 
   it('renders nothing when there are no toasts', () => {
