@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Tests.Support;
@@ -283,6 +284,15 @@ public class ProposalHousekeepingWorkerTests
             var requestedIds = ids.ToHashSet();
             return Task.FromResult<IReadOnlyList<AutomationProposal>>(
                 _proposals.Where(proposal => requestedIds.Contains(proposal.Id)).ToList());
+        }
+
+        public Task<IReadOnlyList<ProposalHeaderDto>> GetHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            var requestedIds = ids.ToHashSet();
+            return Task.FromResult<IReadOnlyList<ProposalHeaderDto>>(
+                _proposals.Where(proposal => requestedIds.Contains(proposal.Id))
+                    .Select(proposal => new ProposalHeaderDto(proposal.Id, proposal.RequestedByUserId, proposal.BoardId))
+                    .ToList());
         }
 
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)

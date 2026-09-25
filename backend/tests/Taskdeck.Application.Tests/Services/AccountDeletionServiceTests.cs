@@ -352,6 +352,39 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
+    public async Task DeleteAccountAsync_DeletesChatSessionsSetBased()
+    {
+        // The old per-session/per-message loop issued 1+N queries plus a tracked delete
+        // per row, and silently kept everything past the 100k fetch cap. Chat cleanup is
+        // now one set-based session delete; messages cascade at the database.
+        SetupUserFound();
+        SetupEmptyRepositories();
+        _chatSessionRepoMock
+            .Setup(r => r.DeleteByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+
+        var result = await _service.DeleteAccountAsync(_userId, new AccountDeletionRequest(_password, "DELETE MY ACCOUNT"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ChatSessionsAnonymized.Should().Be(3);
+        _chatSessionRepoMock.Verify(
+            r => r.DeleteByUserIdAsync(_userId, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _chatSessionRepoMock.Verify(
+            r => r.GetByUserIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _chatMessageRepoMock.Verify(
+            r => r.GetBySessionIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _chatSessionRepoMock.Verify(
+            r => r.DeleteAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _chatMessageRepoMock.Verify(
+            r => r.DeleteAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task DeleteAccountAsync_DeletesExternalLogins()
     {
         // Arrange
@@ -579,41 +612,6 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
-    public async Task DeleteAccountAsync_InvalidatesActiveUserCache()
-    {
-        // Arrange — create a service with a cache mock
-        var cacheMock = new Mock<IActiveUserCache>();
-        var serviceWithCache = new AccountDeletionService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(), cacheMock.Object);
-
-        SetupUserFound();
-        SetupEmptyRepositories();
-        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
-
-        // Act
-        var result = await serviceWithCache.DeleteAccountAsync(_userId, request);
-
-        // Assert
-        result.IsSuccess.Should().BeTrue();
-        cacheMock.Verify(c => c.Invalidate(_userId), Times.Once);
-    }
-
-    [Fact]
-    public async Task DeleteAccountAsync_SucceedsWithoutCache()
-    {
-        // Arrange — the default _service has no cache (null), should still work
-        SetupUserFound();
-        SetupEmptyRepositories();
-        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
-
-        // Act
-        var result = await _service.DeleteAccountAsync(_userId, request);
-
-        // Assert
-        result.IsSuccess.Should().BeTrue();
-    }
-
-    [Fact]
     public async Task DeleteAccountAsync_LogsException_WhenDeletionFails()
     {
         // Arrange
@@ -623,7 +621,7 @@ public class AccountDeletionServiceTests
         var loggerMock = new Mock<ILogger<AccountDeletionService>>();
         var serviceWithLogger = new AccountDeletionService(
             _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(),
-            activeUserCache: null, logger: loggerMock.Object);
+            logger: loggerMock.Object);
 
         var expectedException = new InvalidOperationException("DB error");
         _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default)).ThrowsAsync(expectedException);
@@ -785,8 +783,8 @@ public class AccountDeletionServiceTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _chatSessionRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
-            .ReturnsAsync(Enumerable.Empty<ChatSession>());
+            .Setup(r => r.DeleteByUserIdAsync(_userId, default))
+            .ReturnsAsync(0);
         _externalLoginRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<ExternalLogin>());

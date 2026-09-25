@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { copyToastReceipt, toastReceiptText, useToastStore } from '../../store/toastStore'
+import {
+  copyToastReceipt,
+  MAX_EVICTED_ERROR_RECEIPTS,
+  MAX_VISIBLE_TOASTS,
+  toastReceiptText,
+  useToastStore,
+} from '../../store/toastStore'
 
 describe('toastStore', () => {
   let store: ReturnType<typeof useToastStore>
@@ -270,6 +276,114 @@ describe('toastStore', () => {
       vi.advanceTimersByTime(4000)
 
       expect(store.toasts).toHaveLength(0)
+    })
+
+    it('keeps only the newest five live toasts and archives evicted errors with details', () => {
+      const evictedId = store.error('Request failed', 0, { details: 'status: 503' })
+      for (let index = 1; index <= MAX_VISIBLE_TOASTS; index += 1) {
+        store.info(`Toast ${index}`, 0)
+      }
+
+      expect(store.toasts).toHaveLength(MAX_VISIBLE_TOASTS)
+      expect(store.toasts.map((toast) => toast.message)).toEqual([
+        'Toast 1',
+        'Toast 2',
+        'Toast 3',
+        'Toast 4',
+        'Toast 5',
+      ])
+      expect(store.evictedErrors).toHaveLength(1)
+      expect(store.evictedErrors[0]).toMatchObject({ id: evictedId, message: 'Request failed', details: 'status: 503' })
+    })
+
+    it('collapses identical errors, refreshes a temporary timer, and keeps the latest details', () => {
+      vi.useFakeTimers()
+
+      const id = store.error('Request failed', 3000, { details: 'status: 500' })
+      vi.advanceTimersByTime(2000)
+      const duplicateId = store.error('Request failed', 3000, { details: 'status: 503' })
+
+      expect(duplicateId).toBe(id)
+      expect(store.toasts).toHaveLength(1)
+      expect(store.toasts[0]).toMatchObject({ id, details: 'status: 503', duration: 3000 })
+
+      vi.advanceTimersByTime(2999)
+      expect(store.toasts).toHaveLength(1)
+      vi.advanceTimersByTime(1)
+      expect(store.toasts).toHaveLength(0)
+    })
+
+    it('replaces omitted optional metadata when an error repeats', () => {
+      const action = { label: 'retry', handler: vi.fn() }
+      const id = store.error('Request failed', 0, {
+        title: 'Old failure',
+        details: 'status: 500',
+        action,
+        label: 'failed',
+      })
+
+      expect(store.error('Request failed')).toBe(id)
+
+      expect(store.toasts[0]).toMatchObject({ id, message: 'Request failed', type: 'error', duration: 0 })
+      expect(store.toasts[0].title).toBeUndefined()
+      expect(store.toasts[0].details).toBeUndefined()
+      expect(store.toasts[0].action).toBeUndefined()
+      expect(store.toasts[0].label).toBeUndefined()
+    })
+
+    it('deduplicates an error that is already in the receipt archive', () => {
+      const id = store.error('Request failed', 0, { details: 'first details' })
+      for (let index = 0; index < MAX_VISIBLE_TOASTS; index += 1) {
+        store.info(`Toast ${index}`, 0)
+      }
+
+      const duplicateId = store.error('Request failed', 0, { details: 'latest details' })
+
+      expect(duplicateId).toBe(id)
+      expect(store.toasts).toHaveLength(MAX_VISIBLE_TOASTS)
+      expect(store.toasts.some((toast) => toast.message === 'Request failed')).toBe(true)
+      expect(store.evictedErrors).toHaveLength(0)
+      expect(store.toasts.find((toast) => toast.id === id)?.details).toBe('latest details')
+    })
+
+    it('dismisses an archived error receipt without affecting live toasts', () => {
+      const id = store.error('Request failed', 0, { details: 'status: 503' })
+      for (let index = 0; index < MAX_VISIBLE_TOASTS; index += 1) {
+        store.info(`Toast ${index}`, 0)
+      }
+
+      store.dismissEvictedError(id)
+
+      expect(store.evictedErrors).toHaveLength(0)
+      expect(store.toasts).toHaveLength(MAX_VISIBLE_TOASTS)
+    })
+
+    it('removes archived errors through the public remove method', () => {
+      const id = store.error('Request failed', 0, { details: 'status: 503' })
+      for (let index = 0; index < MAX_VISIBLE_TOASTS; index += 1) {
+        store.info(`Toast ${index}`, 0)
+      }
+
+      store.remove(id)
+
+      expect(store.evictedErrors).toHaveLength(0)
+    })
+
+    it('bounds archived error receipts and reports older receipts that rolled off', () => {
+      for (let index = 0; index <= MAX_EVICTED_ERROR_RECEIPTS; index += 1) {
+        store.error(`Request failed ${index}`, 0, { details: `status: 5${index % 10}` })
+        for (let liveIndex = 0; liveIndex < MAX_VISIBLE_TOASTS; liveIndex += 1) {
+          store.info(`Live ${index}-${liveIndex}`, 0)
+        }
+      }
+
+      expect(store.evictedErrors).toHaveLength(MAX_EVICTED_ERROR_RECEIPTS)
+      expect(store.evictedErrors[0].message).toBe('Request failed 1')
+      expect(store.evictedErrors.at(-1)?.message).toBe(`Request failed ${MAX_EVICTED_ERROR_RECEIPTS}`)
+      expect(store.evictedErrorOverflowCount).toBe(1)
+
+      store.clear()
+      expect(store.evictedErrorOverflowCount).toBe(0)
     })
   })
 })

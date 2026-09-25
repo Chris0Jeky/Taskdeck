@@ -131,20 +131,11 @@ public class NotificationService : INotificationService
             }
         }
 
-        var unreadNotifications = await _unitOfWork.Notifications.GetUnreadByUserIdAsync(
+        // Set-based bulk update: the old load-all-unread + per-row MarkAsRead loop
+        // materialized every unread notification into the change tracker. The repository
+        // replicates MarkAsRead semantics in a single UPDATE and returns the exact count.
+        var count = await _unitOfWork.Notifications.MarkAllAsReadAsync(
             userId, boardId, cancellationToken);
-
-        var count = 0;
-        foreach (var notification in unreadNotifications)
-        {
-            notification.MarkAsRead();
-            count++;
-        }
-
-        if (count > 0)
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
 
         return Result.Success(count);
     }

@@ -8,6 +8,8 @@ describe('Sentry request URL protocol boundary', () => {
     'data:text/plain,TOPSECRET?token=x',
     'DATA:text/plain,TOPSECRET',
     '  data:text/plain,TOPSECRET',
+    '\tdata:text/plain,TOPSECRET\n',
+    'da\tta:text/plain,TOPSECRET',
     'file:///home/TOPSECRET/private.txt',
     'blob:https://api.example.test/TOPSECRET',
     'javascript:TOPSECRET()',
@@ -37,6 +39,8 @@ describe('Sentry request URL protocol boundary', () => {
   it.each([
     ['/api/cards?token=TOPSECRET#TOPSECRET', '/api/cards'],
     ['https://user:TOPSECRET@api.example.test/api/cards?token=TOPSECRET#TOPSECRET', 'https://api.example.test/api/cards'],
+    ['http://user:TOPSECRET@api.example.test/api/cards?token=TOPSECRET#TOPSECRET', 'http://api.example.test/api/cards'],
+    ['HTTPS://user:TOPSECRET@api.example.test/api/cards?token=TOPSECRET#TOPSECRET', 'https://api.example.test/api/cards'],
     ['//user:TOPSECRET@api.example.test/api/cards?token=TOPSECRET#TOPSECRET', 'http://api.example.test/api/cards'],
     ['api/cards?token=TOPSECRET', '/api/cards'],
   ])('preserves safe HTTP(S) request coordinates for %s', (url, path) => {

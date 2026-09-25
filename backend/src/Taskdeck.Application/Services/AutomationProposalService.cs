@@ -364,6 +364,12 @@ public class AutomationProposalService : IAutomationProposalService
         return await BuildEffectiveProposalDtoAsync(proposal, cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, ProposalHeaderDto>> GetProposalHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        var headers = await _unitOfWork.AutomationProposals.GetHeadersByIdsAsync(ids, cancellationToken);
+        return headers.ToDictionary(header => header.Id);
+    }
+
     public async Task<Result<IEnumerable<ProposalDto>>> GetProposalsAsync(ProposalFilterDto? filter = null, CancellationToken cancellationToken = default)
     {
         filter ??= new ProposalFilterDto();

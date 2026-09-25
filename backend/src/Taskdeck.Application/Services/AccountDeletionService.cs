@@ -26,7 +26,6 @@ public class AccountDeletionService : IAccountDeletionService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
-    private readonly IActiveUserCache? _activeUserCache;
     private readonly ILogger<AccountDeletionService>? _logger;
     private readonly ISourceArtefactRepository _artefacts;
     private readonly ITranscriptRepository _transcripts;
@@ -38,7 +37,6 @@ public class AccountDeletionService : IAccountDeletionService
         ISourceArtefactRepository artefacts,
         ITranscriptRepository transcripts,
         IWorkspaceInsightRepository workspaceInsights,
-        IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null,
         ICaptureStore? captureStore = null,
         IBlobStore? blobStore = null,
@@ -48,7 +46,6 @@ public class AccountDeletionService : IAccountDeletionService
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
-        _activeUserCache = activeUserCache;
         _logger = logger;
         _artefacts = artefacts;
         _transcripts = transcripts;
@@ -181,19 +178,13 @@ public class AccountDeletionService : IAccountDeletionService
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
             var privateWorkspaceDeleted = await _workspaceInsights.DeleteByUserAsync(userId, cancellationToken);
 
-            // 4. Anonymize chat sessions — delete messages and sessions
-            var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
-            var chatSessionsAnonymized = 0;
-            foreach (var session in chatSessions)
-            {
-                var messages = await _unitOfWork.ChatMessages.GetBySessionIdAsync(session.Id, limit: 100000, cancellationToken: cancellationToken);
-                foreach (var message in messages)
-                {
-                    await _unitOfWork.ChatMessages.DeleteAsync(message, cancellationToken);
-                }
-                await _unitOfWork.ChatSessions.DeleteAsync(session, cancellationToken);
-                chatSessionsAnonymized++;
-            }
+            // 4. Anonymize chat sessions with one set-based delete: the old per-session/
+            // per-message loop issued 1+N queries plus a tracked delete per row, and silently
+            // kept every session past the 100k fetch cap. Messages need no separate delete:
+            // ChatMessage.SessionId is a required FK with DeleteBehavior.Cascade, so the
+            // database removes them atomically with their sessions (same reliance as the
+            // transcript-evidence cascade above). The receipt carries the exact session count.
+            var chatSessionsAnonymized = await _unitOfWork.ChatSessions.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 5. Delete external logins, MFA credentials, and API keys (authentication
             //    material must not outlive the account).
@@ -269,10 +260,6 @@ public class AccountDeletionService : IAccountDeletionService
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
-            // Invalidate the active-user cache AFTER the transaction commits so that
-            // concurrent requests cannot repopulate the cache from the still-active row
-            // during the commit window.
-            _activeUserCache?.Invalidate(userId);
             if (_assignments is not null)
                 foreach (var card in detachedAssignments)
                     await _assignments.NotifyAsync(card.BoardId, card.Id, cancellationToken);

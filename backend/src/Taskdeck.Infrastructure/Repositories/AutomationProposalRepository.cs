@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
@@ -97,6 +98,25 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return await _dbSet
             .Include(proposal => proposal.Operations)
             .Where(proposal => uniqueIds.Contains(proposal.Id))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProposalHeaderDto>> GetHeadersByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        var uniqueIds = ids
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (uniqueIds.Count == 0)
+        {
+            return Array.Empty<ProposalHeaderDto>();
+        }
+
+        return await _dbSet
+            .AsNoTracking()
+            .Where(proposal => uniqueIds.Contains(proposal.Id))
+            .Select(proposal => new ProposalHeaderDto(proposal.Id, proposal.RequestedByUserId, proposal.BoardId))
             .ToListAsync(cancellationToken);
     }
 

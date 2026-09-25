@@ -824,6 +824,100 @@ public class BoardJsonExportImportRoundTripTests
         result.IsSuccess.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("columns", 101)]
+    [InlineData("cards", 5001)]
+    [InlineData("labels", 501)]
+    [InlineData("relations", 501)]
+    [InlineData("dependencies", 501)]
+    [InlineData("assignee mappings", 5001)]
+    public async Task ImportBoardAsync_RejectsOversizedCollectionsBeforeStartingTransaction(string collection, int count)
+    {
+        var columns = collection == "columns"
+            ? Enumerable.Repeat(new ImportColumnDto("Todo", 0, null), count)
+            : [new ImportColumnDto("Todo", 0, null)];
+        var cards = collection == "cards"
+            ? Enumerable.Repeat(new ImportCardDto("Card", null, "Todo", 0, null, []), count)
+            : Enumerable.Empty<ImportCardDto>();
+        var labels = collection == "labels"
+            ? Enumerable.Repeat(new ImportLabelDto("Label", "#ffffff"), count)
+            : Enumerable.Empty<ImportLabelDto>();
+        var relations = collection == "relations"
+            ? Enumerable.Repeat(new CardRelationEdge(Guid.NewGuid(), Guid.NewGuid(), "blocks"), count).ToArray()
+            : null;
+        var dependencies = collection == "dependencies"
+            ? Enumerable.Repeat(new CardDependency(Guid.NewGuid(), Guid.NewGuid()), count).ToArray()
+            : null;
+        var mappings = collection == "assignee mappings"
+            ? Enumerable.Range(0, count).ToDictionary(i => i.ToString(), _ => (Guid?)null)
+            : null;
+        var dto = new ImportBoardDto("Board", null, columns, cards, labels, dependencies, mappings, relations);
+
+        var result = await _service.ImportBoardAsync(dto, Guid.NewGuid());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(collection);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+        _boardRepoMock.Verify(r => r.AddAsync(It.IsAny<Board>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task PreviewBoardAsync_RejectsOversizedJsonBeforeStartingTransaction()
+    {
+        var dto = new ImportBoardDto("Board", null,
+            Enumerable.Range(0, BoardJsonExportImportService.MaxImportColumns + 1)
+                .Select(i => new ImportColumnDto($"Column {i}", i, null)).ToArray(),
+            [], []);
+
+        var result = await _service.PreviewBoardAsync(JsonSerializer.Serialize(dto, JsonOptions), Guid.NewGuid());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("columns");
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("labels")]
+    [InlineData("assignees")]
+    public async Task ImportBoardAsync_RejectsExcessiveNestedItemsBeforeStartingTransaction(string nestedKind)
+    {
+        var labelRefs = nestedKind == "labels"
+            ? Enumerable.Repeat("Label", BoardJsonExportImportService.MaxImportNestedItems + 1)
+            : Enumerable.Empty<string>();
+        var assignees = nestedKind == "assignees"
+            ? Enumerable.Repeat(new ImportSourceAssigneeDto("source", "Person"),
+                BoardJsonExportImportService.MaxImportNestedItems + 1).ToArray()
+            : null;
+        var card = new ImportCardDto("Card", null, "Todo", 0, null, labelRefs,
+            SourceAssignees: assignees);
+        var dto = new ImportBoardDto("Board", null, [new ImportColumnDto("Todo", 0, null)], [card], []);
+
+        var result = await _service.ImportBoardAsync(dto, Guid.NewGuid());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("nested items");
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportBoardAsync_AcceptsExactlyTheColumnLimit()
+    {
+        var user = CreateUser("column-limit");
+        SetupImportMocks(user);
+        var dto = new ImportBoardDto("Board", null,
+            Enumerable.Range(0, BoardJsonExportImportService.MaxImportColumns)
+                .Select(i => new ImportColumnDto($"Column {i}", i, null)).ToArray(),
+            [], []);
+
+        var result = await _service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.ColumnsImported.Should().Be(BoardJsonExportImportService.MaxImportColumns);
+    }
+
     [Fact]
     public async Task ImportBoardAsync_RejectsDuplicateLabelNames()
     {
