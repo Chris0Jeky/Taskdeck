@@ -9,6 +9,9 @@ async function installSyntheticVisualViewport(page: Page) {
     let offsetTop = 0
     let scale = 1
 
+    // Preserve the native horizontal geometry while contracting height/top.
+    const nativeVisualViewport = window.visualViewport
+
     Object.defineProperty(window, 'visualViewport', {
       configurable: true,
       value: {
@@ -17,6 +20,12 @@ async function installSyntheticVisualViewport(page: Page) {
         },
         get offsetTop() {
           return offsetTop
+        },
+        get width() {
+          return nativeVisualViewport?.width ?? window.innerWidth
+        },
+        get offsetLeft() {
+          return nativeVisualViewport?.offsetLeft ?? 0
         },
         get scale() {
           return scale
@@ -111,10 +120,14 @@ test('@mobile CardModal follows a contracted visual viewport above the desktop b
     return { top: Math.round(box.layoutTop), height: Math.round(box.height) }
   }).toEqual({ top: contractedTop, height: contractedHeight })
 
-  const horizontalBounds = await editModal.boundingBox()
-  expect(horizontalBounds).not.toBeNull()
+  // Compare visual coordinates with the native visible width. WebKit can
+  // offset and narrow that viewport independently of Playwright's width (#3479).
+  const horizontalBounds = await editModal.evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    return { left: rect.left, width: rect.width, visibleWidth: window.visualViewport?.width ?? window.innerWidth }
+  })
   expect(Math.abs(
-    horizontalBounds!.x * 2 + horizontalBounds!.width - viewport!.width,
+    horizontalBounds.left * 2 + horizontalBounds.width - horizontalBounds.visibleWidth,
   )).toBeLessThanOrEqual(2)
 
   await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')

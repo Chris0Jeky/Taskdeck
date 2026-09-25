@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services.Pipeline;
@@ -15,6 +16,7 @@ public class AutomationProposalService : IAutomationProposalService
     private const string CaptureTriageActionType = "create";
     private const string CaptureTriageTargetType = "card";
     private const int MaxBatchApprovalCount = 500;
+    private const int OutcomeFieldsPerOperation = 5;
     private static readonly TimeSpan BatchApprovalFreshnessWindow = TimeSpan.FromHours(24);
 
     private static readonly HashSet<string> KnownActionVerbs = new(StringComparer.OrdinalIgnoreCase)
@@ -500,6 +502,7 @@ public class AutomationProposalService : IAutomationProposalService
             // is not PendingReview — but the domain guard in Approve throws for any other status
             // before that DTO is built, so the reused value is always the pinned revision.
             ProposalRevision? latestRevision = null;
+            IReadOnlyCollection<ProposalOperationDto>? approvedOperations = null;
             if (proposal.Status == ProposalStatus.PendingReview)
             {
                 // Read the latest revision NOW and pin its id onto the proposal (#1428): approve
@@ -517,6 +520,8 @@ public class AutomationProposalService : IAutomationProposalService
                 var structureValidation = ProposalOperationStructureValidator.Validate(effectiveOperations.Value);
                 if (!structureValidation.IsSuccess)
                     return Result.Failure<ProposalDto>(structureValidation.ErrorCode, structureValidation.ErrorMessage);
+
+                approvedOperations = effectiveOperations.Value;
 
                 if (!proposal.IsExpired)
                 {
@@ -539,6 +544,13 @@ public class AutomationProposalService : IAutomationProposalService
             }
 
             proposal.Approve(decidedByUserId, approvedRevisionId);
+            var outcomeFields = latestRevision is null
+                ? (FieldCount: proposal.Operations.Count * OutcomeFieldsPerOperation, EditedFieldCount: 0)
+                : CountOutcomeFields(proposal, approvedOperations!);
+            proposal.RecordOutcome(
+                outcomeFields.EditedFieldCount > 0 ? OutcomeDecision.EditedThenApproved : OutcomeDecision.Approved,
+                outcomeFields.FieldCount,
+                outcomeFields.EditedFieldCount);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "approved", cancellationToken);
@@ -662,6 +674,7 @@ public class AutomationProposalService : IAutomationProposalService
             }
 
             var now = DateTimeOffset.UtcNow;
+            var approvedOperationsById = new Dictionary<Guid, IReadOnlyCollection<ProposalOperationDto>>();
 
             // Preflight the COMPLETE set before any domain transition or board guard marker is
             // advanced. One failure therefore leaves every proposal PendingReview.
@@ -683,6 +696,8 @@ public class AutomationProposalService : IAutomationProposalService
                         structureValidation.ErrorCode,
                         structureValidation.ErrorMessage);
                 }
+
+                approvedOperationsById[proposal.Id] = effectiveOperations.Value;
 
                 // Preserve the single-approve gate order: malformed effective content is reported
                 // before expiry, then live permission/contract checks run only for a structurally
@@ -806,6 +821,13 @@ public class AutomationProposalService : IAutomationProposalService
                 proposals[index].Approve(
                     decidedByUserId,
                     selections[index].ExpectedLatestRevisionId);
+                var outcomeFields = revisions.ContainsKey(proposals[index].Id)
+                    ? CountOutcomeFields(proposals[index], approvedOperationsById[proposals[index].Id])
+                    : (FieldCount: proposals[index].Operations.Count * OutcomeFieldsPerOperation, EditedFieldCount: 0);
+                proposals[index].RecordOutcome(
+                    outcomeFields.EditedFieldCount > 0 ? OutcomeDecision.EditedThenApproved : OutcomeDecision.Approved,
+                    outcomeFields.FieldCount,
+                    outcomeFields.EditedFieldCount);
             }
 
             // Queue the same per-proposal outcome notification as single approve before the one
@@ -931,6 +953,82 @@ public class AutomationProposalService : IAutomationProposalService
             .Select(MapOperationToDto)
             .ToList();
         return Result.Success<IReadOnlyCollection<ProposalOperationDto>>(originalOperations);
+    }
+
+    /// <summary>
+    /// Counts the five reviewer-visible contract fields of each operation:
+    /// action, target type, target id, parameters, and expected version. Operation
+    /// IDs and idempotency keys are execution identity, not edits to reviewed
+    /// content. Action and target names are case-insensitive, target GUIDs are
+    /// compared by value, and parameters are compared as JSON so formatting
+    /// cannot create a false EditedThenApproved outcome. A missing operation
+    /// changes all five fields at its sequence position.
+    /// </summary>
+    private static (int FieldCount, int EditedFieldCount) CountOutcomeFields(
+        AutomationProposal proposal,
+        IReadOnlyCollection<ProposalOperationDto> effectiveOperations)
+    {
+        // Original operations may share a sequence even when the approved revision
+        // is valid. Outcome telemetry must still allow that decision to be saved.
+        var originalBySequence = proposal.Operations
+            .GroupBy(operation => operation.Sequence)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var effectiveBySequence = effectiveOperations
+            .GroupBy(operation => operation.Sequence)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var sequences = originalBySequence.Keys.Union(effectiveBySequence.Keys);
+        var fieldCount = 0;
+        var editedFieldCount = 0;
+
+        foreach (var sequence in sequences)
+        {
+            fieldCount += OutcomeFieldsPerOperation;
+            if (!originalBySequence.TryGetValue(sequence, out var originals) ||
+                !effectiveBySequence.TryGetValue(sequence, out var effectives) ||
+                originals.Length != 1 || effectives.Length != 1)
+            {
+                editedFieldCount += OutcomeFieldsPerOperation;
+                continue;
+            }
+
+            var original = originals[0];
+            var effective = effectives[0];
+
+            if (!string.Equals(original.ActionType, effective.ActionType, StringComparison.OrdinalIgnoreCase)) editedFieldCount++;
+            if (!string.Equals(original.TargetType, effective.TargetType, StringComparison.OrdinalIgnoreCase)) editedFieldCount++;
+            if (!OutcomeTargetIdsEqual(original.TargetId, effective.TargetId)) editedFieldCount++;
+            if (!OutcomeParametersEqual(original.Parameters, effective.Parameters)) editedFieldCount++;
+            if (!string.Equals(original.ExpectedVersion, effective.ExpectedVersion, StringComparison.Ordinal)) editedFieldCount++;
+        }
+
+        return (fieldCount, editedFieldCount);
+    }
+
+    private static bool OutcomeTargetIdsEqual(string? original, string? effective)
+    {
+        if (string.IsNullOrWhiteSpace(original) || string.IsNullOrWhiteSpace(effective))
+            return string.IsNullOrWhiteSpace(original) && string.IsNullOrWhiteSpace(effective);
+        if (Guid.TryParse(original, out var originalId) && Guid.TryParse(effective, out var effectiveId))
+            return originalId == effectiveId;
+        return string.Equals(original, effective, StringComparison.Ordinal);
+    }
+
+    private static bool OutcomeParametersEqual(string? original, string? effective)
+    {
+        if (original is null || effective is null)
+            return original is null && effective is null;
+
+        try
+        {
+            return JsonNode.DeepEquals(JsonNode.Parse(original), JsonNode.Parse(effective));
+        }
+        catch (JsonException)
+        {
+            // Outcome telemetry must not turn a previously approvable, valid
+            // revision into a failed decision because its legacy original
+            // parameter snapshot cannot be parsed for semantic comparison.
+            return string.Equals(original, effective, StringComparison.Ordinal);
+        }
     }
 
     /// <summary>
@@ -1179,6 +1277,7 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
 
             proposal.Reject(decidedByUserId, dto.Reason);
+            proposal.RecordOutcome(OutcomeDecision.Rejected, proposal.Operations.Count * OutcomeFieldsPerOperation, 0);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "rejected", cancellationToken);

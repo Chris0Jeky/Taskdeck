@@ -94,6 +94,52 @@ public class BoardsCommandTests
     }
 
     [Fact]
+    public async Task BoardsUpdate_DuplicateName_ReturnsUsageErrorAndLeavesBoardUnchanged()
+    {
+        await using var harness = new CliTestHarness("cli-boards-duplicate");
+
+        var createResult = await harness.RunAsync("boards create OrigBoard --json");
+        createResult.ExitCode.Should().Be(0, createResult.StdErr);
+        using var createDoc = JsonDocument.Parse(createResult.StdOut);
+        var boardId = createDoc.RootElement.GetProperty("id").GetGuid();
+
+        var updateResult = await harness.RunAsync($"boards update --board {boardId} --name First --name Second --json");
+
+        updateResult.ExitCode.Should().Be(2);
+        updateResult.StdErr.Should().Contain("Duplicate option").And.Contain("--name");
+
+        var listResult = await harness.RunAsync("boards list --json");
+        listResult.ExitCode.Should().Be(0, listResult.StdErr);
+        using var listDoc = JsonDocument.Parse(listResult.StdOut);
+        var board = listDoc.RootElement.EnumerateArray()
+            .Single(x => x.GetProperty("id").GetGuid() == boardId);
+        board.GetProperty("name").GetString().Should().Be("OrigBoard");
+    }
+
+    [Fact]
+    public async Task BoardsUpdate_TrailingBareDuplicateName_ReturnsUsageErrorAndLeavesBoardUnchanged()
+    {
+        await using var harness = new CliTestHarness("cli-boards-duplicate");
+
+        var createResult = await harness.RunAsync("boards create OrigBoard --json");
+        createResult.ExitCode.Should().Be(0, createResult.StdErr);
+        using var createDoc = JsonDocument.Parse(createResult.StdOut);
+        var boardId = createDoc.RootElement.GetProperty("id").GetGuid();
+
+        var updateResult = await harness.RunAsync($"boards update --board {boardId} --name First --name --json");
+
+        updateResult.ExitCode.Should().Be(2);
+        updateResult.StdErr.Should().Contain("Duplicate option").And.Contain("--name");
+
+        var listResult = await harness.RunAsync("boards list --json");
+        listResult.ExitCode.Should().Be(0, listResult.StdErr);
+        using var listDoc = JsonDocument.Parse(listResult.StdOut);
+        var board = listDoc.RootElement.EnumerateArray()
+            .Single(x => x.GetProperty("id").GetGuid() == boardId);
+        board.GetProperty("name").GetString().Should().Be("OrigBoard");
+    }
+
+    [Fact]
     public async Task BoardsArchiveUnarchive_FiltersListAndRestoresBoard()
     {
         await using var harness = new CliTestHarness("cli-boards");

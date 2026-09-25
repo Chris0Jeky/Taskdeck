@@ -184,7 +184,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Frontend unit (Vitest) | ~2,463+ | 200+ test files across stores, views, components, composables, API |
 | Frontend E2E (Playwright) | 61+ | Smoke, capture loop, onboarding, cross-browser, validation slices |
 | Load tests (k6) | Board-heavy profile | 20 VUs, 90s, advisory only |
-| Mutation tests (Stryker) | Domain + captureStore/boardStore | Weekly, non-blocking, 60/80/0 thresholds |
+| Mutation tests (Stryker) | Domain + captureStore/boardStore | On demand, non-blocking, 60/80/0 thresholds |
 | Visual regression | 7 tests | `toHaveScreenshot()` with 0.5% threshold |
 | Container integration | 20 tests | Testcontainers PostgreSQL |
 | Property-based | 211+ tests | FsCheck (backend), fast-check (frontend) |
@@ -211,10 +211,10 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci-required.yml` | PR/push/merge | **Gate**: docs, arch, backend, frontend, container, E2E |
-| `ci-extended.yml` | Label/manual | Cross-browser, load test, mutation, visual regression |
+| `ci-extended.yml` | PR path changes/label/manual | Cross-browser, load and concurrency, visual regression, advisory checks |
 | `ci-nightly.yml` | Schedule | Full regression, cross-browser, load, container images |
 | `nightly-quality.yml` | Schedule | Coverage, dependency security signals |
-| `mutation-testing.yml` | Weekly | Stryker.NET + Stryker JS (non-blocking) |
+| `mutation-testing.yml` | Manual dispatch | Stryker.NET + Stryker JS (non-blocking) |
 | `ci-release.yml` | Tag/release | SBOM/provenance, container artifacts |
 | `release-security.yml` | Tag/release | Dependency inventory, vulnerability reports |
 | `cd-staging-gate.yml` | Release _(2026-04-16 snapshot; superseded)_ | 4-phase blue/green with manual approval _(historical)_ |
