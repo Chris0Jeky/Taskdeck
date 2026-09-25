@@ -140,7 +140,7 @@ describe('boardStore — WIP-limit toast deduplication (#686)', () => {
       expect(errorToasts).toHaveLength(1)
     })
 
-    it('does not accumulate toasts across two consecutive WIP-limit rejections', async () => {
+    it('deduplicates two consecutive WIP-limit rejections into one receipt', async () => {
       vi.mocked(cardsApi.createCard).mockRejectedValue(makeWipLimitError())
 
       await expect(
@@ -150,6 +150,8 @@ describe('boardStore — WIP-limit toast deduplication (#686)', () => {
         }),
       ).rejects.toBeDefined()
 
+      const firstReceiptId = toastStore.toasts[0]?.id
+
       await expect(
         boardStore.createCard('board-1', {
           title: 'Second card over limit',
@@ -157,10 +159,10 @@ describe('boardStore — WIP-limit toast deduplication (#686)', () => {
         }),
       ).rejects.toBeDefined()
 
-      // Each rejected call should add exactly one toast; two calls → two toasts total.
-      // If the error path is duplicated internally, the count would be 4 (two per call).
       const errorToasts = toastStore.toasts.filter((t) => t.type === 'error')
-      expect(errorToasts).toHaveLength(2)
+      expect(errorToasts).toHaveLength(1)
+      expect(errorToasts[0]?.id).toBe(firstReceiptId)
+      expect(cardsApi.createCard).toHaveBeenCalledTimes(2)
     })
 
     it('toast message matches the WIP-limit error message returned by the API', async () => {
@@ -192,15 +194,17 @@ describe('boardStore — WIP-limit toast deduplication (#686)', () => {
       expect(errorToasts).toHaveLength(1)
     })
 
-    it('does not accumulate toasts across two consecutive move rejections', async () => {
+    it('deduplicates two consecutive move rejections into one receipt', async () => {
       vi.mocked(cardsApi.moveCard).mockRejectedValue(makeWipLimitError())
 
       await expect(boardStore.moveCard('board-1', 'card-a', 'column-1', 2)).rejects.toBeDefined()
+      const firstReceiptId = toastStore.toasts[0]?.id
       await expect(boardStore.moveCard('board-1', 'card-b', 'column-1', 2)).rejects.toBeDefined()
 
-      // Two calls, each producing exactly one toast → two total.
       const errorToasts = toastStore.toasts.filter((t) => t.type === 'error')
-      expect(errorToasts).toHaveLength(2)
+      expect(errorToasts).toHaveLength(1)
+      expect(errorToasts[0]?.id).toBe(firstReceiptId)
+      expect(cardsApi.moveCard).toHaveBeenCalledTimes(2)
     })
 
     it('emits one error toast per move failure regardless of error message variation', async () => {
@@ -232,10 +236,15 @@ describe('boardStore — WIP-limit toast deduplication (#686)', () => {
         }),
       ).rejects.toBeDefined()
 
+      const firstReceiptId = toastStore.toasts[0]?.id
+
       await expect(boardStore.moveCard('board-1', 'card-x', 'column-1', 0)).rejects.toBeDefined()
 
       const errorToasts = toastStore.toasts.filter((t) => t.type === 'error')
-      expect(errorToasts).toHaveLength(2)
+      expect(errorToasts).toHaveLength(1)
+      expect(errorToasts[0]?.id).toBe(firstReceiptId)
+      expect(cardsApi.createCard).toHaveBeenCalledTimes(1)
+      expect(cardsApi.moveCard).toHaveBeenCalledTimes(1)
     })
   })
 })
