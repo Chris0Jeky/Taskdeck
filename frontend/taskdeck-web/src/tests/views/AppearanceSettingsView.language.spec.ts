@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
+import { computeAccessibleName } from 'dom-accessibility-api'
 import AppearanceSettingsView from '../../views/AppearanceSettingsView.vue'
 import { useLocaleStore } from '../../store/localeStore'
 import { i18n, DEFAULT_LOCALE } from '../../i18n'
@@ -51,10 +52,10 @@ describe('AppearanceSettingsView — language', () => {
     const wrapper = mount(AppearanceSettingsView)
 
     expect(localeButton(wrapper, 'en').find('[data-testid="mt-badge"]').exists()).toBe(false)
-    expect(localeButton(wrapper, 'it').find('[data-testid="mt-badge"]').text()).toBe(
+    expect(localeButton(wrapper, 'it').find('[data-testid="mt-badge"]').text()).toContain(
       'Machine-translated',
     )
-    expect(localeButton(wrapper, 'es').find('[data-testid="mt-badge"]').text()).toBe(
+    expect(localeButton(wrapper, 'es').find('[data-testid="mt-badge"]').text()).toContain(
       'Machine-translated',
     )
   })
@@ -160,6 +161,39 @@ describe('AppearanceSettingsView — language', () => {
     const store = useLocaleStore()
     expect(store.preferredLocale).toBe('en')
     expect(store.locale).toBe('en')
+  })
+
+  it('exposes spaced, parenthesised accessible names with the note translated (#3395)', async () => {
+    const wrapper = mount(AppearanceSettingsView)
+
+    const accessibleName = (locale: string) => {
+      const el = localeButton(wrapper, locale).element as HTMLElement
+      return computeAccessibleName(el)
+    }
+    const visibleEndonym = (locale: string) =>
+      localeButton(wrapper, locale).find('.paper-appearance__segment-name').text()
+
+    expect(accessibleName('en')).toBe('English')
+    expect(accessibleName('it')).toBe('Italiano (Machine-translated)')
+    expect(accessibleName('es')).toBe('Español (Machine-translated)')
+    for (const locale of ['en', 'it', 'es'] as const) {
+      expect(accessibleName(locale).startsWith(visibleEndonym(locale))).toBe(true)
+    }
+    // No aria-label override: the name stays content-derived so the endonym
+    // `lang` keeps switching pronunciation.
+    expect(localeButton(wrapper, 'it').attributes('aria-label')).toBeUndefined()
+
+    await localeButton(wrapper, 'it').trigger('click')
+    await flushPromises()
+
+    expect(accessibleName('en')).toBe('English')
+    expect(accessibleName('it')).toBe('Italiano (Traduzione automatica)')
+    expect(accessibleName('es')).toBe('Español (Traduzione automatica)')
+    expect(accessibleName('es').startsWith(visibleEndonym('es'))).toBe(true)
+    expect(localeButton(wrapper, 'it').attributes('aria-pressed')).toBe('true')
+    expect(
+      localeButton(wrapper, 'it').find('.paper-appearance__segment-name').attributes('lang'),
+    ).toBe('it')
   })
 
   it('rejects an unsupported locale passed to setLocale', () => {
