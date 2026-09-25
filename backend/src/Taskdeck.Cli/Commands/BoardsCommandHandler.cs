@@ -115,7 +115,22 @@ internal sealed class BoardsCommandHandler
 
         var name = ArgParser.GetOption(args, "--name");
         var description = ArgParser.GetOption(args, "--description");
+
+        if (ArgParser.HasFlag(args, "--name") && name is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --name <name>.",
+                "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+        }
+
+        if (ArgParser.HasFlag(args, "--description") && description is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --description <description>.",
+                "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+        }
         var archiveFlag = ArgParser.HasFlag(args, "--archive");
+
         var unarchiveFlag = ArgParser.HasFlag(args, "--unarchive");
 
         if (archiveFlag && unarchiveFlag)

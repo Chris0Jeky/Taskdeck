@@ -13,7 +13,13 @@ internal static class ArgParser
         {
             if (string.Equals(args[i], optionName, StringComparison.OrdinalIgnoreCase))
             {
-                return args[i + 1];
+                var optionValue = args[i + 1];
+                if (optionValue.StartsWith("--", StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
+                return optionValue;
             }
         }
 
