@@ -6,6 +6,7 @@ import { versionApi } from '../../../api/versionApi'
 import { resetProductVersionForTests } from '../../../composables/useProductVersion'
 import type { FeatureFlags } from '../../../types/feature-flags'
 import type { ViewportMode } from '../../../composables/useViewportMode'
+import { ensureLocaleMessages, i18n } from '../../../i18n'
 
 const mockRoute = reactive({
   path: '/workspace/home',
@@ -548,6 +549,24 @@ describe('PaperSidebar', () => {
     }
     expect(phone.find('button[aria-label="More"]').exists()).toBe(true)
     phone.unmount()
+  })
+
+  it('keeps the Advanced spoken name aligned with its visible label in translated locales', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      for (const locale of ['it', 'es'] as const) {
+        await ensureLocaleMessages(locale)
+        i18n.global.locale.value = locale
+        const wrapper = mountSidebar()
+        const toggle = wrapper.get('[data-testid="paper-guided-advanced-toggle"]')
+        const visibleLabel = toggle.get('.paper-sidebar__label').text()
+        const visibleAction = toggle.get('.paper-sidebar__disclosure').text()
+        expect(toggle.attributes('aria-label')).toBe(`${visibleLabel} ${visibleAction}`)
+        wrapper.unmount()
+      }
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
   })
 
   it('renders rail active-route ember accent on tablet', () => {

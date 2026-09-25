@@ -248,9 +248,11 @@ const themeToggleLabel = computed(() =>
   paperTheme.activeClass === 'paper-night' ? t('shell.sidebar.theme.switchToLight') : t('shell.sidebar.theme.switchToDark'),
 )
 
-const advancedToggleLabel = computed(() =>
+const advancedVisibleLabel = computed(() => t('shell.sidebar.advanced.label'))
+const advancedVisibleAction = computed(() =>
   guidedAdvancedRevealed.value ? t('shell.sidebar.advanced.hide') : t('shell.sidebar.advanced.show'),
 )
+const advancedToggleLabel = computed(() => `${advancedVisibleLabel.value} ${advancedVisibleAction.value}`)
 
 const themeIcon = computed<'sun' | 'moon'>(() =>
   paperTheme.activeClass === 'paper-night' ? 'sun' : 'moon',
@@ -452,8 +454,8 @@ defineExpose({
           @click="toggleGuidedAdvanced"
         >
           <span class="paper-sidebar__glyph" aria-hidden="true">A</span>
-          <span class="paper-sidebar__label">Advanced</span>
-          <span class="paper-sidebar__disclosure" aria-hidden="true">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+          <span class="paper-sidebar__label">{{ advancedVisibleLabel }}</span>
+          <span class="paper-sidebar__disclosure" aria-hidden="true">{{ advancedVisibleAction }}</span>
         </button>
         <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
           <li v-for="item in guidedAdvancedNavItems" :key="item.id">
@@ -718,8 +720,8 @@ defineExpose({
           @click="toggleGuidedAdvanced"
         >
           <span class="paper-sidebar__glyph" aria-hidden="true">A</span>
-          <span class="paper-sidebar__label">Advanced</span>
-          <span class="paper-sidebar__disclosure" aria-hidden="true">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+          <span class="paper-sidebar__label">{{ advancedVisibleLabel }}</span>
+          <span class="paper-sidebar__disclosure" aria-hidden="true">{{ advancedVisibleAction }}</span>
         </button>
         <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
           <li v-for="item in guidedAdvancedNavItems" :key="item.id">

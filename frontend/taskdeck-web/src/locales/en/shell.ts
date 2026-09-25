@@ -65,8 +65,9 @@ export default {
       withCount: '{label}: {count} pending',
     },
     advanced: {
-      show: 'Show advanced navigation',
-      hide: 'Hide advanced navigation',
+      label: 'Advanced',
+      show: 'Show',
+      hide: 'Hide',
     },
     more: 'More',
     useAdvancedWorkspace: 'Use advanced workspace',

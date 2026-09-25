@@ -56,8 +56,9 @@ export default {
       withCount: '{label}: {count} in attesa',
     },
     advanced: {
-      show: 'Mostra navigazione avanzata',
-      hide: 'Nascondi navigazione avanzata',
+      label: 'Avanzate',
+      show: 'Mostra',
+      hide: 'Nascondi',
     },
     more: 'Altro',
     useAdvancedWorkspace: "Usa l'area di lavoro avanzata",
