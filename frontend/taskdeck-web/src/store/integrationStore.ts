@@ -29,13 +29,30 @@ export const useIntegrationStore = defineStore('integration', () => {
     token: symbol
   }
 
+  interface MutationTail {
+    promise: Promise<void>
+    ownerToken: symbol
+  }
+
   let lifecycleEpoch = 0
+  let errorOwner: symbol | null = null
   const readOwners = new Map<ReadLane, ReadOwner>()
   const readRetries = new Map<ReadLane, ReadRetry>()
   const activeReadTokens = new Set<symbol>()
+  const mutationTails = new Map<string, MutationTail>()
 
   function syncLoading() {
     loading.value = activeReadTokens.size > 0
+  }
+
+  function clearError() {
+    error.value = null
+    errorOwner = null
+  }
+
+  function recordError(ownerToken: symbol, message: string) {
+    error.value = message
+    errorOwner = ownerToken
   }
 
   function beginRead(lane: ReadLane, retry: ReadRetry): ReadOwner {
@@ -46,7 +63,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     readOwners.set(lane, owner)
     readRetries.set(lane, retry)
     activeReadTokens.add(owner.token)
-    error.value = null
+    clearError()
     syncLoading()
     return owner
   }
@@ -69,6 +86,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     readOwners.clear()
     readRetries.clear()
     activeReadTokens.clear()
+    mutationTails.clear()
     loading.value = false
     error.value = null
   }
@@ -98,6 +116,35 @@ export const useIntegrationStore = defineStore('integration', () => {
     return epoch === lifecycleEpoch
   }
 
+  async function enqueueConnectorMutation<T>(
+    connectorId: string,
+    task: (epoch: number, ownerToken: symbol) => Promise<T>,
+  ): Promise<T | undefined> {
+    const epoch = lifecycleEpoch
+    const ownerToken = Symbol(`mutation:${connectorId}`)
+    const predecessor = mutationTails.get(connectorId)
+    let release!: () => void
+    const tail = new Promise<void>((resolve) => { release = resolve })
+    mutationTails.set(connectorId, { promise: tail, ownerToken })
+
+    try {
+      if (predecessor) await predecessor.promise
+      if (!ownsLifetime(epoch)) return undefined
+
+      // Retire only an error produced by this connector's predecessor. Another
+      // connector can fail while this intent waits and must keep its receipt.
+      if (predecessor) {
+        if (errorOwner === predecessor.ownerToken) clearError()
+      } else {
+        clearError()
+      }
+      return await task(epoch, ownerToken)
+    } finally {
+      release()
+      if (mutationTails.get(connectorId)?.promise === tail) mutationTails.delete(connectorId)
+    }
+  }
+
   function guardDemoMutation(): never | void {
     if (isDemoMode) {
       toast.info('This action is view-only in demo mode.')
@@ -108,6 +155,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   async function fetchConnectors() {
     if (isDemoMode) {
       loading.value = false
+      clearError()
       error.value = 'Integrations are not available in demo mode.'
       return
     }
@@ -121,7 +169,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       if (!ownsRead('list', owner)) return
       connectors.value = []
       const msg = getErrorDisplay(e, 'Failed to fetch integrations').message
-      error.value = msg
+      recordError(owner.token, msg)
       toast.error(msg)
     } finally {
       finishRead('list', owner)
@@ -130,6 +178,7 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function fetchConnectorDetail(id: string) {
     if (isDemoMode) {
+      clearError()
       error.value = 'Integrations are not available in demo mode.'
       return
     }
@@ -142,7 +191,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     } catch (e: unknown) {
       if (!ownsRead('detail', owner)) return
       const msg = getErrorDisplay(e, 'Failed to fetch connector details').message
-      error.value = msg
+      recordError(owner.token, msg)
       selectedConnector.value = null
       toast.error(msg)
     } finally {
@@ -153,8 +202,9 @@ export const useIntegrationStore = defineStore('integration', () => {
   async function registerConnector(request: CreateIntegrationConnectorRequest) {
     guardDemoMutation()
     const epoch = lifecycleEpoch
+    const ownerToken = Symbol('register')
     try {
-      error.value = null
+      clearError()
       const connector = await integrationsApi.registerConnector(request)
       if (!ownsLifetime(epoch)) return connector
 
@@ -164,7 +214,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     } catch (e: unknown) {
       if (ownsLifetime(epoch)) {
         const msg = getErrorDisplay(e, 'Failed to register connector').message
-        error.value = msg
+        recordError(ownerToken, msg)
         toast.error(msg)
       }
       throw e
@@ -173,101 +223,102 @@ export const useIntegrationStore = defineStore('integration', () => {
 
   async function updateConnector(id: string, request: UpdateIntegrationConnectorRequest) {
     guardDemoMutation()
-    const epoch = lifecycleEpoch
-    try {
-      error.value = null
-      const updated = await integrationsApi.updateConnector(id, request)
-      if (!ownsLifetime(epoch)) return updated
+    return await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
+      try {
+        const updated = await integrationsApi.updateConnector(id, request)
+        if (!ownsLifetime(epoch)) return updated
 
-      connectors.value = connectors.value.map((connector) => connector.id === id ? updated : connector)
-      if (selectedConnector.value?.id === id) {
-        selectedConnector.value = { ...selectedConnector.value, ...updated }
+        connectors.value = connectors.value.map((connector) => connector.id === id ? updated : connector)
+        if (selectedConnector.value?.id === id) {
+          selectedConnector.value = { ...selectedConnector.value, ...updated }
+        }
+        toast.success('Connector updated.')
+        return updated
+      } catch (e: unknown) {
+        if (ownsLifetime(epoch)) {
+          const msg = getErrorDisplay(e, 'Failed to update connector').message
+          recordError(ownerToken, msg)
+          toast.error(msg)
+        }
+        throw e
       }
-      toast.success('Connector updated.')
-      return updated
-    } catch (e: unknown) {
-      if (ownsLifetime(epoch)) {
-        const msg = getErrorDisplay(e, 'Failed to update connector').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    }
+    })
   }
 
   async function deleteConnector(id: string) {
     guardDemoMutation()
-    const epoch = lifecycleEpoch
-    try {
-      error.value = null
-      await integrationsApi.deleteConnector(id)
-      if (!ownsLifetime(epoch)) return
+    await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
+      try {
+        await integrationsApi.deleteConnector(id)
+        if (!ownsLifetime(epoch)) return
 
-      connectors.value = connectors.value.filter((connector) => connector.id !== id)
-      if (selectedConnector.value?.id === id) {
-        selectedConnector.value = null
+        connectors.value = connectors.value.filter((connector) => connector.id !== id)
+        if (selectedConnector.value?.id === id) {
+          selectedConnector.value = null
+        }
+        toast.success('Connector removed.')
+      } catch (e: unknown) {
+        if (ownsLifetime(epoch)) {
+          const msg = getErrorDisplay(e, 'Failed to remove connector').message
+          recordError(ownerToken, msg)
+          toast.error(msg)
+        }
+        throw e
       }
-      toast.success('Connector removed.')
-    } catch (e: unknown) {
-      if (ownsLifetime(epoch)) {
-        const msg = getErrorDisplay(e, 'Failed to remove connector').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    }
+    })
   }
 
   async function enableConnector(id: string) {
     guardDemoMutation()
-    const epoch = lifecycleEpoch
-    try {
-      error.value = null
-      const updated = await integrationsApi.enableConnector(id)
-      if (!ownsLifetime(epoch)) return
+    await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
+      try {
+        const updated = await integrationsApi.enableConnector(id)
+        if (!ownsLifetime(epoch)) return
 
-      connectors.value = connectors.value.map((connector) => connector.id === id ? updated : connector)
-      if (selectedConnector.value?.id === id) {
-        selectedConnector.value = { ...selectedConnector.value, ...updated }
+        connectors.value = connectors.value.map((connector) => connector.id === id ? updated : connector)
+        if (selectedConnector.value?.id === id) {
+          selectedConnector.value = { ...selectedConnector.value, ...updated }
+        }
+        toast.success('Connector enabled.')
+      } catch (e: unknown) {
+        if (ownsLifetime(epoch)) {
+          const msg = getErrorDisplay(e, 'Failed to enable connector').message
+          recordError(ownerToken, msg)
+          toast.error(msg)
+        }
+        throw e
       }
-      toast.success('Connector enabled.')
-    } catch (e: unknown) {
-      if (ownsLifetime(epoch)) {
-        const msg = getErrorDisplay(e, 'Failed to enable connector').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    }
+    })
   }
 
   async function disableConnector(id: string) {
     guardDemoMutation()
-    const epoch = lifecycleEpoch
-    try {
-      error.value = null
-      const updated = await integrationsApi.disableConnector(id)
-      if (!ownsLifetime(epoch)) return
+    await enqueueConnectorMutation(id, async (epoch, ownerToken) => {
+      try {
+        const updated = await integrationsApi.disableConnector(id)
+        if (!ownsLifetime(epoch)) return
 
-      connectors.value = connectors.value.map((connector) => connector.id === id ? updated : connector)
-      if (selectedConnector.value?.id === id) {
-        selectedConnector.value = { ...selectedConnector.value, ...updated }
+        connectors.value = connectors.value.map((connector) => connector.id === id ? updated : connector)
+        if (selectedConnector.value?.id === id) {
+          selectedConnector.value = { ...selectedConnector.value, ...updated }
+        }
+        toast.success('Connector disabled.')
+      } catch (e: unknown) {
+        if (ownsLifetime(epoch)) {
+          const msg = getErrorDisplay(e, 'Failed to disable connector').message
+          recordError(ownerToken, msg)
+          toast.error(msg)
+        }
+        throw e
       }
-      toast.success('Connector disabled.')
-    } catch (e: unknown) {
-      if (ownsLifetime(epoch)) {
-        const msg = getErrorDisplay(e, 'Failed to disable connector').message
-        error.value = msg
-        toast.error(msg)
-      }
-      throw e
-    }
+    })
   }
 
   function $reset() {
     invalidateOperations()
     connectors.value = []
     selectedConnector.value = null
+    clearError()
   }
 
   watch(
