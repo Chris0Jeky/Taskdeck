@@ -454,6 +454,12 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onUpdated()
       options.onClose()
     } catch (error) {
+      // A queued delete whose board visit retired (navigation or logout)
+      // rejects with StaleBoardVisitError without sending any request. There
+      // is no failure to report, and the originating route is gone, so a
+      // toast would land on the wrong screen. Stay silent; confirming again
+      // captures a fresh visit and transports normally.
+      if (error instanceof Error && error.name === 'StaleBoardVisitError') return
       logError('Failed to delete card:', error)
       reportPermissionDenied(error, permissionRequest)
       deletePreviewError.value = 'Card or children changed, or deletion could not be confirmed. Close and refresh before confirming again.'

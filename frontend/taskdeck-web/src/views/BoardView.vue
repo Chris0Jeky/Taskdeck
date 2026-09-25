@@ -33,7 +33,7 @@ import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 import { isDemoMode } from '../utils/demoMode'
 import { getErrorMessage } from '../utils/errorMessage'
 import { logError } from '../utils/errorReporting'
-import { captureSessionContinuity, getToken, isSameSessionContinuity, type SessionContinuity } from '../utils/tokenStorage'
+import { captureSessionContinuity, getObservedCredentialGeneration, getToken, isSameSessionContinuity, type SessionContinuity } from '../utils/tokenStorage'
 
 const route = useRoute()
 const router = useRouter()
@@ -117,7 +117,14 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 }
 
 const boardId = ref(route.params.id as string)
-let boardViewVisit = boardStore.beginBoardViewVisit(boardId.value)
+function beginRouteVisit(id: string) {
+  const visit = boardStore.beginBoardViewVisit(id)
+  visit.onBackgroundForbidden = (deniedId) => {
+    if (boardViewVisit === visit) retireRevokedBoard(deniedId)
+  }
+  return visit
+}
+let boardViewVisit = beginRouteVisit(boardId.value)
 const previewProposalId = computed(() => typeof route.query?.proposalId === 'string' ? route.query.proposalId : null)
 const proposalMarkers = ref<BoardProposalMarkers>({})
 provide(BOARD_PROPOSAL_MARKERS, readonly(proposalMarkers))
@@ -180,20 +187,30 @@ const realtime = createBoardRealtimeController({
     presenceMembers.value = normalized
     boardStore.setBoardPresenceMembers(normalized)
   },
-  onAccessRevoked: (revokedBoardId) => {
-    if (viewUnmounted || revokedBoardId !== boardId.value) {
-      return
-    }
-
-    // Hide cached board content immediately and retire the unsaved-editor guard.
-    // Wait one render tick so Paper's child route guard unmounts before replace.
-    boardAccessRevoked.value = true
-    toast.error(t('boardDetail.accessRevoked'))
-    void nextTick()
-      .then(() => router.replace('/workspace/boards'))
-      .catch((error) => logError('Failed to leave revoked board:', error))
-  },
+  onAccessRevoked: retireRevokedBoard,
 })
+
+function retireRevokedBoard(revokedBoardId: string) {
+  if (viewUnmounted || boardAccessRevoked.value || revokedBoardId !== boardId.value) return
+  const visit = boardViewVisit
+
+  // The route may still be waiting to join realtime. Retire it directly instead
+  // of sending A's denial through a controller that still owns B or no board.
+  boardAccessRevoked.value = true
+  pendingRealtimeRecovery = undefined
+  boardRealtimeLoadGeneration++
+  boardStore.endBoardViewVisit(visit)
+  presenceMembers.value = []
+  boardStore.setBoardPresenceMembers([])
+  void realtime.stop().catch((error) => logError('Failed to stop revoked board realtime:', error))
+  toast.error(t('boardDetail.accessRevoked'))
+  // Unmount child editor guards before leaving, but never redirect a new visit.
+  void nextTick().then(() => {
+    if (!viewUnmounted && boardViewVisit === visit && boardId.value === revokedBoardId && boardAccessRevoked.value) {
+      return router.replace('/workspace/boards')
+    }
+  }).catch((error) => logError('Failed to leave revoked board:', error))
+}
 
 const boardLoadErrorSummary = computed(() => routedBoard.value
   ? "We couldn't refresh this board. Your last loaded board is still shown."
@@ -209,6 +226,123 @@ function recordBoardLoadFailure(requestedBoardId: string, error: unknown) {
   boardLoadError.value = boardStore.error ?? getErrorMessage(error, 'Failed to fetch board')
 }
 
+// Only a superseded explicit load may resume realtime from a later payload.
+// Ordinary background refreshes must not restart an already connected route.
+interface BoardRealtimeLoad {
+  id: string
+  visit: ReturnType<typeof boardStore.beginBoardViewVisit>
+  generation: number
+  requestGeneration: number
+  credentialGeneration: number
+  session: SessionContinuity
+  credentialRetries: number
+  mode: 'start' | 'switchBoard'
+}
+let boardRealtimeLoadGeneration = 0
+let pendingRealtimeRecovery: BoardRealtimeLoad | undefined
+
+function ownsRealtimeVisit(load: BoardRealtimeLoad) {
+  return !viewUnmounted && !boardAccessRevoked.value &&
+    boardId.value === load.id && boardViewVisit === load.visit &&
+    boardRealtimeLoadGeneration === load.generation &&
+    isSameSessionContinuity(load.session)
+}
+
+function hasCurrentRealtimeCredential(load: BoardRealtimeLoad) {
+  getToken()
+  return getObservedCredentialGeneration() === load.credentialGeneration
+}
+
+function ownsRealtimeLoad(load: BoardRealtimeLoad) {
+  return ownsRealtimeVisit(load) && hasCurrentRealtimeCredential(load)
+}
+
+async function continueRealtimeWithCurrentCredential(load: BoardRealtimeLoad) {
+  if (!ownsRealtimeVisit(load)) return
+  pendingRealtimeRecovery = undefined
+  if (load.credentialRetries >= 1) {
+    boardLoadError.value = 'Your session refreshed again while loading this board. Retry to reconnect live updates.'
+    return
+  }
+
+  // Same user, new credential: revalidate once instead of joining on the old
+  // read. A second refresh remains an explicit Retry, not an unbounded loop.
+  await loadBoardWithRealtime(load.id, load.mode, load.credentialRetries + 1)
+}
+
+async function connectLoadedBoard(load: BoardRealtimeLoad) {
+  if (!ownsRealtimeLoad(load)) return
+  boardLoadError.value = null
+  try {
+    await realtime[load.mode](load.id)
+    // The controller observes the current token and owns same-user continuity
+    // during its asynchronous join. Do not lose that completed connection merely
+    // because a token refresh finished while the join was in flight.
+    if (ownsRealtimeVisit(load)) realtimeStarted = true
+  } catch (error) {
+    logError('Failed to connect loaded board realtime:', error)
+  }
+}
+
+async function resumeRecoveredBoardRealtime() {
+  const load = pendingRealtimeRecovery
+  if (!load || !ownsRealtimeVisit(load) || boardStore.currentBoard?.id !== load.id ||
+    !(boardStore.currentBoardPayloadGeneration > load.requestGeneration)) return
+
+  // Consume before awaiting the controller so repeated payload notifications
+  // cannot issue duplicate joins. Connection failures follow existing handling.
+  pendingRealtimeRecovery = undefined
+  try {
+    if (!hasCurrentRealtimeCredential(load)) await continueRealtimeWithCurrentCredential(load)
+    else await connectLoadedBoard(load)
+  } catch (error) {
+    recordBoardLoadFailure(load.id, error)
+    logError('Failed to reconnect recovered board:', error)
+  }
+}
+
+async function loadBoardWithRealtime(id: string, mode: BoardRealtimeLoad['mode'], credentialRetries = 0) {
+  getToken()
+  const load: BoardRealtimeLoad = {
+    id, mode, visit: boardViewVisit, generation: ++boardRealtimeLoadGeneration,
+    requestGeneration: 0,
+    credentialGeneration: getObservedCredentialGeneration(),
+    session: captureSessionContinuity(),
+    credentialRetries,
+  }
+  pendingRealtimeRecovery = undefined
+  let committed: boolean
+  try {
+    const request = boardStore.fetchBoard(id)
+    load.requestGeneration = boardStore.currentBoardRequestGeneration
+    committed = await request
+  } catch (error) {
+    if (!ownsRealtimeVisit(load)) return
+    if (!hasCurrentRealtimeCredential(load)) {
+      await continueRealtimeWithCurrentCredential(load)
+      return
+    }
+    throw error
+  }
+  if (!ownsRealtimeVisit(load)) return
+  if (!hasCurrentRealtimeCredential(load)) {
+    await continueRealtimeWithCurrentCredential(load)
+    return
+  }
+
+  if (committed) {
+    await connectLoadedBoard(load)
+  } else {
+    pendingRealtimeRecovery = load
+    // Recovery may already have committed before the explicit promise settled.
+    await resumeRecoveredBoardRealtime()
+  }
+}
+
+watch(() => boardStore.currentBoardPayloadGeneration, () => {
+  void resumeRecoveredBoardRealtime()
+}, { flush: 'post' })
+
 async function retryBoardLoad() {
   if (viewUnmounted || boardLoadRetryInFlight.value) return
 
@@ -218,20 +352,7 @@ async function retryBoardLoad() {
   boardLoadRetryInFlight.value = true
 
   try {
-    const committed = await boardStore.fetchBoard(requestedBoardId)
-    if (viewUnmounted || !committed || boardId.value !== requestedBoardId) return
-
-    boardLoadError.value = null
-    try {
-      if (realtimeStarted) {
-        await realtime.switchBoard(requestedBoardId)
-      } else {
-        await realtime.start(requestedBoardId)
-      }
-      realtimeStarted = true
-    } catch (error) {
-      logError('Failed to resume board realtime after retry:', error)
-    }
+    await loadBoardWithRealtime(requestedBoardId, realtimeStarted ? 'switchBoard' : 'start')
   } catch (error) {
     recordBoardLoadFailure(requestedBoardId, error)
     logError('Failed to retry board load:', error)
@@ -348,16 +469,7 @@ onMounted(async () => {
     // BoardJoined push event (fixes #523 flicker).
     applyPresenceSeed()
     boardStore.setEditingCard(null)
-    const committed = await boardStore.fetchBoard(requestedBoardId)
-    if (!viewUnmounted && committed && boardId.value === requestedBoardId) {
-      boardLoadError.value = null
-      try {
-        await realtime.start(requestedBoardId)
-        realtimeStarted = true
-      } catch (error) {
-        logError('Failed to start board realtime:', error)
-      }
-    }
+    await loadBoardWithRealtime(requestedBoardId, 'start')
   } catch (error) {
     recordBoardLoadFailure(requestedBoardId, error)
     logError('Failed to load board:', error)
@@ -374,7 +486,7 @@ watch(
       return
     }
 
-    boardViewVisit = boardStore.beginBoardViewVisit(nextBoardId)
+    boardViewVisit = beginRouteVisit(nextBoardId)
     boardId.value = nextBoardId
     boardAccessRevoked.value = false
     boardLoadError.value = null
@@ -384,16 +496,7 @@ watch(
     boardStore.setEditingCard(null)
 
     try {
-      const committed = await boardStore.fetchBoard(nextBoardId)
-      if (!viewUnmounted && committed && boardId.value === nextBoardId) {
-        boardLoadError.value = null
-        try {
-          await realtime.switchBoard(nextBoardId)
-          realtimeStarted = true
-        } catch (error) {
-          logError('Failed to switch board realtime:', error)
-        }
-      }
+      await loadBoardWithRealtime(nextBoardId, 'switchBoard')
     } catch (error) {
       recordBoardLoadFailure(nextBoardId, error)
       logError('Failed to switch board:', error)
@@ -411,6 +514,7 @@ watch(
 
 onBeforeUnmount(() => {
   viewUnmounted = true
+  pendingRealtimeRecovery = undefined
   boardStore.endBoardViewVisit(boardViewVisit)
   boardStore.cancelBackgroundBoardFetch?.(boardId.value)
   presenceMembers.value = []

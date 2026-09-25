@@ -20,6 +20,9 @@ export interface CardFilters {
 
 export interface BoardViewVisit {
   readonly boardId: string | null
+  // Attached by the mounted route, never persisted. A recovery read can be
+  // denied before the realtime controller has joined this route's board.
+  onBackgroundForbidden?: (boardId: string) => void
 }
 
 /**
