@@ -41,12 +41,10 @@ const orchestratorState = {
   captureStore: mockCaptureStore,
   items: ref<Array<{ id: string }>>([]),
   activeBoardId: ref<string | null>(null),
-  activeColumnId: ref<string | null>(null),
   isArchivedHistory: ref(false),
   isScopeReplacement: ref(false),
   activeBoardName: ref(''),
   activeBoardCanWrite: ref(true),
-  activeColumnName: ref(''),
   selectedItemId: ref<string | null>(null),
   loadInbox: vi.fn<() => Promise<void>>(),
   clearScope: vi.fn<() => Promise<void>>(),
@@ -97,12 +95,10 @@ describe('PaperInboxView', () => {
     vi.clearAllMocks()
     orchestratorState.items.value = []
     orchestratorState.activeBoardId.value = null
-    orchestratorState.activeColumnId.value = null
     orchestratorState.isArchivedHistory.value = false
     orchestratorState.isScopeReplacement.value = false
     orchestratorState.activeBoardName.value = ''
     orchestratorState.activeBoardCanWrite.value = true
-    orchestratorState.activeColumnName.value = ''
     orchestratorState.selectedItemId.value = null
     orchestratorState.loadInbox.mockResolvedValue(undefined)
     orchestratorState.clearScope.mockResolvedValue(undefined)
@@ -632,12 +628,9 @@ describe('PaperInboxView', () => {
   // view over the real orchestrator; here the orchestrator is a stub.
   it('discloses only the board scope the list request applies, then clears it without reloading', async () => {
     orchestratorState.activeBoardId.value = 'board-active'
-    orchestratorState.activeColumnId.value = 'column-ready'
     orchestratorState.activeBoardName.value = 'Payments API Migration'
-    orchestratorState.activeColumnName.value = 'Ready'
     orchestratorState.clearScope.mockImplementation(async () => {
       orchestratorState.activeBoardId.value = null
-      orchestratorState.activeColumnId.value = null
       orchestratorState.items.value = [captureRow('restored-capture', 'New')]
     })
 
@@ -663,21 +656,6 @@ describe('PaperInboxView', () => {
     expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
     await empty.trigger('click')
     expect(orchestratorState.clearScope).toHaveBeenCalledTimes(1)
-  })
-
-  // #1984 finding 2: the scoped empty state interpolates the same label as the
-  // chip, so a column left in the route used to make it read "No captures in
-  // Board: X · Column: Y" over a list that was never column-filtered.
-  it('names only the applied scope in an empty Inbox when the route still carries a column', async () => {
-    orchestratorState.activeBoardId.value = 'board-active'
-    orchestratorState.activeColumnId.value = 'column-ready'
-    orchestratorState.activeBoardName.value = 'Payments API Migration'
-    orchestratorState.activeColumnName.value = 'Ready'
-
-    const wrapper = mount(PaperInboxView)
-    expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
-    expect(wrapper.text()).not.toContain('Column: Ready')
-    expect(wrapper.find('[data-testid="paper-triage-clear-scope"]').exists()).toBe(true)
   })
 
   it('toggles between composer and nib when Cmd+; is pressed globally', async () => {
