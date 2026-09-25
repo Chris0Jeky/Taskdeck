@@ -117,6 +117,34 @@ export function createCardActions(
       (candidate.second === current.second && candidate.fraction < current.fraction)
   }
 
+  async function reconcileReopenedBoard(visit: CardMutationVisit) {
+    const recoveryVisit = state.boardViewVisit.value
+    if (
+      state.boardMutationSessionGeneration.value !== visit.sessionGeneration ||
+      recoveryVisit?.boardId !== visit.boardId
+    ) return
+
+    const message = 'Card change saved, but the reopened board could not be refreshed. Refresh the board before editing.'
+    try {
+      // The prior write invalidated any pre-commit explicit read. Queue behind
+      // it even when another board's cached payload is still installed. The
+      // shared reader owns bounded transport, deduplication and cancellation.
+      await refreshBoard(visit.boardId, {
+        intent: 'background',
+        afterActive: true,
+        preserveCardComments: true,
+        backgroundFailureMessage: message,
+      })
+    } catch {
+      // A post-commit read failure must not turn a confirmed write into a
+      // failed mutation receipt. Only the recovery's current route may warn.
+      if (
+        state.boardMutationSessionGeneration.value === visit.sessionGeneration &&
+        state.boardViewVisit.value === recoveryVisit
+      ) helpers.toast.warning(message)
+    }
+  }
+
   async function refreshDetachedChildren(boardId: string) {
     // The mutation already committed. It only changes hierarchy ownership, not
     // surviving comment threads, so keep the open editor's same-board cache
@@ -237,10 +265,12 @@ export function createCardActions(
     const visit = captureCardMutationVisit(boardId)
     return runCardMutation(cardId, visit, async () => {
       let refreshChildren = false
+      let committed = false
       try {
         state.loading.value = true
         state.error.value = null
         await cardsApi.deleteCard(boardId, cardId, confirmation)
+        committed = true
         if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
           helpers.markBoardDetailMutation(boardId)
         }
@@ -276,6 +306,9 @@ export function createCardActions(
         if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
           state.loading.value = false
         }
+        if (committed && !isCurrentCardMutationVisit(visit)) {
+          await reconcileReopenedBoard(visit)
+        }
       }
       // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
       if (refreshChildren) await refreshDetachedChildren(boardId)
@@ -291,6 +324,7 @@ export function createCardActions(
     helpers.guardDemoMutation()
     const visit = captureCardMutationVisit(boardId)
     return runCardMutation(cardId, visit, async () => {
+      let committed = false
       try {
         state.loading.value = true
         state.error.value = null
@@ -299,6 +333,7 @@ export function createCardActions(
           targetColumnId,
           targetPosition,
         })
+        committed = true
         if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
           helpers.markBoardDetailMutation(boardId)
         }
@@ -344,6 +379,9 @@ export function createCardActions(
         // Never let this old session finish a replacement session's loading.
         if (state.boardMutationSessionGeneration.value === visit.sessionGeneration) {
           state.loading.value = false
+        }
+        if (committed && !isCurrentCardMutationVisit(visit)) {
+          await reconcileReopenedBoard(visit)
         }
       }
     })

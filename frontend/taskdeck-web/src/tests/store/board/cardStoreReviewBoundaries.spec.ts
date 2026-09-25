@@ -121,7 +121,7 @@ describe('card move/delete review boundaries', () => {
       expect(state.currentBoardCards.value).toEqual([card()])
       expect(helpers.updateColumnCardCount).not.toHaveBeenCalled()
       expect(helpers.toast.success).not.toHaveBeenCalled()
-      expect(refresh).not.toHaveBeenCalled()
+      expect(refresh).toHaveBeenCalledTimes(mode === 'leave and reopen' ? 1 : 0)
     })
   }
 
