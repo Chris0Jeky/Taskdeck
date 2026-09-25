@@ -948,6 +948,96 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task ApproveProposalAsync_ShouldRecordOutcome_WhenLegacyOriginalParametersAreNull()
+    {
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, Guid.NewGuid(), "Legacy original", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        var original = new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", "{}", Guid.NewGuid().ToString(),
+            targetId: boardId.ToString());
+        typeof(AutomationProposalOperation).GetProperty(nameof(AutomationProposalOperation.Parameters))!
+            .SetValue(original, null); // Simulate a legacy materialized row bypassing the current constructor.
+        proposal.AddOperation(original);
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "board",
+                    targetId = boardId.ToString(),
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Valid revision" }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, deciderId, revisedPayload, "Repair legacy payload");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default)).ReturnsAsync(revision);
+        _revisionRepoMock.Setup(r => r.GetByIdAsync(revision.Id, default)).ReturnsAsync(revision);
+
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        result.IsSuccess.Should().BeTrue();
+        proposal.Outcomes.Should().ContainSingle();
+        proposal.Outcomes.Single().EditedFieldCount.Should().Be(1);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_WithDuplicateOriginalSequenceAndValidRevision_RecordsEditedOutcome()
+    {
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, Guid.NewGuid(), "Duplicate original sequence", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        for (var index = 0; index < 2; index++)
+        {
+            proposal.AddOperation(new AutomationProposalOperation(
+                proposal.Id, 0, "update", "board", "{}", Guid.NewGuid().ToString(),
+                targetId: boardId.ToString()));
+        }
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "board",
+                    targetId = boardId.ToString(),
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Reviewed revision" }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, deciderId, revisedPayload, "Resolve duplicate");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default)).ReturnsAsync(revision);
+        _revisionRepoMock.Setup(r => r.GetByIdAsync(revision.Id, default)).ReturnsAsync(revision);
+
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        result.IsSuccess.Should().BeTrue();
+        proposal.Outcomes.Should().ContainSingle();
+        proposal.Outcomes.Single().Decision.Should().Be(OutcomeDecision.EditedThenApproved);
+        proposal.Outcomes.Single().FieldCount.Should().Be(5);
+        proposal.Outcomes.Single().EditedFieldCount.Should().Be(5);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
     public async Task ApproveProposalAsync_ShouldPinLatestRevision_AndEchoEffectiveOperations()
     {
         // #1428 + #1424: approve stamps ApprovedRevisionId with the latest revision read at approve

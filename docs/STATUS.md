@@ -1,6 +1,26 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-24
+Last Updated: 2026-09-25
+
+## Proposal decisions populate insight cohorts (#3415)
+
+Single approve, single reject and batch approve now stage one content-free
+`ProposalOutcome` per successful decision before the decision's existing save.
+New decisions therefore reach the cohort and bucketed metrics endpoints; older
+decisions are not backfilled. An approved revision is counted as edited only
+when its effective operations differ from the original reviewed operations.
+The comparison ignores operation IDs and idempotency keys, treats action and
+target names case-insensitively, compares target GUIDs by value and compares
+JSON parameters by value. `FieldCount` and `EditedFieldCount` count five comparable
+operation contract fields per sequence: action, target type, target ID,
+parameters and expected version. They do not count nested parameter keys.
+The existing single-decision notification remains a separate post-save write;
+batch notifications remain inside the batch transaction.
+
+SQLite API regressions cover single and batch outcome rows, edited and
+identity-only revisions, rejected and failed-batch non-writes, and cohort
+read-back. These writes do not change approval or Apply authorization, and
+Apply remains a separate explicit action.
 
 ## Swarm wave-2B correctness fixes ship (PRs #3372-#3374, #3384)
 
