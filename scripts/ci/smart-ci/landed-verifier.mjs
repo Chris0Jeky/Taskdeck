@@ -86,6 +86,11 @@ function evaluateEvidence(evidence, target) {
 
   if (!isObject(workflowRun) || !positiveInteger(workflowRun.id)) return reject(evidence, 'workflow-run-invalid');
   if (artifact.workflowRunId !== workflowRun.id) return reject(evidence, 'artifact-workflow-run-mismatch');
+  // These identities must come from the collector's repository-scoped API reads,
+  // not from self-declared fields inside the downloaded receipt.
+  if (artifact.repository !== target.repository || workflowRun.repository !== target.repository) {
+    return reject(evidence, 'repository-mismatch');
+  }
   if (workflowRun.path !== AUTHORITY_WORKFLOW) return reject(evidence, 'workflow-path-mismatch');
   if (workflowRun.event !== AUTHORITY_EVENT) return reject(evidence, 'workflow-event-mismatch');
   if (workflowRun.status !== 'completed' || workflowRun.conclusion !== 'success') {
@@ -98,7 +103,11 @@ function evaluateEvidence(evidence, target) {
   }
   if (receipt.ok !== true || receipt.wouldFail !== false) return reject(evidence, 'receipt-not-green');
   if (!Array.isArray(receipt.failures) || receipt.failures.length !== 0) return reject(evidence, 'receipt-invalid');
-  if (!['shadow', 'enforce'].includes(receipt.mode)) return reject(evidence, 'receipt-invalid');
+  // Shadow receipts may be green after checking only the plan, with no lane results.
+  if (receipt.mode !== 'enforce') return reject(evidence, 'receipt-not-enforced');
+  if (!Array.isArray(receipt.selected) || receipt.selected.length === 0) {
+    return reject(evidence, 'receipt-invalid');
+  }
   if (!isObject(receipt.event)
     || receipt.event.name !== AUTHORITY_EVENT
     || receipt.event.repository !== target.repository
@@ -177,10 +186,10 @@ function fullVerdict(target, reason, diagnostics = [], candidates = 0) {
  * Decide whether the landed commit may use the bounded verification path.
  *
  * Evidence is authoritative only when trusted landing classification identifies a
- * normal PR merge and the artifact's producer run, producer workflow, event,
- * successful conclusion, receipt identity, current policy digest, associated PR,
- * and landed tree all agree. Missing or conflicting facts fall back to full hosted
- * qualification.
+ * normal PR merge and the artifact/run repository identities, producer run,
+ * producer workflow, event, successful conclusion, enforced receipt identity,
+ * current policy digest, associated PR, and landed tree all agree. Missing or
+ * conflicting facts fall back to full hosted qualification.
  */
 export function decideLandedQualification({
   repository,
