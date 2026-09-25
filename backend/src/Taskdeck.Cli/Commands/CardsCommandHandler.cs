@@ -71,6 +71,14 @@ internal sealed class CardsCommandHandler
             DueDate: null,
             LabelIds: null);
 
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board", "--column", "--title", "--description");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]");
+        }
+
         var result = await _cardService.CreateCardAsync(createRequest);
         if (!result.IsSuccess)
         {
@@ -120,6 +128,14 @@ internal sealed class CardsCommandHandler
         {
             return ConsoleOutput.PrintUsageError(
                 "Invalid --position value. Position must be a non-negative integer.",
+                "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
+        }
+
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--card", "--target-column", "--position");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
                 "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
         }
 
@@ -178,6 +194,14 @@ internal sealed class CardsCommandHandler
             }
 
             labelId = parsedLabelId;
+        }
+
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--board", "--search", "--column", "--label");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
         }
 
         var result = await _cardService.SearchCardsAsync(boardId, search, labelId, columnId);

@@ -40,6 +40,14 @@ internal sealed class ApiKeysCommandHandler
                 "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
         }
 
+        var duplicateOption = ArgParser.FindDuplicateOption(args, "--name", "--scopes", "--expires");
+        if (duplicateOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateOption}'. Each option may be supplied at most once.",
+                "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
+        }
+
         var scopesText = ArgParser.GetOption(args, "--scopes");
         var scopeNames = scopesText?.Split(',', StringSplitOptions.None);
         if (!ApiKeyScopeRules.TryParseNames(scopeNames, out var scopes))
@@ -123,6 +131,14 @@ internal sealed class ApiKeysCommandHandler
         var name = ArgParser.GetOption(args, "--name");
         var idText = ArgParser.GetOption(args, "--id");
 
+        var duplicateRevokeOption = ArgParser.FindDuplicateOption(args, "--name", "--id");
+        if (duplicateRevokeOption is not null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                $"Duplicate option '{duplicateRevokeOption}'. Each option may be supplied at most once.",
+                "taskdeck api-key revoke --name <name> | --id <key-id>");
+        }
+
         if (ArgParser.HasFlag(args, "--name") && name is null)
         {
             return ConsoleOutput.PrintUsageError(
@@ -134,6 +150,13 @@ internal sealed class ApiKeysCommandHandler
         {
             return ConsoleOutput.PrintUsageError(
                 "Missing value for --id <key-id>.",
+                "taskdeck api-key revoke --name <name> | --id <key-id>");
+        }
+
+        if (ArgParser.HasFlag(args, "--name") && ArgParser.HasFlag(args, "--id"))
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Provide either --name or --id to identify the key to revoke, not both.",
                 "taskdeck api-key revoke --name <name> | --id <key-id>");
         }
 
