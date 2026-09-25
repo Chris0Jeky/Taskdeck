@@ -74,3 +74,14 @@ match it. Priority expresses urgency within the active direction
 
 > The pre-2026-06 tranche meanings ("Phase 4 completion", "expansion tranche" etc.) are historical;
 > they were retired with the archive pivot and the revival. Do not resurrect them when triaging.
+
+## Issue-template label allowlist
+
+`scripts/check-github-ops-governance.mjs` (`allowedTemplateLabels`) enforces the exact label set
+issue templates may carry — sixteen labels, kept in sync with the sections above:
+
+`automation`, `backend`, `bug`, `docs`, `feature`, `frontend`, `hardening`, `llm`, `performance`,
+`refactor`, `security`, `starter-packs`, `tech-debt`, `testing`, `ux`, `worker`.
+
+Priority labels are never template labels: every issue gets exactly one at creation (see the
+priority rule above), and the ProjectV2 `Priority` field must match it.

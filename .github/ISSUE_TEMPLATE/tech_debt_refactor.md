@@ -30,4 +30,4 @@ assignees: []
 - Manual verification:
 
 ## Priority label check
-- [ ] Add exactly one priority label (`Priority I` to `Priority V`) before moving issue to `Now`.
+- [ ] Add exactly one priority label (`Priority I` to `Priority V`) at creation; the ProjectV2 `Priority` field must match it.

@@ -110,6 +110,7 @@ jobs:
           node --test scripts/check-docs-governance*.test.mjs
           node --test scripts/check-doc-links*.test.mjs
           node scripts/check-docs-governance.mjs
+          node scripts/check-doc-links.mjs
 
       - name: Validate golden principles invariants
         run: node scripts/check-golden-principles.mjs
