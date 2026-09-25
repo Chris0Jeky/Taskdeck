@@ -211,7 +211,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci-required.yml` | PR/push/merge | **Gate**: docs, arch, backend, frontend, container, E2E |
-| `ci-extended.yml` | Label/manual | Cross-browser, load test, mutation, visual regression |
+| `ci-extended.yml` | PR path changes/label/manual | Cross-browser, load and concurrency, visual regression, advisory checks |
 | `ci-nightly.yml` | Schedule | Full regression, cross-browser, load, container images |
 | `nightly-quality.yml` | Schedule | Coverage, dependency security signals |
 | `mutation-testing.yml` | Manual dispatch | Stryker.NET + Stryker JS (non-blocking) |
