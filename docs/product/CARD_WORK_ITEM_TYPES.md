@@ -19,6 +19,8 @@ control and the assignment field share it, so none of them reads an omitted fiel
 "no" while another reads the server's answer (#3028). An archived card is the one
 exception, and it is deliberate: no read is spent on one, so on a payload that omits the
 field its restore control stays read-only exactly as before.
+Static demo mode uses its fixture permission without a server read. A card whose board is not
+the currently loaded board also keeps the existing disabled control until that board loads.
 Changing type retains the card ID, column, position, labels, block state and history.
 
 ## API and proposals

@@ -141,7 +141,7 @@ describe('CardModal', () => {
     vi.mocked(boardsApi.getBoard).mockResolvedValue({ id: card.boardId, canWrite: true, isArchived: false } as any)
     const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
 
-    expect(wrapper.get('[data-testid="card-type-permission-checking"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-checking"]').exists()).toBe(true)
     expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
 
     await flushPromises()
@@ -160,7 +160,7 @@ describe('CardModal', () => {
     await flushPromises()
 
     expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
-    expect(wrapper.get('[data-testid="card-type-permission-unknown"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(true)
 
     vi.mocked(boardsApi.getBoard).mockResolvedValueOnce({ id: card.boardId, canWrite: true, isArchived: false } as any)
     await wrapper.get('[data-testid="card-type-permission-refresh"]').trigger('click')
