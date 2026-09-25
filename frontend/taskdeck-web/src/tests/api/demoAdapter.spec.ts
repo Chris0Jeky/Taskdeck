@@ -328,6 +328,31 @@ describe('demoHttpAdapter', () => {
     expect(generated.data).toEqual([])
   })
 
+  it('rejects single execute while PendingReview and applies after approval', async () => {
+    const pending = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}`))
+    expect(pending.data.status).toBe('PendingReview')
+
+    await expect(demoHttpAdapter(config('post', `/automation/proposals/${DEMO_PROPOSAL_ID}/execute`))).rejects.toMatchObject({
+      response: {
+        status: 409,
+        data: { errorCode: 'ProposalNotApproved', message: 'Only an approved proposal can be applied.' },
+      },
+    })
+
+    const stillPending = await demoHttpAdapter(config('get', `/automation/proposals/${DEMO_PROPOSAL_ID}`))
+    expect(stillPending.data.status).toBe('PendingReview')
+    expect(stillPending.data.appliedAt).toBeNull()
+
+    await demoHttpAdapter(config('post', `/automation/proposals/${DEMO_PROPOSAL_ID}/approve`))
+    const executed = await demoHttpAdapter(config('post', `/automation/proposals/${DEMO_PROPOSAL_ID}/execute`))
+    expect(executed.status).toBe(200)
+    expect(executed.data.status).toBe('Applied')
+    expect(executed.data.appliedAt).toEqual(expect.any(String))
+
+    const replay = await demoHttpAdapter(config('post', `/automation/proposals/${DEMO_PROPOSAL_ID}/execute`))
+    expect(replay.data).toEqual(executed.data)
+  })
+
   it('rejects unmatched GET paths instead of returning {}', async () => {
     await expect(demoHttpAdapter(config('get', '/metrics/boards/demo-board-1'))).rejects.toMatchObject({
       response: { status: 404, data: { message: 'This resource is not available in demo mode.' } },
