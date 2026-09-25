@@ -191,6 +191,97 @@ public class CliFirstRunBootstrapTests
     }
 
     [Fact]
+    public void EnsureConnectorEncryptionKey_WithCorruptLocalConfig_PreservesCorruptSibling()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        const string corruptContent = "{ this is not valid json";
+        File.WriteAllText(localConfig, corruptContent);
+
+        var configuration = BuildConfiguration(temp.DatabasePath);
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        // A fresh key is persisted...
+        var key = configuration["Connectors:EncryptionKey"];
+        key.Should().NotBeNullOrWhiteSpace();
+        ReadPersistedKey(localConfig).Should().Be(key);
+
+        // ...and the corrupt original survives byte-faithful in a .corrupt-* sibling.
+        var backups = System.IO.Directory.GetFiles(temp.Directory, "appsettings.local.json.corrupt-*");
+        backups.Should().ContainSingle();
+        File.ReadAllText(backups[0]).Should().Be(corruptContent);
+    }
+
+    [Fact]
+    public void EnsureConnectorEncryptionKey_WithCorruptBomLocalConfig_PreservesExactBytes()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        // UTF-8 BOM plus corrupt JSON: a decode/re-encode backup would strip the
+        // BOM, so byte equality fails before the fix.
+        var utf8 = System.Text.Encoding.UTF8;
+        var original = utf8.GetPreamble().Concat(utf8.GetBytes("{ this is not valid json")).ToArray();
+        File.WriteAllBytes(localConfig, original);
+
+        var configuration = BuildConfiguration(temp.DatabasePath);
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        // A fresh key is persisted and remains functional...
+        var key = configuration["Connectors:EncryptionKey"];
+        key.Should().NotBeNullOrWhiteSpace();
+        Convert.FromBase64String(key!).Length.Should().Be(32);
+        ReadPersistedKey(localConfig).Should().Be(key);
+
+        // ...and the corrupt original survives byte-identical in the sibling.
+        var backups = System.IO.Directory.GetFiles(temp.Directory, "appsettings.local.json.corrupt-*");
+        backups.Should().ContainSingle();
+        File.ReadAllBytes(backups[0]).Should().Equal(original);
+    }
+
+    [Fact]
+    public void EnsureConnectorEncryptionKey_WithInvalidUtf8LocalConfig_PreservesExactBytes()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        // Invalid UTF-8 sequences decode to replacement chars; re-encoding would
+        // expand them, so byte equality fails before the fix.
+        var original = new byte[] { 0x7B, 0x22, 0x6B, 0x22, 0x3A, 0xFF, 0xFE, 0x7D };
+        File.WriteAllBytes(localConfig, original);
+
+        var configuration = BuildConfiguration(temp.DatabasePath);
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        var key = configuration["Connectors:EncryptionKey"];
+        key.Should().NotBeNullOrWhiteSpace();
+        Convert.FromBase64String(key!).Length.Should().Be(32);
+        ReadPersistedKey(localConfig).Should().Be(key);
+
+        var backups = System.IO.Directory.GetFiles(temp.Directory, "appsettings.local.json.corrupt-*");
+        backups.Should().ContainSingle();
+        File.ReadAllBytes(backups[0]).Should().Equal(original);
+    }
+
+    [Fact]
+    public void EnsureConnectorEncryptionKey_WithValidUtf16LocalConfig_ReusesExistingKeyWithoutReplacement()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        const string existingKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        var json = "{\"Connectors\":{\"EncryptionKey\":\"" + existingKey + "\"}}";
+        var utf16 = System.Text.Encoding.Unicode;
+        var original = utf16.GetPreamble().Concat(utf16.GetBytes(json)).ToArray();
+        File.WriteAllBytes(localConfig, original);
+
+        var configuration = BuildConfiguration(temp.DatabasePath);
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        // A valid UTF-16 config holding a key must be read as-is: no replacement.
+        configuration["Connectors:EncryptionKey"].Should().Be(existingKey);
+        File.ReadAllBytes(localConfig).Should().Equal(original);
+        System.IO.Directory.GetFiles(temp.Directory, "appsettings.local.json.corrupt-*").Should().BeEmpty();
+    }
+
+    [Fact]
     public void GenerateKey_ProducesBase64EncodedTwoFiftySixBitKey()
     {
         var key = CliFirstRunBootstrapper.GenerateKey();
