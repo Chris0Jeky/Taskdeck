@@ -2130,7 +2130,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         // #3478: GetAllByUserIdAsync applied Take(1000) without ordering, so the bounded sample
         // could drop the newest decisions before InsightsService filters the cohort. Seed just past
         // the cap with the newest row inserted LAST: under the old unordered query SQLite serves
-        // Take(1000) in insertion order, so the newest row never appears and this fails. Seed
+        // Take(1000) in insertion order, so the newest decision never appears and this fails. Seed
         // directly via the DbContext -- 1005 API round-trips would be needlessly slow, and
         // AutomationProposal has no required parent FK. Outcomes carry structural dimensions only.
         const int cohortCap = 1000; // mirrors ProposalOutcomeRepository.MaxLimit
@@ -2144,7 +2144,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var decidedAt = typeof(ProposalOutcome).GetProperty(nameof(ProposalOutcome.DecidedAt))
             ?? throw new InvalidOperationException("Expected ProposalOutcome.DecidedAt property to exist.");
 
-        Guid newestProposalId;
+        Guid newestDecisionProposalId;
         Guid otherProposalId;
         using (var seedScope = _factory.Services.CreateScope())
         {
@@ -2160,7 +2160,9 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
                     proposal.Id, userId, OutcomeDecision.Approved,
                     decisionLatencySeconds: 1.0, fieldCount: 1, editedFieldCount: 0,
                     sourceType: "Chat", riskLevel: "Low");
-                createdAt.SetValue(outcome, baseTime.AddSeconds(i));
+                // The newest decision belongs to the oldest-created proposal: creation order
+                // must not decide which rows survive the cap.
+                createdAt.SetValue(outcome, i == seedCount - 1 ? baseTime.AddSeconds(-1) : baseTime.AddSeconds(i));
                 decidedAt.SetValue(outcome, i == seedCount - 1 ? recentDecisionAt : baseTime.AddSeconds(i));
                 db.ProposalOutcomes.Add(outcome);
                 newest = outcome;
@@ -2179,7 +2181,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             db.ProposalOutcomes.Add(otherOutcome);
 
             await db.SaveChangesAsync();
-            newestProposalId = newest!.ProposalId;
+            newestDecisionProposalId = newest!.ProposalId;
             otherProposalId = otherProposal.Id;
         }
 
@@ -2188,8 +2190,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var all = await repo.GetAllByUserIdAsync(userId);
 
         all.Should().HaveCount(cohortCap); // the 1000-row cap is preserved
-        all.First().ProposalId.Should().Be(newestProposalId); // the recent row survives, newest-first
-        all.Select(o => o.CreatedAt).Should().BeInDescendingOrder();
+        all.First().ProposalId.Should().Be(newestDecisionProposalId); // the recent decision survives
+        all.Select(o => o.DecidedAt).Should().BeInDescendingOrder();
         all.Select(o => o.DecidedByUserId).Should().OnlyContain(id => id == userId);
         all.Select(o => o.ProposalId).Should().NotContain(otherProposalId);
 
