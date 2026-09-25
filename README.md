@@ -2,7 +2,7 @@
 
 **A local-first, review-first work operating system for turning context into accountable work.**
 
-Taskdeck takes the messy material work arrives in—notes, transcripts, checklists, and agent requests—and turns it into source-linked proposals. You inspect the diff, provenance, side effects, and risk; only an explicit approval and apply step changes the board.
+Taskdeck takes the messy material work arrives in and turns automation-suggested work into reviewable proposals. The shipped wedge is typed and transcript capture with `.txt` transcript upload; source-linked evidence is available where transcript extraction is configured to return it, and broader file and meeting intake stays future direction. You inspect the diff, provenance, side effects, and risk; for automation-originated board changes, only an explicit approval and apply step changes the board, while direct human edits remain first-class.
 
 The current product wedge is a dependable capture-to-action loop. The destination is broader: an adaptive project companion where people and agents can understand work, propose changes, coordinate execution, and retain evidence without silently taking authority away from the user.
 
@@ -192,7 +192,7 @@ dotnet test backend/Taskdeck.sln -c Release -m:1
 cd frontend/taskdeck-web
 npm run typecheck
 npm run build
-npx vitest --run
+npx vitest --run --maxWorkers=2
 npx playwright test --reporter=line
 ```
 
@@ -212,6 +212,6 @@ Read [SECURITY.md](SECURITY.md), [UPGRADING.md](UPGRADING.md), and the architect
 
 ## Contributing and licence
 
-Issues and bug reports are welcome. External code contributions are currently paused while the open-core commercial model and relicensing-capable contribution terms are completed; see [CONTRIBUTING.md](CONTRIBUTING.md), [ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md), and issue `#2012`.
+Issues and bug reports are welcome. Report suspected vulnerabilities through the private path in [SECURITY.md](SECURITY.md), not a public issue. External code contributions are currently paused while the open-core commercial model and relicensing-capable contribution terms are completed; see [CONTRIBUTING.md](CONTRIBUTING.md), [ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md), and issue `#2012`.
 
 The current open-source core is GPL-3.0-only. The licence transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md).
