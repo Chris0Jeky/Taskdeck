@@ -202,6 +202,102 @@ public class CardsCommandTests
     }
 
     [Fact]
+    public async Task CardsList_BareSearch_ReturnsUsageError()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (boardId, columnId) = await harness.CreateBoardAndColumnAsync();
+        var cardResult = await harness.RunAsync($"cards add --board {boardId} --column {columnId} --title SearchableCard --json");
+        cardResult.ExitCode.Should().Be(0, cardResult.StdErr);
+
+        var result = await harness.RunAsync($"cards list --board {boardId} --search --json");
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("--search");
+        result.StdOut.Should().NotContain("SearchableCard");
+    }
+
+    [Fact]
+    public async Task CardsList_BareColumn_ReturnsUsageError()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (boardId, columnId) = await harness.CreateBoardAndColumnAsync();
+        var cardResult = await harness.RunAsync($"cards add --board {boardId} --column {columnId} --title SearchableCard --json");
+        cardResult.ExitCode.Should().Be(0, cardResult.StdErr);
+
+        var result = await harness.RunAsync($"cards list --board {boardId} --column --json");
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("--column");
+        result.StdOut.Should().NotContain("SearchableCard");
+    }
+
+    [Fact]
+    public async Task CardsList_BareLabel_ReturnsUsageError()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (boardId, columnId) = await harness.CreateBoardAndColumnAsync();
+        var cardResult = await harness.RunAsync($"cards add --board {boardId} --column {columnId} --title SearchableCard --json");
+        cardResult.ExitCode.Should().Be(0, cardResult.StdErr);
+
+        var result = await harness.RunAsync($"cards list --board {boardId} --label --json");
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("--label");
+        result.StdOut.Should().NotContain("SearchableCard");
+    }
+
+    [Fact]
+    public async Task CardsList_SearchFollowedByAnotherOption_ReturnsUsageError()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (boardId, columnId) = await harness.CreateBoardAndColumnAsync();
+        var cardResult = await harness.RunAsync($"cards add --board {boardId} --column {columnId} --title SearchableCard --json");
+        cardResult.ExitCode.Should().Be(0, cardResult.StdErr);
+
+        var result = await harness.RunAsync($"cards list --board {boardId} --search --column {columnId} --json");
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("--search");
+        result.StdOut.Should().NotContain("SearchableCard");
+    }
+
+    [Fact]
+    public async Task CardsList_BlankSearch_ReturnsUsageError()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (boardId, columnId) = await harness.CreateBoardAndColumnAsync();
+        var cardResult = await harness.RunAsync($"cards add --board {boardId} --column {columnId} --title SearchableCard --json");
+        cardResult.ExitCode.Should().Be(0, cardResult.StdErr);
+
+        var result = await harness.RunAsync($"cards list --board {boardId} --search \" \" --json");
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("--search");
+        result.StdOut.Should().NotContain("SearchableCard");
+    }
+
+    [Fact]
+    public async Task CardsList_ValidSearchFilter_ReturnsMatchingCards()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (boardId, columnId) = await harness.CreateBoardAndColumnAsync();
+        var alphaResult = await harness.RunAsync($"cards add --board {boardId} --column {columnId} --title AlphaFilterCard --json");
+        alphaResult.ExitCode.Should().Be(0, alphaResult.StdErr);
+        var betaResult = await harness.RunAsync($"cards add --board {boardId} --column {columnId} --title BetaFilterCard --json");
+        betaResult.ExitCode.Should().Be(0, betaResult.StdErr);
+
+        var result = await harness.RunAsync($"cards list --board {boardId} --search AlphaFilterCard --json");
+
+        result.ExitCode.Should().Be(0, result.StdErr);
+        using var doc = JsonDocument.Parse(result.StdOut);
+        var titles = doc.RootElement.EnumerateArray()
+            .Select(x => x.GetProperty("title").GetString())
+            .ToList();
+        titles.Should().Contain("AlphaFilterCard");
+        titles.Should().NotContain("BetaFilterCard");
+    }
+
+    [Fact]
     public async Task Cards_UnknownCommand_ReturnsUsageError()
     {
         await using var harness = new CliTestHarness("cli-cards");
