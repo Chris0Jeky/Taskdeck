@@ -20,7 +20,7 @@ candidate-specific results and explicitly separates unrun, blocked and passed ca
 | Frontend unit tests | ~2,463+ | Excellent |
 | E2E Playwright scenarios | 61+ | Good |
 | Property-based tests | 211+ | Good |
-| Mutation tests | Weekly (non-blocking) | Established |
+| Mutation tests | On demand (non-blocking) | Established |
 | Visual regression tests | 5 | Needs expansion |
 | Load tests | k6 advisory | Needs gating |
 | Manual validation scenarios | 95+ across 3 slices | Excellent |
@@ -125,7 +125,7 @@ candidate-specific results and explicitly separates unrun, blocked and passed ca
 - Webhook delivery concurrency, board presence, rate limiting
 - Cross-user isolation under load
 
-**Mutation Tests (Weekly)**
+**Mutation Tests (On demand)**
 - Backend: Stryker.NET targeting Domain (60/80/0 thresholds)
 - Frontend: Stryker JS targeting captureStore/boardStore
 - Non-blocking CI; triage signal, not enforcement gate
@@ -185,12 +185,12 @@ candidate-specific results and explicitly separates unrun, blocked and passed ca
 | Frontend coverage | Daily | Coverage trend |
 | Dependency security signals | Daily | Vulnerability detection |
 
-### Weekly Quality (`mutation-testing.yml`)
+### On-demand Quality (`mutation-testing.yml`)
 
 | Check | Schedule | Purpose |
 |-------|----------|---------|
-| Stryker.NET (Domain) | Sunday 04:00 UTC | Assertion quality |
-| Stryker JS (stores) | Sunday 04:00 UTC | Assertion quality |
+| Stryker.NET (Domain) | On demand (`workflow_dispatch`) | Assertion quality |
+| Stryker JS (stores) | On demand (`workflow_dispatch`) | Assertion quality |
 
 ### Release Gate (`ci-release.yml`)
 
@@ -262,7 +262,7 @@ Historical evidence: This process caught 47 review-fix commits in a single wave,
 
 ### Mutation Testing Triage
 
-Weekly Stryker results are triaged for:
+After each manual Stryker run, results are triaged for:
 - **Survived mutants in critical paths** — Must be killed (add assertions)
 - **Survived mutants in edge cases** — Evaluate if assertion is worthwhile
 - **Equivalent mutants** — Document and exclude from future runs
@@ -291,7 +291,7 @@ Weekly Stryker results are triaged for:
 2. **Architecture tests** — Layer boundary violations caught at compile time
 3. **Golden principles enforcement** — CI checks for invariant compliance
 4. **OpenAPI guardrail** — API contract drift detected in nightly
-5. **Mutation testing** — Weak assertions identified weekly
+5. **Mutation testing** — Weak assertions identified when the manual lane runs
 
 ---
 
@@ -387,7 +387,7 @@ Weekly Stryker results are triaged for:
 |----------|-----------|-------|
 | Full CI gate | Every PR | Automated |
 | Nightly regression | Daily | Automated |
-| Mutation testing triage | Weekly | Maintainer |
+| Mutation testing triage | After each manual run | Maintainer |
 | Manual validation slice rotation | Monthly (1 slice) | QA |
 | Headed audit | Monthly | QA |
 | Demo director regression | Monthly | QA |
@@ -438,8 +438,8 @@ Track these metrics over time:
 | Frontend test count | ~2,463 | +10%/quarter | Weekly |
 | E2E scenario count | 61+ | 100+ | Monthly |
 | CI gate pass rate | ~95% | >98% | Daily |
-| Mutation score (Domain) | TBD | >80% | Weekly |
-| Mutation score (stores) | TBD | >70% | Weekly |
+| Mutation score (Domain) | TBD | >80% | On demand |
+| Mutation score (stores) | TBD | >70% | On demand |
 | P95 API latency | TBD | <500ms | Daily |
 | Flaky test rate | TBD | <2% | Weekly |
 | Time-to-green (PR) | TBD | <15min | Weekly |

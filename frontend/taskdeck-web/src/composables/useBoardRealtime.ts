@@ -14,6 +14,7 @@ import { resolveApiBaseUrl } from '../utils/apiBaseUrl'
 
 const BOARD_MUTATION_EVENT = 'boardMutation'
 const BOARD_PRESENCE_EVENT = 'boardPresence'
+const BOARD_ACCESS_REVOKED_EVENT = 'accessRevoked'
 const RECONNECT_DELAYS_MS = [0, 2000, 5000, 10000]
 const FALLBACK_POLL_INTERVAL_MS = 30000
 // Coalesce rapid burst events so the board is not re-fetched on every
@@ -37,6 +38,7 @@ export interface BoardRealtimeControllerOptions {
     options: { intent: 'background'; afterActive?: boolean },
   ) => Promise<boolean>
   onPresenceChanged?: (snapshot: BoardPresenceSnapshot) => void
+  onAccessRevoked?: (boardId: string) => void
 }
 
 export interface BoardRealtimeController {
@@ -216,6 +218,25 @@ export function createBoardRealtimeController(
     options.onPresenceChanged?.(snapshot)
   }
 
+  const handleBoardAccessRevoked = (event: { boardId: string }) => {
+    if (
+      !subscribedBoardId ||
+      event.boardId !== subscribedBoardId ||
+      event.boardId !== requestedBoardId
+    ) {
+      return
+    }
+
+    const revokedBoardId = event.boardId
+    // stop() retires refresh and polling intent before its first await. Report
+    // the lost access immediately: a best-effort LeaveBoard can take time or
+    // fail after the server has already evicted this connection.
+    void stop().catch((error) => {
+      logWarn('SignalR board teardown after access revocation failed.', error)
+    })
+    options.onAccessRevoked?.(revokedBoardId)
+  }
+
   const ensureConnection = () => {
     if (connection) {
       return connection
@@ -232,6 +253,7 @@ export function createBoardRealtimeController(
 
     hubConnection.on(BOARD_MUTATION_EVENT, handleBoardMutation)
     hubConnection.on(BOARD_PRESENCE_EVENT, handleBoardPresence)
+    hubConnection.on(BOARD_ACCESS_REVOKED_EVENT, handleBoardAccessRevoked)
     hubConnection.onreconnecting(() => {
       if (connection === hubConnection && requestedBoardId) {
         recoveryGeneration += 1
@@ -412,26 +434,22 @@ export function createBoardRealtimeController(
     pendingRecoveryGeneration = null
     editingCardId = null
 
-    if (!connection) {
-      subscribedBoardId = null
-      return
-    }
+    const hubConnection = connection
+    const boardToLeave = subscribedBoardId
+    connection = null
+    subscribedBoardId = null
+    if (!hubConnection) return
 
     try {
-      if (subscribedBoardId && connection.state === HubConnectionState.Connected) {
-        await connection.invoke('LeaveBoard', subscribedBoardId)
+      if (boardToLeave && hubConnection.state === HubConnectionState.Connected) {
+        await hubConnection.invoke('LeaveBoard', boardToLeave)
       }
     } catch {
       // Best-effort leave.
     }
 
-    try {
-      if (connection.state !== HubConnectionState.Disconnected) {
-        await connection.stop()
-      }
-    } finally {
-      subscribedBoardId = null
-      connection = null
+    if (hubConnection.state !== HubConnectionState.Disconnected) {
+      await hubConnection.stop()
     }
   }
 
