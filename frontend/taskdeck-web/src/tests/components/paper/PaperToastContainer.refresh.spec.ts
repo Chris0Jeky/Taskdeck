@@ -146,12 +146,14 @@ describe('PaperToastContainer error refresh', () => {
     const store = useToastStore()
     const id = store.error('Focus me', 3000)
 
-    wrapper = mount(PaperToastContainer)
+    wrapper = mount(PaperToastContainer, { attachTo: document.body })
     await nextTick()
 
     vi.advanceTimersByTime(1000)
     await nextTick()
-    await wrapper.get(`[data-toast-id="${id}"]`).trigger('focusin')
+    const copyButton = wrapper.get(`[data-toast-id="${id}"]`).find('.paper-toast__receipt-button').element as HTMLElement
+    copyButton.focus()
+    expect(document.activeElement).toBe(copyButton)
 
     expect(store.error('Focus me', 3000)).toBe(id)
     await nextTick()
@@ -165,8 +167,7 @@ describe('PaperToastContainer error refresh', () => {
     expect(store.toasts).toHaveLength(1)
     expect(announcerText()).toBe('')
 
-    const card = wrapper.get(`[data-toast-id="${id}"]`)
-    card.element.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }))
+    copyButton.blur()
     await nextTick()
 
     vi.advanceTimersByTime(2999)
@@ -174,6 +175,27 @@ describe('PaperToastContainer error refresh', () => {
     expect(store.toasts).toHaveLength(1)
 
     vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(store.toasts).toHaveLength(0)
+  })
+
+  it('resumes a refreshed timer when its focused details control disappears', async () => {
+    const store = useToastStore()
+    const id = store.error('Missing details', 3000, { details: 'First failure' })
+    wrapper = mount(PaperToastContainer, { attachTo: document.body })
+    await nextTick()
+
+    const detailsButton = wrapper.get(`[data-toast-id="${id}"]`).find('.paper-toast__receipt-button').element as HTMLElement
+    detailsButton.focus()
+    expect(document.activeElement).toBe(detailsButton)
+
+    expect(store.error('Missing details', 3000)).toBe(id)
+    await nextTick()
+    await nextTick()
+    expect(detailsButton.isConnected).toBe(false)
+    expect(store.toasts).toHaveLength(1)
+
+    vi.advanceTimersByTime(3000)
     await nextTick()
     expect(store.toasts).toHaveLength(0)
   })

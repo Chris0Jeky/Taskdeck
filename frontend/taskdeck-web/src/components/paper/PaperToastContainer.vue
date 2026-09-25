@@ -150,11 +150,23 @@ function refreshCountdown(toast: Toast, current: CountdownState, revision: numbe
   current.revision = revision
   current.remaining = toast.duration
   current.deadline = Date.now() + toast.duration
-  if (current.hover || current.focusWithin || current.paused) {
+  if (current.hover || current.focusWithin) {
     // The store rebuilds an unpaused timer on refresh; re-pause it so a
     // hovered/focused toast stays paused with the full refreshed duration.
     current.paused = true
     toastStore.pause(toast.id)
+    if (current.focusWithin) {
+      // A refresh can remove the focused details/action button without firing
+      // focusout. After Vue patches the card, release that stale pause.
+      void nextTick(() => {
+        if (state[toast.id] !== current || !current.focusWithin) return
+        const focusedToast = document.activeElement?.closest('[data-toast-id]')
+        if (focusedToast?.getAttribute('data-toast-id') !== toast.id) {
+          current.focusWithin = false
+          syncPauseState(toast.id)
+        }
+      })
+    }
   } else {
     current.paused = false
   }
