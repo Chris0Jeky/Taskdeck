@@ -19,11 +19,20 @@ const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-container.yml', import.meta.url))
 const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
 const bashBin = process.platform === 'win32' ? (process.env.BASH_BIN || 'bash') : 'bash'
+const healthVersionParser = String.raw`sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'`
 
 function resolveContainerVersion(ref) {
   return spawnSync(bashBin, ['scripts/ci/resolve-container-version.sh', ref], {
     cwd: repoRoot,
     encoding: 'utf8',
+  })
+}
+
+function parseHealthVersion(payload) {
+  return spawnSync(bashBin, ['-c', healthVersionParser], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    input: payload,
   })
 }
 
@@ -55,6 +64,18 @@ test('rejects a v-prefixed tag that is not valid release semver', () => {
   assert.match(result.stderr, /::error::/)
 })
 
+test('the health version parser extracts the version without an early-closing pipeline', () => {
+  const result = parseHealthVersion('{"status":"Healthy","version":"1.2.3","timestamp":"now"}\n')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '1.2.3')
+})
+
+test('the health version parser returns empty successfully when the field is absent', () => {
+  const result = parseHealthVersion('{"status":"Healthy","timestamp":"now"}\n')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout, '')
+})
+
 test('the workflow delegates product-version derivation to the tested resolver before metadata', () => {
   const resolveStep = stepBlock('Resolve product version')
   assert.match(
@@ -79,5 +100,14 @@ test('the tag smoke test fails at the first failing command and always cleans up
     smokeStep,
     /trap 'docker rm -f taskdeck-smoke >\/dev\/null 2>&1 \|\| true' EXIT/,
     'fail-fast exits must still remove a partially started smoke container',
+  )
+  assert.ok(
+    smokeStep.includes(healthVersionParser),
+    'the workflow must use the tested no-match-safe version parser',
+  )
+  assert.doesNotMatch(
+    smokeStep,
+    /grep -o[\s\S]*head -1/,
+    'the version parser must not reintroduce an early-closing grep/head pipeline under pipefail',
   )
 })

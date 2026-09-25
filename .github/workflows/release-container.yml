@@ -138,9 +138,11 @@ jobs:
               echo "Health check passed."
               # Version stamp assertions (#1804): the running binaries and the image
               # metadata must both report the tag-derived version, not the 0.0.0-dev
-              # fallback that an un-injected build would carry.
+              # fallback that an un-injected build would carry. `sed` deliberately
+              # exits zero on a missing field so the explicit mismatch diagnostic below
+              # remains the reporting path, without an early-closing grep/head pipeline.
               REPORTED_VERSION="$(curl -fsS http://localhost:5000/health/live \
-                | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+                | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
               LABEL_VERSION="$(docker inspect \
                 --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
                 "$IMAGE_REF")"
