@@ -67,13 +67,13 @@ public class CardCommentService
         if (actor is null)
             return Result.Failure<CardCommentDto>(ErrorCodes.NotFound, $"User with ID {actorUserId} not found");
 
-        var boardResult = await EnsureBoardWritableAsync(boardId, cancellationToken);
-        if (!boardResult.IsSuccess)
-            return Result.Failure<CardCommentDto>(boardResult.ErrorCode, boardResult.ErrorMessage);
-
         try
         {
             var comment = new CardComment(cardId, boardId, actorUserId, dto.Content, dto.ParentCommentId);
+            var boardResult = await EnsureBoardWritableAsync(boardId, cancellationToken);
+            if (!boardResult.IsSuccess)
+                return Result.Failure<CardCommentDto>(boardResult.ErrorCode, boardResult.ErrorMessage);
+
             await RefreshMentionsAsync(comment, dto.Content, actorUserId, boardId, cancellationToken);
 
             await _unitOfWork.CardComments.AddAsync(comment, cancellationToken);
@@ -142,12 +142,13 @@ public class CardCommentService
         if (actor is null)
             return Result.Failure<CardCommentDto>(ErrorCodes.NotFound, $"User with ID {actorUserId} not found");
 
-        var boardResult = await EnsureBoardWritableAsync(boardId, cancellationToken);
-        if (!boardResult.IsSuccess)
-            return Result.Failure<CardCommentDto>(boardResult.ErrorCode, boardResult.ErrorMessage);
-
         try
         {
+            comment.ValidateContentUpdate(dto.Content);
+            var boardResult = await EnsureBoardWritableAsync(boardId, cancellationToken);
+            if (!boardResult.IsSuccess)
+                return Result.Failure<CardCommentDto>(boardResult.ErrorCode, boardResult.ErrorMessage);
+
             var existingMentionUserIds = comment.Mentions
                 .Select(mention => mention.MentionedUserId)
                 .ToHashSet();
