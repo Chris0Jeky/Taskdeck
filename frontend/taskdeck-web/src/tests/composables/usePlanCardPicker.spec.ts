@@ -3,6 +3,7 @@ import { defineComponent, nextTick, reactive } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePlanCardPicker } from '../../composables/usePlanCardPicker'
 import { boardsApi } from '../../api/boardsApi'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../../api/http'
 import { cardsApi } from '../../api/cardsApi'
 import type { Board, Card } from '../../types/board'
 
@@ -48,6 +49,17 @@ describe('personal plan card choices', () => {
     expect(model.boardId.value).toBe('')
     expect(model.loadingCards.value).toBe(false)
   })
+  it('bounds every board page with a timeout and no retry', async () => {
+    vi.mocked(boardsApi.getBoardsPaginated)
+      .mockResolvedValueOnce({ items: [{ id: 'first', isArchived: false } as Board], hasMore: true, totalCount: 2, offset: 0, limit: 200 })
+      .mockResolvedValueOnce({ items: [{ id: 'second', isArchived: false } as Board], hasMore: false, totalCount: 2, offset: 1, limit: 200 })
+    const { model } = setup()
+    await model.loadBoards()
+    expect(boardsApi.getBoardsPaginated).toHaveBeenCalledTimes(2)
+    expect(boardsApi.getBoardsPaginated).toHaveBeenNthCalledWith(1, undefined, false, 0, 200, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
+    expect(boardsApi.getBoardsPaginated).toHaveBeenNthCalledWith(2, undefined, false, 1, 200, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
+    expect(model.loadingBoards.value).toBe(false)
+  })
   it('clears old cards on project discovery failure and supports retry', async () => {
     vi.mocked(boardsApi.getBoardsPaginated).mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ items: [{ id: 'restored' } as Board], hasMore: false, totalCount: 1, offset: 0, limit: 200 })
@@ -56,8 +68,10 @@ describe('personal plan card choices', () => {
     await model.loadBoards()
     expect(model.cards.value).toEqual([])
     expect(model.error.value).toBeTruthy()
+    expect(model.loadingBoards.value).toBe(false)
     await model.loadBoards()
     expect(model.error.value).toBeNull()
     expect(model.boards.value[0]?.id).toBe('restored')
+    expect(model.loadingBoards.value).toBe(false)
   })
 })
