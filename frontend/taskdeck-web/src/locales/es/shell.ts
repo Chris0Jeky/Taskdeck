@@ -29,6 +29,8 @@ export default {
       copyFailed: 'No se pudo copiar',
       dismissNotification: 'Cerrar la notificación',
       errorDetails: 'Detalles del error: {message}',
+      olderErrors: '{count} recibos de error anteriores',
+      hideOlderErrors: 'Ocultar recibos de error anteriores',
     },
   },
   topbar: {

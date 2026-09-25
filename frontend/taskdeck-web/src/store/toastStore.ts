@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+export const MAX_VISIBLE_TOASTS = 5
+
 export interface ToastAction {
   /** Short label for the action (e.g. "undo", "open"). */
   label: string
@@ -120,6 +122,8 @@ type ToastTimer = {
 
 export const useToastStore = defineStore('toast', () => {
   const toasts = ref<Toast[]>([])
+  /** Error receipts evicted from the live five-toast surface stay recoverable. */
+  const evictedErrors = ref<Toast[]>([])
   const timers = new Map<string, ToastTimer>()
 
   function clearTimer(id: string) {
@@ -147,17 +151,62 @@ export const useToastStore = defineStore('toast', () => {
     timers.set(id, timer)
   }
 
+  function receiptKey(toast: Pick<Toast, 'type' | 'message'>): string {
+    return `${toast.type}\u0000${toast.message}`
+  }
+
+  function archiveError(toast: Toast) {
+    if (toast.type !== 'error') return
+
+    const key = receiptKey(toast)
+    const duplicateIndex = evictedErrors.value.findIndex((receipt) => receiptKey(receipt) === key)
+    if (duplicateIndex !== -1) {
+      evictedErrors.value.splice(duplicateIndex, 1)
+    }
+    evictedErrors.value.push(toast)
+  }
+
+  function enforceVisibleLimit() {
+    while (toasts.value.length > MAX_VISIBLE_TOASTS) {
+      const evicted = toasts.value.shift()
+      if (!evicted) return
+      clearTimer(evicted.id)
+      archiveError(evicted)
+    }
+  }
+
   function show(
     message: string,
     type: Toast['type'] = 'info',
     duration = 3000,
     options: ToastOptions = {},
   ) {
+    if (type === 'error') {
+      const key = receiptKey({ type, message })
+      const liveIndex = toasts.value.findIndex((toast) => receiptKey(toast) === key)
+      const archivedIndex = evictedErrors.value.findIndex((receipt) => receiptKey(receipt) === key)
+      const existing = liveIndex !== -1
+        ? toasts.value.splice(liveIndex, 1)[0]
+        : archivedIndex !== -1
+          ? evictedErrors.value.splice(archivedIndex, 1)[0]
+          : undefined
+
+      if (existing) {
+        Object.assign(existing, { duration, ...options })
+        toasts.value.push(existing)
+        clearTimer(existing.id)
+        scheduleRemoval(existing.id, duration)
+        enforceVisibleLimit()
+        return existing.id
+      }
+    }
+
     const id = `toast-${Date.now()}-${Math.random()}`
     const toast: Toast = { id, message, type, duration, ...options }
 
     toasts.value.push(toast)
     scheduleRemoval(id, duration)
+    enforceVisibleLimit()
 
     return id
   }
@@ -187,11 +236,17 @@ export const useToastStore = defineStore('toast', () => {
     clearTimer(id)
   }
 
+  function dismissEvictedError(id: string) {
+    const index = evictedErrors.value.findIndex((toast) => toast.id === id)
+    if (index !== -1) evictedErrors.value.splice(index, 1)
+  }
+
   function clear() {
     for (const id of timers.keys()) {
       clearTimer(id)
     }
     toasts.value = []
+    evictedErrors.value = []
   }
 
   function pause(id: string) {
@@ -226,12 +281,14 @@ export const useToastStore = defineStore('toast', () => {
 
   return {
     toasts,
+    evictedErrors,
     show,
     success,
     error,
     info,
     warning,
     remove,
+    dismissEvictedError,
     clear,
     pause,
     resume,

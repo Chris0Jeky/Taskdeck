@@ -36,6 +36,8 @@ export default {
       copyFailed: 'Copy failed',
       dismissNotification: 'Dismiss notification',
       errorDetails: 'Error details for {message}',
+      olderErrors: '{count} older error receipts',
+      hideOlderErrors: 'Hide older error receipts',
     },
   },
   topbar: {
