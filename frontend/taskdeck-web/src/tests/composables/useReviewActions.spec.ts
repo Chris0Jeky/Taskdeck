@@ -836,6 +836,72 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiffMode.value).toBe('live')
   })
 
+  it('preserves the stored preview when a disappeared proposal returns Applied at a newer approved revision (#2598)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    vi.mocked(automationApi.getProposal).mockResolvedValue(makeProposal())
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffMode.value).toBe('live')
+
+    // A partial queue read drops the row while the pane stays open.
+    proposals.value = []
+    await nextTick()
+
+    // Another reviewer saved rev-2, approved and applied it meanwhile. The row
+    // returns Applied with the newer revision pinned; the read-only watcher
+    // converts the pane to the stored decision-time preview, and the revision
+    // watcher must not wipe that still-valid read-only presentation.
+    proposals.value = [
+      makeProposal({
+        status: 'Applied',
+        latestRevisionId: null,
+        approvedRevisionId: 'rev-2',
+        diffPreview: 'stored diff text',
+      } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored diff text')
+  })
+
+  it('still closes an open diff when a disappeared proposal returns Approved at a newer approved revision (#2598)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    proposals.value = []
+    await nextTick()
+
+    // Another reviewer saved rev-2 and approved it; the proposal is still
+    // actionable (Apply would execute rev-2), so the stale live pane must
+    // close rather than back an action on the old diff.
+    proposals.value = [
+      makeProposal({
+        status: 'Approved',
+        latestRevisionId: null,
+        approvedRevisionId: 'rev-2',
+      } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(actions.selectedDiff.value).toBeNull()
+    expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
   it('reopens on the first click after a pane torn down while its row was absent (#2215 round 2)', async () => {
     let rejectDiff!: (reason?: unknown) => void
     const inFlight = new Promise<string>((_, reject) => {
