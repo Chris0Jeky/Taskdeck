@@ -1,4 +1,5 @@
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Domain.Entities;
@@ -96,6 +97,38 @@ public class AutomationProposal : Entity
         
         _operations.Add(operation);
         Touch();
+    }
+
+    /// <summary>
+    /// Stages one content-free outcome on the tracked proposal so the decision and
+    /// its telemetry are saved atomically by the same unit of work.
+    /// Field counts describe the comparable operation contract fields; a JSON
+    /// parameters object is one field regardless of its internal shape.
+    /// </summary>
+    public void RecordOutcome(OutcomeDecision decision, int fieldCount, int editedFieldCount)
+    {
+        var matchesDecision = Status switch
+        {
+            ProposalStatus.Approved => decision is OutcomeDecision.Approved or OutcomeDecision.EditedThenApproved,
+            ProposalStatus.Rejected => decision == OutcomeDecision.Rejected,
+            _ => false
+        };
+        if (!matchesDecision || DecidedByUserId is null || DecidedAt is null)
+            throw new DomainException(ErrorCodes.InvalidOperation, "An outcome requires a matching terminal decision");
+        if (_outcomes.Count != 0)
+            throw new DomainException(ErrorCodes.InvalidOperation, "A decision outcome has already been recorded");
+
+        var decisionTime = new DateTimeOffset(DateTime.SpecifyKind(DecidedAt.Value, DateTimeKind.Utc));
+        var latency = Math.Max(0, (decisionTime - CreatedAt).TotalSeconds);
+        _outcomes.Add(new ProposalOutcome(
+            Id,
+            DecidedByUserId.Value,
+            decision,
+            latency,
+            fieldCount,
+            editedFieldCount,
+            SourceType.ToString(),
+            RiskLevel.ToString()));
     }
 
     /// <summary>
