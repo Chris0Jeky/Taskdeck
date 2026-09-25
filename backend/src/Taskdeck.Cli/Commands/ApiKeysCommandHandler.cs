@@ -50,6 +50,12 @@ internal sealed class ApiKeysCommandHandler
         }
 
         var expiresText = ArgParser.GetOption(args, "--expires");
+        if (ArgParser.HasFlag(args, "--expires") && expiresText is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --expires <days>. Provide a positive number of days (e.g., 90 or 90d).",
+                "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
+        }
         TimeSpan? expiresIn = null;
         if (expiresText is not null)
         {
@@ -116,6 +122,20 @@ internal sealed class ApiKeysCommandHandler
     {
         var name = ArgParser.GetOption(args, "--name");
         var idText = ArgParser.GetOption(args, "--id");
+
+        if (ArgParser.HasFlag(args, "--name") && name is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --name <name>.",
+                "taskdeck api-key revoke --name <name> | --id <key-id>");
+        }
+
+        if (ArgParser.HasFlag(args, "--id") && idText is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --id <key-id>.",
+                "taskdeck api-key revoke --name <name> | --id <key-id>");
+        }
 
         if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(idText))
         {

@@ -6,7 +6,7 @@ import { useVisualViewport, type UseVisualViewportOptions } from '../../composab
 type SyntheticVisualViewport = {
   /** Mutate the viewport and dispatch exactly the named events, so a test can
    * prove which listener carried the update. */
-  set: (next: { height: number; offsetTop: number }, events: Array<'resize' | 'scroll'>) => void
+  set: (next: { height: number; offsetTop: number; width?: number; offsetLeft?: number }, events: Array<'resize' | 'scroll'>) => void
   listeners: () => number
 }
 
@@ -28,6 +28,8 @@ function installSyntheticVisualViewport(height: number, offsetTop: number): Synt
   const events = new EventTarget()
   let currentHeight = height
   let currentOffsetTop = offsetTop
+  let currentWidth = window.innerWidth
+  let currentOffsetLeft = 0
   let listenerCount = 0
 
   const visualViewport = {
@@ -36,6 +38,12 @@ function installSyntheticVisualViewport(height: number, offsetTop: number): Synt
     },
     get offsetTop() {
       return currentOffsetTop
+    },
+    get width() {
+      return currentWidth
+    },
+    get offsetLeft() {
+      return currentOffsetLeft
     },
     addEventListener(type: string, handler: EventListener) {
       listenerCount += 1
@@ -56,6 +64,8 @@ function installSyntheticVisualViewport(height: number, offsetTop: number): Synt
     set(next, dispatched) {
       currentHeight = next.height
       currentOffsetTop = next.offsetTop
+      currentWidth = next.width ?? currentWidth
+      currentOffsetLeft = next.offsetLeft ?? currentOffsetLeft
       for (const type of dispatched) {
         events.dispatchEvent(new Event(type))
       }
@@ -126,6 +136,19 @@ describe('useVisualViewport', () => {
     expect(style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('420px')
     expect(style.getPropertyValue('--td-dialog-visual-viewport-offset-top')).toBe('120px')
 
+    wrapper.unmount()
+  })
+
+  it('tracks horizontal width and offset on a visual viewport scroll', async () => {
+    const synthetic = installSyntheticVisualViewport(420, 120)
+    const wrapper = mountHost({ prefix: '--card-modal' })
+
+    synthetic.set({ height: 420, offsetTop: 120, width: 892, offsetLeft: 8 }, ['scroll'])
+    await wrapper.vm.$nextTick()
+
+    const style = hostStyle(wrapper)
+    expect(style.getPropertyValue('--card-modal-visual-viewport-width')).toBe('892px')
+    expect(style.getPropertyValue('--card-modal-visual-viewport-offset-left')).toBe('8px')
     wrapper.unmount()
   })
 
