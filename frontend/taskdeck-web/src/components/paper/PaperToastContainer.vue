@@ -138,18 +138,42 @@ type CountdownState = {
   deadline: number
   hover: boolean
   focusWithin: boolean
+  revision: number
 }
 const state = reactive<Record<string, CountdownState>>({})
 let intervalHandle: ReturnType<typeof setInterval> | null = null
 
+function refreshCountdown(toast: Toast, current: CountdownState, revision: number) {
+  // GH-3474: the store reused this toast (same ID, refreshed removal timer),
+  // so restart the visible countdown in sync — even when the duration number
+  // itself did not change.
+  current.revision = revision
+  current.remaining = toast.duration
+  current.deadline = Date.now() + toast.duration
+  if (current.hover || current.focusWithin || current.paused) {
+    // The store rebuilds an unpaused timer on refresh; re-pause it so a
+    // hovered/focused toast stays paused with the full refreshed duration.
+    current.paused = true
+    toastStore.pause(toast.id)
+  } else {
+    current.paused = false
+  }
+}
+
 function ensureCountdown(toast: Toast) {
-  if (state[toast.id]) return
+  const revision = toast.revision ?? 0
+  const current = state[toast.id]
+  if (current) {
+    if (current.revision !== revision) refreshCountdown(toast, current, revision)
+    return
+  }
   state[toast.id] = {
     remaining: toast.duration,
     paused: false,
     deadline: Date.now() + toast.duration,
     hover: false,
     focusWithin: false,
+    revision,
   }
 }
 
@@ -184,14 +208,15 @@ watch(
 )
 
 watch(
-  () => toastStore.toasts.map((t) => t.id),
-  (ids, prev) => {
+  () => toastStore.toasts.map((t) => ({ id: t.id, revision: t.revision ?? 0 })),
+  (current, prev) => {
     for (const toast of toastStore.toasts) {
       ensureCountdown(toast)
     }
     if (prev) {
-      for (const oldId of prev) {
-        if (!ids.includes(oldId)) delete state[oldId]
+      const ids = new Set(current.map(({ id }) => id))
+      for (const { id: oldId } of prev) {
+        if (!ids.has(oldId)) delete state[oldId]
       }
     }
   },

@@ -313,6 +313,23 @@ describe('toastStore', () => {
       expect(store.toasts).toHaveLength(0)
     })
 
+    it('bumps the internal revision when an error receipt is reused (GH-3474)', () => {
+      vi.useFakeTimers()
+
+      const id = store.error('Request failed', 3000)
+      expect(store.toasts[0].revision).toBe(0)
+
+      vi.advanceTimersByTime(2000)
+      expect(store.error('Request failed', 3000)).toBe(id)
+      expect(store.toasts).toHaveLength(1)
+      expect(store.toasts[0].revision).toBe(1)
+
+      vi.advanceTimersByTime(2999)
+      expect(store.toasts).toHaveLength(1)
+      vi.advanceTimersByTime(1)
+      expect(store.toasts).toHaveLength(0)
+    })
+
     it('replaces omitted optional metadata when an error repeats', () => {
       const action = { label: 'retry', handler: vi.fn() }
       const id = store.error('Request failed', 0, {
