@@ -1,4 +1,5 @@
 import { parseJwtPayload } from './jwt'
+import { createRequestId } from './requestId'
 
 /**
  * Centralized token and session storage abstraction.
@@ -10,6 +11,7 @@ import { parseJwtPayload } from './jwt'
 
 const TOKEN_KEY = 'taskdeck_token'
 const SESSION_KEY = 'taskdeck_session'
+const SESSION_BREAK_KEY = 'taskdeck_session_break'
 
 // In-memory ownership only: never persisted or sent to the server. Explicit
 // token writes/removals advance even when the token string is unchanged, so
@@ -21,14 +23,30 @@ let observedToken: string | null = null
 // distinguishes a same-user token refresh (break unchanged, user same) from a
 // logout (break advanced) or user replacement (user differs).
 let sessionBreakGeneration = 0
+let observedSessionBreakMarker: string | null = null
 
 function advanceCredentialGeneration(token: string | null): void {
   observedToken = token
   credentialGeneration++
 }
 
-function advanceSessionBreak(): void {
+function observeCrossTabSessionBreak(): void {
+  const marker = localStorage.getItem(SESSION_BREAK_KEY)
+  if (marker !== observedSessionBreakMarker) {
+    observedSessionBreakMarker = marker
+    sessionBreakGeneration++
+  }
+}
+
+function advanceSessionBreak(publish = false): void {
   sessionBreakGeneration++
+  if (publish) {
+    // A persisted marker lets another tab detect logout even when logout and
+    // same-user login both finish before that tab next reads the token.
+    const marker = createRequestId()
+    localStorage.setItem(SESSION_BREAK_KEY, marker)
+    observedSessionBreakMarker = marker
+  }
 }
 
 /**
@@ -158,13 +176,14 @@ export function validateSessionData(raw: unknown): PersistedSession | null {
 // --- Token operations ---
 
 export function getToken(): string | null {
+  observeCrossTabSessionBreak()
   const token = localStorage.getItem(TOKEN_KEY)
   if (token && !isValidJwtStructure(token)) {
     // Corrupted or malicious value — remove it
     localStorage.removeItem(TOKEN_KEY)
     if (observedToken !== null) {
       advanceCredentialGeneration(null)
-      advanceSessionBreak()
+      advanceSessionBreak(true)
     }
     return null
   }
@@ -188,7 +207,7 @@ export function setToken(token: string): boolean {
 export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY)
   advanceCredentialGeneration(null)
-  advanceSessionBreak()
+  advanceSessionBreak(true)
 }
 
 // --- Session metadata operations ---

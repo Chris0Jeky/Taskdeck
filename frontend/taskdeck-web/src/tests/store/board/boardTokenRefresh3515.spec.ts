@@ -190,6 +190,32 @@ describe('board token-refresh revocation (#3515)', () => {
     expect(state.error.value).toBeNull()
   })
 
+  it('does not notify after another tab logs out and rejoins as the same user', async () => {
+    signInAs('user-a', firstToken)
+    const pending = createDeferred<{ id: string; name: string; columns: [] }>()
+    mockBoardsApi.getBoard.mockReturnValueOnce(pending.promise)
+    mockCardsApi.getCards.mockResolvedValueOnce([])
+    mockLabelsApi.getLabels.mockResolvedValueOnce([])
+    const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+    const onBackgroundForbidden = vi.fn()
+    const read = fetchBoard('board-1', { intent: 'background', onBackgroundForbidden })
+
+    // Another tab completes both writes before this tab observes the missing token.
+    localStorage.removeItem('taskdeck_token')
+    const priorBreak = localStorage.getItem('taskdeck_session_break')
+    localStorage.setItem('taskdeck_session_break', `${priorBreak ?? ''}:other-tab-logout`)
+    localStorage.setItem('taskdeck_token', secondToken)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 'user-a', username: 'user-a-name', email: 'user-a@example.test',
+    }))
+    pending.reject({ response: { status: 403 } })
+    await expect(read).resolves.toBe(false)
+
+    expect(onBackgroundForbidden).not.toHaveBeenCalled()
+    expect(helpers.handleApiError).not.toHaveBeenCalled()
+    expect(state.error.value).toBeNull()
+  })
+
   it('does not notify when a different user replaces the session mid-read', async () => {
     signInAs('user-a', firstToken)
     const pending = createDeferred<{ id: string; name: string; columns: [] }>()
@@ -230,6 +256,35 @@ describe('board token-refresh revocation (#3515)', () => {
     expect(onBackgroundForbidden).toHaveBeenCalledExactlyOnceWith('board-1')
     expect(helpers.handleApiError).not.toHaveBeenCalled()
     expect(state.error.value).toBeNull()
+  })
+
+  it('uses the new session store notice when its queued read replaces an old callback', async () => {
+    signInAs('user-a', firstToken)
+    const explicitBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+    mockBoardsApi.getBoard
+      .mockReturnValueOnce(explicitBoard.promise)
+      .mockRejectedValueOnce({ response: { status: 403 } })
+    mockCardsApi.getCards.mockResolvedValue([])
+    mockLabelsApi.getLabels.mockResolvedValue([])
+    const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+    const oldSessionCallback = vi.fn()
+    const explicit = fetchBoard('board-1')
+    const queued = fetchBoard('board-1', {
+      intent: 'background', onBackgroundForbidden: oldSessionCallback,
+    })
+
+    signInAs('user-b', secondToken)
+    const newSessionQueued = fetchBoard('board-1', { intent: 'background' })
+    expect(newSessionQueued).toBe(queued)
+    explicitBoard.resolve({ id: 'board-1', name: 'Current board', columns: [] })
+    await expect(explicit).resolves.toBe(true)
+    await expect(queued).resolves.toBe(false)
+
+    expect(oldSessionCallback).not.toHaveBeenCalled()
+    expect(helpers.handleApiError).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ message: 'You no longer have access to this board' }),
+      'You no longer have access to this board',
+    )
   })
 
   it('discards a queued refresh when a new user replaces the session before the drain', async () => {

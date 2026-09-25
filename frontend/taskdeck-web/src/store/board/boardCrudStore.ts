@@ -319,9 +319,14 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     onBackgroundForbidden?: (boardId: string) => void,
   ): Promise<boolean> {
     if (queuedBackgroundBoardFetch?.boardId === id) {
+      const sameQueuedSession = isSameSessionContinuity(queuedBackgroundBoardFetch.session)
       if (backgroundFailureMessage) queuedBackgroundBoardFetch.backgroundFailureMessage = backgroundFailureMessage
       if (preserveCardComments) queuedBackgroundBoardFetch.preserveCardComments = true
-      if (onBackgroundForbidden) queuedBackgroundBoardFetch.onBackgroundForbidden = onBackgroundForbidden
+      // A callback from the previous session must not swallow this session's
+      // store-owned revocation notice when a no-callback refresh re-arms the queue.
+      if (!sameQueuedSession || onBackgroundForbidden) {
+        queuedBackgroundBoardFetch.onBackgroundForbidden = onBackgroundForbidden
+      }
       // Latest queuer owns continuity: a post-break refresh re-arms the drain.
       queuedBackgroundBoardFetch.session = captureSessionContinuity()
       return queuedBackgroundBoardFetch.promise

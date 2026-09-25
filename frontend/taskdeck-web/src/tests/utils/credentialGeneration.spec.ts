@@ -21,6 +21,28 @@ describe('credential generation', () => {
     expect(storage.isSameSessionContinuity(snapshot)).toBe(true)
   })
 
+  it('keeps continuity when another tab replaces a same-user token without logout', () => {
+    storage.setToken(first)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    localStorage.setItem('taskdeck_token', second)
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(true)
+  })
+
+  it('detects another tab logging out and back in before the next token read', () => {
+    storage.setToken(first)
+    storage.setSession({ userId: 'user-a', username: 'ann', email: 'a@example.test' })
+    const snapshot = storage.captureSessionContinuity()
+    localStorage.removeItem('taskdeck_token')
+    const priorBreak = localStorage.getItem('taskdeck_session_break')
+    localStorage.setItem('taskdeck_session_break', `${priorBreak ?? ''}:other-tab-logout`)
+    localStorage.setItem('taskdeck_token', second)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 'user-a', username: 'ann', email: 'a@example.test',
+    }))
+    expect(storage.isSameSessionContinuity(snapshot)).toBe(false)
+  })
+
   it('rejects a token replacement when session identity is unavailable', () => {
     storage.setToken(first)
     const snapshot = storage.captureSessionContinuity()
