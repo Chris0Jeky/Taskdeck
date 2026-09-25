@@ -2,6 +2,16 @@
 
 Last Updated: 2026-09-25
 
+## Disconnected board revocation recovery (#3511)
+
+A current board rejoin refused with `Forbidden`, or a current background board read returning 403,
+now retires the board subscription and uses the existing access-removed notice and route exit.
+Board, request-generation, and credential-generation checks reject stale results from another
+board or session; transient failures keep polling. This removes the retry and navigation burden of
+a cached board the user can no longer read, without changing capture or review-first write gates.
+Focused client tests cover rejoin, fallback, stale results, and transient recovery. A live
+server-driven disconnected revocation was not exercised locally.
+
 ## Board access revocation exits the active board (#3455)
 
 The board realtime client now handles the server's `accessRevoked` event for its confirmed,
