@@ -19,6 +19,7 @@ const featureFlagMocks = vi.hoisted(() => ({
   isEnabled: vi.fn(() => false),
   setFlag: vi.fn(),
   resetAll: vi.fn(),
+  persistenceError: null as string | null,
 }))
 
 vi.mock('../../store/sessionStore', () => ({
@@ -38,6 +39,7 @@ vi.mock('../../store/featureFlagStore', () => ({
     isEnabled: featureFlagMocks.isEnabled,
     setFlag: featureFlagMocks.setFlag,
     resetAll: featureFlagMocks.resetAll,
+    persistenceError: featureFlagMocks.persistenceError,
   }),
 }))
 
@@ -114,6 +116,15 @@ describe('ProfileSettingsView', () => {
 
     expect(wrapper.text()).toContain('Editor')
     expect(wrapper.text()).toContain('Can run editor-safe Ops templates; admin templates are restricted.')
+  })
+
+  it('surfaces feature-flag persistence failures', () => {
+    featureFlagMocks.persistenceError = 'Feature flag changes are active for this session but could not be saved in browser storage.'
+
+    const wrapper = mount(ProfileSettingsView)
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('could not be saved')
+    featureFlagMocks.persistenceError = null
   })
 })
 

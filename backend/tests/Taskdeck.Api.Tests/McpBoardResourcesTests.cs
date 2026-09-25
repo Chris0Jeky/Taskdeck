@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -545,6 +546,94 @@ public class McpBoardResourcesTests : IDisposable
         root.GetProperty("workItemType").GetString().Should().Be("Spike");
         root.GetProperty("description").GetString().Should().Be("Full description");
         root.GetProperty("columnName").GetString().Should().Be("Active");
+    }
+
+    // ── BoardResources.GetCardDetail detach-preview tests ─────────────────────
+
+    [Fact]
+    public async Task BoardResources_GetCardDetail_IncludesDetachPreviewMatchingServicePreview()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+
+        var user = new User("detach-preview-user", "detachpreview@example.com", "Password1!");
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+
+        var board = await boardService.CreateBoardAsync(new CreateBoardDto("DetachBoard", null), user.Id);
+        var boardId = board.Value.Id;
+        var col = await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Active", null, null));
+        var parent = await cardService.CreateCardAsync(new CreateCardDto(boardId, col.Value.Id, "Parent", null, null, null));
+        parent.IsSuccess.Should().BeTrue(parent.ErrorMessage);
+        var child = await cardService.CreateCardAsync(new CreateCardDto(boardId, col.Value.Id, "Child", null, null, null, ParentCardId: parent.Value.Id));
+        child.IsSuccess.Should().BeTrue(child.ErrorMessage);
+
+        var preview = await cardService.PreviewDetachAsync(boardId, parent.Value.Id);
+        preview.IsSuccess.Should().BeTrue(preview.ErrorMessage);
+
+        var resources = CreateBoardResources(scope, user.Id);
+        var json = await resources.GetCardDetail(boardId.ToString(), parent.Value.Id.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.TryGetProperty("detachPreview", out var detachPreview).Should().BeTrue("card detail must include 'detachPreview'");
+        detachPreview.GetProperty("cardId").GetGuid().Should().Be(parent.Value.Id);
+        detachPreview.GetProperty("expectedChildrenFingerprint").GetString().Should().Be(preview.Value.ExpectedChildrenFingerprint);
+        var children = detachPreview.GetProperty("children");
+        children.GetArrayLength().Should().Be(1);
+        children[0].GetProperty("id").GetGuid().Should().Be(child.Value.Id);
+
+        using var expected = JsonDocument.Parse(JsonSerializer.Serialize(preview.Value, BoardResources.SerializerOptions));
+        detachPreview.GetRawText().Should().Be(expected.RootElement.GetRawText());
+    }
+
+    [Fact]
+    public async Task BoardResources_GetCardDetail_PreviewFailure_ThrowsSanitizedError()
+    {
+        // NOTE: with a consistent store PreviewDetachAsync fails only when the card is
+        // missing, which GetCardAsync rejects first — so the preview-failure branch is
+        // unreachable through the SQLite fixture. Fake it with Moq (same pattern as
+        // BoardResourcesErrorSafetyTests): the card read succeeds while the preview's
+        // own lookup misses.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+
+        var unitOfWork = new Mock<IUnitOfWork>(MockBehavior.Strict);
+        var boardRepository = new Mock<IBoardRepository>(MockBehavior.Strict);
+        var cardRepository = new Mock<ICardRepository>(MockBehavior.Strict);
+        unitOfWork.SetupGet(value => value.Boards).Returns(boardRepository.Object);
+        unitOfWork.SetupGet(value => value.Cards).Returns(cardRepository.Object);
+        boardRepository
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Board("PreviewBoard", null, userId));
+        cardRepository
+            .Setup(repository => repository.GetByIdWithLabelsAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Card(cardId, boardId, columnId, "Preview card", "desc"));
+        cardRepository
+            .Setup(repository => repository.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Card?)null);
+
+        var resources = new BoardResources(
+            new BoardService(unitOfWork.Object),
+            new ColumnService(unitOfWork.Object),
+            new CardService(unitOfWork.Object),
+            new LabelService(unitOfWork.Object),
+            new FixedUserContextProvider(userId));
+
+        var act = () => resources.GetCardDetail(boardId.ToString(), cardId.ToString());
+
+        var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        exception.Message.Should().StartWith("MCP: failed to read child detachment preview:");
+        exception.Message.Should().Be("MCP: failed to read child detachment preview: Card not found in this board");
+        exception.Message.Should().NotContain("Exception");
+        unitOfWork.VerifyAll();
+        boardRepository.VerifyAll();
+        cardRepository.VerifyAll();
     }
 
     // ── BoardResources.GetBoardLabels tests ──────────────────────────────────

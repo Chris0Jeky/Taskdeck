@@ -49,7 +49,7 @@ public class ProcessNextClaimRaceTests : IClassFixture<HostedWorkerDisabledTestW
     {
         const int workerCount = 10;
         using var setupClient = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsync(setupClient, "queue-claim-10");
+        await ApiTestHarness.AuthenticateAsAdminAsync(setupClient, "queue-claim-10", _factory);
 
         // Seed a single LLM queue item
         var queueResp = await setupClient.PostAsJsonAsync(
@@ -103,7 +103,7 @@ public class ProcessNextClaimRaceTests : IClassFixture<HostedWorkerDisabledTestW
     public async Task ProcessNext_TwoWorkersTwoItems_EachClaimsDifferentItem()
     {
         using var setupClient = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsync(setupClient, "queue-two-workers");
+        await ApiTestHarness.AuthenticateAsAdminAsync(setupClient, "queue-two-workers", _factory);
 
         // Seed two LLM queue items
         var q1 = await setupClient.PostAsJsonAsync(

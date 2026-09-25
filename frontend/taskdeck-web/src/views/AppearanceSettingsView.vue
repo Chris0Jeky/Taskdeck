@@ -185,8 +185,7 @@ const localeStatus = computed(() => {
           @click="selectLocale(option.locale)"
         >
           <!-- `lang` sits on the endonym span, not the button: the endonym is in
-               the option's own language, while the machine-translated note below
-               it is in the ACTIVE locale like the rest of the page. -->
+               the option's own language, while the note is in the active locale. -->
           <span class="paper-appearance__segment-name" :lang="option.locale">{{
             option.label
           }}</span>
@@ -195,7 +194,8 @@ const localeStatus = computed(() => {
             class="paper-appearance__segment-note"
             data-testid="mt-badge"
           >
-            {{ $t('settings.language.machineTranslated') }}
+            <span class="sr-only">{{ ` (${$t('settings.language.machineTranslated')})` }}</span>
+            <span aria-hidden="true">{{ $t('settings.language.machineTranslated') }}</span>
           </span>
         </button>
       </div>

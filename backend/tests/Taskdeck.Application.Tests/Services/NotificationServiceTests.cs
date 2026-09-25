@@ -165,23 +165,87 @@ public class NotificationServiceTests
     }
 
     [Fact]
+    public async Task GetNotificationsAsync_ShouldExcludeRevokedBoards_WhenListingWithoutFilter()
+    {
+        // #3421: the unfiltered list must not return board-scoped notifications
+        // for boards the user can no longer read. Board-less notifications
+        // (e.g. system) are unaffected.
+        var userId = Guid.NewGuid();
+        var readableBoardId = Guid.NewGuid();
+        var revokedBoardId = Guid.NewGuid();
+        var readable = new Notification(
+            userId, NotificationType.Mention, NotificationCadence.Immediate,
+            "Mention", "visible", boardId: readableBoardId);
+        var revoked = new Notification(
+            userId, NotificationType.Mention, NotificationCadence.Immediate,
+            "Mention", "leaked card title", boardId: revokedBoardId);
+        var global = new Notification(
+            userId, NotificationType.System, NotificationCadence.Immediate,
+            "System", "global");
+
+        _notificationRepositoryMock
+            .Setup(r => r.GetByUserIdAsync(userId, 20, false, null, default, 0))
+            .ReturnsAsync(new[] { readable, revoked, global });
+        _authorizationServiceMock
+            .Setup(s => s.GetReadableBoardIdsAsync(
+                userId,
+                It.Is<IEnumerable<Guid>>(ids => new HashSet<Guid>(ids).SetEquals(new[] { readableBoardId, revokedBoardId })),
+                default))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { readableBoardId }));
+
+        var result = await _service.GetNotificationsAsync(
+            userId,
+            new NotificationQueryDto(UnreadOnly: false, BoardId: null, Limit: 20));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Select(n => n.BoardId).Should().BeEquivalentTo(new Guid?[] { readableBoardId, null });
+    }
+
+    [Fact]
+    public async Task GetNotificationsAsync_ShouldFailClosed_WhenReadableBoardsLookupFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var notification = new Notification(
+            userId, NotificationType.Mention, NotificationCadence.Immediate,
+            "Mention", "content", boardId: boardId);
+
+        _notificationRepositoryMock
+            .Setup(r => r.GetByUserIdAsync(userId, 20, false, null, default, 0))
+            .ReturnsAsync(new[] { notification });
+        _authorizationServiceMock
+            .Setup(s => s.GetReadableBoardIdsAsync(
+                userId,
+                It.IsAny<IEnumerable<Guid>>(),
+                default))
+            .ReturnsAsync(Result.Failure<IReadOnlySet<Guid>>(ErrorCodes.UnexpectedError, "auth store down"));
+
+        var result = await _service.GetNotificationsAsync(
+            userId,
+            new NotificationQueryDto(UnreadOnly: false, BoardId: null, Limit: 20));
+
+        result.IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task MarkAllAsReadAsync_ShouldMarkAllUnread_WhenNotificationsExist()
     {
         var userId = Guid.NewGuid();
-        var n1 = new Notification(userId, NotificationType.Mention, NotificationCadence.Immediate, "N1", "Message 1");
-        var n2 = new Notification(userId, NotificationType.Assignment, NotificationCadence.Immediate, "N2", "Message 2");
 
         _notificationRepositoryMock
-            .Setup(r => r.GetUnreadByUserIdAsync(userId, null, default))
-            .ReturnsAsync(new[] { n1, n2 });
+            .Setup(r => r.MarkAllAsReadAsync(userId, null, default))
+            .ReturnsAsync(2);
 
         var result = await _service.MarkAllAsReadAsync(userId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(2);
-        n1.IsRead.Should().BeTrue();
-        n2.IsRead.Should().BeTrue();
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _notificationRepositoryMock.Verify(r => r.MarkAllAsReadAsync(userId, null, default), Times.Once);
+        // Batched path: no row materialization, no tracked SaveChanges.
+        _notificationRepositoryMock.Verify(
+            r => r.GetUnreadByUserIdAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]
@@ -189,14 +253,34 @@ public class NotificationServiceTests
     {
         var userId = Guid.NewGuid();
         _notificationRepositoryMock
-            .Setup(r => r.GetUnreadByUserIdAsync(userId, null, default))
-            .ReturnsAsync(Array.Empty<Notification>());
+            .Setup(r => r.MarkAllAsReadAsync(userId, null, default))
+            .ReturnsAsync(0);
 
         var result = await _service.MarkAllAsReadAsync(userId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(0);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task MarkAllAsReadAsync_ShouldPassBoardFilter_ToRepository()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+        _notificationRepositoryMock
+            .Setup(r => r.MarkAllAsReadAsync(userId, boardId, default))
+            .ReturnsAsync(1);
+
+        var result = await _service.MarkAllAsReadAsync(userId, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        _notificationRepositoryMock.Verify(r => r.MarkAllAsReadAsync(userId, boardId, default), Times.Once);
     }
 
     [Fact]

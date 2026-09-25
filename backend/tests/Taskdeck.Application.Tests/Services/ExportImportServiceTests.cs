@@ -352,7 +352,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ExportDatabaseAsync_ShouldReturnValidationError_WhenConnectionStringIsMissing()
     {
-        var user = CreateUser("dbexport");
+        var user = CreateUser("dbexport", UserRole.Admin);
         var service = CreateDatabaseService(connectionString: null);
 
         _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
@@ -367,7 +367,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ExportDatabaseAsync_ShouldReturnNotFound_WhenDatabaseFileDoesNotExist()
     {
-        var user = CreateUser("dbexport");
+        var user = CreateUser("dbexport", UserRole.Admin);
         var dbPath = CreateTempFilePath();
         var service = CreateDatabaseService($"Data Source={dbPath}");
 
@@ -382,7 +382,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ExportDatabaseAsync_ShouldReturnDatabaseBytes_WhenSandboxEnabledAndDatabaseExists()
     {
-        var user = CreateUser("dbexport");
+        var user = CreateUser("dbexport", UserRole.Admin);
         var dbPath = CreateTempFilePath();
         var expectedBytes = CreateSqlitePayload();
 
@@ -406,7 +406,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ExportDatabaseAsync_ShouldReturnForbidden_WhenSandboxDisabled()
     {
-        var user = CreateUser("dbexport");
+        var user = CreateUser("dbexport", UserRole.Admin);
         var service = CreateDatabaseService("Data Source=taskdeck.db", sandboxEnabled: false);
 
         _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
@@ -420,7 +420,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ImportDatabaseAsync_ShouldReturnForbidden_WhenSandboxDisabled()
     {
-        var user = CreateUser("dbimport");
+        var user = CreateUser("dbimport", UserRole.Admin);
         var service = CreateDatabaseService("Data Source=taskdeck.db", sandboxEnabled: false);
 
         _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
@@ -434,7 +434,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ImportDatabaseAsync_ShouldReturnValidationError_WhenPayloadIsNotSqlite()
     {
-        var user = CreateUser("dbimport");
+        var user = CreateUser("dbimport", UserRole.Admin);
         var dbPath = CreateTempFilePath();
         var service = CreateDatabaseService($"Data Source={dbPath}");
 
@@ -450,7 +450,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ImportDatabaseAsync_ShouldReturnValidationError_WhenPayloadExceedsConfiguredLimit()
     {
-        var user = CreateUser("dbimport");
+        var user = CreateUser("dbimport", UserRole.Admin);
         var dbPath = CreateTempFilePath();
         var service = CreateDatabaseService(
             $"Data Source={dbPath}",
@@ -469,7 +469,7 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ImportDatabaseAsync_ShouldReplaceDatabaseFile_WhenPayloadIsValid()
     {
-        var user = CreateUser("dbimport");
+        var user = CreateUser("dbimport", UserRole.Admin);
         var dbPath = CreateTempFilePath();
         var originalBytes = CreateSqlitePayload();
         var importedBytes = CreateSqlitePayload(length: 384);
@@ -501,7 +501,7 @@ public class ExportImportServiceTests
         if (!OperatingSystem.IsWindows())
             return;
 
-        var user = CreateUser("dbimport");
+        var user = CreateUser("dbimport", UserRole.Admin);
         var dbPath = CreateTempFilePath();
         var originalBytes = CreateSqlitePayload();
         var importedBytes = CreateSqlitePayload(length: 384);
@@ -552,10 +552,10 @@ public class ExportImportServiceTests
             });
     }
 
-    private static User CreateUser(string stem)
+    private static User CreateUser(string stem, UserRole role = UserRole.Editor)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        return new User($"{stem}_{suffix}", $"{stem}_{suffix}@example.com", "hashedpassword");
+        return new User($"{stem}_{suffix}", $"{stem}_{suffix}@example.com", "hashedpassword", role);
     }
 
     private static void AddToPrivateCollection<T>(object target, string fieldName, T value)

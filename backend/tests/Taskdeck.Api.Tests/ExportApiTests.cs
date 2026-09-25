@@ -1,15 +1,25 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
@@ -144,6 +154,7 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
 
     public ExportApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -295,23 +306,77 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task DatabaseEndpoints_ShouldReturnForbidden_WhenSandboxIsDisabled()
     {
-        await EnsureAuthenticatedAsync();
+        // Admin passes the AdminOnly policy, so the 403 must come from the
+        // service-level sandbox refusal; the message pins which layer refused.
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsAdminAsync(client, "export-sandbox-admin", _factory);
 
-        await ApiTestHarness.AssertForbiddenAsync(
-            await _client.GetAsync("/api/export/database"));
+        using var exportResponse = await client.GetAsync("/api/export/database");
+        await ApiTestHarness.AssertForbiddenAsync(exportResponse);
+        (await exportResponse.Content.ReadAsStringAsync()).Should().Contain("DevelopmentSandbox");
 
         using var importContent = CreateDatabaseImportContent(CreateSqlitePayload());
-        await ApiTestHarness.AssertForbiddenAsync(
-            await _client.PostAsync("/api/import/database", importContent));
+        using var importResponse = await client.PostAsync("/api/import/database", importContent);
+        await ApiTestHarness.AssertForbiddenAsync(importResponse);
+        (await importResponse.Content.ReadAsStringAsync()).Should().Contain("DevelopmentSandbox");
+    }
+
+    [Theory]
+    [InlineData(UserRole.Editor)]
+    [InlineData(UserRole.Viewer)]
+    public async Task DatabaseEndpoints_NonAdminWithSandboxEnabled_ReturnsPolicyForbidden(UserRole role)
+    {
+        // Sandbox enabled: the service layer would allow the call, so the 403
+        // provably comes from the AdminOnly policy. Reverting the policy
+        // attributes turns the export into a 200, so this test is red-capable.
+        using var factory = CreateSandboxEnabledFactory();
+        using var client = factory.CreateClient();
+        await AuthenticateWithRoleAsync(factory, client, "export-policy-nonadmin", role);
+
+        using var exportResponse = await client.GetAsync("/api/export/database");
+        await ApiTestHarness.AssertForbiddenAsync(exportResponse);
+        (await exportResponse.Content.ReadAsStringAsync()).Should().Contain("You do not have permission");
+
+        using var importContent = CreateDatabaseImportContent(CreateSqlitePayload());
+        using var importResponse = await client.PostAsync("/api/import/database", importContent);
+        await ApiTestHarness.AssertForbiddenAsync(importResponse);
+        (await importResponse.Content.ReadAsStringAsync()).Should().Contain("You do not have permission");
+    }
+
+    [Theory]
+    [InlineData(UserRole.Owner)]
+    [InlineData(UserRole.Admin)]
+    public async Task DatabaseExport_AdminWithSandboxEnabled_ReturnsDatabaseFile(UserRole role)
+    {
+        var payload = CreateSqlitePayload(512);
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-export-api-{Guid.NewGuid():N}.db");
+        await File.WriteAllBytesAsync(dbPath, payload);
+        try
+        {
+            using var factory = CreateSandboxEnabledFactory($"Data Source={dbPath}");
+            using var client = factory.CreateClient();
+            await AuthenticateWithRoleAsync(factory, client, "export-policy-admin", role);
+
+            using var response = await client.GetAsync("/api/export/database");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/octet-stream");
+            (await response.Content.ReadAsByteArrayAsync()).Should().Equal(payload);
+        }
+        finally
+        {
+            File.Delete(dbPath);
+        }
     }
 
     [Fact]
     public async Task ImportDatabase_ShouldReturnBadRequest_WhenFileIsMissing()
     {
-        await EnsureAuthenticatedAsync();
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsAdminAsync(client, "export-missing-file-admin", _factory);
 
         using var content = new MultipartFormDataContent();
-        var response = await _client.PostAsync("/api/import/database", content);
+        var response = await client.PostAsync("/api/import/database", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -348,6 +413,50 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
         _isAuthenticated = true;
     }
 
+    private WebApplicationFactory<Program> CreateSandboxEnabledFactory(string? databaseConnectionString = null) =>
+        _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<DevelopmentSandboxSettings>();
+                services.AddSingleton(new DevelopmentSandboxSettings { Enabled = true });
+                if (databaseConnectionString is not null)
+                {
+                    // DatabaseExportImportSettings is bound at startup before the
+                    // factory's in-memory connection string applies, so it always
+                    // holds the default in tests; point it at the test file explicitly.
+                    services.RemoveAll<DatabaseExportImportSettings>();
+                    services.AddSingleton(new DatabaseExportImportSettings
+                    {
+                        ConnectionString = databaseConnectionString,
+                        MaxImportBytes = DatabaseExportImportSettings.DefaultMaxImportBytes
+                    });
+                }
+            }));
+
+    private static async Task AuthenticateWithRoleAsync(
+        WebApplicationFactory<Program> factory,
+        HttpClient client,
+        string stem,
+        UserRole role)
+    {
+        var identity = await ApiTestHarness.AuthenticateAsync(client, stem);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var user = await db.Users.SingleAsync(user => user.Id == identity.UserId);
+            user.UpdateDefaultRole(role);
+            await db.SaveChangesAsync();
+        }
+
+        // The policy uses the signed global role, so re-login for a fresh token.
+        using var response = await client.PostAsJsonAsync(
+            "/api/auth/login", new LoginDto(identity.Username, "password123"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var login = await response.Content.ReadFromJsonAsync<AuthResultDto>();
+        login.Should().NotBeNull();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login!.Token);
+    }
+
     private static MultipartFormDataContent CreateDatabaseImportContent(byte[] payload)
     {
         var content = new MultipartFormDataContent();
@@ -355,9 +464,9 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
         return content;
     }
 
-    private static byte[] CreateSqlitePayload()
+    private static byte[] CreateSqlitePayload(int length = 128)
     {
-        var payload = new byte[128];
+        var payload = new byte[Math.Max(length, 16)];
         var signature = System.Text.Encoding.ASCII.GetBytes("SQLite format 3\0");
         Array.Copy(signature, payload, signature.Length);
         return payload;

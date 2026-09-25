@@ -391,10 +391,10 @@ Bound to `LlmQuotaSettings`.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `LlmQuota:RequestsPerHour` | `int` | `60` | Max LLM requests per user per hour. `0` means unlimited. | No |
-| `LlmQuota:TokensPerDay` | `long` | `100000` | Max combined input+output tokens per user per day. `0` means unlimited. | No |
-| `LlmQuota:GlobalBudgetCeilingTokens` | `long` | `0` | Global per-day token ceiling across all users. `0` means unlimited. | No |
-| `LlmQuota:ReservationEstimatedTokens` | `int` | `2000` | Tokens held per in-flight quota reservation before the actual usage is known (issue #1313). This estimate is what bounds concurrent token-budget overshoot: in-flight callers see each other's estimates against `TokensPerDay`/`GlobalBudgetCeilingTokens`, so worst-case overshoot per boundary crossing is roughly one call's real usage beyond the estimate. Replaced by the real count when the reservation commits. Minimum `1` — `0` would make reservations invisible to the token sums and reopen the concurrent-token race. | No |
+| `LlmQuota:RequestsPerHour` | `int` | `60` | Max LLM requests per user, per surface, per hour. `0` means unlimited. | No |
+| `LlmQuota:TokensPerDay` | `long` | `100000` | Max combined input+output tokens per user, per surface, per day. `0` means unlimited. | No |
+| `LlmQuota:GlobalBudgetCeilingTokens` | `long` | `0` | Daily token ceiling across all users **for each surface separately**, not the whole instance. `0` means unlimited. | No |
+| `LlmQuota:ReservationEstimatedTokens` | `int` | `2000` | Tokens held per in-flight quota reservation before the actual usage is known (issue #1313). In the tested same-process SQLite configuration, concurrent reservations against one database count each other's estimates against `TokensPerDay`/`GlobalBudgetCeilingTokens` before admission. This bounds admitted estimates at a boundary, but it does not cap real billed tokens, provider-side usage, or cross-process deployments. At commit, replaced by authoritative provider usage when available or persisted as an estimate when usage is unknown. Minimum `1` — `0` would make reservations invisible to the token sums and reopen the concurrent-token race. | No |
 | `LlmQuota:ReservationTtlSeconds` | `int` | `120` | How long a quota reservation stays live before it is treated as stale (a crashed process between reserve and commit) and swept. Must outlast the slowest expected LLM call: if a call finishes after its reservation was swept, the billed usage is still recovered into a committed row, but a warning is logged and the slot briefly frees early. | No |
 
 ### `LlmKillSwitch`
@@ -884,7 +884,7 @@ export/import endpoints, which return `403` unless it is on.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. | No |
+| `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. The database export/import endpoints additionally require the `Owner` or `Admin` global role and refuse in `Production`. | No |
 
 ## Connectors
 
