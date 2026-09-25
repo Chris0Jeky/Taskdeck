@@ -35,6 +35,13 @@ internal sealed class CardsCommandHandler
         var title = ArgParser.GetOption(args, "--title");
         var description = ArgParser.GetOption(args, "--description");
 
+        if (ArgParser.HasFlag(args, "--description") && description is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --description <description>.",
+                "taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]");
+        }
+
         if (!ArgParser.TryParseGuid(boardIdText, out var boardId))
         {
             return ConsoleOutput.PrintUsageError(
@@ -85,7 +92,15 @@ internal sealed class CardsCommandHandler
     {
         var cardIdText = ArgParser.GetOption(args, "--card");
         var targetColumnIdText = ArgParser.GetOption(args, "--target-column");
-        var positionText = ArgParser.GetOption(args, "--position") ?? "0";
+        var positionOption = ArgParser.GetOption(args, "--position");
+        if (ArgParser.HasFlag(args, "--position") && positionOption is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --position <position>.",
+                "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
+        }
+
+        var positionText = positionOption ?? "0";
 
         if (!ArgParser.TryParseGuid(cardIdText, out var cardId))
         {

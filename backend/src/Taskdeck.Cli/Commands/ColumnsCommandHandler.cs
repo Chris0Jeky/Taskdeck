@@ -80,6 +80,20 @@ internal sealed class ColumnsCommandHandler
         var positionText = ArgParser.GetOption(args, "--position");
         var wipText = ArgParser.GetOption(args, "--wip");
 
+        if (ArgParser.HasFlag(args, "--position") && positionText is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --position <position>.",
+                "taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]");
+        }
+
+        if (ArgParser.HasFlag(args, "--wip") && wipText is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --wip <limit>.",
+                "taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]");
+        }
+
         if (!ArgParser.TryParseGuid(boardIdText, out var boardId))
         {
             return ConsoleOutput.PrintUsageError(
