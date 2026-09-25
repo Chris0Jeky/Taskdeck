@@ -6,7 +6,7 @@ import {
   LogLevel,
 } from '@microsoft/signalr'
 import type { BoardPresenceSnapshot, BoardRealtimeEvent } from '../types/realtime'
-import { getToken } from '../utils/tokenStorage'
+import { getObservedCredentialGeneration, getToken } from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
 import { apiRootFrom } from '../utils/apiRoot'
 import { isDemoMode } from '../utils/demoMode'
@@ -32,6 +32,20 @@ function getAccessToken(): string {
   return getToken() ?? ''
 }
 
+/**
+ * Whether a JoinBoard refusal is the server's authoritative access verdict.
+ * BoardsHub.JoinBoard answers a failed reader check with
+ * `HubException("Forbidden:...")`, which SignalR surfaces either as the bare
+ * message or in a HubException-prefixed completion error. Only that code may retire the board:
+ * transport failures, Unauthorized, and NotFound keep the polling fallback.
+ */
+function isJoinBoardForbiddenError(error: unknown): boolean {
+  const message =
+    typeof error === 'string' ? error : (error as { message?: unknown } | null)?.message
+  return typeof message === 'string' &&
+    /(?:^|HubException: )Forbidden(?::|$)/.test(message)
+}
+
 export interface BoardRealtimeControllerOptions {
   fetchBoard: (
     boardId: string,
@@ -46,6 +60,7 @@ export interface BoardRealtimeController {
   switchBoard: (boardId: string) => Promise<void>
   setEditingCard: (cardId: string | null) => Promise<void>
   stop: () => Promise<void>
+  notifyAccessRevoked: (boardId: string) => void
 }
 
 export function createBoardRealtimeController(
@@ -54,6 +69,7 @@ export function createBoardRealtimeController(
   let connection: HubConnection | null = null
   let subscribedBoardId: string | null = null
   let requestedBoardId: string | null = null
+  let requestedCredentialGeneration: number | null = null
   let subscriptionGeneration = 0
   let subscriptionTransition: Promise<void> = Promise.resolve()
   let editingCardId: string | null = null
@@ -227,14 +243,7 @@ export function createBoardRealtimeController(
       return
     }
 
-    const revokedBoardId = event.boardId
-    // stop() retires refresh and polling intent before its first await. Report
-    // the lost access immediately: a best-effort LeaveBoard can take time or
-    // fail after the server has already evicted this connection.
-    void stop().catch((error) => {
-      logWarn('SignalR board teardown after access revocation failed.', error)
-    })
-    options.onAccessRevoked?.(revokedBoardId)
+    retireForRevocation(event.boardId)
   }
 
   const ensureConnection = () => {
@@ -355,7 +364,23 @@ export function createBoardRealtimeController(
       return
     }
 
-    await hubConnection.invoke('JoinBoard', boardId)
+    try {
+      await hubConnection.invoke('JoinBoard', boardId)
+    } catch (error) {
+      // An authoritative Forbidden for the current request is revocation while
+      // disconnected, not a transport failure: retire instead of polling.
+      // Stale requests (navigated away, session changed) and every other
+      // failure keep the existing polling fallback via the caller.
+      if (
+        isCurrentRequest() &&
+        isJoinBoardForbiddenError(error) &&
+        isCurrentSessionForRequest()
+      ) {
+        retireForRevocation(boardId)
+        return
+      }
+      throw error
+    }
     if (connection !== hubConnection) return
     subscribedBoardId = boardId
     if (isCurrentRequest() && hubConnection.state === HubConnectionState.Connected) {
@@ -386,6 +411,11 @@ export function createBoardRealtimeController(
 
   const requestBoardSubscription = (boardId: string) => {
     requestedBoardId = boardId
+    // Snapshot session ownership alongside board intent: a Forbidden that
+    // settles after a logout/login belongs to the previous session and must
+    // not retire the board the new session just requested.
+    getToken()
+    requestedCredentialGeneration = getObservedCredentialGeneration()
     const generation = ++subscriptionGeneration
 
     // Cancel any debounced mutation fetch from the previous board as soon as
@@ -421,8 +451,40 @@ export function createBoardRealtimeController(
     await connection.invoke('SetEditingCard', subscribedBoardId, cardId)
   }
 
+  const isCurrentSessionForRequest = () => {
+    if (requestedCredentialGeneration === null) {
+      return false
+    }
+
+    // Observe cross-tab/storage changes before comparing, as api/http.ts does.
+    getToken()
+    return getObservedCredentialGeneration() === requestedCredentialGeneration
+  }
+
+  const retireForRevocation = (boardId: string) => {
+    // stop() retires refresh and polling intent before its first await. Report
+    // the lost access immediately: a best-effort LeaveBoard can take time or
+    // fail after the server has already evicted this connection.
+    void stop().catch((error) => {
+      logWarn('SignalR board teardown after access revocation failed.', error)
+    })
+    options.onAccessRevoked?.(boardId)
+  }
+
+  const notifyAccessRevoked = (boardId: string) => {
+    // Out-of-band revocation (a fallback board read refused with 403): the
+    // caller verified routing and session ownership. Re-check the requested
+    // board so a result that crossed a switch cannot retire the new board.
+    if (!boardId || requestedBoardId !== boardId) {
+      return
+    }
+
+    retireForRevocation(boardId)
+  }
+
   const stop = async () => {
     requestedBoardId = null
+    requestedCredentialGeneration = null
     subscriptionGeneration++
     recoveryGeneration += 1
     recoveryPending = false
@@ -458,5 +520,6 @@ export function createBoardRealtimeController(
     switchBoard,
     setEditingCard,
     stop,
+    notifyAccessRevoked,
   }
 }

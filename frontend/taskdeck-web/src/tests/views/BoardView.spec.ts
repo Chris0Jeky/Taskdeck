@@ -8,6 +8,7 @@ import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useToastStore } from '../../store/toastStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
 import type { Card } from '../../types/board'
+import { removeToken } from '../../utils/tokenStorage'
 
 const demoModeFlag = vi.hoisted(() => ({ value: false }))
 
@@ -65,6 +66,7 @@ const realtimeMock = {
   switchBoard: vi.fn(async () => {}),
   stop: vi.fn(async () => {}),
   setEditingCard: vi.fn(async () => {}),
+  notifyAccessRevoked: vi.fn((boardId: string) => capturedOnAccessRevoked?.(boardId)),
 }
 
 // Captures the onPresenceChanged callback passed by BoardView so tests can
@@ -162,6 +164,14 @@ function createDeferred<T>() {
     reject = innerReject
   })
   return { promise, resolve, reject }
+}
+
+function lastBackgroundForbiddenCallback(): (boardId: string) => void {
+  const call = mockBoardStore.fetchBoard.mock.calls.at(-1) as unknown as [
+    string,
+    { onBackgroundForbidden: (boardId: string) => void },
+  ]
+  return call[1].onBackgroundForbidden
 }
 
 function mountView(provide: Record<symbol | string, unknown> = {}) {
@@ -694,6 +704,7 @@ describe('BoardView', () => {
     await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
     expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(3, 'board-1', {
       intent: 'background',
+      onBackgroundForbidden: expect.any(Function),
     })
 
     wrapper.unmount()
@@ -1096,6 +1107,42 @@ describe('BoardView', () => {
     })
     expect(routerMock.replace).toHaveBeenCalledTimes(1)
     expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+  })
+
+  it('routes a current background 403 through the same revocation notice', async () => {
+    const wrapper = mountView()
+    await waitForUi()
+    mockBoardStore.fetchBoard.mockResolvedValueOnce(false)
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    lastBackgroundForbiddenCallback()('board-1')
+    await nextTick()
+
+    expect(realtimeMock.notifyAccessRevoked).toHaveBeenCalledExactlyOnceWith('board-1')
+    expect(wrapper.findComponent({ name: 'BoardCanvas' }).exists()).toBe(false)
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+    expect(useToastStore().toasts[0]?.message).toBe('Your access to this board was removed.')
+  })
+
+  it('ignores a background 403 after board navigation or session replacement', async () => {
+    mountView()
+    await waitForUi()
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    const staleBoardCallback = lastBackgroundForbiddenCallback()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    staleBoardCallback('board-1')
+    expect(realtimeMock.notifyAccessRevoked).not.toHaveBeenCalled()
+
+    routeMock.params.id = 'board-1'
+    await nextTick()
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    const staleSessionCallback = lastBackgroundForbiddenCallback()
+    removeToken()
+    staleSessionCallback('board-1')
+    expect(realtimeMock.notifyAccessRevoked).not.toHaveBeenCalled()
+    expect(routerMock.replace).not.toHaveBeenCalled()
   })
 
   it('hides revoked content and bypasses a pending legacy editor navigation guard', async () => {
