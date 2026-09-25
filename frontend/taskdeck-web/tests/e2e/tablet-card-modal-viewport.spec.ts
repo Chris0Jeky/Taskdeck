@@ -9,6 +9,9 @@ async function installSyntheticVisualViewport(page: Page) {
     let offsetTop = 0
     let scale = 1
 
+    // Preserve the native horizontal geometry while contracting height/top.
+    const nativeVisualViewport = window.visualViewport
+
     Object.defineProperty(window, 'visualViewport', {
       configurable: true,
       value: {
@@ -17,6 +20,12 @@ async function installSyntheticVisualViewport(page: Page) {
         },
         get offsetTop() {
           return offsetTop
+        },
+        get width() {
+          return nativeVisualViewport?.width ?? window.innerWidth
+        },
+        get offsetLeft() {
+          return nativeVisualViewport?.offsetLeft ?? 0
         },
         get scale() {
           return scale
@@ -59,14 +68,17 @@ async function measureInLayoutViewportSpace(locator: Locator) {
     sentinel.style.visibility = 'hidden'
     sentinel.style.pointerEvents = 'none'
     document.body.appendChild(sentinel)
-    const fixedOrigin = sentinel.getBoundingClientRect().top
+    const sentinelRect = sentinel.getBoundingClientRect()
     sentinel.remove()
 
     const rect = element.getBoundingClientRect()
     return {
-      layoutTop: rect.top - fixedOrigin,
-      layoutBottom: rect.bottom - fixedOrigin,
+      layoutTop: rect.top - sentinelRect.top,
+      layoutBottom: rect.bottom - sentinelRect.top,
       height: rect.height,
+      fixedLeft: rect.left - sentinelRect.left,
+      width: rect.width,
+      visibleWidth: window.visualViewport?.width ?? window.innerWidth,
     }
   })
 }
@@ -111,10 +123,11 @@ test('@mobile CardModal follows a contracted visual viewport above the desktop b
     return { top: Math.round(box.layoutTop), height: Math.round(box.height) }
   }).toEqual({ top: contractedTop, height: contractedHeight })
 
-  const horizontalBounds = await editModal.boundingBox()
-  expect(horizontalBounds).not.toBeNull()
+  // WebKit can shift the fixed-position origin and narrow the native visual
+  // viewport; Playwright's configured width is then the wrong reference (#3479).
+  const horizontalBounds = await measureInLayoutViewportSpace(editModal)
   expect(Math.abs(
-    horizontalBounds!.x * 2 + horizontalBounds!.width - viewport!.width,
+    horizontalBounds.fixedLeft * 2 + horizontalBounds.width - horizontalBounds.visibleWidth,
   )).toBeLessThanOrEqual(2)
 
   await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
