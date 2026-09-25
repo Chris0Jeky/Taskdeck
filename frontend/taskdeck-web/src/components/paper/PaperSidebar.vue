@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { isDemoMode } from '../../utils/demoMode'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useProductVersion } from '../../composables/useProductVersion'
@@ -55,6 +56,7 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
+const { t } = useI18n()
 const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
@@ -72,10 +74,10 @@ const paperAdvancedDrawerId = 'paper-guided-advanced-navigation'
 const phoneNavItemCandidates: PaperNavItem[] = [
   { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home', keywords: '' },
   { id: 'today', glyph: 'T', label: 'Today', path: '/workspace/today', keywords: '' },
-  { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox', keywords: '' },
-  { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: '' },
+  { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox', badgeKey: 'inbox', keywords: '' },
+  { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review', badgeKey: 'review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: '' },
 ]
-const phoneNavItems = computed<PaperNavItemBase[]>(() => phoneNavItemCandidates.filter(isAvailable))
+const phoneNavItems = computed<PaperNavItem[]>(() => phoneNavItemCandidates.filter(isAvailable))
 
 /**
  * Primary loop, ordered as the loop is actually WALKED (GH-1934): the two
@@ -181,6 +183,23 @@ function badgeFor(item: PaperNavItem): number {
   return 0
 }
 
+/**
+ * Spoken name for a nav control (GH-3389).
+ *
+ * Glyphs (`H`, `I`, …) and the `· N` badge are decorative: without an explicit
+ * name the accessible name concatenates them with the label (`HHome`,
+ * `IInbox· 3`). Every nav link/button therefore carries this as its
+ * `aria-label` in every variant, with the glyph and badge spans `aria-hidden`.
+ * Badge counts stay in the name via a catalog key so the frame is translated;
+ * `{label}` is the item's own label so a future sidebar-surface extraction
+ * flows through without touching this function.
+ */
+function navAccessibleName(item: PaperNavItem): string {
+  const count = badgeFor(item)
+  if (count > 0) return t('shell.sidebar.badge.withCount', { label: item.label, count })
+  return item.label
+}
+
 function isActive(item: PaperNavItemBase): boolean {
   if (item.path.startsWith('#')) return false
   if (item.path === '/workspace/home') return route.path === item.path
@@ -226,7 +245,11 @@ const workspaceInitial = computed(() =>
 )
 
 const themeToggleLabel = computed(() =>
-  paperTheme.activeClass === 'paper-night' ? 'Switch to light Paper theme' : 'Switch to dark Paper theme',
+  paperTheme.activeClass === 'paper-night' ? t('shell.sidebar.theme.switchToLight') : t('shell.sidebar.theme.switchToDark'),
+)
+
+const advancedToggleLabel = computed(() =>
+  guidedAdvancedRevealed.value ? t('shell.sidebar.advanced.hide') : t('shell.sidebar.advanced.show'),
 )
 
 const themeIcon = computed<'sun' | 'moon'>(() =>
@@ -365,20 +388,20 @@ defineExpose({
         class="paper-bottombar__tab"
         :class="{ 'paper-bottombar__tab--active': isActive(item) }"
         :aria-current="isActive(item) ? 'page' : undefined"
-        :aria-label="item.label"
+        :aria-label="navAccessibleName(item)"
       >
-        <span class="paper-bottombar__glyph">{{ item.glyph }}</span>
+        <span class="paper-bottombar__glyph" aria-hidden="true">{{ item.glyph }}</span>
       </router-link>
       <button
         type="button"
         class="paper-bottombar__tab"
         :class="{ 'paper-bottombar__tab--active': phoneMoreOpen }"
-        aria-label="More"
+        :aria-label="t('shell.sidebar.more')"
         :aria-expanded="phoneMoreOpen ? 'true' : 'false'"
         :aria-controls="phoneMoreDrawerId"
         @click="togglePhoneMore"
       >
-        <span class="paper-bottombar__glyph paper-bottombar__glyph--more">…</span>
+        <span class="paper-bottombar__glyph paper-bottombar__glyph--more" aria-hidden="true">…</span>
       </button>
     </nav>
 
@@ -404,9 +427,10 @@ defineExpose({
               :to="item.path"
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-label="navAccessibleName(item)"
               @click="closePhoneMore"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
           </li>
@@ -422,13 +446,14 @@ defineExpose({
           type="button"
           class="paper-sidebar__item"
           data-testid="paper-guided-advanced-toggle"
+          :aria-label="advancedToggleLabel"
           :aria-expanded="guidedAdvancedRevealed"
           :aria-controls="paperAdvancedDrawerId"
           @click="toggleGuidedAdvanced"
         >
-          <span class="paper-sidebar__glyph">A</span>
+          <span class="paper-sidebar__glyph" aria-hidden="true">A</span>
           <span class="paper-sidebar__label">Advanced</span>
-          <span class="paper-sidebar__disclosure">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+          <span class="paper-sidebar__disclosure" aria-hidden="true">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
         </button>
         <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
           <li v-for="item in guidedAdvancedNavItems" :key="item.id">
@@ -437,16 +462,17 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="navAccessibleName(item)"
               @click="closePhoneMore"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
           </li>
           <li>
-            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" @click="switchToWorkbench">
-              <span class="paper-sidebar__glyph">&rarr;</span>
-              <span class="paper-sidebar__label">Use advanced workspace</span>
+            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" :aria-label="t('shell.sidebar.useAdvancedWorkspace')" @click="switchToWorkbench">
+              <span class="paper-sidebar__glyph" aria-hidden="true">&rarr;</span>
+              <span class="paper-sidebar__label">{{ t('shell.sidebar.useAdvancedWorkspace') }}</span>
             </button>
           </li>
         </ul>
@@ -460,18 +486,20 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="navAccessibleName(item)"
               @click="closePhoneMore"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
             <button
               v-else
               type="button"
               class="paper-sidebar__item"
+              :aria-label="navAccessibleName(item)"
               @click="handlePhoneMetaClick(item, $event)"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </button>
           </li>
@@ -501,9 +529,9 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
-              :aria-label="item.label"
+              :aria-label="navAccessibleName(item)"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
             </router-link>
           </li>
         </ul>
@@ -517,9 +545,9 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
-              :aria-label="item.label"
+              :aria-label="navAccessibleName(item)"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
             </router-link>
           </li>
         </ul>
@@ -535,12 +563,12 @@ defineExpose({
           type="button"
           class="paper-sidebar__item"
           data-testid="paper-guided-advanced-toggle"
-          :aria-label="guidedAdvancedRevealed ? 'Hide advanced navigation' : 'Show advanced navigation'"
+          :aria-label="advancedToggleLabel"
           :aria-expanded="guidedAdvancedRevealed"
           :aria-controls="paperAdvancedDrawerId"
           @click="toggleGuidedAdvanced"
         >
-          <span class="paper-sidebar__glyph">A</span>
+          <span class="paper-sidebar__glyph" aria-hidden="true">A</span>
         </button>
         <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
           <li v-for="item in guidedAdvancedNavItems" :key="item.id">
@@ -549,14 +577,14 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
-              :aria-label="item.label"
+              :aria-label="navAccessibleName(item)"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
             </router-link>
           </li>
           <li>
-            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" aria-label="Use advanced workspace" @click="switchToWorkbench">
-              <span class="paper-sidebar__glyph">&rarr;</span>
+            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" :aria-label="t('shell.sidebar.useAdvancedWorkspace')" @click="switchToWorkbench">
+              <span class="paper-sidebar__glyph" aria-hidden="true">&rarr;</span>
             </button>
           </li>
         </ul>
@@ -573,18 +601,18 @@ defineExpose({
               class="paper-sidebar__item paper-sidebar__item--muted"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
-              :aria-label="item.label"
+              :aria-label="navAccessibleName(item)"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
             </router-link>
             <button
               v-else
               type="button"
               class="paper-sidebar__item paper-sidebar__item--muted"
-              :aria-label="item.label"
+              :aria-label="navAccessibleName(item)"
               @click="handleMetaClick(item, $event)"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
             </button>
           </li>
         </ul>
@@ -597,7 +625,7 @@ defineExpose({
           :aria-label="themeToggleLabel"
           @click="handleThemeToggle"
         >
-          <PaperIcon :name="themeIcon" :label="themeToggleLabel" />
+          <PaperIcon :name="themeIcon" />
         </button>
       </div>
     </nav>
@@ -640,14 +668,15 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="navAccessibleName(item)"
               @click="closeMobileMenu"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
               <span
                 v-if="badgeFor(item) > 0"
                 class="paper-sidebar__badge"
-                :aria-label="`${item.label}: ${badgeFor(item)} pending`"
+                aria-hidden="true"
               >&middot; {{ badgeFor(item) }}</span>
             </router-link>
           </li>
@@ -663,9 +692,10 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="navAccessibleName(item)"
               @click="closeMobileMenu"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
           </li>
@@ -682,13 +712,14 @@ defineExpose({
           type="button"
           class="paper-sidebar__item paper-sidebar__advanced-toggle"
           data-testid="paper-guided-advanced-toggle"
+          :aria-label="advancedToggleLabel"
           :aria-expanded="guidedAdvancedRevealed"
           :aria-controls="paperAdvancedDrawerId"
           @click="toggleGuidedAdvanced"
         >
-          <span class="paper-sidebar__glyph">A</span>
+          <span class="paper-sidebar__glyph" aria-hidden="true">A</span>
           <span class="paper-sidebar__label">Advanced</span>
-          <span class="paper-sidebar__disclosure">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+          <span class="paper-sidebar__disclosure" aria-hidden="true">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
         </button>
         <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
           <li v-for="item in guidedAdvancedNavItems" :key="item.id">
@@ -697,16 +728,17 @@ defineExpose({
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="navAccessibleName(item)"
               @click="closeMobileMenu"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
           </li>
           <li>
-            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" @click="switchToWorkbench">
-              <span class="paper-sidebar__glyph">&rarr;</span>
-              <span class="paper-sidebar__label">Use advanced workspace</span>
+            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" :aria-label="t('shell.sidebar.useAdvancedWorkspace')" @click="switchToWorkbench">
+              <span class="paper-sidebar__glyph" aria-hidden="true">&rarr;</span>
+              <span class="paper-sidebar__label">{{ t('shell.sidebar.useAdvancedWorkspace') }}</span>
             </button>
           </li>
         </ul>
@@ -723,18 +755,20 @@ defineExpose({
               class="paper-sidebar__item paper-sidebar__item--muted"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="navAccessibleName(item)"
               @click="closeMobileMenu"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
             <a
               v-else
               href="#"
               class="paper-sidebar__item paper-sidebar__item--muted"
+              :aria-label="navAccessibleName(item)"
               @click="handleMetaClick(item, $event)"
             >
-              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__glyph" aria-hidden="true">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </a>
           </li>
@@ -756,7 +790,7 @@ defineExpose({
           :aria-label="themeToggleLabel"
           @click="handleThemeToggle"
         >
-          <PaperIcon :name="themeIcon" :label="themeToggleLabel" />
+          <PaperIcon :name="themeIcon" />
         </button>
       </div>
     </nav>

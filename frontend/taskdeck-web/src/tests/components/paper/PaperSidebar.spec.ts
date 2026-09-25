@@ -246,7 +246,10 @@ describe('PaperSidebar', () => {
     expect(badges.length).toBeGreaterThan(0)
     const reviewBadge = badges.find((b) => b.text().includes('3'))
     expect(reviewBadge?.text()).toMatch(/·\s*3/)
-    expect(reviewBadge?.attributes('aria-label')).toBe('Review: 3 pending')
+    // #3389: the badge is decorative — the count lives on the link's name.
+    expect(reviewBadge?.attributes('aria-hidden')).toBe('true')
+    expect(reviewBadge?.attributes('aria-label')).toBeUndefined()
+    expect(wrapper.get('a[href="/workspace/review"]').attributes('aria-label')).toBe('Review: 3 pending')
   })
 
   it('hides badges when count is zero', () => {
@@ -368,7 +371,10 @@ describe('PaperSidebar', () => {
     const badges = wrapper.findAll('.paper-sidebar__badge')
     const inboxBadge = badges.find((b) => b.text().includes('5'))
     expect(inboxBadge?.text()).toMatch(/·\s*5/)
-    expect(inboxBadge?.attributes('aria-label')).toBe('Inbox: 5 pending')
+    // #3389: the badge is decorative — the count lives on the link's name.
+    expect(inboxBadge?.attributes('aria-hidden')).toBe('true')
+    expect(inboxBadge?.attributes('aria-label')).toBeUndefined()
+    expect(wrapper.get('a[href="/workspace/inbox"]').attributes('aria-label')).toBe('Inbox: 5 pending')
   })
 
   it('renders sidebar groups with data-group attributes for styling hooks', () => {
@@ -511,6 +517,37 @@ describe('PaperSidebar', () => {
 
     const glyphs = wrapper.findAll('.paper-sidebar__glyph')
     expect(glyphs.length).toBeGreaterThan(0)
+  })
+
+  // #3389 — decorative glyphs and badge text must not concatenate into
+  // control names (`HHome`, `IInbox· 3`). Names come from the link/button
+  // `aria-label`, with counts folded in and glyphs hidden.
+  it('exposes spoken control names without glyph prefixes on desktop and phone', () => {
+    mockWorkspace.inboxBadgeCount = 5
+    mockWorkspace.reviewBadgeCount = 3
+
+    const desktop = mountSidebar()
+    expect(desktop.get('a[href="/workspace/home"]').attributes('aria-label')).toBe('Home')
+    expect(desktop.get('a[href="/workspace/inbox"]').attributes('aria-label')).toBe('Inbox: 5 pending')
+    expect(desktop.get('a[href="/workspace/review"]').attributes('aria-label')).toBe('Review: 3 pending')
+    const desktopGlyphs = desktop.findAll('.paper-sidebar__glyph')
+    expect(desktopGlyphs.length).toBeGreaterThan(0)
+    for (const glyph of desktopGlyphs) {
+      expect(glyph.attributes('aria-hidden')).toBe('true')
+    }
+    // Visible design is unchanged: glyphs and the · badge still render.
+    expect(desktop.get('a[href="/workspace/inbox"]').text()).toContain('Inbox')
+    desktop.unmount()
+
+    mockViewportMode.value = 'phone'
+    const phone = mountSidebar()
+    expect(phone.get('a[href="/workspace/home"]').attributes('aria-label')).toBe('Home')
+    expect(phone.get('a[href="/workspace/inbox"]').attributes('aria-label')).toBe('Inbox: 5 pending')
+    for (const glyph of phone.findAll('.paper-bottombar__glyph')) {
+      expect(glyph.attributes('aria-hidden')).toBe('true')
+    }
+    expect(phone.find('button[aria-label="More"]').exists()).toBe(true)
+    phone.unmount()
   })
 
   it('renders rail active-route ember accent on tablet', () => {
