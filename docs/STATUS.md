@@ -2,6 +2,26 @@
 
 Last Updated: 2026-09-25
 
+## Disconnected board revocation recovery (#3511)
+
+A current board rejoin refused with `Forbidden`, or a current background board read returning 403,
+now retires the board subscription and uses the existing access-removed notice and route exit.
+Board, request-generation, and credential-generation checks reject stale results from another
+board or session; transient failures keep polling. This removes the retry and navigation burden of
+a cached board the user can no longer read, without changing capture or review-first write gates.
+Focused client tests cover rejoin, fallback, stale results, and transient recovery. A live
+server-driven disconnected revocation was not exercised locally.
+
+## Board access revocation exits the active board (#3455)
+
+The board realtime client now handles the server's `accessRevoked` event for its confirmed,
+currently requested board. It retires pending refresh and fallback polling, shows a persistent
+translated notice, hides cached board content, and replaces the revoked board route with the boards
+list even when an editor had blocked ordinary navigation. Events for another
+board, an old subscription during a switch, or an unmounted view do not redirect. Focused
+composable and route-view tests cover the event, cleanup, notice, and navigation; a live
+server-driven revocation was not exercised locally.
+
 ## Proposal decisions populate insight cohorts (#3415)
 
 Single approve, single reject and batch approve now stage one content-free
@@ -1948,7 +1968,7 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 
 Mutation testing workflow: `.github/workflows/mutation-testing.yml`
 
-- Weekly schedule (Sunday 04:00 UTC) + manual dispatch
+- Manual dispatch only (`workflow_dispatch`)
 - Backend Stryker.NET (Domain) + Frontend Stryker JS (captureStore/boardStore)
 - Non-blocking; HTML/JSON reports uploaded as 30-day artifacts
 
