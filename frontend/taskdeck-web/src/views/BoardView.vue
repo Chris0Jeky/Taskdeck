@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, computed, watch, provide, readonly } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
 import { usePaperThemeStore } from '../store/paperThemeStore'
+import { useToastStore } from '../store/toastStore'
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
@@ -37,6 +39,8 @@ const router = useRouter()
 const boardStore = useBoardStore()
 const sessionStore = useSessionStore()
 const paperTheme = usePaperThemeStore()
+const toast = useToastStore()
+const { t } = useI18n()
 const paperOn = computed(() => paperTheme.isOn)
 const shellKeyboardHelp = useShellKeyboardHelp()
 
@@ -163,6 +167,17 @@ const realtime = createBoardRealtimeController({
     const normalized = normalizePresenceMembers(snapshot.members)
     presenceMembers.value = normalized
     boardStore.setBoardPresenceMembers(normalized)
+  },
+  onAccessRevoked: (revokedBoardId) => {
+    if (viewUnmounted || revokedBoardId !== boardId.value) {
+      return
+    }
+
+    // Persistent error toast (duration 0): the redirect below unmounts this
+    // view, so a timed toast could expire before the user reads why the board
+    // is gone. replace (not push) keeps the revoked board out of history.
+    toast.error(t('boardDetail.accessRevoked'))
+    void router.replace('/workspace/boards')
   },
 })
 

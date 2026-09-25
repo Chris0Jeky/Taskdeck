@@ -8,6 +8,7 @@
  * board and is reversible, and the English says so too.
  */
 export default {
+  accessRevoked: 'Tu acceso a este tablero ha sido eliminado.',
   actions: {
     settings: 'Ajustes del tablero',
     // Presentación de las tarjetas del tablero. El modo oculta el extracto y la
