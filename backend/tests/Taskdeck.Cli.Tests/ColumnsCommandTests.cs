@@ -99,6 +99,27 @@ public class ColumnsCommandTests
     }
 
     [Fact]
+    public async Task ColumnsCreate_DuplicateName_ReturnsUsageErrorAndCreatesNothing()
+    {
+        await using var harness = new CliTestHarness("cli-columns-duplicate");
+
+        var boardResult = await harness.RunAsync("boards create DupNameBoard --json");
+        boardResult.ExitCode.Should().Be(0, boardResult.StdErr);
+        using var boardDoc = JsonDocument.Parse(boardResult.StdOut);
+        var boardId = boardDoc.RootElement.GetProperty("id").GetGuid();
+
+        var result = await harness.RunAsync($"columns create --board {boardId} --name Todo --name Done --json");
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("Duplicate option").And.Contain("--name");
+
+        var listResult = await harness.RunAsync($"columns list --board {boardId} --json");
+        listResult.ExitCode.Should().Be(0, listResult.StdErr);
+        using var listDoc = JsonDocument.Parse(listResult.StdOut);
+        listDoc.RootElement.EnumerateArray().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Columns_UnknownCommand_ReturnsUsageError()
     {
         await using var harness = new CliTestHarness("cli-columns");
