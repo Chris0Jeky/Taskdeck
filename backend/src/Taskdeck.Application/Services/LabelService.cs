@@ -61,6 +61,7 @@ public class LabelService
 
             var label = new Label(dto.BoardId, dto.Name, dto.ColorHex);
             await _unitOfWork.Labels.AddAsync(label, cancellationToken);
+            board.RecordDependentMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "created", label.Id, DateTimeOffset.UtcNow),
@@ -97,6 +98,7 @@ public class LabelService
             var oldColorHex = label.ColorHex;
 
             label.Update(dto.Name, dto.ColorHex);
+            board?.RecordDependentMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "updated", label.Id, DateTimeOffset.UtcNow),
@@ -159,6 +161,7 @@ public class LabelService
             return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
         await _unitOfWork.Labels.DeleteAsync(label, cancellationToken);
+        board?.RecordDependentMutation();
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(label.BoardId, "label", "deleted", label.Id, DateTimeOffset.UtcNow),

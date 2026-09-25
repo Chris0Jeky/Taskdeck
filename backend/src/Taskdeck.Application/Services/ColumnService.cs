@@ -60,6 +60,7 @@ public class ColumnService
 
             var column = new Column(dto.BoardId, dto.Name, position.Value, dto.WipLimit);
             await _unitOfWork.Columns.AddAsync(column, cancellationToken);
+            board.RecordDependentMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "created", column.Id, DateTimeOffset.UtcNow),
@@ -97,6 +98,7 @@ public class ColumnService
             var oldPosition = column.Position;
 
             column.Update(dto.Name, dto.WipLimit, dto.Position);
+            board?.RecordDependentMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "updated", column.Id, DateTimeOffset.UtcNow),
@@ -226,7 +228,7 @@ public class ColumnService
             // Reindex positions in the requested order. This preserves each column's
             // WipLimit and Name — only the position changes, so a reorder is lossless.
             var orderedColumns = dto.ColumnIds.Select(id => columnDict[id]).ToList();
-            await ApplyColumnOrderAsync(orderedColumns, cancellationToken);
+            await ApplyColumnOrderAsync(board, orderedColumns, cancellationToken);
 
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(boardId, "column", "reordered", null, DateTimeOffset.UtcNow),
@@ -246,7 +248,7 @@ public class ColumnService
     /// <summary>
     /// Moves a single column to <paramref name="newPosition"/> within its board and
     /// reindexes the remaining columns to a contiguous 0..n-1 sequence. The move is
-    /// atomic (no transient unique-index collision) and lossless (WipLimit/Name are
+    /// free of transient unique-index collisions and lossless (WipLimit/Name are
     /// preserved). Used by the proposal "reorder column" apply operation.
     ///
     /// Proposal-lane only: no human actor is threaded here, so the audit row stays
@@ -279,7 +281,7 @@ public class ColumnService
             var insertAt = Math.Min(newPosition, ordered.Count);
             ordered.Insert(insertAt, column);
 
-            await ApplyColumnOrderAsync(ordered, cancellationToken);
+            await ApplyColumnOrderAsync(board, ordered, cancellationToken);
 
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "reordered", column.Id, DateTimeOffset.UtcNow),
@@ -301,7 +303,7 @@ public class ColumnService
     /// violates the unique (BoardId, Position) index (SQLite checks the constraint per
     /// row, not deferred to commit). Only positions change — WipLimit and Name are kept.
     /// </summary>
-    private async Task ApplyColumnOrderAsync(IReadOnlyList<Column> orderedColumns, CancellationToken cancellationToken)
+    private async Task ApplyColumnOrderAsync(Board? board, IReadOnlyList<Column> orderedColumns, CancellationToken cancellationToken)
     {
         if (orderedColumns.Count == 0)
             return;
@@ -309,10 +311,13 @@ public class ColumnService
         var parkBase = orderedColumns.Max(c => c.Position) + 1;
         for (var i = 0; i < orderedColumns.Count; i++)
             orderedColumns[i].SetPosition(parkBase + i);
+        // Enlist the board token in each save without advancing its metadata version.
+        board?.RecordDependentMutation();
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         for (var i = 0; i < orderedColumns.Count; i++)
             orderedColumns[i].SetPosition(i);
+        board?.RecordDependentMutation();
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
