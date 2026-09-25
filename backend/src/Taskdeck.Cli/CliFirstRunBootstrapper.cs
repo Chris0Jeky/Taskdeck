@@ -346,16 +346,27 @@ internal static class CliFirstRunBootstrapper
             return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: false);
         }
 
-        string text;
+        byte[] raw;
         try
         {
-            text = File.ReadAllText(path);
+            raw = File.ReadAllBytes(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // File exists but is temporarily unreadable -- preserve it rather than
             // risk clobbering a valid key.
             return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: true);
+        }
+
+        // Decode from the already-read bytes with the same BOM detection as
+        // File.ReadAllText (StreamReader over UTF-8 with BOM detection), so valid
+        // UTF-16 configs keep working. The raw bytes are retained so a corrupt
+        // file is backed up byte-faithful without decode/re-encode changes.
+        string text;
+        using (var stream = new MemoryStream(raw, writable: false))
+        using (var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        {
+            text = reader.ReadToEnd();
         }
 
         JsonObject root;
@@ -372,7 +383,7 @@ internal static class CliFirstRunBootstrapper
             // run this invocation on a transient key rather than clobbering evidence.
             try
             {
-                var backupPath = PreserveCorruptConfig(path, text);
+                var backupPath = PreserveCorruptConfig(path, raw);
                 Console.Error.WriteLine(
                     $"[CliFirstRun] WARNING: {path} contains invalid JSON ({ex.Message}). " +
                     $"The original was preserved at {backupPath} and a fresh key will be generated.");
@@ -399,12 +410,12 @@ internal static class CliFirstRunBootstrapper
     }
 
     /// <summary>
-    /// Backs up an unparsable config file to a timestamped <c>.corrupt-*</c> sibling with
+    /// Backs up the exact bytes of an unparsable config file to a timestamped <c>.corrupt-*</c> sibling with
     /// owner-only permissions before it is rewritten, so a previously-generated secret it may
     /// still hold is recoverable by an operator instead of being silently overwritten.
     /// Returns the backup path.
     /// </summary>
-    private static string PreserveCorruptConfig(string path, string content)
+    private static string PreserveCorruptConfig(string path, byte[] content)
     {
         var backupPath = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
         RestrictedFileWriter.WriteRestrictedFile(backupPath, content);
