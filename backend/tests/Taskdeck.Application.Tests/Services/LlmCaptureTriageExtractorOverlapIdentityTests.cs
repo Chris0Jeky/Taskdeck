@@ -41,6 +41,108 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
     [Fact]
     public async Task ExtractAsync_ShouldKeepDistinctCrossChunkTasksThatShareOneEvidenceRange()
     {
+        var extraction = await ExtractSharedOverlapAsync(
+            "Prepare the agenda",
+            "Send the summary");
+
+        extraction.MatchingChunkCalls.Should().Be(2,
+            "the exact absolute range must be visible in both adjacent overlap chunks");
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            "Prepare the agenda",
+            "Send the summary");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 2);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldKeepTasksWithDifferentActionHeadsAndSharedNounPhrase()
+    {
+        var extraction = await ExtractSharedOverlapAsync(
+            "Prepare the launch packet",
+            "Archive the launch packet");
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            new[]
+            {
+                "Prepare the launch packet",
+                "Archive the launch packet"
+            },
+            "one evidence sentence can contain two commitments even when their trailing noun phrase matches");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 2);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldNotTreatSharedModalLeadAsTheActionHead()
+    {
+        var extraction = await ExtractSharedOverlapAsync(
+            "We will prepare the launch packet",
+            "We will archive the launch packet");
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            new[]
+            {
+                "We will prepare the launch packet",
+                "We will archive the launch packet"
+            },
+            "a shared subject or modal phrase must not hide incompatible commitment verbs");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 2);
+    }
+
+    [Theory]
+    [InlineData("Archive the launch packet in SharePoint", "Archive the launch packet in Dropbox")]
+    [InlineData("Archive the launch packet", "Archive the launch checklist")]
+    public async Task ExtractAsync_ShouldKeepSameActionHeadWithDifferentArguments(
+        string firstTitle,
+        string secondTitle)
+    {
+        var extraction = await ExtractSharedOverlapAsync(firstTitle, secondTitle);
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            new[] { firstTitle, secondTitle },
+            "same-verb commitments with different targets must remain separate");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 2);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldCollapseSameCommitmentAcrossVerbInflectionAndPrefix()
+    {
+        var extraction = await ExtractSharedOverlapAsync(
+            "Please prepare the launch packet",
+            "Preparing the launch packet");
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            new[] { "Please prepare the launch packet" },
+            "a grammatical prefix and verb inflection do not create a second commitment");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 1);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldCollapseCompatiblePreparationRephrasing()
+    {
+        var extraction = await ExtractSharedOverlapAsync(
+            "Prepare the launch packet",
+            "Finalize the launch handoff");
+
+        extraction.MatchingChunkCalls.Should().Be(2);
+        extraction.Result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        extraction.Result.Output!.Tasks.Select(task => task.Title).Should().Equal(
+            new[] { "Prepare the launch packet" },
+            "the reducer keeps the first stable task when adjacent chunks rephrase one preparation commitment");
+        AssertSharedEvidenceSpans(extraction, expectedCount: 1);
+    }
+
+    private async Task<OverlapExtraction> ExtractSharedOverlapAsync(
+        string firstTitle,
+        string secondTitle)
+    {
         var settings = new LlmCaptureTriageSettings
         {
             MaxInputTokensPerChunk = 64,
@@ -75,7 +177,7 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
                 var requestText = request.Messages.Single().Content;
                 var completion = requestText.Contains(quote, StringComparison.Ordinal)
                     ? V2ShapeCompletion((
-                        matchingChunkCall++ == 0 ? "Prepare the agenda" : "Send the summary",
+                        matchingChunkCall++ == 0 ? firstTitle : secondTitle,
                         quote))
                     : V2ShapeCompletion();
                 return new LlmCompletionResult(
@@ -99,17 +201,22 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
                 CaptureSource.TranscriptPaste,
                 transcript));
 
-        matchingChunkCall.Should().Be(2,
-            "the exact absolute range must be visible in both adjacent overlap chunks");
-        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
-        result.Output!.Tasks.Select(task => task.Title).Should().Equal(
-            "Prepare the agenda",
-            "Send the summary");
-        result.EvidenceSpans.Should().HaveCount(2)
+        return new OverlapExtraction(
+            result,
+            quoteStart,
+            quote.Length,
+            matchingChunkCall);
+    }
+
+    private static void AssertSharedEvidenceSpans(
+        OverlapExtraction extraction,
+        int expectedCount)
+    {
+        extraction.Result.EvidenceSpans.Should().HaveCount(expectedCount)
             .And.OnlyContain(span =>
                 span.HasValue
-                && span.Value.Start == quoteStart
-                && span.Value.End == quoteStart + quote.Length);
+                && span.Value.Start == extraction.QuoteStart
+                && span.Value.End == extraction.QuoteStart + extraction.QuoteLength);
     }
 
     private static string V2ShapeCompletion(params (string Title, string EvidenceQuote)[] tasks)
@@ -127,4 +234,10 @@ public class LlmCaptureTriageExtractorOverlapIdentityTests
             }).ToArray()
         });
     }
+
+    private sealed record OverlapExtraction(
+        LlmCaptureTriageExtraction Result,
+        int QuoteStart,
+        int QuoteLength,
+        int MatchingChunkCalls);
 }

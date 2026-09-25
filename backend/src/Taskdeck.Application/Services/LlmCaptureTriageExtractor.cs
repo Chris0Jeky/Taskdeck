@@ -651,6 +651,15 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         return new ReducedTasks(reduced, reducedSpans);
     }
 
+    /// <summary>
+    /// Determines whether two map rows describe one stable commitment. Matching type, assignee and
+    /// due-date metadata are necessary but not sufficient: one evidence sentence can contain both
+    /// "Prepare the launch packet" and "Archive the launch packet". Title identity therefore also
+    /// requires recognized, compatible action heads before lexical overlap can collapse a row.
+    /// Exact recognized heads are compatible; the only cross-head pair admitted is the known-good
+    /// Prepare/Finalize map rephrasing. If a head cannot be identified, retain both tasks so Review
+    /// can merge a duplicate rather than losing a commitment.
+    /// </summary>
     private static bool HasStableTaskIdentity(
         CaptureTriageTaskV2 left,
         CaptureTriageTaskV2 right)
@@ -675,10 +684,141 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return true;
         }
 
+        if (!ActionHeadsAreCompatible(leftTokens, rightTokens))
+        {
+            return false;
+        }
+
         var longestSharedRun = LongestCommonContiguousTokenRun(leftTokens, rightTokens);
         return longestSharedRun > 0 &&
                longestSharedRun * 2 >= Math.Min(leftTokens.Count, rightTokens.Count);
     }
+
+    private static bool ActionHeadsAreCompatible(
+        IReadOnlyList<string> leftTokens,
+        IReadOnlyList<string> rightTokens)
+    {
+        var leftHead = GetActionHead(leftTokens);
+        var rightHead = GetActionHead(rightTokens);
+        if (leftHead is null || rightHead is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(leftHead.Value.Head, rightHead.Value.Head, StringComparison.Ordinal))
+        {
+            return ActionArgumentsMatch(
+                leftTokens,
+                leftHead.Value.Index,
+                rightTokens,
+                rightHead.Value.Index);
+        }
+
+        return leftHead.Value.Head is "prepare" && rightHead.Value.Head is "finalize" ||
+               leftHead.Value.Head is "finalize" && rightHead.Value.Head is "prepare";
+    }
+
+    private static bool ActionArgumentsMatch(
+        IReadOnlyList<string> leftTokens,
+        int leftHeadIndex,
+        IReadOnlyList<string> rightTokens,
+        int rightHeadIndex)
+    {
+        return leftTokens.Skip(leftHeadIndex + 1).SequenceEqual(
+            rightTokens.Skip(rightHeadIndex + 1));
+    }
+
+    private static (string Head, int Index)? GetActionHead(IReadOnlyList<string> tokens)
+    {
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            var token = tokens[index];
+            if (token is "please" or "kindly" or "to" or "can" or "could" or "would" or
+                "should" or "must" or "will" or "shall" or "may" or "might" or
+                "we" or "you" or "i" or "he" or "she" or "they" or
+                "let" or "lets" or "s" or "need" or "needs" or "needed" or
+                "am" or "is" or "are" or "was" or "were" or "be" or "being" or "been" or
+                "task" or "action")
+            {
+                continue;
+            }
+
+            var normalized = NormalizeActionHead(token);
+            return normalized is null ? null : (normalized, index);
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeActionHead(string token) => token switch
+    {
+        "prepare" or "prepares" or "preparing" or "prepared" => "prepare",
+        "finalize" or "finalizes" or "finalizing" or "finalized" or
+            "finalise" or "finalises" or "finalising" or "finalised" => "finalize",
+        "archive" or "archives" or "archiving" or "archived" => "archive",
+        "send" or "sends" or "sending" or "sent" => "send",
+        "schedule" or "schedules" or "scheduling" or "scheduled" => "schedule",
+        "update" or "updates" or "updating" or "updated" => "update",
+        "review" or "reviews" or "reviewing" or "reviewed" => "review",
+        "approve" or "approves" or "approving" or "approved" => "approve",
+        "reject" or "rejects" or "rejecting" or "rejected" => "reject",
+        "publish" or "publishes" or "publishing" or "published" => "publish",
+        "deploy" or "deploys" or "deploying" or "deployed" => "deploy",
+        "create" or "creates" or "creating" or "created" => "create",
+        "add" or "adds" or "adding" or "added" => "add",
+        "move" or "moves" or "moving" or "moved" => "move",
+        "rename" or "renames" or "renaming" or "renamed" => "rename",
+        "assign" or "assigns" or "assigning" or "assigned" => "assign",
+        "attach" or "attaches" or "attaching" or "attached" => "attach",
+        "block" or "blocks" or "blocking" or "blocked" => "block",
+        "unblock" or "unblocks" or "unblocking" or "unblocked" => "unblock",
+        "restore" or "restores" or "restoring" or "restored" => "restore",
+        "reorder" or "reorders" or "reordering" or "reordered" => "reorder",
+        "set" or "sets" or "setting" => "set",
+        "write" or "writes" or "writing" or "wrote" or "written" => "write",
+        "document" or "documents" or "documenting" or "documented" => "document",
+        "email" or "emails" or "emailing" or "emailed" => "email",
+        "call" or "calls" or "calling" or "called" => "call",
+        "contact" or "contacts" or "contacting" or "contacted" => "contact",
+        "book" or "books" or "booking" or "booked" => "book",
+        "cancel" or "cancels" or "cancelling" or "cancelled" or "canceling" or "canceled" => "cancel",
+        "investigate" or "investigates" or "investigating" or "investigated" => "investigate",
+        "fix" or "fixes" or "fixing" or "fixed" => "fix",
+        "test" or "tests" or "testing" or "tested" => "test",
+        "verify" or "verifies" or "verifying" or "verified" => "verify",
+        "confirm" or "confirms" or "confirming" or "confirmed" => "confirm",
+        "submit" or "submits" or "submitting" or "submitted" => "submit",
+        "share" or "shares" or "sharing" or "shared" => "share",
+        "record" or "records" or "recording" or "recorded" => "record",
+        "summarize" or "summarizes" or "summarizing" or "summarized" or
+            "summarise" or "summarises" or "summarising" or "summarised" => "summarize",
+        "compile" or "compiles" or "compiling" or "compiled" => "compile",
+        "clean" or "cleans" or "cleaning" or "cleaned" => "clean",
+        "migrate" or "migrates" or "migrating" or "migrated" => "migrate",
+        "refactor" or "refactors" or "refactoring" or "refactored" => "refactor",
+        "design" or "designs" or "designing" or "designed" => "design",
+        "implement" or "implements" or "implementing" or "implemented" => "implement",
+        "configure" or "configures" or "configuring" or "configured" => "configure",
+        "install" or "installs" or "installing" or "installed" => "install",
+        "run" or "runs" or "running" or "ran" => "run",
+        "check" or "checks" or "checking" or "checked" => "check",
+        "plan" or "plans" or "planning" or "planned" => "plan",
+        "organize" or "organizes" or "organizing" or "organized" or
+            "organise" or "organises" or "organising" or "organised" => "organize",
+        "coordinate" or "coordinates" or "coordinating" or "coordinated" => "coordinate",
+        "follow" or "follows" or "following" or "followed" => "follow",
+        "remove" or "removes" or "removing" or "removed" => "remove",
+        "delete" or "deletes" or "deleting" or "deleted" => "delete",
+        "close" or "closes" or "closing" or "closed" => "close",
+        "open" or "opens" or "opening" or "opened" => "open",
+        "read" or "reads" or "reading" => "read",
+        "analyze" or "analyzes" or "analyzing" or "analyzed" or
+            "analyse" or "analyses" or "analysing" or "analysed" => "analyze",
+        "research" or "researches" or "researching" or "researched" => "research",
+        "audit" or "audits" or "auditing" or "audited" => "audit",
+        "resolve" or "resolves" or "resolving" or "resolved" => "resolve",
+        _ => null
+    };
 
     private static IReadOnlyList<string> TokenizeIdentity(string? value)
     {
