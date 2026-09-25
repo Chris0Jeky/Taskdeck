@@ -137,6 +137,13 @@ internal sealed class ApiKeysCommandHandler
                 "taskdeck api-key revoke --name <name> | --id <key-id>");
         }
 
+        if (ArgParser.HasFlag(args, "--name") && ArgParser.HasFlag(args, "--id"))
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Provide either --name or --id to identify the key to revoke, not both.",
+                "taskdeck api-key revoke --name <name> | --id <key-id>");
+        }
+
         if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(idText))
         {
             return ConsoleOutput.PrintUsageError(
