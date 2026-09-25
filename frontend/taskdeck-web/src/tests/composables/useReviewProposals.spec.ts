@@ -93,6 +93,7 @@ import {
   isProposalStale,
   useReviewProposals,
 } from '../../composables/useReviewProposals'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../../api/http'
 
 // The apply/reject parity cases now assert against HARD-CODED truth tables (see
 // the cases array below) rather than a re-derived mirror, so a flipped rule
@@ -848,6 +849,15 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       await rp.loadBoardOptions()
       expect(rp.availableBoards.value).toEqual(boards)
+      expect(rp.loadingBoards.value).toBe(false)
+    })
+
+    it('bounds the board-option read and still releases loadingBoards on error', async () => {
+      mockBoardsApi.getBoards.mockRejectedValueOnce(new Error('fail'))
+      const rp = useReviewProposals()
+      await expect(rp.loadBoardOptions()).resolves.toBeUndefined()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith(undefined, true, { timeout: BOARD_REQUEST_TIMEOUT_MS, skipRetry: true })
+      expect(mockToast.error).not.toHaveBeenCalled()
       expect(rp.loadingBoards.value).toBe(false)
     })
 

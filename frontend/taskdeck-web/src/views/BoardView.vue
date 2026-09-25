@@ -33,6 +33,7 @@ import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 import { isDemoMode } from '../utils/demoMode'
 import { getErrorMessage } from '../utils/errorMessage'
 import { logError } from '../utils/errorReporting'
+import { getObservedCredentialGeneration, getToken } from '../utils/tokenStorage'
 
 const route = useRoute()
 const router = useRouter()
@@ -145,7 +146,17 @@ const realtime = createBoardRealtimeController({
 
     const boardLoadErrorAtStart = boardLoadError.value
     const storeErrorAtStart = boardStore.error
-    const committed = await boardStore.fetchBoard(id, options)
+    getToken()
+    const credentialGeneration = getObservedCredentialGeneration()
+    const committed = await boardStore.fetchBoard(id, {
+      ...options,
+      onBackgroundForbidden: (forbiddenBoardId) => {
+        if (viewUnmounted || forbiddenBoardId !== id || forbiddenBoardId !== boardId.value) return
+        getToken()
+        if (getObservedCredentialGeneration() !== credentialGeneration) return
+        realtime.notifyAccessRevoked(forbiddenBoardId)
+      },
+    })
     if (
       options.intent === 'background' &&
       committed &&
