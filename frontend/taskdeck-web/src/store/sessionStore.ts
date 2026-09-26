@@ -116,7 +116,7 @@ export const useSessionStore = defineStore('session', () => {
     defaultRole.value = data.user.defaultRole
     expiresAt.value = getTokenExpiryIso(data.token)
 
-    tokenStorage.setToken(data.token)
+    tokenStorage.setToken(data.token, data.user.id)
     persistSessionSnapshot({
       userId: data.user.id,
       username: data.user.username,

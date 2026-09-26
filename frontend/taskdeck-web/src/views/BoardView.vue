@@ -33,7 +33,7 @@ import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 import { isDemoMode } from '../utils/demoMode'
 import { getErrorMessage } from '../utils/errorMessage'
 import { logError } from '../utils/errorReporting'
-import { getObservedCredentialGeneration, getToken } from '../utils/tokenStorage'
+import { captureSessionContinuity, getToken, isSameSessionContinuity, type SessionContinuity } from '../utils/tokenStorage'
 
 const route = useRoute()
 const router = useRouter()
@@ -147,13 +147,13 @@ const realtime = createBoardRealtimeController({
     const boardLoadErrorAtStart = boardLoadError.value
     const storeErrorAtStart = boardStore.error
     getToken()
-    const credentialGeneration = getObservedCredentialGeneration()
+    const requestSession: SessionContinuity = captureSessionContinuity()
     const committed = await boardStore.fetchBoard(id, {
       ...options,
       onBackgroundForbidden: (forbiddenBoardId) => {
         if (viewUnmounted || forbiddenBoardId !== id || forbiddenBoardId !== boardId.value) return
         getToken()
-        if (getObservedCredentialGeneration() !== credentialGeneration) return
+        if (!isSameSessionContinuity(requestSession)) return
         realtime.notifyAccessRevoked(forbiddenBoardId)
       },
     })

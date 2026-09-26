@@ -8,7 +8,7 @@ import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useToastStore } from '../../store/toastStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
 import type { Card } from '../../types/board'
-import { removeToken } from '../../utils/tokenStorage'
+import { removeToken, setSession, setToken } from '../../utils/tokenStorage'
 
 const demoModeFlag = vi.hoisted(() => ({ value: false }))
 
@@ -1122,6 +1122,51 @@ describe('BoardView', () => {
     expect(wrapper.findComponent({ name: 'BoardCanvas' }).exists()).toBe(false)
     expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
     expect(useToastStore().toasts[0]?.message).toBe('Your access to this board was removed.')
+  })
+
+  const boardViewFirstToken = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXJzdCJ9.synthetic'
+  const boardViewSecondToken = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZWNvbmQifQ.synthetic'
+
+  function signInBoardViewAs(userId: string, token: string) {
+    expect(setToken(token)).toBe(true)
+    expect(setSession({ userId, username: `${userId}-name`, email: `${userId}@example.test` })).toBe(true)
+  }
+
+  it('routes a background 403 to one revocation notice after a same-user token refresh (#3515)', async () => {
+    signInBoardViewAs('user-abc', boardViewFirstToken)
+    const wrapper = mountView()
+    await waitForUi()
+    mockBoardStore.fetchBoard.mockResolvedValueOnce(false)
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    signInBoardViewAs('user-abc', boardViewSecondToken)
+    lastBackgroundForbiddenCallback()('board-1')
+    await nextTick()
+
+    expect(realtimeMock.notifyAccessRevoked).toHaveBeenCalledExactlyOnceWith('board-1')
+    expect(wrapper.findComponent({ name: 'BoardCanvas' }).exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('Your access to this board was removed.')
+    expect(routerMock.replace).toHaveBeenCalledWith('/workspace/boards')
+    const toasts = useToastStore().toasts
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0]).toMatchObject({
+      type: 'error',
+      duration: 0,
+      message: 'Your access to this board was removed.',
+    })
+  })
+
+  it('ignores a background 403 after new-user replacement without redirecting (#3515)', async () => {
+    signInBoardViewAs('user-abc', boardViewFirstToken)
+    mountView()
+    await waitForUi()
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    const staleCallback = lastBackgroundForbiddenCallback()
+    signInBoardViewAs('user-xyz', boardViewSecondToken)
+    staleCallback('board-1')
+    await nextTick()
+    expect(realtimeMock.notifyAccessRevoked).not.toHaveBeenCalled()
+    expect(routerMock.replace).not.toHaveBeenCalled()
   })
 
   it('ignores a background 403 after board navigation or session replacement', async () => {
