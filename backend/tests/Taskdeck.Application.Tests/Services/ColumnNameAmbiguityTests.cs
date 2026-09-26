@@ -291,8 +291,10 @@ public class ColumnNameAmbiguityTests
             Times.Never);
     }
 
-    [Fact]
-    public async Task AutomationPlanner_BatchAmbiguousColumn_FailsClosedWithoutProposal()
+    [Theory]
+    [InlineData("create card 'DupTarget' in column 'Dup'")]
+    [InlineData("move column 'Dup' to position 1")]
+    public async Task AutomationPlanner_BatchAmbiguousColumn_ReportsNameWithoutProposal(string instruction)
     {
         var user = new User("planner", "planner@example.com", "hashedPassword");
         var board = TestDataBuilder.CreateBoard();
@@ -303,12 +305,33 @@ public class ColumnNameAmbiguityTests
             TestDataBuilder.CreateColumn(board.Id, "Dup", 1));
         SetupProposalCreation();
 
-        var result = await service.ParseBatchInstructionAsync(
-            ["create card 'DupTarget' in column 'Dup'"], user.Id, board.Id);
+        var result = await service.ParseBatchInstructionAsync([instruction], user.Id, board.Id);
 
-        // The batch lane maps unresolvable instructions to a generic parse
-        // failure; pin fail-closed (no proposal) rather than the message text.
         result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be(ColumnNameResolver.AmbiguousMessage("Dup"));
+        _proposalService.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AutomationPlanner_BatchMoveCardAmbiguousTarget_ReportsNameWithoutProposal()
+    {
+        var user = new User("planner", "planner@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var service = SetupPlannerBoard(
+            user,
+            board,
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 0),
+            TestDataBuilder.CreateColumn(board.Id, "Dup", 1));
+
+        var result = await service.ParseBatchInstructionAsync(
+            [$"move card {Guid.NewGuid()} to column 'Dup'"], user.Id, board.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be(ColumnNameResolver.AmbiguousMessage("Dup"));
         _proposalService.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);

@@ -368,6 +368,31 @@ public class AutomationPlannerBatchTests
     }
 
     [Fact]
+    public async Task ParseBatchInstruction_ShouldReportAmbiguousColumnAlongsideValidOperation()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        SetupMocksForSuccess(userId, boardId);
+        var duplicateColumn = TestDataBuilder.CreateColumn(boardId, "To Do", 1);
+        var firstColumn = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { firstColumn, duplicateColumn });
+
+        var result = await _service.ParseBatchInstructionAsync(
+            ["create card 'Valid Task'", "create card 'Ambiguous Task' in column 'To Do'"],
+            userId, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto =>
+                dto.Operations != null && dto.Operations.Count == 1 &&
+                dto.Operations[0].ActionType == "create" &&
+                dto.Summary.Contains("1 instruction(s) could not be parsed") &&
+                dto.Summary.Contains(ColumnNameResolver.AmbiguousMessage("To Do"))),
+            default), Times.Once);
+    }
+
+    [Fact]
     public async Task ParseBatchInstruction_ShouldSkipWhitespaceInstructions()
     {
         var userId = Guid.NewGuid();

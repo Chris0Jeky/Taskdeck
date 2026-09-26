@@ -566,6 +566,7 @@ public class AutomationPlannerService : IAutomationPlannerService
         {
             var allOperations = new List<CreateProposalOperationDto>();
             var parseErrors = new List<string>();
+            var ambiguityDiagnostics = new List<string>();
 
             foreach (var instruction in instructions)
             {
@@ -581,7 +582,8 @@ public class AutomationPlannerService : IAutomationPlannerService
                 }
 
                 // Fall back to single-instruction parsing
-                var ops = await TryParseOperationsAsync(instruction, boardId, cancellationToken);
+                var ambiguitySink = new List<string>();
+                var ops = await TryParseOperationsAsync(instruction, boardId, cancellationToken, ambiguitySink);
                 if (ops != null && ops.Count > 0)
                 {
                     allOperations.AddRange(ops);
@@ -589,11 +591,16 @@ public class AutomationPlannerService : IAutomationPlannerService
                 else
                 {
                     parseErrors.Add(instruction);
+                    foreach (var ambiguousName in ambiguitySink)
+                        ambiguityDiagnostics.Add(ColumnNameResolver.AmbiguousMessage(ambiguousName));
                 }
             }
 
             if (allOperations.Count == 0)
             {
+                var firstAmbiguity = ambiguityDiagnostics.FirstOrDefault();
+                if (firstAmbiguity != null)
+                    return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, firstAmbiguity);
                 var combinedInstruction = string.Join("; ", instructions.Where(i => !string.IsNullOrWhiteSpace(i)));
                 return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
                     BuildParseHintMessage(combinedInstruction));
@@ -630,6 +637,8 @@ public class AutomationPlannerService : IAutomationPlannerService
                 ? $" ({parseErrors.Count} instruction(s) could not be parsed)"
                 : string.Empty;
             var summary = $"Batch: {successCount} operation{(successCount == 1 ? string.Empty : "s")}{failSuffix}";
+            if (ambiguityDiagnostics.Count > 0)
+                summary += ". " + string.Join("; ", ambiguityDiagnostics.Distinct());
             if (summary.Length > 500)
                 summary = SurrogateSafeTruncation.Truncate(summary, 497, "...");
 
@@ -738,7 +747,8 @@ public class AutomationPlannerService : IAutomationPlannerService
     internal async Task<List<CreateProposalOperationDto>?> TryParseOperationsAsync(
         string instruction,
         Guid? boardId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ICollection<string>? ambiguousColumnNames = null)
     {
         var operations = new List<CreateProposalOperationDto>();
         var sequence = 0;
@@ -763,7 +773,10 @@ public class AutomationPlannerService : IAutomationPlannerService
                 var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 var resolution = ColumnNameResolver.Resolve(columns, columnName);
                 if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+                {
+                    ambiguousColumnNames?.Add(columnName);
                     return null;
+                }
                 var column = resolution.Column;
                 if (column == null)
                     return null;
@@ -805,7 +818,10 @@ public class AutomationPlannerService : IAutomationPlannerService
             var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
             var resolution = ColumnNameResolver.Resolve(columns, columnName);
             if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+            {
+                ambiguousColumnNames?.Add(columnName);
                 return null;
+            }
             var column = resolution.Column;
             if (column == null)
                 return null;
@@ -954,7 +970,11 @@ public class AutomationPlannerService : IAutomationPlannerService
             if (!columns.Any()) return null;
 
             var resolution = ColumnNameResolver.Resolve(columns, columnName);
-            if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous) return null;
+            if (resolution.Outcome == ColumnResolutionOutcome.Ambiguous)
+            {
+                ambiguousColumnNames?.Add(columnName);
+                return null;
+            }
             var column = resolution.Column;
             if (column == null) return null;
             if (position >= columns.Count) return null;
