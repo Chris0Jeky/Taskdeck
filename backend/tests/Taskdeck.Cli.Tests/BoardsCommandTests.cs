@@ -41,6 +41,7 @@ public class BoardsCommandTests
         result.ExitCode.Should().Be(0, result.StdErr);
         using var doc = JsonDocument.Parse(result.StdOut);
         doc.RootElement.GetProperty("name").GetString().Should().Be("DescBoard");
+        doc.RootElement.GetProperty("description").GetString().Should().Be("A nice description");
     }
 
     [Fact]
@@ -136,6 +137,49 @@ public class BoardsCommandTests
         var board = listDoc.RootElement.EnumerateArray()
             .Single(x => x.GetProperty("id").GetGuid() == boardId);
         board.GetProperty("name").GetString().Should().Be("OrigBoard");
+    }
+
+    [Fact]
+    public async Task BoardsArchiveUnarchive_FiltersListAndRestoresBoard()
+    {
+        await using var harness = new CliTestHarness("cli-boards");
+
+        var createResult = await harness.RunAsync("boards create ArchiveBoard --json");
+        createResult.ExitCode.Should().Be(0, createResult.StdErr);
+        using var createDoc = JsonDocument.Parse(createResult.StdOut);
+        var boardId = createDoc.RootElement.GetProperty("id").GetGuid();
+
+        var archiveResult = await harness.RunAsync($"boards update --board {boardId} --archive --json");
+        archiveResult.ExitCode.Should().Be(0, archiveResult.StdErr);
+        using var archiveDoc = JsonDocument.Parse(archiveResult.StdOut);
+        archiveDoc.RootElement.GetProperty("isArchived").GetBoolean().Should().BeTrue();
+
+        var listResult = await harness.RunAsync("boards list --json");
+        listResult.ExitCode.Should().Be(0, listResult.StdErr);
+        using var listDoc = JsonDocument.Parse(listResult.StdOut);
+        listDoc.RootElement.EnumerateArray()
+            .Select(x => x.GetProperty("id").GetGuid())
+            .Should()
+            .NotContain(boardId);
+
+        var includeArchivedResult = await harness.RunAsync("boards list --include-archived --json");
+        includeArchivedResult.ExitCode.Should().Be(0, includeArchivedResult.StdErr);
+        using var includeArchivedDoc = JsonDocument.Parse(includeArchivedResult.StdOut);
+        includeArchivedDoc.RootElement.EnumerateArray()
+            .Single(x => x.GetProperty("id").GetGuid() == boardId)
+            .GetProperty("isArchived").GetBoolean().Should().BeTrue();
+
+        var unarchiveResult = await harness.RunAsync($"boards update --board {boardId} --unarchive --json");
+        unarchiveResult.ExitCode.Should().Be(0, unarchiveResult.StdErr);
+        using var unarchiveDoc = JsonDocument.Parse(unarchiveResult.StdOut);
+        unarchiveDoc.RootElement.GetProperty("isArchived").GetBoolean().Should().BeFalse();
+
+        var restoredListResult = await harness.RunAsync("boards list --json");
+        restoredListResult.ExitCode.Should().Be(0, restoredListResult.StdErr);
+        using var restoredListDoc = JsonDocument.Parse(restoredListResult.StdOut);
+        restoredListDoc.RootElement.EnumerateArray()
+            .Single(x => x.GetProperty("id").GetGuid() == boardId)
+            .GetProperty("isArchived").GetBoolean().Should().BeFalse();
     }
 
     [Fact]
