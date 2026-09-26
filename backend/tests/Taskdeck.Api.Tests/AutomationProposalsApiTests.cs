@@ -2125,6 +2125,83 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task GetAllByUserIdAsync_ReturnsUserOutcomesNewestFirstCapped_OnSqlite()
+    {
+        // #3478: GetAllByUserIdAsync applied Take(1000) without ordering, so the bounded sample
+        // could drop the newest decisions before InsightsService filters the cohort. Seed just past
+        // the cap with the newest row inserted LAST: under the old unordered query SQLite serves
+        // Take(1000) in insertion order, so the newest decision never appears and this fails. Seed
+        // directly via the DbContext -- 1005 API round-trips would be needlessly slow, and
+        // AutomationProposal has no required parent FK. Outcomes carry structural dimensions only.
+        const int cohortCap = 1000; // mirrors ProposalOutcomeRepository.MaxLimit
+        const int seedCount = cohortCap + 5;
+        var userId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var baseTime = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var recentDecisionAt = DateTimeOffset.UtcNow;
+        var createdAt = typeof(ProposalOutcome).GetProperty(nameof(ProposalOutcome.CreatedAt))
+            ?? throw new InvalidOperationException("Expected ProposalOutcome.CreatedAt property to exist.");
+        var decidedAt = typeof(ProposalOutcome).GetProperty(nameof(ProposalOutcome.DecidedAt))
+            ?? throw new InvalidOperationException("Expected ProposalOutcome.DecidedAt property to exist.");
+
+        Guid newestDecisionProposalId;
+        Guid otherProposalId;
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            ProposalOutcome? newest = null;
+            for (var i = 0; i < seedCount; i++)
+            {
+                var proposal = new AutomationProposal(
+                    ProposalSourceType.Chat, userId, $"outcome-order proposal {i}",
+                    RiskLevel.Low, Guid.NewGuid().ToString());
+                db.AutomationProposals.Add(proposal);
+                var outcome = new ProposalOutcome(
+                    proposal.Id, userId, OutcomeDecision.Approved,
+                    decisionLatencySeconds: 1.0, fieldCount: 1, editedFieldCount: 0,
+                    sourceType: "Chat", riskLevel: "Low");
+                // The newest decision belongs to the oldest-created proposal: creation order
+                // must not decide which rows survive the cap.
+                createdAt.SetValue(outcome, i == seedCount - 1 ? baseTime.AddSeconds(-1) : baseTime.AddSeconds(i));
+                decidedAt.SetValue(outcome, i == seedCount - 1 ? recentDecisionAt : baseTime.AddSeconds(i));
+                db.ProposalOutcomes.Add(outcome);
+                newest = outcome;
+            }
+
+            // A second user's row -- the newest timestamp overall -- must never leak into the read.
+            var otherProposal = new AutomationProposal(
+                ProposalSourceType.Chat, otherUserId, "outcome-order other user",
+                RiskLevel.Low, Guid.NewGuid().ToString());
+            db.AutomationProposals.Add(otherProposal);
+            var otherOutcome = new ProposalOutcome(
+                otherProposal.Id, otherUserId, OutcomeDecision.Approved,
+                decisionLatencySeconds: 1.0, fieldCount: 1, editedFieldCount: 0,
+                sourceType: "Chat", riskLevel: "Low");
+            createdAt.SetValue(otherOutcome, baseTime.AddSeconds(seedCount + 100));
+            db.ProposalOutcomes.Add(otherOutcome);
+
+            await db.SaveChangesAsync();
+            newestDecisionProposalId = newest!.ProposalId;
+            otherProposalId = otherProposal.Id;
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<IProposalOutcomeRepository>();
+        var all = await repo.GetAllByUserIdAsync(userId);
+
+        all.Should().HaveCount(cohortCap); // the 1000-row cap is preserved
+        all.First().ProposalId.Should().Be(newestDecisionProposalId); // the recent decision survives
+        all.Select(o => o.DecidedAt).Should().BeInDescendingOrder();
+        all.Select(o => o.DecidedByUserId).Should().OnlyContain(id => id == userId);
+        all.Select(o => o.ProposalId).Should().NotContain(otherProposalId);
+
+        var insights = scope.ServiceProvider.GetRequiredService<IInsightsService>();
+        var cohort = await insights.GetProposalCohortAsync(userId, periodDays: 30);
+        cohort.AcceptedCount.Should().Be(1); // the recent decision survives the cap and period filter
+        cohort.TotalCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task ReportFeedback_ShouldReturn404_ForUnknownProposal()
     {
         await AuthenticateAsync("automation-feedback-404");
