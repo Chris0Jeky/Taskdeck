@@ -250,6 +250,17 @@ export function useReviewActions(
         proposalIdsEqual(openDiffProposalId, proposal.id) &&
         proposalRevisionMoved(openDiffRevisionId, revisionId)
       ) {
+        // #2598: a decision taken elsewhere can BOTH move the effective
+        // revision (rev-1 to approved rev-2) and flip the proposal read-only.
+        // The stored decision-time preview the read-only watcher presents is
+        // still valid for that result, so re-key the pair instead of wiping
+        // the pane. Only a still-actionable proposal closes here, where the
+        // cached live diff would otherwise back an action on the old revision.
+        if (isProposalReadOnly(proposal, isProposalExpired(proposal))) {
+          openDiffProposalId = proposal.id
+          openDiffRevisionId = revisionId
+          return
+        }
         // Cancel any in-flight fetch so a late response cannot re-open the pane.
         // `resetDiffState` clears the pair along with the pane it belongs to.
         latestDiffRequestId += 1
