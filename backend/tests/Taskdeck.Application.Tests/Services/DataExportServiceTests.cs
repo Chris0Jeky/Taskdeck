@@ -214,6 +214,154 @@ public class DataExportServiceTests
     }
 
     [Fact]
+    public async Task ExportUserDataAsync_RejectsManyEscapedArtefactMetadataRows_WhileStreamStillWorks()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var escapedName = new string('\\', SourceArtefact.MaxFileNameLength);
+        var escapedOrigin = new string('\\', SourceArtefact.MaxOriginReferenceLength);
+        var artefacts = Enumerable.Range(0, 3_000)
+            .Select(_ => new SourceArtefact(_userId, ArtefactKind.TextFile, "text/plain",
+                escapedName, 1, new string('a', SourceArtefact.Sha256HexLength),
+                CaptureSource.Import, originReference: escapedOrigin))
+            .ToArray();
+        _artefactRepoMock
+            .Setup(repository => repository.GetByUserAsync(
+                _userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int limit, int offset, CancellationToken _) =>
+                artefacts.Skip(offset).Take(limit).ToArray());
+        _artefactRepoMock
+            .Setup(repository => repository.CopyContentForUserAsync(
+                It.IsAny<Guid>(), _userId, It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .Returns(async (Guid _, Guid _, Stream destination, CancellationToken token) =>
+            {
+                await destination.WriteAsync(new byte[] { 1 }, token);
+                return true;
+            });
+
+        var buffered = await _service.ExportUserDataAsync(_userId);
+
+        buffered.IsSuccess.Should().BeFalse();
+        buffered.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        _artefactRepoMock.Verify(repository => repository.GetContentsForUserAsync(
+            It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()), Times.Never);
+
+        using var destination = new MemoryStream();
+        var streamed = await _service.StreamUserDataExportAsync(_userId, destination);
+        streamed.IsSuccess.Should().BeTrue(streamed.ErrorMessage);
+        using var document = System.Text.Json.JsonDocument.Parse(destination.ToArray());
+        document.RootElement.GetProperty("data").GetProperty("artefacts").GetArrayLength()
+            .Should().Be(artefacts.Length);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_RejectsUploadCommittedAfterAggregateEstimateBeforeBlobLoad()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var metadataRead = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commitUpload = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var committed = new List<SourceArtefact>();
+        _artefactRepoMock
+            .Setup(repository => repository.GetByUserAsync(
+                _userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns(async (Guid _, int limit, int offset, CancellationToken _) =>
+            {
+                if (offset == 0)
+                {
+                    metadataRead.TrySetResult(true);
+                    await commitUpload.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                }
+                return (IReadOnlyList<SourceArtefact>)committed.Skip(offset).Take(limit).ToArray();
+            });
+
+        var export = _service.ExportUserDataAsync(_userId);
+        await metadataRead.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        committed.Add(new SourceArtefact(_userId, ArtefactKind.TextFile, "text/plain",
+            "arrived-during-export.txt", 7L * 1024 * 1024,
+            new string('a', SourceArtefact.Sha256HexLength), CaptureSource.Import));
+        commitUpload.TrySetResult(true);
+
+        var result = await export;
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        _artefactRepoMock.Verify(repository => repository.GetContentsForUserAsync(
+            It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_RejectsSourceUploadCommittedAfterEstimateBeforeSourceLoad()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var artefact = new SourceArtefact(_userId, ArtefactKind.TextFile, "text/plain",
+            "already-present.txt", 3L * 1024 * 1024,
+            new string('a', SourceArtefact.Sha256HexLength), CaptureSource.Import);
+        _artefactRepoMock.Setup(repository => repository.GetTotalByteSizeByUserAsync(
+                _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(artefact.ByteSize);
+        _artefactRepoMock.Setup(repository => repository.GetByUserAsync(
+                _userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int limit, int offset, CancellationToken _) =>
+                new[] { artefact }.Skip(offset).Take(limit).ToArray());
+        _artefactRepoMock.Setup(repository => repository.GetContentsForUserAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyDictionary<Guid, byte[]>)new Dictionary<Guid, byte[]>
+            {
+                [artefact.Id] = new byte[3 * 1024 * 1024]
+            });
+        var sourceRead = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commitUpload = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sourceStorage = new Mock<ISourcePortabilityStore>();
+        sourceStorage.Setup(store => store.EstimateBufferedBytesAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
+        sourceStorage.Setup(store => store.OpenReadSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Mock<IAsyncDisposable>().Object);
+        sourceStorage.Setup(store => store.ObjectsAsync(_userId, It.IsAny<CancellationToken>()))
+            .Returns(EmptyAsync<SourceBlobObjectExportDto>());
+        sourceStorage.Setup(store => store.ReferencesAsync(_userId, It.IsAny<CancellationToken>()))
+            .Returns(EmptyAsync<SourceBlobReferenceExportDto>());
+        sourceStorage.Setup(store => store.ChunksAsync(_userId, It.IsAny<CancellationToken>()))
+            .Returns(ConcurrentChunks());
+        sourceStorage.Setup(store => store.RepresentationsAsync(_userId, It.IsAny<CancellationToken>()))
+            .Returns(EmptyAsync<RepresentationDescriptor>());
+        sourceStorage.Setup(store => store.AudioAnswersAsync(_userId, It.IsAny<CancellationToken>()))
+            .Returns(EmptyAsync<ThinkingAudioExportDto>());
+        sourceStorage.Setup(store => store.AudioTranscriptionAttemptsAsync(_userId, It.IsAny<CancellationToken>()))
+            .Returns(EmptyAsync<AudioTranscriptionAttemptExportDto>());
+        sourceStorage.Setup(store => store.AudioTranscriptionBudgetsAsync(_userId, It.IsAny<CancellationToken>()))
+            .Returns(EmptyAsync<AudioTranscriptionBudgetExportDto>());
+        var service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object,
+            _artefactRepoMock.Object, _extractionRepoMock.Object, _transcriptRepoMock.Object,
+            EmptyWorkspaceInsightRepository.Create(), sourceStorage: sourceStorage.Object);
+
+        var export = service.ExportUserDataAsync(_userId);
+        await sourceRead.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        commitUpload.TrySetResult(true);
+
+        var result = await export;
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        _historyServiceMock.Verify(history => history.LogActionAsync("User", _userId,
+            AuditAction.DataExported, _userId, It.IsAny<string>()), Times.Never);
+
+        async IAsyncEnumerable<SourceBlobChunkExportDto> ConcurrentChunks()
+        {
+            sourceRead.TrySetResult(true);
+            await commitUpload.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var blobId = Guid.NewGuid();
+            for (var ordinal = 0; ordinal < 48; ordinal++)
+                yield return new SourceBlobChunkExportDto(blobId, ordinal, new byte[64 * 1024]);
+        }
+    }
+
+    private static async IAsyncEnumerable<T> EmptyAsync<T>()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    [Fact]
     public async Task ExportUserDataAsync_AcceptsArtefactAtSerializedRepresentationBoundary()
     {
         SetupUserFound();
