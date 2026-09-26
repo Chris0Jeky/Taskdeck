@@ -12,6 +12,9 @@ public class AutomationProposal : Entity
     /// <summary>Upper bound (24h) on a single defer window; the override is clamped to this.</summary>
     public const int MaxDeferMinutes = 1440;
 
+    /// <summary>Upper bound (one year) on proposal expiry, matching WorkerSettings.ProposalExpiryMinutes.</summary>
+    public const int MaxExpiryMinutes = 525600;
+
     /// <summary>
     /// Grace period added on top of <see cref="DeferredUntil"/> when pushing out
     /// <see cref="ExpiresAt"/>, so a snoozed proposal can never silently expire while
@@ -76,8 +79,8 @@ public class AutomationProposal : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Summary cannot exceed 500 characters");
         if (string.IsNullOrWhiteSpace(correlationId))
             throw new DomainException(ErrorCodes.ValidationError, "CorrelationId cannot be empty");
-        if (expiryMinutes <= 0)
-            throw new DomainException(ErrorCodes.ValidationError, "ExpiryMinutes must be positive");
+        if (expiryMinutes <= 0 || expiryMinutes > MaxExpiryMinutes)
+            throw new DomainException(ErrorCodes.ValidationError, "ExpiryMinutes must be between 1 and 525600");
 
         SourceType = sourceType;
         SourceReferenceId = sourceReferenceId;

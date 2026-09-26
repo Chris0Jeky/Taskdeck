@@ -136,7 +136,9 @@ public class AutomationProposalTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Constructor_ShouldThrow_WhenExpiryMinutesIsNotPositive(int expiryMinutes)
+    [InlineData(525601)]
+    [InlineData(int.MaxValue)]
+    public void Constructor_ShouldThrow_WhenExpiryMinutesIsOutOfRange(int expiryMinutes)
     {
         // Act
         var act = () => new AutomationProposal(
@@ -149,7 +151,8 @@ public class AutomationProposalTests
 
         // Assert
         act.Should().Throw<DomainException>()
-            .WithMessage("ExpiryMinutes must be positive");
+            .Where(ex => ex.ErrorCode == ErrorCodes.ValidationError)
+            .WithMessage("ExpiryMinutes must be between 1 and 525600");
     }
 
     [Fact]
@@ -727,6 +730,25 @@ public class AutomationProposalTests
 
         // Assert
         proposal.DeferredUntil.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1440)]
+    [InlineData(525600)]
+    public void Constructor_ShouldSucceed_WhenExpiryMinutesWithinBounds(int expiryMinutes)
+    {
+        // Act
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Manual,
+            _requestedByUserId,
+            "Summary",
+            RiskLevel.Low,
+            "corr-1",
+            expiryMinutes: expiryMinutes);
+
+        // Assert
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
     }
 
     private AutomationProposal CreateProposal(RiskLevel riskLevel = RiskLevel.Medium, int expiryMinutes = 1440)

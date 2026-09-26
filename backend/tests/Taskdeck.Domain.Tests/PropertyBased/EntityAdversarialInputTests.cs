@@ -587,10 +587,12 @@ public class EntityAdversarialInputTests
     [Theory]
     [InlineData(1)]
     [InlineData(1440)]
+    [InlineData(525600)]
+    [InlineData(525601)]
     [InlineData(int.MaxValue)]
-    public void Proposal_ExpiryMinutes_Positive_Succeeds(int expiryMinutes)
+    public void Proposal_ExpiryMinutes_Boundary_HandledCorrectly(int expiryMinutes)
     {
-        var proposal = new AutomationProposal(
+        var act = () => new AutomationProposal(
             ProposalSourceType.Chat,
             Guid.NewGuid(),
             "Summary",
@@ -598,6 +600,15 @@ public class EntityAdversarialInputTests
             Guid.NewGuid().ToString(),
             expiryMinutes: expiryMinutes);
 
-        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        if (expiryMinutes > 525600)
+        {
+            act.Should().Throw<DomainException>()
+                .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+        }
+        else
+        {
+            var proposal = act();
+            proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        }
     }
 }
