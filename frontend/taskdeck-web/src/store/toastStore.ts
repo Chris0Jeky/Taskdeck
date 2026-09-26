@@ -56,6 +56,13 @@ export interface Toast extends ToastOptions {
   message: string
   type: 'success' | 'error' | 'info' | 'warning'
   duration: number
+  /**
+   * Internal refresh sequence (GH-3474). Bumped whenever `show()` reuses an
+   * existing error receipt so the Paper countdown can restart in sync with
+   * the refreshed removal timer even when the duration number is unchanged.
+   * Never set by callers; the legacy surface and receipt copy ignore it.
+   */
+  revision?: number
 }
 
 /**
@@ -209,6 +216,7 @@ export const useToastStore = defineStore('toast', () => {
           details: options.details,
           action: options.action,
           label: options.label,
+          revision: (existing.revision ?? 0) + 1,
         })
         toasts.value.push(existing)
         clearTimer(existing.id)
@@ -219,7 +227,7 @@ export const useToastStore = defineStore('toast', () => {
     }
 
     const id = `toast-${Date.now()}-${Math.random()}`
-    const toast: Toast = { id, message, type, duration, ...options }
+    const toast: Toast = { id, message, type, duration, revision: 0, ...options }
 
     toasts.value.push(toast)
     scheduleRemoval(id, duration)
