@@ -339,6 +339,15 @@ function resolveDemoHttpResult(config: InternalAxiosRequestConfig): DemoHttpResu
       return mutateProposal(proposalId, { deferredUntil: until })
     }
     if (action === 'execute' && method === 'post') {
+      const singleExecuteProposal = findProposal(proposalId)
+      if (!singleExecuteProposal) return notFound('Proposal not found in demo mode.')
+      if (singleExecuteProposal.status === 'Applied') return ok(singleExecuteProposal)
+      if (singleExecuteProposal.status !== 'Approved') {
+        return {
+          status: 409,
+          data: { errorCode: 'ProposalNotApproved', message: 'Only an approved proposal can be applied.' },
+        }
+      }
       return mutateProposal(proposalId, { status: 'Applied', appliedAt: new Date().toISOString() })
     }
     if (action === 'dismiss' && method === 'post') {
