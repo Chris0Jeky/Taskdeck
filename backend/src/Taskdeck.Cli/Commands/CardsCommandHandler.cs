@@ -170,6 +170,27 @@ internal sealed class CardsCommandHandler
                 "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
         }
 
+        if (ArgParser.HasFlag(args, "--search") && string.IsNullOrWhiteSpace(search))
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --search <text>.",
+                "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
+        }
+
+        if (ArgParser.HasFlag(args, "--column") && columnIdText is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --column <column-id>.",
+                "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
+        }
+
+        if (ArgParser.HasFlag(args, "--label") && labelIdText is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --label <label-id>.",
+                "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
+        }
+
         Guid? columnId = null;
         if (columnIdText is not null)
         {
