@@ -417,12 +417,11 @@ describe('useInboxOrchestrator', () => {
   })
 
   describe('route scope', () => {
-    it('reads board and column context, then clears both without a page reload', async () => {
+    it('reads board scope and clears stale column query without a page reload', async () => {
       mockRoute.query = { boardId: 'board-1', columnId: 'column-1', source: 'capture' }
       const orch = createOrchestrator()
 
       expect(orch.activeBoardId.value).toBe('board-1')
-      expect(orch.activeColumnId.value).toBe('column-1')
 
       await orch.clearScope()
       expect(mockRouter.replace).toHaveBeenCalledWith({
@@ -484,7 +483,7 @@ describe('useInboxOrchestrator', () => {
       })
     })
 
-    it('keeps B names after an obsolete A metadata success resolves last', async () => {
+    it('keeps B board name after an obsolete A metadata success resolves last', async () => {
       const boardA = deferred<BoardDetail>()
       const boardB = deferred<BoardDetail>()
       mockBoardsApi.getBoard
@@ -499,12 +498,10 @@ describe('useInboxOrchestrator', () => {
       boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
       await flushAsyncWork()
       expect(orch.activeBoardName.value).toBe('Board B')
-      expect(orch.activeColumnName.value).toBe('Column B')
 
       boardA.resolve(makeBoard('board-a', 'Stale Board A', 'column-a', 'Stale Column A'))
       await flushAsyncWork()
       expect(orch.activeBoardName.value).toBe('Board B')
-      expect(orch.activeColumnName.value).toBe('Column B')
     })
 
     it('exposes the scoped board write capability to Inbox surfaces', async () => {
@@ -543,7 +540,7 @@ describe('useInboxOrchestrator', () => {
       expect(orch.activeBoardCanWrite.value).toBe(false)
     })
 
-    it('keeps B names after an obsolete A metadata failure resolves last', async () => {
+    it('keeps B board name after an obsolete A metadata failure resolves last', async () => {
       const boardA = deferred<BoardDetail>()
       const boardB = deferred<BoardDetail>()
       mockBoardsApi.getBoard
@@ -561,10 +558,9 @@ describe('useInboxOrchestrator', () => {
       boardA.reject(new Error('obsolete A failed'))
       await flushAsyncWork()
       expect(orch.activeBoardName.value).toBe('Board B')
-      expect(orch.activeColumnName.value).toBe('Column B')
     })
 
-    it('falls back to B ids while loaded A metadata is being replaced', async () => {
+    it('falls back to B board id while loaded A metadata is being replaced', async () => {
       mockBoardsApi.getBoard.mockResolvedValueOnce(
         makeBoard('board-a', 'Board A', 'column-a', 'Column A'),
       )
@@ -575,17 +571,14 @@ describe('useInboxOrchestrator', () => {
       mountedCallback!()
       await flushAsyncWork()
       expect(orch.activeBoardName.value).toBe('Board A')
-      expect(orch.activeColumnName.value).toBe('Column A')
 
       mockRoute.query = { boardId: 'board-b', columnId: 'column-b' }
       watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
       expect(orch.activeBoardName.value).toBe('board-b')
-      expect(orch.activeColumnName.value).toBe('column-b')
 
       boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
       await flushAsyncWork()
       expect(orch.activeBoardName.value).toBe('Board B')
-      expect(orch.activeColumnName.value).toBe('Column B')
     })
 
     it('marks a route-scope list load as a replacement until it succeeds', async () => {

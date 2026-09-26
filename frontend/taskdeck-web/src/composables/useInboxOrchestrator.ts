@@ -64,7 +64,6 @@ export function useInboxOrchestrator(options: {
     return captureStore.detailById[selectedItemId.value] ?? null
   })
   const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
-  const activeColumnId = computed(() => normalizeBoardIdQueryParam(route.query.columnId))
   const isArchivedHistory = computed(
     () => route.query.history === 'archived' && activeBoardId.value !== null,
   )
@@ -118,13 +117,6 @@ export function useInboxOrchestrator(options: {
     if (scopedBoard.value?.id !== boardId) return false
     return scopedBoard.value.canWrite !== false
   })
-  const activeColumnName = computed(() => {
-    const columnId = activeColumnId.value
-    if (!columnId) return ''
-    if (scopedBoard.value?.id !== activeBoardId.value) return columnId
-    return scopedBoard.value.columns.find((column) => column.id === columnId)?.name ?? columnId
-  })
-
   async function loadScopedBoard() {
     const requestGeneration = ++scopedBoardLoadGeneration
     const boardId = activeBoardId.value
@@ -749,12 +741,10 @@ export function useInboxOrchestrator(options: {
     activeDescendantId,
     selectedItem,
     activeBoardId,
-    activeColumnId,
     isArchivedHistory,
     isScopeReplacement,
     activeBoardName,
     activeBoardCanWrite,
-    activeColumnName,
     showCaptureModal,
     selectedIds,
     isEditingSuggestion,
